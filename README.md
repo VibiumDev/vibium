@@ -235,7 +235,7 @@ See [V2-ROADMAP.md](V2-ROADMAP.md) for planned features:
 
 ## Updates
 
-- [2025-12-11: V1 Announcement](docs/updates/2025-12-11-v1-announcement.txt)
+- [2025-12-11: V1 Announcement](docs/updates/2025-12-11-v1-announcement.md)
 
 ---
 
