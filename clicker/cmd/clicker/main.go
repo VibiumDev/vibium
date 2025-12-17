@@ -16,6 +16,26 @@ import (
 
 var version = "0.1.0"
 
+// Global flags
+var (
+	headed bool
+	delay  int
+)
+
+// waitAndClose handles the delay flag before closing the browser.
+// If delay > 0, waits that many seconds.
+// If delay == 0 and headed, waits for user to press Enter.
+func waitAndClose(launchResult *browser.LaunchResult) {
+	if headed && delay == 0 {
+		fmt.Println("\nBrowser is open. Press Enter to close...")
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
+	} else if delay > 0 {
+		fmt.Printf("\nKeeping browser open for %d seconds...\n", delay)
+		time.Sleep(time.Duration(delay) * time.Second)
+	}
+	launchResult.Close()
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "clicker",
@@ -24,6 +44,10 @@ func main() {
 			cmd.Help()
 		},
 	}
+
+	// Add global flags for browser commands
+	rootCmd.PersistentFlags().BoolVar(&headed, "headed", false, "Show browser window (not headless)")
+	rootCmd.PersistentFlags().IntVar(&delay, "delay", 0, "Seconds to keep browser open after command (0 = wait for user to close)")
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
@@ -81,7 +105,7 @@ func main() {
 		Use:   "launch-test",
 		Short: "Launch browser via chromedriver and print BiDi WebSocket URL",
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			result, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -148,7 +172,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 			fmt.Printf("       Chromedriver started on port %d\n", launchResult.Port)
 			fmt.Printf("       Session ID: %s\n", launchResult.SessionID)
 
@@ -190,12 +214,12 @@ func main() {
 			url := args[0]
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
@@ -231,12 +255,12 @@ func main() {
 			output, _ := cmd.Flags().GetString("output")
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
@@ -292,12 +316,12 @@ func main() {
 			expression := args[1]
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
@@ -338,12 +362,12 @@ func main() {
 			selector := args[1]
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
@@ -385,12 +409,12 @@ func main() {
 			selector := args[1]
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
@@ -443,12 +467,12 @@ func main() {
 			text := args[2]
 
 			fmt.Println("Launching browser...")
-			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: !headed})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
 				os.Exit(1)
 			}
-			defer launchResult.Close()
+			defer waitAndClose(launchResult)
 
 			fmt.Println("Connecting to BiDi...")
 			conn, err := bidi.Connect(launchResult.WebSocketURL)
