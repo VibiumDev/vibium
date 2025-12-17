@@ -136,6 +136,43 @@ func main() {
 		},
 	})
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "bidi-test",
+		Short: "Launch browser, connect via BiDi, send session.status",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("Launching browser...")
+			launchResult, err := browser.Launch(browser.LaunchOptions{Headless: true})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
+				os.Exit(1)
+			}
+			defer launchResult.Close()
+
+			fmt.Printf("BiDi WebSocket: %s\n", launchResult.WebSocketURL)
+			fmt.Println("Connecting to BiDi WebSocket...")
+
+			conn, err := bidi.Connect(launchResult.WebSocketURL)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
+				os.Exit(1)
+			}
+			defer conn.Close()
+
+			client := bidi.NewClient(conn)
+
+			fmt.Println("Sending session.status...")
+			status, err := client.SessionStatus()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("Response:\n")
+			fmt.Printf("  Ready: %v\n", status.Ready)
+			fmt.Printf("  Message: %s\n", status.Message)
+		},
+	})
+
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate("Clicker v{{.Version}}\n")
 
