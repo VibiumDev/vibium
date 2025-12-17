@@ -297,8 +297,7 @@ Implement internal/bidi/input.go:
 **Checkpoint:**
 ```bash
 ./bin/clicker click https://example.com "a"
-./bin/clicker screenshot https://example.com -o after.png
-# after.png shows IANA page (link was clicked)
+# Shows: Current URL: https://www.iana.org/help/example-domains
 ```
 
 ### Milestone 5.3: Keyboard Input

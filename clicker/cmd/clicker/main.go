@@ -282,11 +282,11 @@ func main() {
 	rootCmd.AddCommand(screenshotCmd)
 
 	rootCmd.AddCommand(&cobra.Command{
-		Use:     "eval [url] [expression]",
-		Short:   "Navigate to a URL and evaluate a JavaScript expression",
+		Use:   "eval [url] [expression]",
+		Short: "Navigate to a URL and evaluate a JavaScript expression",
 		Example: `  clicker eval https://example.com "document.title"
   # Prints: Example Domain`,
-		Args:    cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			url := args[0]
 			expression := args[1]
