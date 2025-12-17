@@ -61,7 +61,7 @@ flags for debugging:
 
 ## building with claude code:
 
-it's been a joy using claude code to build vibium. each milestone is a prompt. claude reads the roadmap, implements the feature, runs the checkpoint test, and we move on. so much fun. it helps that the webdriver bidi has been out for a few years. it's pretty straightforward to implement now. it's "just websockets and json", just like the chrome devtools protocol that playwright depends on.
+it's been a joy using claude code to build vibium. each milestone is a prompt. claude reads the roadmap, implements the feature, runs the checkpoint test, and we move on. so much fun. it helps that the webdriver bidi spec has been out for a few years. it's pretty straightforward to implement now. it's "just websockets and json", just like the chrome devtools protocol that playwright depends on.
 
 bootstrapping clicker as a go-based command line utility has also made testing dead simple. i still secretly wish i made this back-end utility in nim, but i'm not sure the world's ready for that, yet.
 
