@@ -45,6 +45,28 @@ await vibe.quit();
 
 it works. actually works. spawns clicker, connects via websocket, drives chrome, takes screenshots.
 
+**try it yourself (local dev):**
+
+```bash
+# build clicker
+cd clicker && go build -o bin/clicker ./cmd/clicker && cd ..
+
+# build js client
+cd clients/javascript && npm run build && cd ../..
+
+# start node repl
+cd clients/javascript && node --experimental-repl-await
+```
+
+```javascript
+const { browser } = await import('./dist/index.mjs')
+const vibe = await browser.launch({ headless: false }) // see the browser!
+await vibe.go('https://example.com')
+const shot = await vibe.screenshot()
+require('fs').writeFileSync('test.png', shot)
+await vibe.quit()
+```
+
 ---
 
 ## the stack so far

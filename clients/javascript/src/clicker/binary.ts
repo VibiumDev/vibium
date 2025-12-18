@@ -8,7 +8,7 @@ import { getPlatform, getArch } from './platform';
  * Search order:
  * 1. CLICKER_PATH environment variable
  * 2. Platform-specific npm package (@vibium/clicker-{platform}-{arch})
- * 3. Local development path (../../clicker/bin/clicker)
+ * 3. Local development paths (relative to cwd)
  */
 export function getClickerPath(): string {
   // 1. Check environment variable
@@ -17,16 +17,15 @@ export function getClickerPath(): string {
     return envPath;
   }
 
-  // 2. Check platform-specific npm package
   const platform = getPlatform();
   const arch = getArch();
   const packageName = `@vibium/clicker-${platform}-${arch}`;
+  const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
 
+  // 2. Check platform-specific npm package
   try {
-    // Try to resolve the platform package
     const packagePath = require.resolve(`${packageName}/package.json`);
     const packageDir = path.dirname(packagePath);
-    const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
     const binaryPath = path.join(packageDir, 'bin', binaryName);
 
     if (fs.existsSync(binaryPath)) {
@@ -36,12 +35,12 @@ export function getClickerPath(): string {
     // Package not installed, continue to fallback
   }
 
-  // 3. Check local development path
+  // 3. Check local development paths (relative to cwd)
   const localPaths = [
-    // From clients/javascript, go up to find clicker/bin/clicker
-    path.resolve(__dirname, '..', '..', '..', '..', 'clicker', 'bin', 'clicker'),
-    // From dist folder
-    path.resolve(__dirname, '..', '..', '..', '..', '..', 'clicker', 'bin', 'clicker'),
+    // From vibium/ root
+    path.resolve(process.cwd(), 'clicker', 'bin', binaryName),
+    // From clients/javascript/
+    path.resolve(process.cwd(), '..', '..', 'clicker', 'bin', binaryName),
   ];
 
   for (const localPath of localPaths) {
