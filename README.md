@@ -22,27 +22,25 @@ Vibium is browser automation infrastructure built for AI agents. A single Go bin
 │                     LLM / Agent                             │
 │              (Claude Code, GPT, Local Models)               │
 └─────────────────────────┬───────────────────────────────────┘
+                          ▲
                           │ MCP Protocol (stdio)
                           ▼
-               ┌─────────────────────┐
-               │   Clicker Binary    │
-               │   (Go, ~10MB)       │
-               │                     │
-               │  ┌───────────────┐  │
-               │  │  MCP Server   │  │
-               │  └───────┬───────┘  │
-               │          │          │
-               │  ┌───────▼───────┐  │
-               │  │  BiDi Proxy   │  │
-               │  └───────┬───────┘  │
-               │          │          │
-               └──────────┼──────────┘
-                          │ WebSocket (BiDi)
+               ┌─────────────────────┐         ┌─────────────────────┐
+               │   Clicker Binary    │         │                     │
+               │   (Go, ~10MB)       │         │   Chrome Browser    │
+               │                     │         │                     │
+               │  ┌───────────────┐  │         │                     │
+               │  │  MCP Server   │  │         │                     │
+               │  └───────┬───────┘  │         │                     │
+               │          │          │  BiDi   │                     │
+               │  ┌───────▼───────┐  │◄──────►│                     │
+               │  │  BiDi Proxy   │  │WebSocket│                     │
+               │  └───────────────┘  │         │                     │
+               │                     │         │                     │
+               └─────────────────────┘         └─────────────────────┘
+                          ▲
+                          │ WebSocket BiDi :9515
                           ▼
-               ┌─────────────────────┐
-               │   Chrome Browser    │
-               └─────────────────────┘
-
 ┌─────────────────────────────────────────────────────────────┐
 │                     JS/TS Client                            │
 │                    npm install vibium                       │
