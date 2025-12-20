@@ -27,13 +27,13 @@ Vibium is browser automation infrastructure built for AI agents. A single Go bin
                           ▼
                ┌─────────────────────┐         ┌─────────────────────┐
                │   Clicker Binary    │         │                     │
-               │   (Go, ~10MB)       │         │   Chrome Browser    │
+               │   (Go, ~10MB)       │         │                     │
                │                     │         │                     │
                │  ┌───────────────┐  │         │                     │
-               │  │  MCP Server   │  │         │                     │
+               │  │  MCP Server   │  │         │   Chrome Browser    │
                │  └───────┬───────┘  │         │                     │
                │          │          │  BiDi   │                     │
-               │  ┌───────▼───────┐  │◄──────►│                     │
+               │  ┌───────▼───────┐  │◄───────►│                     │
                │  │  BiDi Proxy   │  │WebSocket│                     │
                │  └───────────────┘  │         │                     │
                │                     │         │                     │
@@ -41,16 +41,16 @@ Vibium is browser automation infrastructure built for AI agents. A single Go bin
                           ▲
                           │ WebSocket BiDi :9515
                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     JS/TS Client                            │
-│                    npm install vibium                       │
-│                                                             │
-│   ┌─────────────┐              ┌─────────────┐              │
-│   │ Async API   │              │  Sync API   │              │
-│   │ await vibe  │              │ vibe.go()   │              │
-│   │   .go()     │              │             │              │
-│   └─────────────┘              └─────────────┘              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                     JS/TS Client                        │
+│                    npm install vibium                   │
+│                                                         │
+│       ┌─────────────┐             ┌─────────────┐       │
+│       │ Async API   │             │  Sync API   │       │
+│       │ await vibe  │             │ vibe.go()   │       │
+│       │   .go()     │             │             │       │
+│       └─────────────┘             └─────────────┘       │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
