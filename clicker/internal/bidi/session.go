@@ -5,77 +5,6 @@ import (
 	"fmt"
 )
 
-// Client is a BiDi client that wraps a WebSocket connection.
-type Client struct {
-	conn    *Connection
-	verbose bool
-}
-
-// NewClient creates a new BiDi client from a WebSocket connection.
-func NewClient(conn *Connection) *Client {
-	return &Client{conn: conn}
-}
-
-// SetVerbose enables or disables verbose logging of JSON messages.
-func (c *Client) SetVerbose(verbose bool) {
-	c.verbose = verbose
-}
-
-// SendCommand sends a BiDi command and waits for the response.
-func (c *Client) SendCommand(method string, params interface{}) (*Message, error) {
-	cmd := NewCommand(method, params)
-
-	data, err := cmd.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal command: %w", err)
-	}
-
-	if c.verbose {
-		fmt.Printf("       --> %s\n", string(data))
-	}
-
-	if err := c.conn.Send(string(data)); err != nil {
-		return nil, fmt.Errorf("failed to send command: %w", err)
-	}
-
-	// Wait for response with matching ID
-	for {
-		resp, err := c.conn.Receive()
-		if err != nil {
-			return nil, fmt.Errorf("failed to receive response: %w", err)
-		}
-
-		if c.verbose {
-			fmt.Printf("       <-- %s\n", resp)
-		}
-
-		msg, err := UnmarshalMessage([]byte(resp))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		// Check if this is the response we're waiting for
-		if msg.ID != nil && *msg.ID == cmd.ID {
-			if msg.IsError() {
-				errData, _ := msg.GetError()
-				if errData != nil {
-					return nil, fmt.Errorf("BiDi error: %s - %s", errData.Error, errData.Message)
-				}
-				return nil, fmt.Errorf("BiDi error: %s", string(msg.Error))
-			}
-			return msg, nil
-		}
-
-		// If it's an event, skip it for now (could be handled by event listener)
-		if msg.IsEvent() {
-			if c.verbose {
-				fmt.Printf("       (event, skipping)\n")
-			}
-			continue
-		}
-	}
-}
-
 // SessionStatusResult represents the result of session.status command.
 type SessionStatusResult struct {
 	Ready   bool   `json:"ready"`
@@ -122,7 +51,71 @@ func (c *Client) SessionNew(capabilities map[string]interface{}) (*SessionNewRes
 	return &result, nil
 }
 
-// Close closes the underlying connection.
-func (c *Client) Close() error {
-	return c.conn.Close()
+// SessionSubscribeParams represents the parameters for session.subscribe command.
+type SessionSubscribeParams struct {
+	Events       []string `json:"events"`
+	Contexts     []string `json:"contexts,omitempty"`
+	UserContexts []string `json:"userContexts,omitempty"`
+}
+
+// SessionSubscribeResult represents the result of session.subscribe command.
+type SessionSubscribeResult struct {
+	Subscription string `json:"subscription"`
+}
+
+// SessionSubscribe sends a session.subscribe command to enable event subscriptions.
+// The events parameter is a list of event names to subscribe to (e.g., "browsingContext.load").
+// Optionally, contexts or userContexts can be provided to limit the subscription scope.
+func (c *Client) SessionSubscribe(events []string, contexts []string, userContexts []string) (*SessionSubscribeResult, error) {
+	params := SessionSubscribeParams{
+		Events: events,
+	}
+	if len(contexts) > 0 {
+		params.Contexts = contexts
+	}
+	if len(userContexts) > 0 {
+		params.UserContexts = userContexts
+	}
+
+	msg, err := c.SendCommand("session.subscribe", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var result SessionSubscribeResult
+	if err := json.Unmarshal(msg.Result, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse session.subscribe result: %w", err)
+	}
+
+	return &result, nil
+}
+
+// SessionUnsubscribeByIDParams represents the parameters for session.unsubscribe by subscription ID.
+type SessionUnsubscribeByIDParams struct {
+	Subscriptions []string `json:"subscriptions"`
+}
+
+// SessionUnsubscribeByEventsParams represents the parameters for session.unsubscribe by event names.
+type SessionUnsubscribeByEventsParams struct {
+	Events []string `json:"events"`
+}
+
+// SessionUnsubscribeByID sends a session.unsubscribe command to remove subscriptions by their IDs.
+func (c *Client) SessionUnsubscribeByID(subscriptions []string) error {
+	params := SessionUnsubscribeByIDParams{
+		Subscriptions: subscriptions,
+	}
+
+	_, err := c.SendCommand("session.unsubscribe", params)
+	return err
+}
+
+// SessionUnsubscribeByEvents sends a session.unsubscribe command to remove subscriptions by event names.
+func (c *Client) SessionUnsubscribeByEvents(events []string) error {
+	params := SessionUnsubscribeByEventsParams{
+		Events: events,
+	}
+
+	_, err := c.SendCommand("session.unsubscribe", params)
+	return err
 }

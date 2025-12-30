@@ -27,6 +27,13 @@ type BrowserSession struct {
 	internalCmds   map[int]chan json.RawMessage // id -> response channel
 	internalCmdsMu sync.Mutex
 	nextInternalID int
+
+	// Navigation event subscription ID for cleanup on session close
+	navigationSubscriptionID string
+
+	// Event listeners for internal handling of BiDi events
+	eventListeners   map[string][]chan json.RawMessage // event method -> listener channels
+	eventListenersMu sync.Mutex
 }
 
 // BiDi command structure for parsing incoming messages
@@ -103,6 +110,21 @@ func (r *Router) OnClientConnect(client *ClientConn) {
 		stopChan:       make(chan struct{}),
 		internalCmds:   make(map[int]chan json.RawMessage),
 		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
+		eventListeners: make(map[string][]chan json.RawMessage),
+	}
+
+	// Subscribe to navigation events for tracking page load states
+	navigationEvents := []string{
+		"browsingContext.navigationStarted",
+		"browsingContext.domContentLoaded",
+		"browsingContext.load",
+	}
+	subscribeResult, err := bidiClient.SessionSubscribe(navigationEvents, nil, nil)
+	if err != nil {
+		fmt.Printf("[router] Warning: Failed to subscribe to navigation events for client %d: %v\n", client.ID, err)
+	} else {
+		session.navigationSubscriptionID = subscribeResult.Subscription
+		fmt.Printf("[router] Subscribed to navigation events for client %d (subscription: %s)\n", client.ID, subscribeResult.Subscription)
 	}
 
 	r.sessions.Store(client.ID, session)
@@ -163,10 +185,26 @@ func (r *Router) handleVibiumClick(session *BrowserSession, cmd bidiCommand) {
 	selector, _ := cmd.Params["selector"].(string)
 	context, _ := cmd.Params["context"].(string)
 	timeoutMs, _ := cmd.Params["timeout"].(float64)
+	waitBehavior, _ := cmd.Params["waitBehavior"].(string) // "none", "waitForNavigationStarted", "waitForDomContentLoaded", or "waitForLoad"
+	if waitBehavior == "" {
+		waitBehavior = "waitForLoad"
+	}
 
 	timeout := defaultTimeout
 	if timeoutMs > 0 {
 		timeout = time.Duration(timeoutMs) * time.Millisecond
+	}
+
+	// Use a single deadline for the entire operation
+	deadline := time.Now().Add(timeout)
+
+	// Helper to get remaining time
+	remainingTime := func() time.Duration {
+		remaining := time.Until(deadline)
+		if remaining < 0 {
+			return 0
+		}
+		return remaining
 	}
 
 	// Get context if not provided
@@ -179,8 +217,8 @@ func (r *Router) handleVibiumClick(session *BrowserSession, cmd bidiCommand) {
 		context = ctx
 	}
 
-	// Wait for element and get its position
-	info, err := r.waitForElement(session, context, selector, timeout)
+	// Wait for element and get its position (uses remaining time from deadline)
+	info, err := r.waitForElement(session, context, selector, remainingTime())
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -208,10 +246,75 @@ func (r *Router) handleVibiumClick(session *BrowserSession, cmd bidiCommand) {
 		},
 	}
 
+	// Set up event listeners based on waitBehavior
+	var navStartedCh, domContentLoadedCh, loadCh chan json.RawMessage
+
+	if waitBehavior != "none" {
+		navStartedCh = r.addEventListener(session, "browsingContext.navigationStarted")
+	}
+	if waitBehavior == "waitForDomContentLoaded" {
+		domContentLoadedCh = r.addEventListener(session, "browsingContext.domContentLoaded")
+	}
+	if waitBehavior == "waitForLoad" {
+		loadCh = r.addEventListener(session, "browsingContext.load")
+	}
+
+	// Helper to clean up all listeners
+	cleanupListeners := func() {
+		if navStartedCh != nil {
+			r.removeEventListener(session, "browsingContext.navigationStarted", navStartedCh)
+		}
+		if domContentLoadedCh != nil {
+			r.removeEventListener(session, "browsingContext.domContentLoaded", domContentLoadedCh)
+		}
+		if loadCh != nil {
+			r.removeEventListener(session, "browsingContext.load", loadCh)
+		}
+	}
+
+	// Perform the click
 	if _, err := r.sendInternalCommand(session, "input.performActions", clickParams); err != nil {
+		cleanupListeners()
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+
+	// Wait for navigation events based on waitBehavior (using remaining time from deadline)
+	if waitBehavior != "none" {
+		// Wait for navigationStarted
+		select {
+		case <-navStartedCh:
+			// Navigation started
+		case <-time.After(remainingTime()):
+			cleanupListeners()
+			r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for navigation to start", timeout))
+			return
+		}
+
+		// Wait for additional events based on waitBehavior
+		if waitBehavior == "waitForDomContentLoaded" {
+			select {
+			case <-domContentLoadedCh:
+				// DOM content loaded
+			case <-time.After(remainingTime()):
+				cleanupListeners()
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for DOMContentLoaded", timeout))
+				return
+			}
+		} else if waitBehavior == "waitForLoad" {
+			select {
+			case <-loadCh:
+				// Page fully loaded
+			case <-time.After(remainingTime()):
+				cleanupListeners()
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for page load", timeout))
+				return
+			}
+		}
+	}
+
+	// Remove the listeners before returning
+	cleanupListeners()
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"clicked": true})
 }
@@ -222,10 +325,26 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 	context, _ := cmd.Params["context"].(string)
 	text, _ := cmd.Params["text"].(string)
 	timeoutMs, _ := cmd.Params["timeout"].(float64)
+	waitBehavior, _ := cmd.Params["waitBehavior"].(string) // "none", "waitForNavigationStarted", "waitForDomContentLoaded", or "waitForLoad"
+	if waitBehavior == "" {
+		waitBehavior = "none"
+	}
 
 	timeout := defaultTimeout
 	if timeoutMs > 0 {
 		timeout = time.Duration(timeoutMs) * time.Millisecond
+	}
+
+	// Use a single deadline for the entire operation
+	deadline := time.Now().Add(timeout)
+
+	// Helper to get remaining time
+	remainingTime := func() time.Duration {
+		remaining := time.Until(deadline)
+		if remaining < 0 {
+			return 0
+		}
+		return remaining
 	}
 
 	// Get context if not provided
@@ -238,8 +357,8 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 		context = ctx
 	}
 
-	// Wait for element and get its position
-	info, err := r.waitForElement(session, context, selector, timeout)
+	// Wait for element and get its position (uses remaining time from deadline)
+	info, err := r.waitForElement(session, context, selector, remainingTime())
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -292,10 +411,75 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 		},
 	}
 
+	// Set up event listeners based on waitBehavior
+	var navStartedCh, domContentLoadedCh, loadCh chan json.RawMessage
+
+	if waitBehavior != "none" {
+		navStartedCh = r.addEventListener(session, "browsingContext.navigationStarted")
+	}
+	if waitBehavior == "waitForDomContentLoaded" {
+		domContentLoadedCh = r.addEventListener(session, "browsingContext.domContentLoaded")
+	}
+	if waitBehavior == "waitForLoad" {
+		loadCh = r.addEventListener(session, "browsingContext.load")
+	}
+
+	// Helper to clean up all listeners
+	cleanupListeners := func() {
+		if navStartedCh != nil {
+			r.removeEventListener(session, "browsingContext.navigationStarted", navStartedCh)
+		}
+		if domContentLoadedCh != nil {
+			r.removeEventListener(session, "browsingContext.domContentLoaded", domContentLoadedCh)
+		}
+		if loadCh != nil {
+			r.removeEventListener(session, "browsingContext.load", loadCh)
+		}
+	}
+
+	// Perform the typing
 	if _, err := r.sendInternalCommand(session, "input.performActions", typeParams); err != nil {
+		cleanupListeners()
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+
+	// Wait for navigation events based on waitBehavior (using remaining time from deadline)
+	if waitBehavior != "none" {
+		// Wait for navigationStarted
+		select {
+		case <-navStartedCh:
+			// Navigation started
+		case <-time.After(remainingTime()):
+			cleanupListeners()
+			r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for navigation to start", timeout))
+			return
+		}
+
+		// Wait for additional events based on waitBehavior
+		if waitBehavior == "waitForDomContentLoaded" {
+			select {
+			case <-domContentLoadedCh:
+				// DOM content loaded
+			case <-time.After(remainingTime()):
+				cleanupListeners()
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for DOMContentLoaded", timeout))
+				return
+			}
+		} else if waitBehavior == "waitForLoad" {
+			select {
+			case <-loadCh:
+				// Page fully loaded
+			case <-time.After(remainingTime()):
+				cleanupListeners()
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout after %s waiting for page load", timeout))
+				return
+			}
+		}
+	}
+
+	// Remove the listeners before returning
+	cleanupListeners()
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"typed": true})
 }
@@ -462,6 +646,31 @@ func (r *Router) sendError(session *BrowserSession, id int, err error) {
 	session.Client.Send(string(data))
 }
 
+// addEventListener registers a channel to receive events of the specified method.
+// Returns the channel that will receive events.
+func (r *Router) addEventListener(session *BrowserSession, method string) chan json.RawMessage {
+	ch := make(chan json.RawMessage, 10)
+	session.eventListenersMu.Lock()
+	session.eventListeners[method] = append(session.eventListeners[method], ch)
+	session.eventListenersMu.Unlock()
+	return ch
+}
+
+// removeEventListener removes a previously registered event listener channel.
+func (r *Router) removeEventListener(session *BrowserSession, method string, ch chan json.RawMessage) {
+	session.eventListenersMu.Lock()
+	defer session.eventListenersMu.Unlock()
+
+	listeners := session.eventListeners[method]
+	for i, listener := range listeners {
+		if listener == ch {
+			session.eventListeners[method] = append(listeners[:i], listeners[i+1:]...)
+			close(ch)
+			break
+		}
+	}
+}
+
 // OnClientDisconnect is called when a client disconnects.
 // It closes the browser session.
 func (r *Router) OnClientDisconnect(client *ClientConn) {
@@ -497,19 +706,42 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			return
 		}
 
-		// Check if this is a response to an internal command
-		var resp struct {
-			ID int `json:"id"`
+		// Parse the message to determine its type
+		var parsed struct {
+			ID     *int   `json:"id,omitempty"`
+			Method string `json:"method,omitempty"`
 		}
-		if err := json.Unmarshal([]byte(msg), &resp); err == nil && resp.ID > 0 {
-			session.internalCmdsMu.Lock()
-			ch, isInternal := session.internalCmds[resp.ID]
-			session.internalCmdsMu.Unlock()
+		if err := json.Unmarshal([]byte(msg), &parsed); err == nil {
+			// Check if this is a response to an internal command
+			if parsed.ID != nil && *parsed.ID > 0 {
+				session.internalCmdsMu.Lock()
+				ch, isInternal := session.internalCmds[*parsed.ID]
+				session.internalCmdsMu.Unlock()
 
-			if isInternal {
-				// Route to internal handler
-				ch <- json.RawMessage(msg)
-				continue
+				if isInternal {
+					// Route to internal handler
+					ch <- json.RawMessage(msg)
+					continue
+				}
+			}
+
+			// Check if this is an event (has method, no id) and dispatch to listeners
+			if parsed.ID == nil && parsed.Method != "" {
+				session.eventListenersMu.Lock()
+				listeners := session.eventListeners[parsed.Method]
+				// Copy the slice to avoid holding the lock while sending
+				listenersCopy := make([]chan json.RawMessage, len(listeners))
+				copy(listenersCopy, listeners)
+				session.eventListenersMu.Unlock()
+
+				// Dispatch to all listeners (non-blocking)
+				for _, ch := range listenersCopy {
+					select {
+					case ch <- json.RawMessage(msg):
+					default:
+						// Channel full, skip
+					}
+				}
 			}
 		}
 
@@ -569,6 +801,16 @@ func (r *Router) closeSession(session *BrowserSession) {
 	session.mu.Unlock()
 
 	fmt.Printf("[router] Closing browser session for client %d\n", session.Client.ID)
+
+	// Unsubscribe from navigation events before closing
+	if session.navigationSubscriptionID != "" && session.BidiClient != nil {
+		err := session.BidiClient.SessionUnsubscribeByID([]string{session.navigationSubscriptionID})
+		if err != nil {
+			fmt.Printf("[router] Warning: Failed to unsubscribe from navigation events for client %d: %v\n", session.Client.ID, err)
+		} else {
+			fmt.Printf("[router] Unsubscribed from navigation events for client %d\n", session.Client.ID)
+		}
+	}
 
 	// Signal the routing goroutine to stop
 	close(session.stopChan)
