@@ -7,7 +7,7 @@ all: build
 build: build-go build-js
 
 # Build clicker binary
-build-go: deps
+build-go:
 	cd clicker && go build -o bin/clicker ./cmd/clicker
 
 # Build JS client
@@ -29,6 +29,7 @@ build-all-platforms:
 # Copy binaries to platform packages for npm publishing
 package-platforms: build-all-platforms
 	@echo "Copying binaries to platform packages..."
+	mkdir -p packages/linux-x64/bin packages/linux-arm64/bin packages/darwin-x64/bin packages/darwin-arm64/bin packages/win32-x64/bin
 	cp clicker/bin/clicker-linux-amd64 packages/linux-x64/bin/clicker
 	cp clicker/bin/clicker-linux-arm64 packages/linux-arm64/bin/clicker
 	cp clicker/bin/clicker-darwin-amd64 packages/darwin-x64/bin/clicker
@@ -51,6 +52,7 @@ package: package-platforms package-main
 # Copy binaries to Python platform packages
 package-python-platforms: build-all-platforms
 	@echo "Copying binaries to Python platform packages..."
+	mkdir -p packages/python/vibium_linux_x64/src/vibium_linux_x64/bin packages/python/vibium_linux_arm64/src/vibium_linux_arm64/bin packages/python/vibium_darwin_x64/src/vibium_darwin_x64/bin packages/python/vibium_darwin_arm64/src/vibium_darwin_arm64/bin packages/python/vibium_win32_x64/src/vibium_win32_x64/bin
 	cp clicker/bin/clicker-linux-amd64 packages/python/vibium_linux_x64/src/vibium_linux_x64/bin/clicker
 	cp clicker/bin/clicker-linux-arm64 packages/python/vibium_linux_arm64/src/vibium_linux_arm64/bin/clicker
 	cp clicker/bin/clicker-darwin-amd64 packages/python/vibium_darwin_x64/src/vibium_darwin_x64/bin/clicker
