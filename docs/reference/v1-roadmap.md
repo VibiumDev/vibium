@@ -950,11 +950,11 @@ Create docs/api.md:
 - ✅ Clean shutdown in all scenarios
 
 ### Platforms
-- [ ] Linux x64
+- ✅ Linux x64
 - [ ] Linux arm64
 - ✅ macOS x64
 - ✅ macOS arm64
-- [ ] Windows x64
+- ✅ Windows x64
 
 ### Distribution
 - ✅ npm install vibium works
