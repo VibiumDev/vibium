@@ -77,12 +77,12 @@ def find_clicker() -> str:
     # 2. Check platform package
     package_name = get_platform_package_name()
     try:
-        spec = importlib.util.find_spec(package_name)
-        if spec and spec.origin:
-            package_dir = Path(spec.origin).parent
-            binary_path = package_dir / "bin" / binary_name
-            if binary_path.is_file():
-                return str(binary_path)
+        import importlib
+        package = importlib.import_module(package_name)
+        if hasattr(package, 'get_binary_path'):
+            binary_path = package.get_binary_path()
+            if os.path.isfile(binary_path):
+                return binary_path
     except (ImportError, ModuleNotFoundError):
         pass
 
