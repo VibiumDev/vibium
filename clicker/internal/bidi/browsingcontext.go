@@ -5,6 +5,37 @@ import (
 	"fmt"
 )
 
+// Event names for browsingContext events.
+const (
+	EventNavigationStarted = "browsingContext.navigationStarted"
+	EventDOMContentLoaded  = "browsingContext.domContentLoaded"
+	EventLoad              = "browsingContext.load"
+)
+
+// NavigationInfoEvent represents the params for navigation-related events:
+// browsingContext.navigationStarted, browsingContext.domContentLoaded, and browsingContext.load.
+type NavigationInfoEvent struct {
+	Context    string `json:"context"`
+	Navigation string `json:"navigation"`
+	Timestamp  int64  `json:"timestamp"`
+	URL        string `json:"url"`
+}
+
+// ParseNavigationInfoEvent parses an Event's Params into a NavigationInfoEvent.
+// Returns nil if the event is not a navigation event.
+func ParseNavigationInfoEvent(event *Event) (*NavigationInfoEvent, error) {
+	switch event.Method {
+	case EventNavigationStarted, EventDOMContentLoaded, EventLoad:
+		var info NavigationInfoEvent
+		if err := json.Unmarshal(event.Params, &info); err != nil {
+			return nil, fmt.Errorf("failed to parse navigation info event: %w", err)
+		}
+		return &info, nil
+	default:
+		return nil, fmt.Errorf("not a navigation event: %s", event.Method)
+	}
+}
+
 // BrowsingContextInfo represents a browsing context in the tree.
 type BrowsingContextInfo struct {
 	Context  string                `json:"context"`
