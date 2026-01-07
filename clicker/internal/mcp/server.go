@@ -191,17 +191,18 @@ func (s *Server) handleRequest(data []byte) *Response {
 
 	// Route to handler
 	result, err := s.route(req)
+
+	// Notifications (no ID) don't get a response (even on error)
+	if req.ID == nil {
+		return nil
+	}
+
 	if err != nil {
 		return &Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Error:   err,
 		}
-	}
-
-	// Notifications (no ID) don't get a response
-	if req.ID == nil {
-		return nil
 	}
 
 	return &Response{
@@ -218,7 +219,7 @@ func (s *Server) route(req Request) (interface{}, *Error) {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req.Params)
-	case "initialized":
+	case "initialized", "notifications/initialized":
 		// Notification, no response needed
 		return nil, nil
 	case "tools/list":

@@ -15,6 +15,7 @@ func GetToolSchemas() []Tool {
 						"default":     false,
 					},
 				},
+				"additionalProperties": false,
 			},
 		},
 		{
@@ -28,7 +29,8 @@ func GetToolSchemas() []Tool {
 						"description": "The URL to navigate to",
 					},
 				},
-				"required": []string{"url"},
+				"required":             []string{"url"},
+				"additionalProperties": false,
 			},
 		},
 		{
@@ -42,7 +44,8 @@ func GetToolSchemas() []Tool {
 						"description": "CSS selector for the element to click",
 					},
 				},
-				"required": []string{"selector"},
+				"required":             []string{"selector"},
+				"additionalProperties": false,
 			},
 		},
 		{
@@ -60,7 +63,8 @@ func GetToolSchemas() []Tool {
 						"description": "The text to type",
 					},
 				},
-				"required": []string{"selector", "text"},
+				"required":             []string{"selector", "text"},
+				"additionalProperties": false,
 			},
 		},
 		{
@@ -74,6 +78,7 @@ func GetToolSchemas() []Tool {
 						"description": "Optional filename to save the screenshot (e.g., screenshot.png)",
 					},
 				},
+				"additionalProperties": false,
 			},
 		},
 		{
@@ -87,15 +92,17 @@ func GetToolSchemas() []Tool {
 						"description": "CSS selector for the element to find",
 					},
 				},
-				"required": []string{"selector"},
+				"required":             []string{"selector"},
+				"additionalProperties": false,
 			},
 		},
 		{
 			Name:        "browser_quit",
 			Description: "Close the browser session",
 			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
+				"type":                 "object",
+				"properties":           map[string]interface{}{},
+				"additionalProperties": false,
 			},
 		},
 	}
