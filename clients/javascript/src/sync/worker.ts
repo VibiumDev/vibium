@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { browser } from '../browser';
-import { Vibe, FindOptions } from '../vibe';
+import { Vibe, FindOptions, RecordingOptions } from '../vibe';
 import { Element, ActionOptions } from '../element';
 
 interface WorkerData {
@@ -94,6 +94,19 @@ async function handleCommand(cmd: Command): Promise<unknown> {
       if (!element) throw new Error(`Element ${elementId} not found`);
       const box = await element.boundingBox();
       return { box };
+    }
+
+    case 'startRecording': {
+      if (!vibe) throw new Error('Browser not launched');
+      const [options] = cmd.args as [RecordingOptions | undefined];
+      await vibe.startRecording(options);
+      return { success: true };
+    }
+
+    case 'stopRecording': {
+      if (!vibe) throw new Error('Browser not launched');
+      const outputPath = await vibe.stopRecording();
+      return { outputPath };
     }
 
     case 'quit': {

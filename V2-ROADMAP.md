@@ -100,24 +100,34 @@ vibe.quit();
 
 ---
 
-## Video Recording
+## Video Recording ✅
 
-**What:** Built-in screen recording of browser sessions.
+**Status:** Implemented
 
-**Why deferred:** Adds FFmpeg dependency complexity. Screenshots may be sufficient for debugging.
+Record browser sessions as MP4 or WebM video files. Requires FFmpeg to be installed.
 
-**Implementation:**
-- Capture screenshots at interval (e.g., 10fps)
-- Encode to MP4/WebM via FFmpeg
-- Start/stop via `vibium.recording.start` / `vibium.recording.stop` BiDi commands
-- JS API: `vibe.startRecording()`, `vibe.stopRecording()`
+**CLI:**
+```bash
+clicker record https://example.com -o recording.mp4 --duration 10 --fps 10
+```
 
-**When to build:** When users need video artifacts for:
-- Test failure debugging
-- Demo generation
-- Compliance/audit trails
+**JavaScript API:**
+```typescript
+await vibe.startRecording({ fps: 10, format: 'mp4' });
+// ... perform actions ...
+const videoPath = await vibe.stopRecording();
+```
 
-**Estimated effort:** 1 week
+**Python API:**
+```python
+await vibe.start_recording(fps=10, format='mp4')
+# ... perform actions ...
+video_path = await vibe.stop_recording()
+```
+
+**BiDi Extension Commands:**
+- `vibium:startRecording` - Start recording with options (fps, format, outputPath)
+- `vibium:stopRecording` - Stop recording and return video file path
 
 ---
 
@@ -222,7 +232,7 @@ const el = await vibe.find("the blue submit button");
 Based on likely user demand:
 
 1. ~~**Python client**~~ ✅ shipped
-2. **Video recording** — Debugging value, moderate effort
+2. ~~**Video recording**~~ ✅ shipped
 3. **Network tracing** — DevTools parity
 4. **Cortex** — If agents need persistent memory
 5. **Retina** — If recording human sessions matters

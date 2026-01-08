@@ -8,6 +8,7 @@ import (
 
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/recording"
 )
 
 // Default timeout for actionability checks
@@ -27,6 +28,9 @@ type BrowserSession struct {
 	internalCmds   map[int]chan json.RawMessage // id -> response channel
 	internalCmdsMu sync.Mutex
 	nextInternalID int
+
+	// Video recording
+	recorder *recording.Recorder
 }
 
 // BiDi command structure for parsing incoming messages
@@ -149,6 +153,12 @@ func (r *Router) OnClientMessage(client *ClientConn, msg string) {
 		return
 	case "vibium:find":
 		r.handleVibiumFind(session, cmd)
+		return
+	case "vibium:startRecording":
+		r.handleVibiumStartRecording(session, cmd)
+		return
+	case "vibium:stopRecording":
+		r.handleVibiumStopRecording(session, cmd)
 		return
 	}
 
@@ -558,6 +568,114 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 	}
 }
 
+// handleVibiumStartRecording handles the vibium:startRecording command.
+func (r *Router) handleVibiumStartRecording(session *BrowserSession, cmd bidiCommand) {
+	// Check if FFmpeg is available
+	if !recording.IsFFmpegAvailable() {
+		r.sendError(session, cmd.ID, fmt.Errorf("FFmpeg is not installed or not in PATH"))
+		return
+	}
+
+	session.mu.Lock()
+	if session.recorder != nil {
+		session.mu.Unlock()
+		r.sendError(session, cmd.ID, fmt.Errorf("recording already in progress"))
+		return
+	}
+	session.mu.Unlock()
+
+	// Parse options
+	fps := 10
+	if fpsVal, ok := cmd.Params["fps"].(float64); ok && fpsVal > 0 {
+		fps = int(fpsVal)
+	}
+
+	format := "mp4"
+	if formatVal, ok := cmd.Params["format"].(string); ok && (formatVal == "mp4" || formatVal == "webm") {
+		format = formatVal
+	}
+
+	outputPath, _ := cmd.Params["outputPath"].(string)
+
+	// Create screenshot function that captures from the browser
+	screenshotFn := func() (string, error) {
+		ctx, err := r.getContext(session)
+		if err != nil {
+			return "", err
+		}
+
+		params := map[string]interface{}{
+			"context": ctx,
+		}
+
+		resp, err := r.sendInternalCommand(session, "browsingContext.captureScreenshot", params)
+		if err != nil {
+			return "", err
+		}
+
+		var result struct {
+			Result struct {
+				Data string `json:"data"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return "", fmt.Errorf("failed to parse screenshot response: %w", err)
+		}
+
+		return result.Result.Data, nil
+	}
+
+	// Create and start recorder
+	recorder := recording.New(screenshotFn, recording.Options{
+		FPS:        fps,
+		OutputPath: outputPath,
+		Format:     format,
+	})
+
+	if err := recorder.Start(); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	session.mu.Lock()
+	session.recorder = recorder
+	session.mu.Unlock()
+
+	fmt.Printf("[router] Started recording for client %d (fps=%d, format=%s)\n", session.Client.ID, fps, format)
+
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{
+		"started": true,
+		"fps":     fps,
+		"format":  format,
+	})
+}
+
+// handleVibiumStopRecording handles the vibium:stopRecording command.
+func (r *Router) handleVibiumStopRecording(session *BrowserSession, cmd bidiCommand) {
+	session.mu.Lock()
+	recorder := session.recorder
+	session.recorder = nil
+	session.mu.Unlock()
+
+	if recorder == nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("no recording in progress"))
+		return
+	}
+
+	outputPath, err := recorder.Stop()
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	fmt.Printf("[router] Stopped recording for client %d, saved to: %s\n", session.Client.ID, outputPath)
+
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{
+		"stopped":    true,
+		"outputPath": outputPath,
+	})
+}
+
 // closeSession closes a browser session and cleans up resources.
 func (r *Router) closeSession(session *BrowserSession) {
 	session.mu.Lock()
@@ -566,9 +684,18 @@ func (r *Router) closeSession(session *BrowserSession) {
 		return
 	}
 	session.closed = true
+	recorder := session.recorder
+	session.recorder = nil
 	session.mu.Unlock()
 
 	fmt.Printf("[router] Closing browser session for client %d\n", session.Client.ID)
+
+	// Stop any active recording
+	if recorder != nil {
+		if outputPath, err := recorder.Stop(); err == nil {
+			fmt.Printf("[router] Recording saved to: %s\n", outputPath)
+		}
+	}
 
 	// Signal the routing goroutine to stop
 	close(session.stopChan)

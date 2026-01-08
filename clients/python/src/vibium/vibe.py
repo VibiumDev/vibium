@@ -1,11 +1,26 @@
 """Vibe class - the main browser automation interface."""
 
 import base64
-from typing import Optional
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 from .client import BiDiClient
 from .clicker import ClickerProcess
 from .element import BoundingBox, Element, ElementInfo
+
+
+@dataclass
+class RecordingOptions:
+    """Options for video recording."""
+
+    fps: int = 10
+    """Frames per second. Default: 10"""
+
+    format: Literal["mp4", "webm"] = "mp4"
+    """Output format. Default: 'mp4'"""
+
+    output_path: Optional[str] = None
+    """Output file path. If not provided, uses temp directory."""
 
 
 class Vibe:
@@ -97,6 +112,56 @@ class Vibe:
         )
 
         return Element(self._client, context, selector, info)
+
+    async def start_recording(
+        self,
+        fps: int = 10,
+        format: Literal["mp4", "webm"] = "mp4",
+        output_path: Optional[str] = None,
+    ) -> None:
+        """Start recording the browser session as a video.
+
+        Requires FFmpeg to be installed on the system.
+
+        Args:
+            fps: Frames per second. Default: 10
+            format: Output format ('mp4' or 'webm'). Default: 'mp4'
+            output_path: Output file path. If not provided, uses temp directory.
+
+        Example:
+            >>> await vibe.start_recording(fps=10, format='mp4')
+            >>> # ... perform actions ...
+            >>> video_path = await vibe.stop_recording()
+        """
+        context = await self._get_context()
+
+        params = {
+            "context": context,
+            "fps": fps,
+            "format": format,
+        }
+        if output_path is not None:
+            params["outputPath"] = output_path
+
+        await self._client.send("vibium:startRecording", params)
+
+    async def stop_recording(self) -> str:
+        """Stop recording and save the video file.
+
+        Returns:
+            Path to the saved video file.
+
+        Example:
+            >>> video_path = await vibe.stop_recording()
+            >>> print(f"Video saved to: {video_path}")
+        """
+        context = await self._get_context()
+
+        result = await self._client.send(
+            "vibium:stopRecording",
+            {"context": context},
+        )
+        return result["outputPath"]
 
     async def quit(self) -> None:
         """Close the browser and clean up resources."""

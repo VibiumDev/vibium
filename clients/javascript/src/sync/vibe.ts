@@ -1,7 +1,7 @@
 import { SyncBridge } from './bridge';
 import { ElementSync } from './element';
 import { ElementInfo } from '../element';
-import { FindOptions } from '../vibe';
+import { FindOptions, RecordingOptions } from '../vibe';
 
 export class VibeSync {
   private bridge: SyncBridge;
@@ -34,6 +34,23 @@ export class VibeSync {
   find(selector: string, options?: FindOptions): ElementSync {
     const result = this.bridge.call<{ elementId: number; info: ElementInfo }>('find', [selector, options]);
     return new ElementSync(this.bridge, result.elementId, result.info);
+  }
+
+  /**
+   * Start recording the browser session as a video.
+   * Requires FFmpeg to be installed on the system.
+   */
+  startRecording(options?: RecordingOptions): void {
+    this.bridge.call('startRecording', [options]);
+  }
+
+  /**
+   * Stop recording and save the video file.
+   * @returns Path to the saved video file
+   */
+  stopRecording(): string {
+    const result = this.bridge.call<{ outputPath: string }>('stopRecording');
+    return result.outputPath;
   }
 
   quit(): void {

@@ -1,5 +1,5 @@
 export { browser } from './browser';
-export { Vibe, FindOptions } from './vibe';
+export { Vibe, FindOptions, RecordingOptions } from './vibe';
 export { Element, BoundingBox, ElementInfo, ActionOptions } from './element';
 
 // Sync API

@@ -17,6 +17,7 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 	"github.com/vibium/clicker/internal/process"
 	"github.com/vibium/clicker/internal/proxy"
+	"github.com/vibium/clicker/internal/recording"
 )
 
 var version = "0.1.0"
@@ -767,6 +768,122 @@ The server provides browser automation tools:
 	}
 	mcpCmd.Flags().String("screenshot-dir", "", "Directory for saving screenshots (default: ~/Pictures/Vibium, use \"\" to disable)")
 	rootCmd.AddCommand(mcpCmd)
+
+	recordCmd := &cobra.Command{
+		Use:   "record [url]",
+		Short: "Navigate to a URL and record the browser session as a video",
+		Long: `Record a browser session as a video file.
+
+This command navigates to a URL, waits for a specified duration while
+capturing screenshots, then encodes them into a video using FFmpeg.
+
+Requires FFmpeg to be installed and available in PATH.`,
+		Example: `  clicker record https://example.com -o recording.mp4
+  # Records the page for 5 seconds (default)
+
+  clicker record https://example.com -o recording.mp4 --duration 10
+  # Records for 10 seconds
+
+  clicker record https://example.com -o recording.webm --format webm --fps 15
+  # Records as WebM at 15 FPS`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			process.WithCleanup(func() {
+				url := args[0]
+				output, _ := cmd.Flags().GetString("output")
+				duration, _ := cmd.Flags().GetInt("duration")
+				fps, _ := cmd.Flags().GetInt("fps")
+				format, _ := cmd.Flags().GetString("format")
+
+				// Check FFmpeg availability
+				if !recording.IsFFmpegAvailable() {
+					fmt.Fprintf(os.Stderr, "Error: FFmpeg is not installed or not in PATH\n")
+					fmt.Fprintf(os.Stderr, "Please install FFmpeg: https://ffmpeg.org/download.html\n")
+					os.Exit(1)
+				}
+
+				fmt.Println("Launching browser...")
+				launchResult, err := browser.Launch(browser.LaunchOptions{Headless: headless})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
+					os.Exit(1)
+				}
+				defer waitAndClose(launchResult)
+
+				fmt.Println("Connecting to BiDi...")
+				conn, err := bidi.Connect(launchResult.WebSocketURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
+					os.Exit(1)
+				}
+				defer conn.Close()
+
+				client := bidi.NewClient(conn)
+
+				fmt.Printf("Navigating to %s...\n", url)
+				_, err = client.Navigate("", url)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error navigating: %v\n", err)
+					os.Exit(1)
+				}
+
+				doWaitOpen()
+
+				// Create screenshot function
+				screenshotFn := func() (string, error) {
+					// Simple fix: Focus + scroll to top before screenshot
+					_, err := client.Evaluate("", `
+						window.focus();
+						window.scrollTo(0, 0);
+						document.body.style.overflow = 'visible';
+					`)
+					if err != nil {
+						return "", err
+					}
+					
+					data, err := client.CaptureScreenshot("")
+					if err != nil {
+						return "", err
+					}
+					
+					fmt.Printf("[screenshot] Captured %d bytes\n", len(data))
+					return data, nil
+				}
+
+
+
+				// Create recorder
+				recorder := recording.New(screenshotFn, recording.Options{
+					FPS:        fps,
+					Format:     format,
+					OutputPath: output,
+				})
+
+				fmt.Printf("Starting recording (duration: %ds, fps: %d, format: %s)...\n", duration, fps, format)
+				if err := recorder.Start(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error starting recording: %v\n", err)
+					os.Exit(1)
+				}
+
+				// Record for specified duration
+				time.Sleep(time.Duration(duration) * time.Second)
+
+				fmt.Println("Stopping recording and encoding video...")
+				outputPath, err := recorder.Stop()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error stopping recording: %v\n", err)
+					os.Exit(1)
+				}
+
+				fmt.Printf("Recording saved to: %s\n", outputPath)
+			})
+		},
+	}
+	recordCmd.Flags().StringP("output", "o", "recording.mp4", "Output file path")
+	recordCmd.Flags().IntP("duration", "d", 5, "Recording duration in seconds")
+	recordCmd.Flags().Int("fps", 10, "Frames per second")
+	recordCmd.Flags().String("format", "mp4", "Output format: mp4 or webm")
+	rootCmd.AddCommand(recordCmd)
 
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate("Clicker v{{.Version}}\n")

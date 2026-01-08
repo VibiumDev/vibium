@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from typing import Optional
+from typing import Literal, Optional
 
 from .browser import browser
 from .element import Element, ElementInfo
@@ -92,6 +92,33 @@ class VibeSync:
         """Find an element by CSS selector."""
         element = self._loop_thread.run(self._vibe.find(selector, timeout))
         return ElementSync(element, self._loop_thread)
+
+    def start_recording(
+        self,
+        fps: int = 10,
+        format: Literal["mp4", "webm"] = "mp4",
+        output_path: Optional[str] = None,
+    ) -> None:
+        """Start recording the browser session as a video.
+
+        Requires FFmpeg to be installed on the system.
+
+        Args:
+            fps: Frames per second. Default: 10
+            format: Output format ('mp4' or 'webm'). Default: 'mp4'
+            output_path: Output file path. If not provided, uses temp directory.
+        """
+        self._loop_thread.run(
+            self._vibe.start_recording(fps=fps, format=format, output_path=output_path)
+        )
+
+    def stop_recording(self) -> str:
+        """Stop recording and save the video file.
+
+        Returns:
+            Path to the saved video file.
+        """
+        return self._loop_thread.run(self._vibe.stop_recording())
 
     def quit(self) -> None:
         """Close the browser and clean up resources."""
