@@ -12,3 +12,5 @@ export {
   ElementNotFoundError,
   BrowserCrashedError,
 } from './utils/errors';
+
+export { mobile, MobileSession, MobileLaunchOptions } from './mobile';

@@ -98,5 +98,74 @@ func GetToolSchemas() []Tool {
 				"properties": map[string]interface{}{},
 			},
 		},
+		{
+			Name:        "mobile_launch",
+			Description: "Start a new Appium session",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"capabilities": map[string]interface{}{
+						"type":        "object",
+						"description": "Appium capabilities (e.g., platformName, deviceName)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "mobile_tap",
+			Description: "Tap an element on the mobile device",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"selector": map[string]interface{}{
+						"type":        "string",
+						"description": "Selector (e.g., accessibility id)",
+					},
+					"strategy": map[string]interface{}{
+						"type":        "string",
+						"description": "Locator strategy (accessibility id, xpath, id). Default: accessibility id",
+					},
+				},
+				"required": []string{"selector"},
+			},
+		},
+		{
+			Name:        "mobile_type",
+			Description: "Type text into a mobile element",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"selector": map[string]interface{}{
+						"type":        "string",
+						"description": "Selector (e.g., accessibility id)",
+					},
+					"text": map[string]interface{}{
+						"type":        "string",
+						"description": "Text to type",
+					},
+					"strategy": map[string]interface{}{
+						"type":        "string",
+						"description": "Locator strategy (accessibility id, xpath, id). Default: accessibility id",
+					},
+				},
+				"required": []string{"selector", "text"},
+			},
+		},
+		{
+			Name:        "mobile_source",
+			Description: "Get the current page source (XML)",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "mobile_quit",
+			Description: "Close the Appium session",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 	}
 }

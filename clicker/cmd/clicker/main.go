@@ -720,7 +720,13 @@ The server provides browser automation tools:
   - browser_type: Type into an element
   - browser_screenshot: Capture the page
   - browser_find: Find element info
-  - browser_quit: Close the browser`,
+  - browser_quit: Close the browser
+
+  - mobile_launch: Start an Appium session
+  - mobile_tap: Tap a mobile element
+  - mobile_type: Type into a mobile element
+  - mobile_source: Get page source (XML)
+  - mobile_quit: Close Appium session`,
 		Example: `  # Run directly (for testing)
   clicker mcp
 
@@ -730,8 +736,8 @@ The server provides browser automation tools:
   # Custom screenshot directory
   clicker mcp --screenshot-dir ./screenshots
 
-  # Disable screenshot file saving (inline only)
-  clicker mcp --screenshot-dir ""
+  # Connect to Appium server
+  clicker mcp --appium-url http://localhost:4723
 
   # Test with echo
   echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}' | clicker mcp`,
@@ -753,8 +759,11 @@ The server provides browser automation tools:
 					}
 				}
 
+				appiumURL, _ := cmd.Flags().GetString("appium-url")
+
 				server := mcp.NewServer(version, mcp.ServerOptions{
 					ScreenshotDir: screenshotDir,
+					AppiumURL:     appiumURL,
 				})
 				defer server.Close()
 
@@ -766,6 +775,7 @@ The server provides browser automation tools:
 		},
 	}
 	mcpCmd.Flags().String("screenshot-dir", "", "Directory for saving screenshots (default: ~/Pictures/Vibium, use \"\" to disable)")
+	mcpCmd.Flags().String("appium-url", "", "URL for Appium server (e.g., http://localhost:4723)")
 	rootCmd.AddCommand(mcpCmd)
 
 	rootCmd.Version = version

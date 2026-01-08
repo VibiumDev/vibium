@@ -125,6 +125,7 @@ type Server struct {
 // ServerOptions configures the MCP server.
 type ServerOptions struct {
 	ScreenshotDir string // Directory for saving screenshots (empty = disabled)
+	AppiumURL     string // URL for Appium server (e.g., http://localhost:4723)
 }
 
 // NewServer creates a new MCP server.
@@ -132,7 +133,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 	return &Server{
 		reader:   bufio.NewReader(os.Stdin),
 		writer:   os.Stdout,
-		handlers: NewHandlers(opts.ScreenshotDir),
+		handlers: NewHandlers(opts.ScreenshotDir, opts.AppiumURL),
 		version:  version,
 	}
 }

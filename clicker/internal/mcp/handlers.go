@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/vibium/clicker/internal/appium"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/features"
@@ -17,14 +18,17 @@ type Handlers struct {
 	launchResult  *browser.LaunchResult
 	client        *bidi.Client
 	conn          *bidi.Connection
+	appiumClient  *appium.Client // Native Appium client
+	appiumURL     string         // URL for Appium server
 	screenshotDir string
 }
 
 // NewHandlers creates a new Handlers instance.
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
-func NewHandlers(screenshotDir string) *Handlers {
+func NewHandlers(screenshotDir string, appiumURL string) *Handlers {
 	return &Handlers{
 		screenshotDir: screenshotDir,
+		appiumURL:     appiumURL,
 	}
 }
 
@@ -33,6 +37,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	log.Debug("tool call", "name", name, "args", args)
 
 	switch name {
+	// Browser Tools
 	case "browser_launch":
 		return h.browserLaunch(args)
 	case "browser_navigate":
@@ -47,6 +52,19 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		return h.browserFind(args)
 	case "browser_quit":
 		return h.browserQuit(args)
+
+	// Mobile Tools
+	case "mobile_launch":
+		return h.mobileLaunch(args)
+	case "mobile_tap":
+		return h.mobileTap(args)
+	case "mobile_type":
+		return h.mobileType(args)
+	case "mobile_source":
+		return h.mobileSource(args)
+	case "mobile_quit":
+		return h.mobileQuit(args)
+
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
@@ -63,7 +81,14 @@ func (h *Handlers) Close() {
 		h.launchResult = nil
 	}
 	h.client = nil
+	// Also close Appium if active
+	if h.appiumClient != nil {
+		h.appiumClient.Quit()
+		h.appiumClient = nil
+	}
 }
+
+// ... (Browser methods remain unchanged)
 
 // browserLaunch launches a new browser session.
 func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult, error) {
@@ -292,4 +317,139 @@ func (h *Handlers) ensureBrowser() error {
 		return fmt.Errorf("no browser session. Call browser_launch first")
 	}
 	return nil
+}
+
+// --- Mobile Handlers ---
+
+func (h *Handlers) mobileLaunch(args map[string]interface{}) (*ToolsCallResult, error) {
+	h.Close()
+
+	if h.appiumURL == "" {
+		return nil, fmt.Errorf("Appium URL not configured. Use --appium-url flag")
+	}
+
+	h.appiumClient = appium.NewClient(h.appiumURL)
+
+	// Default caps if none provided
+	caps := make(map[string]interface{})
+	if userCaps, ok := args["capabilities"].(map[string]interface{}); ok {
+		caps = userCaps
+	} else {
+		// Reasonable defaults? Or just empty and expect Appium to have default caps
+		caps["platformName"] = "iOS"
+		caps["appium:automationName"] = "XCUITest"
+	}
+
+	sessionID, err := h.appiumClient.StartSession(caps)
+	if err != nil {
+		h.appiumClient = nil
+		return nil, fmt.Errorf("failed to start Appium session: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Appium session started: %s", sessionID),
+		}},
+	}, nil
+}
+
+func (h *Handlers) mobileTap(args map[string]interface{}) (*ToolsCallResult, error) {
+	if h.appiumClient == nil {
+		return nil, fmt.Errorf("no Appium session. Call mobile_launch first")
+	}
+
+	selector, ok := args["selector"].(string)
+	if !ok || selector == "" {
+		return nil, fmt.Errorf("selector (id/accessibility id) is required")
+	}
+
+	// Strategy: try 'accessibility id', fallback to 'xpath' or 'id'
+	strategy := "accessibility id"
+	if s, ok := args["strategy"].(string); ok && s != "" {
+		strategy = s
+	}
+
+	elementID, err := h.appiumClient.FindElement(strategy, selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find element: %w", err)
+	}
+
+	if err := h.appiumClient.ClickElement(elementID); err != nil {
+		return nil, fmt.Errorf("failed to tap element: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Tapped element: %s", selector),
+		}},
+	}, nil
+}
+
+func (h *Handlers) mobileType(args map[string]interface{}) (*ToolsCallResult, error) {
+	if h.appiumClient == nil {
+		return nil, fmt.Errorf("no Appium session. Call mobile_launch first")
+	}
+
+	selector, ok := args["selector"].(string)
+	if !ok || selector == "" {
+		return nil, fmt.Errorf("selector is required")
+	}
+	text, ok := args["text"].(string)
+	if !ok {
+		return nil, fmt.Errorf("text is required")
+	}
+
+	strategy := "accessibility id"
+	if s, ok := args["strategy"].(string); ok && s != "" {
+		strategy = s
+	}
+
+	elementID, err := h.appiumClient.FindElement(strategy, selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find element: %w", err)
+	}
+
+	if err := h.appiumClient.TypeElement(elementID, text); err != nil {
+		return nil, fmt.Errorf("failed to type: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Typed '%s' into %s", text, selector),
+		}},
+	}, nil
+}
+
+func (h *Handlers) mobileSource(args map[string]interface{}) (*ToolsCallResult, error) {
+	if h.appiumClient == nil {
+		return nil, fmt.Errorf("no Appium session. Call mobile_launch first")
+	}
+
+	source, err := h.appiumClient.GetPageSource()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get page source: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: source,
+		}},
+	}, nil
+}
+
+func (h *Handlers) mobileQuit(args map[string]interface{}) (*ToolsCallResult, error) {
+	if h.appiumClient != nil {
+		h.appiumClient.Quit()
+		h.appiumClient = nil
+	}
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: "Appium session closed",
+		}},
+	}, nil
 }

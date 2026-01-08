@@ -1,0 +1,6 @@
+Using vibium connect to the iPhone 17 Pro simulator running iOS 26.1 via the local appium server 
+Launch the com.hextablelabs.Features app on the iOS simulator
+Tap on Text
+Enter "Vibium FTW!" into the text field
+Tap the Submit button
+Tap the Back button
