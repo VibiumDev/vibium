@@ -11,6 +11,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// maxMessageSize is the maximum size of a WebSocket message (10MB).
+// This accommodates large screenshots from high-resolution displays (e.g., retina, 4K).
+const maxMessageSize = 10 * 1024 * 1024
+
 // Server is a WebSocket server that accepts client connections.
 type Server struct {
 	port       int
@@ -68,6 +72,8 @@ func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
 		port: 9515, // default port
 		upgrader: websocket.Upgrader{
+			ReadBufferSize:  maxMessageSize,
+			WriteBufferSize: maxMessageSize,
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins
 			},
@@ -132,6 +138,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("WebSocket upgrade error: %v\n", err)
 		return
 	}
+
+	// Set read limit to handle large messages (e.g., screenshots from high-res displays)
+	conn.SetReadLimit(maxMessageSize)
 
 	client := &ClientConn{
 		ID:     s.nextID.Add(1),

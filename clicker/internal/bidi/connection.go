@@ -8,6 +8,10 @@ import (
 	errs "github.com/vibium/clicker/internal/errors"
 )
 
+// maxMessageSize is the maximum size of a WebSocket message (10MB).
+// This accommodates large screenshots from high-resolution displays (e.g., retina, 4K).
+const maxMessageSize = 10 * 1024 * 1024
+
 // Connection represents a WebSocket connection.
 type Connection struct {
 	conn   *websocket.Conn
@@ -17,10 +21,17 @@ type Connection struct {
 
 // Connect establishes a WebSocket connection to the given URL.
 func Connect(url string) (*Connection, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	dialer := websocket.Dialer{
+		ReadBufferSize:  maxMessageSize,
+		WriteBufferSize: maxMessageSize,
+	}
+	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
 		return nil, &errs.ConnectionError{URL: url, Cause: err}
 	}
+
+	// Set read limit to handle large messages (e.g., screenshots from high-res displays)
+	conn.SetReadLimit(maxMessageSize)
 
 	return &Connection{
 		conn: conn,
