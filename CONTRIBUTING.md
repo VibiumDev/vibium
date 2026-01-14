@@ -142,6 +142,20 @@ require('fs').writeFileSync('test.png', shot)
 await vibe.quit()
 ```
 
+With proxy:
+
+```javascript
+// HTTP proxy
+const vibe = await browser.launch({
+  proxy: 'http://proxy.example.com:8080'
+})
+
+// SOCKS5 proxy with authentication
+const vibe = await browser.launch({
+  proxy: 'socks5://user:pass@proxy.example.com:1080'
+})
+```
+
 ---
 
 ## Using the Python Client
@@ -203,6 +217,18 @@ async def main():
 asyncio.run(main())
 ```
 
+### Using a Proxy
+
+Both sync and async APIs support proxy configuration:
+
+```python
+# Sync with HTTP proxy
+vibe = browser_sync.launch(proxy='http://proxy.example.com:8080')
+
+# Async with SOCKS5 proxy and authentication
+vibe = await browser.launch(proxy='socks5://user:pass@proxy.example.com:1080')
+```
+
 ---
 
 ## Using Clicker
@@ -251,12 +277,20 @@ After building, the binary is at `./clicker/bin/clicker`.
 --headless        # Hide the browser window (visible by default)
 --wait-open 5     # Wait 5 seconds after navigation for page to load
 --wait-close 3    # Keep browser open 3 seconds before closing
+--proxy URL       # Use a proxy server (HTTP, HTTPS, or SOCKS5)
 ```
 
-Example:
+Examples:
 
 ```bash
+# Basic screenshot with wait
 ./clicker/bin/clicker screenshot https://example.com --wait-close 5 -o shot.png
+
+# Using an HTTP proxy
+./clicker/bin/clicker navigate https://example.com --proxy http://proxy.example.com:8080
+
+# Using a SOCKS5 proxy with authentication
+./clicker/bin/clicker navigate https://example.com --proxy socks5://user:pass@proxy.example.com:1080
 ```
 
 ---
@@ -269,13 +303,17 @@ Clicker includes an MCP (Model Context Protocol) server for AI agent integration
 
 | Tool | Description |
 |------|-------------|
-| `browser_launch` | Start a browser session |
+| `browser_launch` | Start a browser session (supports `headless` and `proxy` params) |
 | `browser_navigate` | Go to a URL |
 | `browser_click` | Click an element by CSS selector |
 | `browser_type` | Type into an element |
 | `browser_screenshot` | Capture the page |
 | `browser_find` | Find element info |
 | `browser_quit` | Close the browser |
+
+The `browser_launch` tool accepts optional parameters:
+- `headless` (boolean): Run browser in headless mode
+- `proxy` (string): Proxy server URL (e.g., `http://proxy:8080`, `socks5://user:pass@proxy:1080`)
 
 ### Running the MCP Server
 

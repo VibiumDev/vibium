@@ -76,8 +76,16 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		headless = val
 	}
 
+	proxy := ""
+	if val, ok := args["proxy"].(string); ok {
+		proxy = val
+	}
+
 	// Launch browser
-	launchResult, err := browser.Launch(browser.LaunchOptions{Headless: headless})
+	launchResult, err := browser.Launch(browser.LaunchOptions{
+		Headless: headless,
+		Proxy:    proxy,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
 	}
@@ -93,10 +101,15 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
 
+	msg := fmt.Sprintf("Browser launched (headless: %v)", headless)
+	if proxy != "" {
+		msg += fmt.Sprintf(", proxy: %s", proxy)
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Browser launched (headless: %v)", headless),
+			Text: msg,
 		}},
 	}, nil
 }

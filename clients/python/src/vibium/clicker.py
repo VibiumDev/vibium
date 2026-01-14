@@ -156,6 +156,7 @@ class ClickerProcess:
         headless: bool = False,
         port: Optional[int] = None,
         executable_path: Optional[str] = None,
+        proxy: Optional[str] = None,
     ) -> "ClickerProcess":
         """Start a clicker process.
 
@@ -163,6 +164,7 @@ class ClickerProcess:
             headless: Run browser in headless mode.
             port: WebSocket port (default: auto-assigned).
             executable_path: Path to clicker binary (default: auto-detect).
+            proxy: Proxy server URL (e.g., http://proxy:8080, socks5://proxy:1080).
 
         Returns:
             A ClickerProcess instance.
@@ -177,6 +179,8 @@ class ClickerProcess:
             args.append("--headless")
         if port:
             args.extend(["--port", str(port)])
+        if proxy:
+            args.extend(["--proxy", proxy])
 
         # Start the process
         process = subprocess.Popen(

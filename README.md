@@ -79,6 +79,7 @@ A single Go binary (~10MB) that does everything:
 - **MCP Server:** stdio interface for LLM agents
 - **Auto-Wait:** Polls for elements before interacting
 - **Screenshots:** Viewport capture as PNG
+- **Proxy Support:** HTTP, HTTPS, and SOCKS5 proxies with authentication
 
 **Design goal:** The binary is invisible. JS developers just `npm install vibium` and it works.
 

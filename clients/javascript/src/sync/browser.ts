@@ -3,6 +3,7 @@ import { VibeSync } from './vibe';
 
 export interface LaunchOptions {
   headless?: boolean;
+  proxy?: string;
 }
 
 export const browserSync = {

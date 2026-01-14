@@ -6,6 +6,7 @@ export interface ClickerProcessOptions {
   port?: number;
   headless?: boolean;
   executablePath?: string;
+  proxy?: string;
 }
 
 export class ClickerProcess {
@@ -32,6 +33,9 @@ export class ClickerProcess {
     }
     if (options.headless === true) {
       args.push('--headless');
+    }
+    if (options.proxy) {
+      args.push('--proxy', options.proxy);
     }
 
     const proc = spawn(binaryPath, args, {
