@@ -35,6 +35,17 @@ link.click()
 vibe.quit()
 ```
 
+### Custom Window Size
+
+```python
+from vibium import browser_sync
+
+# Launch with specific resolution
+vibe = browser_sync.launch(width=1920, height=1080)
+vibe.go("https://example.com")
+vibe.quit()
+```
+
 ## Async API
 
 ```python
@@ -42,7 +53,7 @@ import asyncio
 from vibium import browser
 
 async def main():
-    vibe = await browser.launch()
+    vibe = await browser.launch(width=1920, height=1080)
     await vibe.go("https://example.com")
 
     link = await vibe.find("a")

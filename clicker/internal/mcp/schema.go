@@ -14,6 +14,14 @@ func GetToolSchemas() []Tool {
 						"description": "Run browser in headless mode (no visible window)",
 						"default":     false,
 					},
+					"width": map[string]interface{}{
+						"type":        "integer",
+						"description": "Browser window width in pixels (default: 1280)",
+					},
+					"height": map[string]interface{}{
+						"type":        "integer",
+						"description": "Browser window height in pixels (default: 720)",
+					},
 				},
 				"additionalProperties": false,
 			},

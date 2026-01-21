@@ -6,6 +6,8 @@ export interface ClickerProcessOptions {
   port?: number;
   headless?: boolean;
   executablePath?: string;
+  width?: number;
+  height?: number;
 }
 
 export class ClickerProcess {
@@ -32,6 +34,12 @@ export class ClickerProcess {
     }
     if (options.headless === true) {
       args.push('--headless');
+    }
+    if (options.width !== undefined) {
+      args.push('--width', options.width.toString());
+    }
+    if (options.height !== undefined) {
+      args.push('--height', options.height.toString());
     }
 
     const proc = spawn(binaryPath, args, {

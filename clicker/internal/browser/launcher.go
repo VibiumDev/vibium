@@ -51,6 +51,8 @@ type LaunchOptions struct {
 	Headless bool
 	Port     int  // Chromedriver port, 0 = auto-select
 	Verbose  bool // Show chromedriver output
+	Width    int  // Window width in pixels, 0 = default (1280)
+	Height   int  // Window height in pixels, 0 = default (720)
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -145,7 +147,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Create session with BiDi enabled
-	sessionID, wsURL, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
+	sessionID, wsURL, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, opts.Width, opts.Height)
 	if err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -187,7 +189,15 @@ func waitForChromedriver(baseURL string, timeout time.Duration) error {
 }
 
 // createSession creates a new WebDriver session with BiDi enabled.
-func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, error) {
+func createSession(baseURL, chromePath string, headless, verbose bool, width, height int) (string, string, error) {
+	// Set default window size if not specified
+	if width == 0 {
+		width = 1280
+	}
+	if height == 0 {
+		height = 720
+	}
+
 	args := []string{
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -216,6 +226,7 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 		"--metrics-recording-only",
 		"--password-store=basic",
 		"--use-mock-keychain",
+		fmt.Sprintf("--window-size=%d,%d", width, height),
 	}
 
 	if headless {

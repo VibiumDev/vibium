@@ -137,7 +137,7 @@ from vibium import browser, browser_sync
 ```python
 from vibium import browser_sync as browser
 
-vibe = browser.launch()
+vibe = browser.launch(width=1920, height=1080)
 vibe.go("https://example.com")
 
 png = vibe.screenshot()

@@ -21,6 +21,8 @@ class browser:
         headless: bool = False,
         port: Optional[int] = None,
         executable_path: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
     ) -> Vibe:
         """Launch a new browser instance.
 
@@ -28,6 +30,8 @@ class browser:
             headless: Run browser in headless mode (default: visible).
             port: WebSocket port (default: auto-assigned).
             executable_path: Path to clicker binary (default: auto-detect).
+            width: Browser window width in pixels (default: 1280).
+            height: Browser window height in pixels (default: 720).
 
         Returns:
             A Vibe instance for browser automation.
@@ -36,6 +40,8 @@ class browser:
             headless=headless,
             port=port,
             executable_path=executable_path,
+            width=width,
+            height=height,
         )
 
         client = await BiDiClient.connect(f"ws://localhost:{process.port}")

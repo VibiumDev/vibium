@@ -27,6 +27,8 @@ var (
 	waitOpen  int
 	waitClose int
 	verbose   bool
+	width     int
+	height    int
 )
 
 // doWaitOpen waits for page to load if --wait-open is set.
@@ -671,7 +673,7 @@ func main() {
 				fmt.Printf("Starting Clicker proxy server on port %d...\n", port)
 
 				// Create router to manage browser sessions
-				router := proxy.NewRouter(headless)
+				router := proxy.NewRouter(headless, width, height)
 
 				server := proxy.NewServer(
 					proxy.WithPort(port),
@@ -703,6 +705,8 @@ func main() {
 		},
 	}
 	serveCmd.Flags().IntP("port", "p", 9515, "Port to listen on")
+	serveCmd.Flags().IntVar(&width, "width", 0, "Browser window width in pixels (default: 1280)")
+	serveCmd.Flags().IntVar(&height, "height", 0, "Browser window height in pixels (default: 720)")
 	rootCmd.AddCommand(serveCmd)
 
 	mcpCmd := &cobra.Command{

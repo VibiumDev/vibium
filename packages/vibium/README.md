@@ -61,12 +61,14 @@ vibe.quit()
 Launch a new browser session.
 
 ```javascript
-const vibe = await browser.launch({ headless: true })
+const vibe = await browser.launch({ headless: true, width: 1920, height: 1080 })
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `headless` | boolean | `false` | Run without visible window |
+| `width` | number | `1280` | Browser window width in pixels |
+| `height` | number | `720` | Browser window height in pixels |
 
 ### vibe.go(url)
 

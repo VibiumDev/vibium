@@ -13,6 +13,7 @@ from typing import Optional
 
 class ClickerNotFoundError(Exception):
     """Raised when the clicker binary cannot be found."""
+
     pass
 
 
@@ -45,7 +46,9 @@ def get_cache_dir() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Caches" / "vibium"
     elif sys.platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
+        local_app_data = os.environ.get(
+            "LOCALAPPDATA", Path.home() / "AppData" / "Local"
+        )
         return Path(local_app_data) / "vibium"
     else:
         xdg_cache = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
@@ -156,6 +159,8 @@ class ClickerProcess:
         headless: bool = False,
         port: Optional[int] = None,
         executable_path: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
     ) -> "ClickerProcess":
         """Start a clicker process.
 
@@ -163,6 +168,8 @@ class ClickerProcess:
             headless: Run browser in headless mode.
             port: WebSocket port (default: auto-assigned).
             executable_path: Path to clicker binary (default: auto-detect).
+            width: Browser window width in pixels (default: 1280).
+            height: Browser window height in pixels (default: 720).
 
         Returns:
             A ClickerProcess instance.
@@ -177,6 +184,10 @@ class ClickerProcess:
             args.append("--headless")
         if port:
             args.extend(["--port", str(port)])
+        if width:
+            args.extend(["--width", str(width)])
+        if height:
+            args.extend(["--height", str(height)])
 
         # Start the process
         process = subprocess.Popen(

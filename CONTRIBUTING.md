@@ -168,7 +168,8 @@ pip install vibium
 ```python
 from vibium import browser_sync
 
-vibe = browser_sync.launch()
+# Launch with custom resolution
+vibe = browser_sync.launch(width=1920, height=1080)
 vibe.go("https://example.com")
 
 el = vibe.find("h1")

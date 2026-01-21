@@ -7,18 +7,22 @@ export interface LaunchOptions {
   headless?: boolean;
   port?: number;
   executablePath?: string;
+  width?: number;
+  height?: number;
 }
 
 export const browser = {
   async launch(options: LaunchOptions = {}): Promise<Vibe> {
-    const { headless = false, port, executablePath } = options;
-    debug('launching browser', { headless, port, executablePath });
+    const { headless = false, port, executablePath, width, height } = options;
+    debug('launching browser', { headless, port, executablePath, width, height, width, height });
 
     // Start the clicker process
     const process = await ClickerProcess.start({
       headless,
       port,
       executablePath,
+      width,
+      height,
     });
     debug('clicker started', { port: process.port });
 
