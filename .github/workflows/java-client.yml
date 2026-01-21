@@ -1,0 +1,70 @@
+name: Java Client
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run unit tests
+        run: mvn -f clients/java/pom.xml test
+
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            clicker_bin: clicker
+            runs: 3
+          - os: windows-latest
+            clicker_bin: clicker.exe
+            runs: 1
+          - os: macos-latest
+            clicker_bin: clicker
+            runs: 1
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build clicker
+        shell: bash
+        run: |
+          cd clicker
+          VERSION="$(cat ../VERSION)"
+          mkdir -p bin
+          go build -ldflags="-X main.version=${VERSION}" -o "bin/${{ matrix.clicker_bin }}" ./cmd/clicker
+
+      - name: Run integration tests (${{ matrix.runs }}x)
+        shell: bash
+        run: |
+          cd clients/java
+          for ((i=1;i<=${{ matrix.runs }};i++)); do
+            echo "=== integration run $i/${{ matrix.runs }} ==="
+            mvn -q verify -DskipITs=false
+          done
