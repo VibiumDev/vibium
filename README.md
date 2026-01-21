@@ -267,7 +267,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 V1 focuses on the core loop: browser control via MCP and JS client.
 
 See [V2-ROADMAP.md](V2-ROADMAP.md) for planned features:
-- Java client
+- Java client (WIP: `clients/java`)
 - Cortex (memory/navigation layer)
 - Retina (recording extension)
 - Video recording

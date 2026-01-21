@@ -203,6 +203,43 @@ asyncio.run(main())
 
 ---
 
+## Using the Java Client (WIP)
+
+The Java client lives at `clients/java` and talks to Clicker's WebSocket proxy (`clicker serve`).
+
+### Build & Test
+
+```bash
+cd clients/java
+mvn test
+```
+
+Integration tests (spawns Clicker + Chrome):
+
+```bash
+cd clients/java
+mvn verify -DskipITs=false
+```
+
+### Clicker Binary
+
+The Java client looks for `clicker` in this order:
+
+1. `VIBIUM_CLICKER_PATH` (recommended for repo development)
+2. `CLICKER_PATH`
+3. `PATH`
+4. Repo-local default: `../../clicker/bin/clicker(.exe)` from `clients/java`
+5. Auto-download from npm into the Vibium cache dir (unless `VIBIUM_SKIP_CLICKER_DOWNLOAD=1`)
+
+### Async API
+
+Java also includes a CompletableFuture-based async API mirroring JS/Python's async clients:
+
+- `BrowserAsync.launch()` → `VibeAsync`
+- `VibeAsync.go/find/screenshot/quit()` → `CompletableFuture<...>`
+
+---
+
 ## Using Clicker
 
 Clicker is the Go binary at the heart of Vibium. It handles browser lifecycle, WebDriver BiDi protocol, and exposes an MCP server for AI agents.

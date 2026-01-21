@@ -66,6 +66,9 @@ venv/
 packages/python/*/src/*/bin/clicker
 packages/python/*/src/*/bin/clicker.exe
 
+# Java (Maven)
+target/
+
 # LICENSE/NOTICE copies in subdirectories (generated at publish time)
 **/LICENSE
 **/NOTICE

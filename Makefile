@@ -1,4 +1,4 @@
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-mcp test-python double-tap get-version set-version help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-mcp test-python test-java test-java-it double-tap get-version set-version help
 
 # Version from VERSION file
 VERSION := $(shell cat VERSION)
@@ -209,6 +209,16 @@ set-version:
 	@echo "  - packages/python/*/src/*/__init__.py (5 platform packages)"
 	@echo "  - package-lock.json (regenerated)"
 
+# Run Java client unit tests
+test-java:
+	@echo "=== Java Client Tests ==="
+	cd clients/java && mvn test
+
+# Run Java client integration tests (spawns Clicker + Chrome)
+test-java-it:
+	@echo "=== Java Client Integration Tests ==="
+	cd clients/java && mvn verify -DskipITs=false
+
 # Show available targets
 help:
 	@echo "Available targets:"
@@ -230,6 +240,8 @@ help:
 	@echo "  make test-js               - Run JS library tests only"
 	@echo "  make test-mcp              - Run MCP server tests only"
 	@echo "  make test-python           - Run Python client tests"
+	@echo "  make test-java             - Run Java client unit tests"
+	@echo "  make test-java-it          - Run Java client integration tests"
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"
