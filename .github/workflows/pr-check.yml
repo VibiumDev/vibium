@@ -1,0 +1,114 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  build-and-test-node:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18.x, 20.x]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Go binary
+        run: npm run build:go
+        if: runner.os != 'Windows'
+
+      - name: Build JS client
+        run: npm run build:js
+
+      - name: Lint (Check formatting and imports)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run Node.js tests
+        run: npm test
+        timeout-minutes: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-node-${{ matrix.os }}-node-${{ matrix.node-version }}
+          path: test-results/
+          retention-days: 7
+
+  build-and-test-python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.9', '3.11', '3.12']
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Go binary and Python packages
+        run: npm run build:go && npm run build:python
+        if: runner.os != 'Windows'
+
+      - name: Build Python packages (Windows)
+        run: npm run build:python
+        if: runner.os == 'Windows'
+
+      - name: Run Python tests
+        shell: bash
+        run: |
+          cd clients/python
+          python -m venv .venv
+          source .venv/bin/activate || . .venv/Scripts/activate
+          pip install -q -e ../../packages/python/vibium_* -e . 2>/dev/null || true
+          python tests/test_basic.py
+        timeout-minutes: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-python-${{ matrix.os }}-py-${{ matrix.python-version }}
+          path: test-results/
+          retention-days: 7
