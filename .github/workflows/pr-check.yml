@@ -34,18 +34,18 @@ jobs:
         run: npm install
 
       - name: Build Go binary
-        run: npm run build:go
+        run: make build-go
         if: runner.os != 'Windows'
 
       - name: Build JS client
-        run: npm run build:js
+        run: make build-js
 
       - name: Lint (Check formatting and imports)
         run: npm run lint
         continue-on-error: true
 
       - name: Run Node.js tests
-        run: npm test
+        run: make test-js
         timeout-minutes: 30
 
       - name: Upload test results
@@ -88,7 +88,7 @@ jobs:
         run: npm install
 
       - name: Build Go binary and Python packages
-        run: npm run build:go && npm run build:python
+        run: make build-go-all && make package-python
         if: runner.os != 'Windows'
 
       - name: Build Python packages (Windows)
