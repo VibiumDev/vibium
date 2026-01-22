@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-node-${{ matrix.os }}-node-${{ matrix.node-version }}
           path: test-results/
@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-python-${{ matrix.os }}-py-${{ matrix.python-version }}
           path: test-results/
