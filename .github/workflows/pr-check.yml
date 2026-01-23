@@ -100,7 +100,11 @@ jobs:
         run: |
           cd clients/python
           python -m venv .venv
-          source .venv/bin/activate || . .venv/Scripts/activate
+          if [ -f .venv/bin/activate ]; then
+            source .venv/bin/activate
+          else
+            source .venv/Scripts/activate
+          fi
           pip install -q -e ../../packages/python/vibium_* -e . 2>/dev/null || true
           python tests/test_basic.py
         timeout-minutes: 30
