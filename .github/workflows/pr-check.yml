@@ -52,11 +52,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
 
-      - name: Lint (Check formatting and imports)
-        run: npm run lint
-        # Allow workflow to continue even if lint fails - lint issues are informational for now
-        continue-on-error: true
-
       - name: Run Node.js tests
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" make test-js
         timeout-minutes: 10
@@ -123,7 +118,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install -q --upgrade pip
-          pip install -q -e ../../packages/python/vibium_* -e .
+          pip install -q -e ../../packages/python/vibium_linux_x64 -e .
           xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" python tests/test_basic.py
         timeout-minutes: 10
         env:

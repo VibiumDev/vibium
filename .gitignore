@@ -71,3 +71,4 @@ packages/python/*/src/*/bin/clicker.exe
 **/NOTICE
 !/LICENSE
 !/NOTICE
+.vscode/settings.json
