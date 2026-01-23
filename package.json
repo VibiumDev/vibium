@@ -4,6 +4,11 @@
   "private": true,
   "workspaces": [
     "clients/javascript",
-    "packages/vibium"
+    "packages/vibium",
+    "packages/darwin-arm64",
+    "packages/darwin-x64",
+    "packages/linux-arm64",
+    "packages/linux-x64",
+    "packages/win32-x64"
   ]
 }
