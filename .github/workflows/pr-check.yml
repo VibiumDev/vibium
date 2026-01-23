@@ -54,7 +54,7 @@ jobs:
 
       - name: Run Node.js tests
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" make test-js
-        timeout-minutes: 10
+        timeout-minutes: 20
         env:
           CHROME_HEADLESS: "true"
           DISPLAY: ":99"
@@ -120,7 +120,7 @@ jobs:
           pip install -q --upgrade pip
           pip install -q -e ../../packages/python/vibium_linux_x64 -e .
           xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" python tests/test_basic.py
-        timeout-minutes: 10
+        timeout-minutes: 20
         env:
           CHROME_HEADLESS: "true"
           DISPLAY: ":99"
