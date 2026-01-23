@@ -106,9 +106,9 @@ test-cli: build-go
 # Run JS library tests (sequential to avoid resource exhaustion)
 test-js: build
 	@echo "━━━ JS Library Tests ━━━"
-	node --test --test-concurrency=1 tests/js/async-api.test.js tests/js/sync-api.test.js tests/js/auto-wait.test.js tests/js/browser-modes.test.js
+	node --test --test-concurrency=1 --test-timeout=60000 tests/js/async-api.test.js tests/js/sync-api.test.js tests/js/auto-wait.test.js tests/js/browser-modes.test.js
 	@echo "━━━ JS Process Tests (sequential) ━━━"
-	node --test --test-concurrency=1 tests/js/process.test.js
+	node --test --test-concurrency=1 --test-timeout=60000 tests/js/process.test.js
 
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go

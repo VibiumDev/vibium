@@ -220,7 +220,7 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 
 	// Add --no-sandbox in CI environments (required for GitHub Actions, Docker, etc.)
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
-		args = append(args, "--no-sandbox")
+		args = append(args, "--no-sandbox", "--disable-gpu", "--disable-software-rasterizer")
 	}
 
 	if headless {
