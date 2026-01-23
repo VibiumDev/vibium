@@ -46,6 +46,10 @@ jobs:
       - name: Build JS client
         run: make build-js
 
+      - name: Install Chrome for Testing
+        run: make install-browser
+        if: runner.os != 'Windows'
+
       - name: Lint (Check formatting and imports)
         run: npm run lint
         # Allow workflow to continue even if lint fails - lint issues are informational for now
@@ -53,6 +57,7 @@ jobs:
 
       - name: Run Node.js tests
         run: make test-js
+        if: runner.os != 'Windows'
         timeout-minutes: 30
 
       - name: Upload test results
@@ -106,7 +111,12 @@ jobs:
         run: npm run build:python
         if: runner.os == 'Windows'
 
+      - name: Install Chrome for Testing
+        run: make install-browser
+        if: runner.os != 'Windows'
+
       - name: Run Python tests
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd clients/python
