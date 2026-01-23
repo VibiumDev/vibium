@@ -1,10 +1,15 @@
 name: PR Check
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, develop]
   push:
     branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test-node:
@@ -25,9 +30,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: clicker/go.sum
 
       - name: Install dependencies
         run: npm install --force
@@ -41,6 +48,7 @@ jobs:
 
       - name: Lint (Check formatting and imports)
         run: npm run lint
+        # Allow workflow to continue even if lint fails - lint issues are informational for now
         continue-on-error: true
 
       - name: Run Node.js tests
@@ -54,6 +62,7 @@ jobs:
           name: test-results-node-${{ matrix.os }}-node-${{ matrix.node-version }}
           path: test-results/
           retention-days: 7
+          if-no-files-found: ignore
 
   build-and-test-python:
     runs-on: ${{ matrix.os }}
@@ -73,14 +82,18 @@ jobs:
           node-version: '20.x'
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: clicker/go.sum
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: clients/python/pyproject.toml
 
       - name: Install dependencies
         run: npm install --force
@@ -98,12 +111,15 @@ jobs:
         run: |
           cd clients/python
           python -m venv .venv
+          # Activate venv (handle both Unix and Windows paths)
           if [ -f .venv/bin/activate ]; then
             source .venv/bin/activate
           else
             source .venv/Scripts/activate
           fi
-          pip install -q -e ../../packages/python/vibium_* -e . 2>/dev/null || true
+          # Install the platform-specific vibium package and the client
+          pip install -q --upgrade pip
+          pip install -q -e ../../packages/python/vibium_* -e .
           python tests/test_basic.py
         timeout-minutes: 30
 
@@ -114,3 +130,4 @@ jobs:
           name: test-results-python-${{ matrix.os }}-py-${{ matrix.python-version }}
           path: test-results/
           retention-days: 7
+          if-no-files-found: ignore
