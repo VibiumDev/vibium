@@ -52,11 +52,18 @@ jobs:
       - name: Install Chrome for Testing
         run: make install-browser
 
+      - name: Setup Xvfb (virtual display)
+        run: |
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
       - name: Run Node.js tests
         run: make test-js
         timeout-minutes: 10
         env:
           CHROME_HEADLESS: "true"
+          DISPLAY: ":99"
 
       - name: Upload test results
         if: always()
