@@ -1,11 +1,14 @@
 """Basic tests for the Vibium Python client."""
 
+import os
 from vibium import browser_sync
 
 
 def test_sync_api():
     """Test the synchronous API."""
-    vibe = browser_sync.launch()
+    # Use headless mode in CI environments
+    headless = os.environ.get("CHROME_HEADLESS", "").lower() in ("true", "1")
+    vibe = browser_sync.launch(headless=headless)
     try:
         vibe.go("https://example.com")
 
