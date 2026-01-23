@@ -1,0 +1,87 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.21'
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Node.js tests on Ubuntu and macOS
+  node-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: clicker/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Build
+        run: make build
+
+      - name: Install Chrome for Testing
+        run: make install-browser
+
+      - name: Run CLI tests
+        run: make test-cli
+
+      - name: Run JS library tests
+        run: make test-js
+
+      - name: Run MCP server tests
+        run: make test-mcp
+
+  # Python tests on macOS ARM64 (current supported environment)
+  python-tests:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: clicker/go.sum
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build platform packages
+        run: make package-python
+
+      - name: Install Chrome for Testing
+        run: make install-browser
+
+      - name: Run Python tests
+        run: make test-python
