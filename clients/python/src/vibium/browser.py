@@ -21,6 +21,7 @@ class browser:
         headless: bool = False,
         port: Optional[int] = None,
         executable_path: Optional[str] = None,
+        proxy: Optional[str] = None,
     ) -> Vibe:
         """Launch a new browser instance.
 
@@ -28,6 +29,7 @@ class browser:
             headless: Run browser in headless mode (default: visible).
             port: WebSocket port (default: auto-assigned).
             executable_path: Path to clicker binary (default: auto-detect).
+            proxy: Proxy server URL (e.g., http://proxy:8080, socks5://proxy:1080).
 
         Returns:
             A Vibe instance for browser automation.
@@ -36,6 +38,7 @@ class browser:
             headless=headless,
             port=port,
             executable_path=executable_path,
+            proxy=proxy,
         )
 
         client = await BiDiClient.connect(f"ws://localhost:{process.port}")

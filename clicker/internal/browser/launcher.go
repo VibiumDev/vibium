@@ -49,8 +49,9 @@ func (pw *prefixWriter) Write(p []byte) (n int, err error) {
 // LaunchOptions contains options for launching the browser.
 type LaunchOptions struct {
 	Headless bool
-	Port     int  // Chromedriver port, 0 = auto-select
-	Verbose  bool // Show chromedriver output
+	Port     int    // Chromedriver port, 0 = auto-select
+	Verbose  bool   // Show chromedriver output
+	Proxy    string // Proxy server URL (e.g., http://proxy:8080, socks5://proxy:1080)
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -145,7 +146,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Create session with BiDi enabled
-	sessionID, wsURL, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
+	sessionID, wsURL, err := createSession(baseURL, chromePath, opts.Headless, opts.Proxy, opts.Verbose)
 	if err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -187,7 +188,7 @@ func waitForChromedriver(baseURL string, timeout time.Duration) error {
 }
 
 // createSession creates a new WebDriver session with BiDi enabled.
-func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, error) {
+func createSession(baseURL, chromePath string, headless bool, proxy string, verbose bool) (string, string, error) {
 	args := []string{
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -220,6 +221,10 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 
 	if headless {
 		args = append(args, "--headless=new")
+	}
+
+	if proxy != "" {
+		args = append(args, fmt.Sprintf("--proxy-server=%s", proxy))
 	}
 
 	reqBody := map[string]interface{}{

@@ -113,6 +113,7 @@ class browser_sync:
         headless: bool = False,
         port: Optional[int] = None,
         executable_path: Optional[str] = None,
+        proxy: Optional[str] = None,
     ) -> VibeSync:
         """Launch a new browser instance.
 
@@ -120,6 +121,7 @@ class browser_sync:
             headless: Run browser in headless mode (default: visible).
             port: WebSocket port (default: auto-assigned).
             executable_path: Path to clicker binary (default: auto-detect).
+            proxy: Proxy server URL (e.g., http://proxy:8080, socks5://proxy:1080).
 
         Returns:
             A VibeSync instance for browser automation.
@@ -132,6 +134,7 @@ class browser_sync:
                 headless=headless,
                 port=port,
                 executable_path=executable_path,
+                proxy=proxy,
             )
         )
 

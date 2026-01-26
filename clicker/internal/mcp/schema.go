@@ -14,6 +14,10 @@ func GetToolSchemas() []Tool {
 						"description": "Run browser in headless mode (no visible window)",
 						"default":     false,
 					},
+					"proxy": map[string]interface{}{
+						"type":        "string",
+						"description": "Proxy server URL (e.g., http://proxy:8080, socks5://proxy:1080, http://user:pass@proxy:8080)",
+					},
 				},
 				"additionalProperties": false,
 			},

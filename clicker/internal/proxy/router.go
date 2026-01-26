@@ -49,12 +49,14 @@ type bidiResponse struct {
 type Router struct {
 	sessions sync.Map // map[uint64]*BrowserSession (client ID -> session)
 	headless bool
+	proxy    string
 }
 
 // NewRouter creates a new router.
-func NewRouter(headless bool) *Router {
+func NewRouter(headless bool, proxy string) *Router {
 	return &Router{
 		headless: headless,
+		proxy:    proxy,
 	}
 }
 
@@ -66,6 +68,7 @@ func (r *Router) OnClientConnect(client *ClientConn) {
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{
 		Headless: r.headless,
+		Proxy:    r.proxy,
 	})
 	if err != nil {
 		fmt.Printf("[router] Failed to launch browser for client %d: %v\n", client.ID, err)
