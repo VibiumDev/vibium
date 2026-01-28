@@ -108,6 +108,40 @@ describe('JS Async API', () => {
     }
   });
 
+  test('element.type() enters text with carriage returns', async () => {
+    const vibe = await browser.launch({ headless: true });
+    try {
+      await vibe.go('https://seleniumbase.io/demo_page');
+      const textarea = await vibe.find('textarea');
+      await textarea.type('123\r456');
+
+      // Verify the value was entered
+      const value = await vibe.evaluate(`
+        return document.querySelector('textarea').value;
+      `);
+      assert.strictEqual(value, '123\n456', 'Textarea should have typed value with newline (via carriage return)');
+    } finally {
+      await vibe.quit();
+    }
+  });
+
+  test('element.type() enters text with newlines', async () => {
+    const vibe = await browser.launch({ headless: true });
+    try {
+      await vibe.go('https://seleniumbase.io/demo_page');
+      const textarea = await vibe.find('textarea');
+      await textarea.type('123\n456');
+
+      // Verify the value was entered
+      const value = await vibe.evaluate(`
+        return document.querySelector('textarea').value;
+      `);
+      assert.strictEqual(value, '123\n456', 'Textarea should have typed value with newline');
+    } finally {
+      await vibe.quit();
+    }
+  });
+
   test('element.text() returns element text', async () => {
     const vibe = await browser.launch({ headless: true });
     try {

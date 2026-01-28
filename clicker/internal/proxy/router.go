@@ -271,6 +271,7 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 	// Build key actions for typing
 	keyActions := make([]map[string]interface{}, 0, len(text)*2)
 	for _, char := range text {
+		char = bidi.NormalizeKeyChar(char)
 		keyActions = append(keyActions,
 			map[string]interface{}{"type": "keyDown", "value": string(char)},
 			map[string]interface{}{"type": "keyUp", "value": string(char)},

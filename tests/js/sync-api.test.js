@@ -101,4 +101,38 @@ describe('JS Sync API', () => {
       vibe.quit();
     }
   });
+
+  test('element.type() enters text with carriage returns (sync)', () => {
+    const vibe = browserSync.launch({ headless: true });
+    try {
+      vibe.go('https://seleniumbase.io/demo_page');
+      const textarea = vibe.find('textarea');
+      textarea.type('123\r456');
+
+      // Verify the value was entered
+      const value = vibe.evaluate(`
+        return document.querySelector('textarea').value;
+      `);
+      assert.strictEqual(value, '123\n456', 'Textarea should have typed value with newline (via carriage return)');
+    } finally {
+      vibe.quit();
+    }
+  });
+
+  test('element.type() enters text with newlines (sync)', () => {
+    const vibe = browserSync.launch({ headless: true });
+    try {
+      vibe.go('https://seleniumbase.io/demo_page');
+      const textarea = vibe.find('textarea');
+      textarea.type('123\n456');
+
+      // Verify the value was entered
+      const value = vibe.evaluate(`
+        return document.querySelector('textarea').value;
+      `);
+      assert.strictEqual(value, '123\n456', 'Textarea should have typed value with newline');
+    } finally {
+      vibe.quit();
+    }
+  });
 });

@@ -137,6 +137,7 @@ func (c *Client) TypeText(context, text string) error {
 	// Build key actions for each character
 	keyActions := make([]map[string]interface{}, 0, len(text)*2)
 	for _, char := range text {
+		char = NormalizeKeyChar(char)
 		keyActions = append(keyActions,
 			map[string]interface{}{
 				"type": "keyDown",

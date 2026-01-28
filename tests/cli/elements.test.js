@@ -40,4 +40,30 @@ describe('CLI: Elements', () => {
     );
     assert.match(result, /12345/, 'Should show typed text in result');
   });
+
+  test('type command enters text with carriage returns into textarea', () => {
+    const result = execSync(
+      `${CLICKER} type https://seleniumbase.io/demo_page "textarea" $'123\\r456'`,
+      {
+        encoding: 'utf-8',
+        timeout: 30000,
+        shell: '/bin/bash',
+      }
+    );
+    // The output should show the textarea value with a newline (via carriage return)
+    assert.match(result, /value is now: 123\n456/, 'Should show typed value with newline (via carriage return)');
+  });
+
+  test('type command enters text with newlines into textarea', () => {
+    const result = execSync(
+      `${CLICKER} type https://seleniumbase.io/demo_page "textarea" $'123\\n456'`,
+      {
+        encoding: 'utf-8',
+        timeout: 30000,
+        shell: '/bin/bash',
+      }
+    );
+    // The output should show the textarea value with a newline
+    assert.match(result, /value is now: 123\n456/, 'Should show typed value with newline');
+  });
 });
