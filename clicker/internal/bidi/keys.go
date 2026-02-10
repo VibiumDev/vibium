@@ -1,10 +1,11 @@
 package bidi
 
-// NormalizeKeyChar converts characters to their WebDriver BiDi equivalents.
-// For example, newline (\n) must be sent as carriage return (\r) to produce Enter.
-func NormalizeKeyChar(r rune) rune {
+// ConvertToKeyChar maps string literal characters to their WebDriver BiDi key
+// equivalents for keyboard input. For example, newline (\n) is a line break in
+// strings but must be sent as the Return key (\uE006) to produce a key press.
+func ConvertToKeyChar(r rune) rune {
 	if r == '\n' {
-		return '\r'
+		return '\uE006'
 	}
 	return r
 }
