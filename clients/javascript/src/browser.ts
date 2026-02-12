@@ -2,6 +2,7 @@ import { ClickerProcess } from './clicker';
 import { BiDiClient } from './bidi';
 import { Vibe } from './vibe';
 import { debug, info } from './utils/debug';
+import { checkNodeVersion } from './utils/version';
 
 export interface LaunchOptions {
   headless?: boolean;
@@ -11,6 +12,8 @@ export interface LaunchOptions {
 
 export const browser = {
   async launch(options: LaunchOptions = {}): Promise<Vibe> {
+    checkNodeVersion();
+
     const { headless = false, port, executablePath } = options;
     debug('launching browser', { headless, port, executablePath });
 
