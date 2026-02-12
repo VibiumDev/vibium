@@ -1,6 +1,34 @@
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import { getPlatform, getArch } from './platform';
+
+/**
+ * Resolve a package's location using either require.resolve (CJS)
+ * or createRequire (ESM-compatible fallback).
+ */
+function resolvePackageJson(packageName: string): string | null {
+  const specifier = `${packageName}/package.json`;
+
+  // Try native require.resolve first (works in CJS context)
+  try {
+    if (typeof require !== 'undefined' && typeof require.resolve === 'function') {
+      return require.resolve(specifier);
+    }
+  } catch {
+    // Not found via native require
+  }
+
+  // Fallback: createRequire from cwd (works in ESM context)
+  try {
+    const esmRequire = createRequire(path.join(process.cwd(), 'package.json'));
+    return esmRequire.resolve(specifier);
+  } catch {
+    // Not found via createRequire either
+  }
+
+  return null;
+}
 
 /**
  * Resolve the path to the clicker binary.
@@ -23,16 +51,14 @@ export function getClickerPath(): string {
   const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
 
   // 2. Check platform-specific npm package
-  try {
-    const packagePath = require.resolve(`${packageName}/package.json`);
-    const packageDir = path.dirname(packagePath);
+  const packageJsonPath = resolvePackageJson(packageName);
+  if (packageJsonPath) {
+    const packageDir = path.dirname(packageJsonPath);
     const binaryPath = path.join(packageDir, 'bin', binaryName);
 
     if (fs.existsSync(binaryPath)) {
       return binaryPath;
     }
-  } catch {
-    // Package not installed, continue to fallback
   }
 
   // 3. Check local development paths (relative to cwd)
