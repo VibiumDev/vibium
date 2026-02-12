@@ -39,7 +39,13 @@ export class BiDiClient {
     this.pendingCommands.delete(response.id);
 
     if (response.type === 'error' && response.error) {
-      pending.reject(new Error(`${response.error}: ${response.message}`));
+      const errorStr = typeof response.error === 'string'
+        ? response.error
+        : JSON.stringify(response.error);
+      const messageStr = typeof response.message === 'string'
+        ? response.message
+        : (response.message !== undefined ? JSON.stringify(response.message) : 'unknown error');
+      pending.reject(new Error(`${errorStr}: ${messageStr}`));
     } else {
       pending.resolve(response.result);
     }

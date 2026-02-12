@@ -2,6 +2,7 @@ import { BiDiClient, BrowsingContextTree, NavigationResult, ScreenshotResult } f
 import { ClickerProcess } from './clicker';
 import { Element, ElementInfo } from './element';
 import { debug } from './utils/debug';
+import { TimeoutError } from './utils/errors';
 
 export interface FindOptions {
   /** Timeout in milliseconds to wait for element. Default: 30000 */
@@ -89,11 +90,21 @@ export class Vibe {
     debug('finding element', { selector, timeout: options?.timeout });
     const context = await this.getContext();
 
-    const result = await this.client.send<VibiumFindResult>('vibium:find', {
-      context,
-      selector,
-      timeout: options?.timeout,
-    });
+    const timeoutMs = options?.timeout ?? 30000;
+    let result: VibiumFindResult;
+    try {
+      result = await this.client.send<VibiumFindResult>('vibium:find', {
+        context,
+        selector,
+        timeout: timeoutMs,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.toLowerCase().includes('timeout') || message.includes('no node')) {
+        throw new TimeoutError(selector, timeoutMs, message);
+      }
+      throw err;
+    }
 
     const info: ElementInfo = {
       tag: result.tag,
