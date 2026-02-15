@@ -86,7 +86,7 @@ claude mcp add vibium -- npx -y vibium mcp    # Claude Code
 gemini mcp add vibium npx -y vibium mcp       # Gemini CLI
 ```
 
-See detailed setup guides: [MCP Server](docs/tutorials/claude-code-mcp-setup.md) | [Gemini CLI](docs/tutorials/gemini-cli-mcp-setup.md)
+See detailed setup guides: [Claude Code](docs/tutorials/claude-code-mcp-setup.md) | [Gemini CLI](docs/tutorials/gemini-cli-mcp-setup.md)
 
 ---
 
