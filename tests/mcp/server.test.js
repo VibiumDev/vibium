@@ -462,6 +462,23 @@ describe('MCP Server: New Tools', () => {
     );
   });
 
+  test('browser_sleep accepts stringified number', async () => {
+    const start = Date.now();
+    const response = await client.call('tools/call', {
+      name: 'browser_sleep',
+      arguments: { ms: '20' },
+    });
+
+    const elapsed = Date.now() - start;
+    assert.ok(response.result, 'Should have result');
+    assert.ok(!response.result.isError, 'Should not be an error');
+    assert.ok(
+      response.result.content[0].text.includes('Slept for'),
+      'Should confirm sleep'
+    );
+    assert.ok(elapsed >= 400, `Should have actually slept (elapsed: ${elapsed}ms)`);
+  });
+
   test('browser_hover hovers over element', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_hover',
