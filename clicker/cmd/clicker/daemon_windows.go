@@ -2,10 +2,15 @@
 
 package main
 
-import "os/exec"
+import (
+	"os/exec"
+	"syscall"
+)
 
 // setSysProcAttr configures the child process for Windows.
-// TODO: Use CREATE_NEW_PROCESS_GROUP when Windows daemon support is added.
+// CREATE_NEW_PROCESS_GROUP detaches the daemon from the parent console.
 func setSysProcAttr(cmd *exec.Cmd) {
-	// No-op on Windows for now
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
 }

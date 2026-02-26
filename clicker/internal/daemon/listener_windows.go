@@ -3,12 +3,12 @@
 package daemon
 
 import (
-	"fmt"
 	"net"
+
+	"github.com/Microsoft/go-winio"
 )
 
 // listen creates a named pipe listener on Windows.
-// TODO: Implement named pipe support for Windows.
 func listen(socketPath string) (net.Listener, error) {
-	return nil, fmt.Errorf("daemon mode is not yet supported on Windows")
+	return winio.ListenPipe(socketPath, nil)
 }

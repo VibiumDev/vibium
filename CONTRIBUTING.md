@@ -32,7 +32,7 @@ make
 make test
 ```
 
-This installs npm dependencies, builds clicker and the JS client, downloads Chrome for Testing (if needed), and runs the test suite.
+This installs npm dependencies, builds the vibium binary and the JS client, downloads Chrome for Testing (if needed), and runs the test suite.
 
 ---
 
@@ -42,9 +42,9 @@ This installs npm dependencies, builds clicker and the JS client, downloads Chro
 
 ```bash
 make                       # Build everything (default)
-make build-go              # Build clicker binary
+make build-go              # Build vibium binary
 make build-js              # Build JS client
-make build-go-all          # Cross-compile clicker for all platforms
+make build-go-all          # Cross-compile vibium for all platforms
 ```
 
 ### Package
@@ -81,7 +81,7 @@ make set-version VERSION=x.x.x  # Set version across all packages
 
 ```bash
 make clean                 # Clean binaries and JS dist
-make clean-go              # Clean clicker binaries
+make clean-go              # Clean vibium binaries
 make clean-js              # Clean JS client dist
 make clean-npm-packages    # Clean built npm packages
 make clean-python-packages # Clean Python packages
@@ -220,48 +220,51 @@ asyncio.run(main())
 
 ---
 
-## Using Clicker
+## Using the Vibium Binary
 
-Clicker is the Go binary at the heart of Vibium. It handles browser lifecycle, WebDriver BiDi protocol, and exposes an MCP server for AI agents.
+The vibium binary is the Go binary at the heart of Vibium. It handles browser lifecycle, WebDriver BiDi protocol, and exposes an MCP server for AI agents.
 
-Long-term, clicker runs silently in the background — called by client libraries (JS/TS, Python, etc.). Most users won't interact with it directly.
+Long-term, vibium runs silently in the background — called by client libraries (JS/TS, Python, etc.). Most users won't interact with it directly.
 
 For now, the CLI is a development and testing aid. It lets you verify browser automation works before the client libraries are built on top.
 
-After building, the binary is at `./clicker/bin/clicker`.
+After building, the binary is at `./clicker/bin/vibium`.
 
 ### Setup
 
 ```bash
-./clicker/bin/clicker install   # Download Chrome for Testing + chromedriver
-./clicker/bin/clicker paths     # Show browser and cache paths
-./clicker/bin/clicker version   # Show version
+cd clicker/bin
+vibium install   # Download Chrome for Testing + chromedriver
+vibium paths     # Show browser and cache paths
+vibium version   # Show version
 ```
 
 ### Browser Commands
 
-By default, clicker runs in **daemon mode** — the browser stays open between commands:
+By default, vibium runs in **daemon mode** — the browser stays open between commands:
 
 ```bash
+cd clicker/bin
+
 # Navigate to a URL
-./clicker/bin/clicker navigate https://example.com
+vibium go https://example.com
 
 # Interact with the current page (no URL needed)
-./clicker/bin/clicker find "h1"
-./clicker/bin/clicker click "a"
-./clicker/bin/clicker type "input" "hello"
-./clicker/bin/clicker eval "document.title"
-./clicker/bin/clicker screenshot -o shot.png
+vibium find "h1"
+vibium click "a"
+vibium type "input" "hello"
+vibium eval "document.title"
+vibium screenshot -o shot.png
 
 # You can also provide a URL to navigate first
-./clicker/bin/clicker find https://example.com "a"
-./clicker/bin/clicker screenshot https://example.com -o shot.png
+vibium find https://example.com "a"
+vibium screenshot https://example.com -o shot.png
 ```
 
 Use `--oneshot` to launch a fresh browser for each command (the old behavior):
 
 ```bash
-./clicker/bin/clicker navigate https://example.com --oneshot
+vibium go https://example.com --oneshot
 ```
 
 ### Useful Flags
@@ -277,10 +280,11 @@ Use `--oneshot` to launch a fresh browser for each command (the old behavior):
 ### Daemon Management
 
 ```bash
-./clicker/bin/clicker daemon start    # Start daemon in foreground
-./clicker/bin/clicker daemon start -d # Start daemon in background
-./clicker/bin/clicker daemon status   # Show daemon status
-./clicker/bin/clicker daemon stop     # Stop the daemon
+cd clicker/bin
+vibium daemon start    # Start daemon in foreground
+vibium daemon start -d # Start daemon in background
+vibium daemon status   # Show daemon status
+vibium daemon stop     # Stop the daemon
 ```
 
 The daemon auto-starts on the first command, so you rarely need to manage it manually.
@@ -289,7 +293,7 @@ The daemon auto-starts on the first command, so you rarely need to manage it man
 
 ## Using the MCP Server
 
-Clicker includes an MCP (Model Context Protocol) server for AI agent integration.
+The vibium binary includes an MCP (Model Context Protocol) server for AI agent integration.
 
 ### Available Tools
 
@@ -321,26 +325,28 @@ Clicker includes an MCP (Model Context Protocol) server for AI agent integration
 ### Running the MCP Server
 
 ```bash
+cd clicker/bin
+
 # Run directly (for testing)
-./clicker/bin/clicker mcp
+vibium mcp
 
 # With custom screenshot directory
-./clicker/bin/clicker mcp --screenshot-dir ./screenshots
+vibium mcp --screenshot-dir ./screenshots
 
 # Disable screenshot file saving (inline base64 only)
-./clicker/bin/clicker mcp --screenshot-dir ""
+vibium mcp --screenshot-dir ""
 ```
 
 ### Configuring with Claude Code
 
 ```bash
-claude mcp add vibium -- clicker mcp
+claude mcp add vibium -- vibium mcp
 ```
 
 ### Testing with JSON-RPC
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}' | ./clicker/bin/clicker mcp
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}' | clicker/bin/vibium mcp
 ```
 
 ---

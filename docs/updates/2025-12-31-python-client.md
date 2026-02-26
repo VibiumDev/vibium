@@ -67,7 +67,7 @@ make clean-python-packages  # clean built wheels
 ## docs
 
 - [Getting Started (Python)](../tutorials/getting-started-python.md)
-- [PyPI Publishing Guide](../how-to-guides/pypi-publishing.md)
+- [PyPI Publishing Guide](https://github.com/VibiumDev/vibium/blob/c858092/docs/how-to-guides/pypi-publishing.md)
 
 ## the stack
 

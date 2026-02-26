@@ -11,10 +11,10 @@ func newTabNewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tab-new [url]",
 		Short: "Open a new browser tab",
-		Example: `  clicker tab-new
+		Example: `  vibium tab-new
   # Open a blank new tab
 
-  clicker tab-new https://example.com
+  vibium tab-new https://example.com
   # Open a new tab and navigate to URL`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

@@ -1,6 +1,6 @@
 # vibium-linux-arm64
 
-Vibium clicker binary for Linux ARM64.
+Vibium binary for Linux ARM64.
 
 This package is automatically installed as a dependency of the main `vibium` package on Linux ARM64 systems.
 

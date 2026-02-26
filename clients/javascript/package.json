@@ -1,6 +1,6 @@
 {
   "name": "vibium-client",
-  "version": "0.1.7",
+  "version": "26.2.0",
   "description": "Browser automation for AI agents and humans",
   "engines": {
     "node": ">=18.0.0"
@@ -13,6 +13,11 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
       "import": "./dist/index.mjs"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "require": "./dist/sync.js",
+      "import": "./dist/sync.mjs"
     }
   },
   "files": [

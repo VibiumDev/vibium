@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -78,8 +79,12 @@ func CleanStale() {
 	// Process is dead — clean up stale files
 	RemovePID()
 
-	socketPath, err := paths.GetSocketPath()
-	if err == nil {
-		os.Remove(socketPath)
+	// On Unix, remove the stale socket file. On Windows, named pipes are
+	// managed by the kernel and don't leave files to clean up.
+	if runtime.GOOS != "windows" {
+		socketPath, err := paths.GetSocketPath()
+		if err == nil {
+			os.Remove(socketPath)
+		}
 	}
 }

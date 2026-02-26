@@ -1,6 +1,6 @@
 # vibium-linux-x64
 
-Vibium clicker binary for Linux x64.
+Vibium binary for Linux x64.
 
 This package is automatically installed as a dependency of the main `vibium` package on Linux x64 systems.
 

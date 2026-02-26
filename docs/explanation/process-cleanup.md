@@ -5,7 +5,7 @@
 When Vibium launches a browser session, it creates this process hierarchy:
 
 ```
-clicker (Go binary)
+vibium (Go binary)
   └── chromedriver
         └── Chrome for Testing (main browser process)
               ├── chrome_crashpad_handler (crash reporting)
@@ -62,7 +62,7 @@ func killProcessTree(pid int) {
 }
 ```
 
-## What if clicker itself dies?
+## What if vibium itself dies?
 
 | Scenario | What happens |
 |----------|--------------|
@@ -72,7 +72,7 @@ func killProcessTree(pid int) {
 
 For `kill -9`, the orphan cleanup in the *next* session's `Close()` will find and kill them. Or use `make double-tap`.
 
-The clicker binary itself doesn't leave zombies - it's just a Go process that exits cleanly. The issue is its children (chromedriver/Chrome) escaping cleanup.
+The vibium binary itself doesn't leave zombies - it's just a Go process that exits cleanly. The issue is its children (chromedriver/Chrome) escaping cleanup.
 
 ## Manual Cleanup
 

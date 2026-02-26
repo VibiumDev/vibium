@@ -15,13 +15,13 @@ func newTypeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "type [url] [selector] [text]",
 		Short: "Type text into an element (optionally navigate to URL first)",
-		Example: `  clicker type "input" "12345"
+		Example: `  vibium type "input" "12345"
   # Types on current page (daemon mode)
 
-  clicker type https://the-internet.herokuapp.com/inputs "input" "12345"
+  vibium type https://the-internet.herokuapp.com/inputs "input" "12345"
   # Navigates to URL first, then types
 
-  clicker type https://the-internet.herokuapp.com/inputs "input" "12345" --timeout 5s
+  vibium type https://the-internet.herokuapp.com/inputs "input" "12345" --timeout 5s
   # Custom timeout for actionability checks`,
 		Args: cobra.RangeArgs(2, 3),
 		Run: func(cmd *cobra.Command, args []string) {

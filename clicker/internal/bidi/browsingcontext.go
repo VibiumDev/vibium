@@ -185,3 +185,143 @@ func (c *Client) CaptureScreenshot(context string) (string, error) {
 
 	return result.Data, nil
 }
+
+// CaptureFullPageScreenshot captures a full-page screenshot (entire document, not just viewport).
+// If context is empty, it uses the first available context.
+// Returns base64-encoded PNG data.
+func (c *Client) CaptureFullPageScreenshot(context string) (string, error) {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return "", fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return "", fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+		"origin":  "document",
+	}
+
+	msg, err := c.SendCommand("browsingContext.captureScreenshot", params)
+	if err != nil {
+		return "", err
+	}
+
+	var result CaptureScreenshotResult
+	if err := json.Unmarshal(msg.Result, &result); err != nil {
+		return "", fmt.Errorf("failed to parse browsingContext.captureScreenshot result: %w", err)
+	}
+
+	return result.Data, nil
+}
+
+// TraverseHistory navigates forward or backward in the browsing history.
+// delta is the number of steps: -1 for back, +1 for forward.
+// If context is empty, it uses the first available context.
+func (c *Client) TraverseHistory(context string, delta int) error {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+		"delta":   delta,
+	}
+
+	_, err := c.SendCommand("browsingContext.traverseHistory", params)
+	return err
+}
+
+// PrintToPDF prints the page to PDF.
+// If context is empty, it uses the first available context.
+// Returns base64-encoded PDF data.
+func (c *Client) PrintToPDF(context string) (string, error) {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return "", fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return "", fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+	}
+
+	msg, err := c.SendCommand("browsingContext.print", params)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(msg.Result, &result); err != nil {
+		return "", fmt.Errorf("failed to parse browsingContext.print result: %w", err)
+	}
+
+	return result.Data, nil
+}
+
+// HandleUserPrompt accepts or dismisses a dialog (alert, confirm, prompt).
+// If context is empty, it uses the first available context.
+func (c *Client) HandleUserPrompt(context string, accept bool, userText string) error {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+		"accept":  accept,
+	}
+	if userText != "" {
+		params["userText"] = userText
+	}
+
+	_, err := c.SendCommand("browsingContext.handleUserPrompt", params)
+	return err
+}
+
+// Reload reloads the current page.
+// If context is empty, it uses the first available context.
+func (c *Client) Reload(context string) error {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+		"wait":    "complete",
+	}
+
+	_, err := c.SendCommand("browsingContext.reload", params)
+	return err
+}

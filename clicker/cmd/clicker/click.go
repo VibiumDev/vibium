@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,13 +15,13 @@ func newClickCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "click [url] [selector]",
 		Short: "Click an element (optionally navigate to URL first)",
-		Example: `  clicker click "a"
+		Example: `  vibium click "a"
   # Clicks on current page (daemon mode)
 
-  clicker click https://example.com "a"
+  vibium click https://example.com "a"
   # Navigates to URL first, then clicks
 
-  clicker click https://example.com "a" --timeout 5s
+  vibium click https://example.com "a" --timeout 5s
   # Custom timeout for actionability checks`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -54,8 +53,7 @@ func newClickCmd() *cobra.Command {
 
 			// Oneshot mode (original behavior) — requires URL + selector
 			if len(args) < 2 {
-				fmt.Fprintf(os.Stderr, "Error: requires [url] [selector] in oneshot mode\n")
-				os.Exit(1)
+				fatalExit("Error: requires [url] [selector] in oneshot mode")
 			}
 			url := args[0]
 			selector := args[1]
@@ -65,16 +63,14 @@ func newClickCmd() *cobra.Command {
 				fmt.Println("Launching browser...")
 				launchResult, err := browser.Launch(browser.LaunchOptions{Headless: headless})
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error launching browser: %v", err)
 				}
 				defer waitAndClose(launchResult)
 
 				fmt.Println("Connecting to BiDi...")
 				conn, err := bidi.Connect(launchResult.WebSocketURL)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error connecting: %v", err)
 				}
 				defer conn.Close()
 
@@ -83,8 +79,7 @@ func newClickCmd() *cobra.Command {
 				fmt.Printf("Navigating to %s...\n", url)
 				_, err = client.Navigate("", url)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error navigating: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error navigating: %v", err)
 				}
 
 				doWaitOpen()
@@ -93,26 +88,35 @@ func newClickCmd() *cobra.Command {
 				fmt.Printf("Waiting for element to be actionable: %s\n", selector)
 				opts := features.WaitOptions{Timeout: timeout}
 				if err := features.WaitForClick(client, "", selector, opts); err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error: %v", err)
 				}
+
+				// Get URL before click so we can detect navigation
+				urlBefore, _ := client.GetCurrentURL()
 
 				fmt.Printf("Clicking element: %s\n", selector)
 				err = client.ClickElement("", selector)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error clicking: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error clicking: %v", err)
 				}
 
-				// TODO: Replace sleep with proper navigation wait (poll URL change or listen for BiDi events)
+				// Poll for URL change to detect click-triggered navigation.
+				// Returns immediately when URL changes, or after 2s if no navigation.
+				// Note: daemon mode (PR #29) uses BiDi events for proper navigation
+				// waiting. This polling approach is a stopgap for oneshot mode.
 				fmt.Println("Waiting for navigation...")
-				time.Sleep(1 * time.Second)
-
-				// Get current URL after click
-				currentURL, err := client.GetCurrentURL()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error getting URL: %v\n", err)
-					os.Exit(1)
+				currentURL := urlBefore
+				deadline := time.Now().Add(2 * time.Second)
+				for time.Now().Before(deadline) {
+					time.Sleep(100 * time.Millisecond)
+					u, err := client.GetCurrentURL()
+					if err != nil {
+						break
+					}
+					currentURL = u
+					if currentURL != urlBefore {
+						break
+					}
 				}
 
 				fmt.Printf("Click complete! Current URL: %s\n", currentURL)

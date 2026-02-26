@@ -1,6 +1,6 @@
 {
   "name": "vibium",
-  "version": "0.1.7",
+  "version": "26.2.0",
   "description": "Browser automation for AI agents and humans",
   "keywords": [
     "browser",
@@ -33,10 +33,15 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
       "import": "./dist/index.mjs"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "require": "./dist/sync.js",
+      "import": "./dist/sync.mjs"
     }
   },
   "bin": {
-    "vibe-check": "bin/cli.js"
+    "vibium": "bin/cli.js"
   },
   "scripts": {
     "postinstall": "node postinstall.js"
@@ -49,11 +54,11 @@
     "NOTICE"
   ],
   "optionalDependencies": {
-    "@vibium/linux-x64": "0.1.7",
-    "@vibium/linux-arm64": "0.1.7",
-    "@vibium/darwin-x64": "0.1.7",
-    "@vibium/darwin-arm64": "0.1.7",
-    "@vibium/win32-x64": "0.1.7"
+    "@vibium/linux-x64": "26.2.0",
+    "@vibium/linux-arm64": "26.2.0",
+    "@vibium/darwin-x64": "26.2.0",
+    "@vibium/darwin-arm64": "26.2.0",
+    "@vibium/win32-x64": "26.2.0"
   },
   "dependencies": {
     "ws": "^8.18.3"

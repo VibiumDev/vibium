@@ -14,13 +14,13 @@ func newTextCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "text [selector]",
 		Short: "Get text content of the page or an element",
-		Example: `  clicker text
+		Example: `  vibium text
   # Get all page text (daemon mode)
 
-  clicker text "h1"
+  vibium text "h1"
   # Get text of a specific element
 
-  clicker text https://example.com
+  vibium text https://example.com
   # Navigate then get page text (oneshot mode)`,
 		Args: cobra.MaximumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {

@@ -11,13 +11,13 @@ func newKeysCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "keys [keys]",
 		Short: "Press a key or key combination",
-		Example: `  clicker keys Enter
+		Example: `  vibium keys Enter
   # Press Enter (daemon mode)
 
-  clicker keys "Control+a"
+  vibium keys "Control+a"
   # Select all
 
-  clicker keys "Shift+Tab"
+  vibium keys "Shift+Tab"
   # Shift+Tab to previous field`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

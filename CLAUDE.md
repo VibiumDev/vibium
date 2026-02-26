@@ -4,10 +4,8 @@ Browser automation for AI agents and humans.
 
 ## Key Docs
 
-- V2-ROADMAP.md — Future features (not yet prioritized)
+- ROADMAP.md — Future features (not yet prioritized)
 - docs/reference/WebDriver-Bidi-Spec.md — BiDirectional WebDriver Protocol spec
-- docs/reference/v1-roadmap.md — V1 roadmap (archived)
-- docs/reference/v1-filesystem.md — V1 file structure (archived)
 
 ## Current Goal
 
@@ -17,7 +15,7 @@ See open issues: https://github.com/VibiumDev/vibium/issues
 
 ## Tech Stack
 
-- Go (clicker binary)
+- Go (vibium binary)
 - TypeScript (JS client)
 - Python (Python client)
 - WebDriver BiDi protocol
@@ -36,4 +34,4 @@ Power users can override defaults (headless mode, custom paths, etc.) when neede
 
 - Prioritize bug fixes over new features
 - Run tests before committing: `make test`
-- When adding new command line options to the bin/clicker binary, add a simple example and sample output (or short description)
+- When adding new command line options to the vibium binary, add a simple example and sample output (or short description)

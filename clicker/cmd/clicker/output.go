@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/vibium/clicker/internal/mcp"
+	"github.com/vibium/clicker/internal/process"
 )
 
 // jsonEnvelope is the output format for --json mode.
@@ -45,11 +46,13 @@ func printError(err error) {
 	if jsonOutput {
 		env := jsonEnvelope{OK: false, Error: err.Error()}
 		printJSON(env)
+		process.KillAll()
 		os.Exit(1)
 		return
 	}
 
 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	process.KillAll()
 	os.Exit(1)
 }
 

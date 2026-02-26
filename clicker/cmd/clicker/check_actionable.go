@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/bidi"
@@ -15,7 +14,7 @@ func newCheckActionableCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "check-actionable [url] [selector]",
 		Short: "Check actionability of an element (Visible, Stable, ReceivesEvents, Enabled, Editable)",
-		Example: `  clicker check-actionable https://example.com "a"
+		Example: `  vibium check-actionable https://example.com "a"
   # Output:
   # Checking actionability for selector: a
   # ✓ Visible: true
@@ -32,16 +31,14 @@ func newCheckActionableCmd() *cobra.Command {
 				fmt.Println("Launching browser...")
 				launchResult, err := browser.Launch(browser.LaunchOptions{Headless: headless})
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error launching browser: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error launching browser: %v", err)
 				}
 				defer waitAndClose(launchResult)
 
 				fmt.Println("Connecting to BiDi...")
 				conn, err := bidi.Connect(launchResult.WebSocketURL)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error connecting: %v", err)
 				}
 				defer conn.Close()
 
@@ -50,8 +47,7 @@ func newCheckActionableCmd() *cobra.Command {
 				fmt.Printf("Navigating to %s...\n", url)
 				_, err = client.Navigate("", url)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error navigating: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error navigating: %v", err)
 				}
 
 				doWaitOpen()
@@ -60,8 +56,7 @@ func newCheckActionableCmd() *cobra.Command {
 
 				result, err := features.CheckAll(client, "", selector)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					os.Exit(1)
+					fatalExit("Error: %v", err)
 				}
 
 				// Print results with checkmarks

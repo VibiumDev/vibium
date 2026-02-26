@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"net"
 	"time"
 
 	"github.com/vibium/clicker/internal/paths"
@@ -30,7 +29,7 @@ func IsRunning() bool {
 
 // socketConnectable tests if the daemon socket accepts connections.
 func socketConnectable(socketPath string) bool {
-	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
+	conn, err := dial(socketPath, 2*time.Second)
 	if err != nil {
 		return false
 	}

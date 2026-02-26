@@ -17,10 +17,9 @@ This automatically downloads Chrome for Testing on first install.
 ```javascript
 import { browser } from 'vibium'
 import { writeFile } from 'fs/promises'
-// In a REPL: const { browser } = require('vibium')
-// In a REPL: const { writeFile } = require('fs/promises')
 
-const vibe = await browser.launch()
+const bro = await browser.launch()
+const vibe = await bro.page()
 await vibe.go('https://example.com')
 
 const link = await vibe.find('a')
@@ -30,18 +29,17 @@ await link.click()
 const screenshot = await vibe.screenshot()
 await writeFile('screenshot.png', screenshot)
 
-await vibe.quit()
+await bro.close()
 ```
 
 ### Sync API
 
 ```javascript
-import { browserSync } from 'vibium'
-import { writeFileSync } from 'fs'
-// In a REPL: const { browserSync } = require('vibium')
-// In a REPL: const { writeFileSync } = require('fs')
+const { browser } = require('vibium/sync')
+const { writeFileSync } = require('fs')
 
-const vibe = browserSync.launch()
+const bro = browser.launch()
+const vibe = bro.page()
 vibe.go('https://example.com')
 
 const link = vibe.find('a')
@@ -51,22 +49,30 @@ link.click()
 const screenshot = vibe.screenshot()
 writeFileSync('screenshot.png', screenshot)
 
-vibe.quit()
+bro.close()
 ```
 
 ## API Reference
 
 ### browser.launch(options?)
 
-Launch a new browser session.
+Launch a new browser session. Returns a `Browser`.
 
 ```javascript
-const vibe = await browser.launch({ headless: true })
+const bro = await browser.launch({ headless: true })
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `headless` | boolean | `false` | Run without visible window |
+
+### bro.page()
+
+Get the default page (tab).
+
+```javascript
+const vibe = await bro.page()
+```
 
 ### vibe.go(url)
 
@@ -96,12 +102,12 @@ Capture a screenshot. Returns a `Buffer` (PNG).
 const png = await vibe.screenshot()
 ```
 
-### vibe.quit()
+### bro.close()
 
 Close the browser session.
 
 ```javascript
-await vibe.quit()
+await bro.close()
 ```
 
 ### element.click(options?)

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/mcp"
 	"github.com/vibium/clicker/internal/process"
 )
 
@@ -14,10 +16,10 @@ func newFindAllCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "find-all [selector]",
 		Short: "Find all elements matching a CSS selector",
-		Example: `  clicker find-all "a"
-  # Find all links on current page (daemon mode)
+		Example: `  vibium find-all "a"
+  # → @e1 [a] "Home"  @e2 [a] "About"  ...
 
-  clicker find-all "a" --limit 5
+  vibium find-all "a" --limit 5
   # Limit results to 5 elements`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -85,17 +87,32 @@ func newFindAllCmd() *cobra.Command {
 
 				doWaitOpen()
 
-				elements, err := client.FindAllElements("", selector, limit)
+				findAllScript := `(selector, limit) => {
+					` + mcp.GetLabelJS() + `
+					const els = document.querySelectorAll(selector);
+					const results = [];
+					const n = Math.min(els.length, limit);
+					for (let i = 0; i < n; i++) {
+						results.push(getLabel(els[i]));
+					}
+					return JSON.stringify(results);
+				}`
+				result, err := client.CallFunction("", findAllScript, []interface{}{selector, limit})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error finding elements: %v\n", err)
 					os.Exit(1)
 				}
 
-				for i, el := range elements {
-					fmt.Printf("[%d] tag=%s, text=\"%s\", box={x:%.0f, y:%.0f, w:%.0f, h:%.0f}\n",
-						i, el.Tag, el.Text, el.Box.X, el.Box.Y, el.Box.Width, el.Box.Height)
+				var labels []string
+				if err := json.Unmarshal([]byte(fmt.Sprintf("%v", result)), &labels); err != nil {
+					fmt.Fprintf(os.Stderr, "Error parsing results: %v\n", err)
+					os.Exit(1)
 				}
-				if len(elements) == 0 {
+
+				for i, label := range labels {
+					fmt.Printf("@e%d %s\n", i+1, label)
+				}
+				if len(labels) == 0 {
 					fmt.Println("No elements found")
 				}
 			})

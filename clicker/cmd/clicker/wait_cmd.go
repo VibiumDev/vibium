@@ -13,13 +13,13 @@ func newWaitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait [selector]",
 		Short: "Wait for an element to reach a specified state",
-		Example: `  clicker wait "div.loaded"
+		Example: `  vibium wait "div.loaded"
   # Wait for element to exist in DOM (daemon mode)
 
-  clicker wait "div.loaded" --state visible
+  vibium wait "div.loaded" --state visible
   # Wait for element to be visible
 
-  clicker wait "div.spinner" --state hidden --timeout 5000
+  vibium wait "div.spinner" --state hidden --timeout 5000
   # Wait for spinner to disappear`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

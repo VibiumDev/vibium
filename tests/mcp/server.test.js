@@ -1,14 +1,12 @@
 /**
  * MCP Server Tests
- * Tests the clicker mcp command via stdin/stdout JSON-RPC
+ * Tests the vibium mcp command via stdin/stdout JSON-RPC
  */
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { spawn } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { spawn, execFileSync } = require('node:child_process');
+const { VIBIUM } = require('../helpers');
 
 /**
  * Helper to run MCP server and send/receive JSON-RPC messages
@@ -23,7 +21,7 @@ class MCPClient {
 
   start() {
     return new Promise((resolve, reject) => {
-      this.proc = spawn(CLICKER, ['mcp'], {
+      this.proc = spawn(VIBIUM, ['mcp'], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -95,7 +93,17 @@ class MCPClient {
 
   stop() {
     if (this.proc) {
-      this.proc.kill();
+      if (process.platform === 'win32') {
+        // On Windows, proc.kill() only kills the immediate process.
+        // Use taskkill /T to kill the entire process tree (clicker + chromedriver + Chrome).
+        try {
+          execFileSync('taskkill', ['/T', '/F', '/PID', this.proc.pid.toString()], { stdio: 'ignore' });
+        } catch {
+          // Process may have already exited
+        }
+      } else {
+        this.proc.kill();
+      }
       this.proc = null;
     }
   }
@@ -127,12 +135,12 @@ describe('MCP Server: Protocol', () => {
     assert.ok(response.result.capabilities.tools, 'Should have tools capability');
   });
 
-  test('tools/list returns all 22 browser tools', async () => {
+  test('tools/list returns all 82 browser tools', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 22, 'Should have 22 tools');
+    assert.strictEqual(response.result.tools.length, 81, 'Should have 81 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
@@ -142,6 +150,31 @@ describe('MCP Server: Protocol', () => {
       'browser_get_html', 'browser_find_all', 'browser_wait',
       'browser_hover', 'browser_select', 'browser_scroll', 'browser_keys',
       'browser_new_tab', 'browser_list_tabs', 'browser_switch_tab', 'browser_close_tab',
+      'browser_a11y_tree',
+      'page_clock_install', 'page_clock_fast_forward', 'page_clock_run_for',
+      'page_clock_pause_at', 'page_clock_resume', 'page_clock_set_fixed_time',
+      'page_clock_set_system_time', 'page_clock_set_timezone',
+      'browser_fill', 'browser_press',
+      'browser_back', 'browser_forward', 'browser_reload',
+      'browser_get_value', 'browser_get_attribute', 'browser_is_visible',
+      'browser_check', 'browser_uncheck', 'browser_scroll_into_view',
+      'browser_wait_for_url', 'browser_wait_for_load', 'browser_sleep',
+      'browser_map', 'browser_diff_map', 'browser_pdf', 'browser_highlight',
+      'browser_dblclick', 'browser_focus', 'browser_count',
+      'browser_is_enabled', 'browser_is_checked',
+      'browser_wait_for_text', 'browser_wait_for_fn',
+      'browser_dialog_accept', 'browser_dialog_dismiss',
+      'browser_get_cookies', 'browser_set_cookie', 'browser_delete_cookies',
+      'browser_mouse_move', 'browser_mouse_down', 'browser_mouse_up', 'browser_mouse_click', 'browser_drag',
+      'browser_set_viewport', 'browser_get_viewport',
+      'browser_get_window', 'browser_set_window',
+      'browser_emulate_media',
+      'browser_set_geolocation', 'browser_set_content',
+      'browser_frames', 'browser_frame',
+      'browser_upload',
+      'browser_trace_start', 'browser_trace_stop',
+      'browser_storage_state', 'browser_restore_storage',
+      'browser_download_set_dir',
     ];
     for (const tool of expectedTools) {
       assert.ok(toolNames.includes(tool), `Should have ${tool}`);
@@ -231,7 +264,11 @@ describe('MCP Server: Browser Tools', () => {
     assert.ok(response.result, 'Should have result');
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('tag=h1'),
+      response.result.content[0].text.includes('@e1'),
+      'Should return @e1 ref'
+    );
+    assert.ok(
+      response.result.content[0].text.includes('[h1]'),
       'Should find h1 element'
     );
   });
@@ -402,12 +439,12 @@ describe('MCP Server: New Tools', () => {
     assert.ok(response.result, 'Should have result');
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('[0]'),
-      'Should contain indexed results'
+      response.result.content[0].text.includes('@e1'),
+      'Should contain @e1 ref'
     );
     assert.ok(
-      response.result.content[0].text.includes('tag=p'),
-      'Should contain tag info'
+      response.result.content[0].text.includes('[p]'),
+      'Should contain [p] tag label'
     );
   });
 

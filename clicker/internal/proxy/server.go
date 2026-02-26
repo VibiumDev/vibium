@@ -99,11 +99,14 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf(":%d", s.port)
 
-	// Try to bind to the port to check availability
+	// Bind to the port (port 0 = OS-assigned random port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %d: %w", s.port, err)
 	}
+
+	// Store actual port (important when port=0 for OS-assigned)
+	s.port = listener.Addr().(*net.TCPAddr).Port
 
 	s.httpServer = &http.Server{
 		Handler: mux,

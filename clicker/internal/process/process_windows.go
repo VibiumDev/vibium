@@ -3,6 +3,7 @@
 package process
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -10,10 +11,10 @@ import (
 	"github.com/vibium/clicker/internal/log"
 )
 
-// killProcess kills a process on Windows.
+// killProcess kills a process tree on Windows.
 func killProcess(cmd *exec.Cmd) {
 	if cmd.Process != nil {
-		cmd.Process.Kill()
+		exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
 	}
 }
 

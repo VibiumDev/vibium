@@ -1,5 +1,6 @@
 # Updates
 
+- [2026-02-22: 26.2](2026-02-22-26.2-release.md)
 - [2025-12-31: Python Client](2025-12-31-python-client.md)
 - [2025-12-22: Day 12 - Published to npm](2025-12-22-day12-npm-publish.md)
 - [2025-12-21: Day 11 - Polish & Error Handling](2025-12-21-day11-polish.md)

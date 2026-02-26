@@ -18,10 +18,10 @@ func newSkillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add-skill",
 		Short: "Install Vibium browser skill for Claude Code",
-		Example: `  vibe-check add-skill
+		Example: `  vibium add-skill
   # Installs skill to ~/.claude/skills/vibe-check/
 
-  vibe-check add-skill --stdout
+  vibium add-skill --stdout
   # Print skill content to stdout`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -1,8 +1,10 @@
-"""WebSocket client for communicating with the clicker binary."""
+"""WebSocket client for communicating with the vibium binary."""
+
+from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from websockets.asyncio.client import ClientConnection, connect as ws_connect
 from websockets.exceptions import ConnectionClosed
@@ -18,28 +20,33 @@ class BiDiError(Exception):
 
 
 class BiDiClient:
-    """WebSocket client for BiDi protocol."""
+    """WebSocket client for BiDi protocol with event dispatch."""
 
     def __init__(self, ws: ClientConnection):
         self._ws = ws
         self._next_id = 1
         self._pending: Dict[int, asyncio.Future] = {}
         self._receiver_task: Optional[asyncio.Task] = None
+        self._event_handlers: List[Callable[[Dict[str, Any]], None]] = []
 
     @classmethod
-    async def connect(cls, url: str) -> "BiDiClient":
-        """Connect to a BiDi WebSocket server.
-
-        Args:
-            url: WebSocket URL (e.g., "ws://localhost:9515").
-
-        Returns:
-            A connected BiDiClient instance.
-        """
+    async def connect(cls, url: str) -> BiDiClient:
+        """Connect to a BiDi WebSocket server."""
         ws = await ws_connect(url)
         client = cls(ws)
         client._receiver_task = asyncio.create_task(client._receive_loop())
         return client
+
+    def on_event(self, handler: Callable[[Dict[str, Any]], None]) -> None:
+        """Register an event handler for messages without an id (events)."""
+        self._event_handlers.append(handler)
+
+    def remove_event_handler(self, handler: Callable[[Dict[str, Any]], None]) -> None:
+        """Remove a previously registered event handler."""
+        try:
+            self._event_handlers.remove(handler)
+        except ValueError:
+            pass
 
     async def _receive_loop(self) -> None:
         """Background task to receive and dispatch messages."""
@@ -49,25 +56,20 @@ class BiDiClient:
                 msg_id = data.get("id")
                 if msg_id is not None and msg_id in self._pending:
                     self._pending[msg_id].set_result(data)
+                elif msg_id is None and "method" in data:
+                    # Event message — dispatch to handlers
+                    for handler in self._event_handlers:
+                        try:
+                            handler(data)
+                        except Exception:
+                            pass
         except ConnectionClosed:
-            # Connection closed, cancel all pending futures
             for future in self._pending.values():
                 if not future.done():
                     future.set_exception(ConnectionError("Connection closed"))
 
     async def send(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Send a command and wait for the response.
-
-        Args:
-            method: The BiDi method name (e.g., "browsingContext.navigate").
-            params: Optional parameters for the command.
-
-        Returns:
-            The result from the response.
-
-        Raises:
-            BiDiError: If the command returns an error.
-        """
+        """Send a command and wait for the response."""
         msg_id = self._next_id
         self._next_id += 1
 
@@ -77,7 +79,6 @@ class BiDiClient:
             "params": params or {},
         }
 
-        # Create future for response
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[msg_id] = future
 

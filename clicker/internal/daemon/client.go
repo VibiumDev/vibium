@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/vibium/clicker/internal/mcp"
@@ -103,7 +102,7 @@ func sendRequest(method string, params json.RawMessage) (*mcp.Response, error) {
 		return nil, fmt.Errorf("get socket path: %w", err)
 	}
 
-	conn, err := net.DialTimeout("unix", socketPath, dialTimeout)
+	conn, err := dial(socketPath, dialTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("connect to daemon: %w", err)
 	}

@@ -6,13 +6,11 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { execSync } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 describe('CLI: Page Reading', () => {
   test('text command returns page text', () => {
-    const result = execSync(`${CLICKER} text https://example.com`, {
+    const result = execSync(`${VIBIUM} text https://example.com`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -20,7 +18,7 @@ describe('CLI: Page Reading', () => {
   });
 
   test('text command with selector returns element text', () => {
-    const result = execSync(`${CLICKER} text https://example.com "h1"`, {
+    const result = execSync(`${VIBIUM} text https://example.com "h1"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -28,7 +26,7 @@ describe('CLI: Page Reading', () => {
   });
 
   test('html command returns page HTML', () => {
-    const result = execSync(`${CLICKER} html https://example.com "h1"`, {
+    const result = execSync(`${VIBIUM} html https://example.com "h1"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -36,7 +34,7 @@ describe('CLI: Page Reading', () => {
   });
 
   test('html command with --outer returns outer HTML', () => {
-    const result = execSync(`${CLICKER} html https://example.com "h1" --outer`, {
+    const result = execSync(`${VIBIUM} html https://example.com "h1" --outer`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -44,21 +42,21 @@ describe('CLI: Page Reading', () => {
     assert.match(result, /Example Domain/, 'Should contain text');
   });
 
-  test('find-all command returns multiple elements', () => {
-    const result = execSync(`${CLICKER} find-all https://example.com "p"`, {
+  test('find-all command returns multiple @refs', () => {
+    const result = execSync(`${VIBIUM} find-all https://example.com "p"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
-    assert.match(result, /\[0\]/, 'Should contain indexed results');
-    assert.match(result, /tag=p/, 'Should contain tag info');
+    assert.match(result, /@e1/, 'Should contain @e1 ref');
+    assert.match(result, /\[p\]/, 'Should contain [p] tag label');
   });
 
   test('find-all command with --limit', () => {
-    const result = execSync(`${CLICKER} find-all https://example.com "p" --limit 1`, {
+    const result = execSync(`${VIBIUM} find-all https://example.com "p" --limit 1`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
-    assert.match(result, /\[0\]/, 'Should contain first result');
-    assert.ok(!result.includes('[1]'), 'Should not contain second result');
+    assert.match(result, /@e1/, 'Should contain @e1 ref');
+    assert.ok(!result.includes('@e2'), 'Should not contain @e2 ref');
   });
 });

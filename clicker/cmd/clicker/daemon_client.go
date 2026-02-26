@@ -84,6 +84,8 @@ func isConnectionError(err error) bool {
 		"connect to daemon",
 		"connection refused",
 		"no such file or directory",
+		"The system cannot find the path",  // Windows named pipe not found
+		"The system cannot find the file",  // Windows named pipe not found (alt)
 	} {
 		if containsString(errMsg, pattern) {
 			return true

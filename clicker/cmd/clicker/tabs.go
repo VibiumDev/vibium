@@ -11,7 +11,7 @@ func newTabsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tabs",
 		Short: "List all open browser tabs",
-		Example: `  clicker tabs
+		Example: `  vibium tabs
   # [0] https://example.com
   # [1] https://google.com`,
 		Args: cobra.NoArgs,

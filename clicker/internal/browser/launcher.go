@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
@@ -55,10 +56,11 @@ type LaunchOptions struct {
 
 // LaunchResult contains the result of launching the browser via chromedriver.
 type LaunchResult struct {
-	WebSocketURL   string
-	SessionID      string
+	WebSocketURL    string
+	SessionID       string
 	ChromedriverCmd *exec.Cmd
-	Port           int
+	Port            int
+	UserDataDir     string // Chrome temp profile dir — cleaned up on Close()
 }
 
 // sessionRequest is the payload for creating a new session.
@@ -145,7 +147,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Create session with BiDi enabled
-	sessionID, wsURL, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
+	sessionID, wsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
 	if err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -157,6 +159,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		SessionID:       sessionID,
 		ChromedriverCmd: cmd,
 		Port:            port,
+		UserDataDir:     userDataDir,
 	}, nil
 }
 
@@ -187,7 +190,7 @@ func waitForChromedriver(baseURL string, timeout time.Duration) error {
 }
 
 // createSession creates a new WebDriver session with BiDi enabled.
-func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, error) {
+func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, string, error) {
 	args := []string{
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -225,8 +228,11 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 	reqBody := map[string]interface{}{
 		"capabilities": map[string]interface{}{
 			"alwaysMatch": map[string]interface{}{
-				"browserName":  "chrome",
-				"webSocketUrl": true,
+				"browserName":              "chrome",
+				"webSocketUrl":             true,
+				"unhandledPromptBehavior": map[string]interface{}{
+					"default": "ignore",
+				},
 				"goog:chromeOptions": map[string]interface{}{
 					"binary":          chromePath,
 					"args":            args,
@@ -244,7 +250,7 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if verbose {
@@ -254,18 +260,18 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 
 	resp, err := http.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", "", fmt.Errorf("failed to create session: HTTP %d", resp.StatusCode)
+		return "", "", "", fmt.Errorf("failed to create session: HTTP %d", resp.StatusCode)
 	}
 
 	// Read response body for logging and parsing
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to read session response: %w", err)
+		return "", "", "", fmt.Errorf("failed to read session response: %w", err)
 	}
 
 	if verbose {
@@ -275,23 +281,28 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 
 	var sessResp sessionResponse
 	if err := json.Unmarshal(respBody, &sessResp); err != nil {
-		return "", "", fmt.Errorf("failed to decode session response: %w", err)
+		return "", "", "", fmt.Errorf("failed to decode session response: %w", err)
 	}
 
 	wsURL, ok := sessResp.Value.Capabilities["webSocketUrl"].(string)
 	if !ok || wsURL == "" {
-		return "", "", fmt.Errorf("webSocketUrl not found in session capabilities")
+		return "", "", "", fmt.Errorf("webSocketUrl not found in session capabilities")
 	}
 
-	return sessResp.Value.SessionID, wsURL, nil
+	// Extract the Chrome user-data-dir so we can clean it up on Close()
+	userDataDir, _ := sessResp.Value.Capabilities["userDataDir"].(string)
+
+	return sessResp.Value.SessionID, wsURL, userDataDir, nil
 }
 
 // Close terminates a chromedriver session and process.
 func (r *LaunchResult) Close() error {
 	log.Debug("closing browser", "sessionId", r.SessionID)
 
-	// Delete session first (tells chromedriver to quit Chrome gracefully)
-	if r.SessionID != "" && r.Port > 0 {
+	// Delete session first (tells chromedriver to quit Chrome gracefully).
+	// Skip on Windows: the DELETE can cause chromedriver to exit before
+	// taskkill /T runs, orphaning Chrome children. taskkill /T handles cleanup.
+	if !skipGracefulShutdown() && r.SessionID != "" && r.Port > 0 {
 		req, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://localhost:%d/session/%s", r.Port, r.SessionID), nil)
 		if req != nil {
 			client := &http.Client{Timeout: 5 * time.Second}
@@ -313,6 +324,15 @@ func (r *LaunchResult) Close() error {
 
 		process.Untrack(r.ChromedriverCmd)
 	}
+
+	// Clean up the Chrome temp profile directory
+	if r.UserDataDir != "" {
+		log.Debug("removing Chrome user data dir", "path", r.UserDataDir)
+		os.RemoveAll(r.UserDataDir)
+	}
+
+	// Clean up orphaned Chrome temp directories
+	cleanupChromeTempDirs()
 
 	return nil
 }
@@ -401,6 +421,28 @@ func killOrphanedChromeProcesses() {
 				}
 			}
 		}
+	}
+}
+
+// cleanupChromeTempDirs removes orphaned temp directories created by Chrome for Testing.
+// Chrome creates these in os.TempDir() and doesn't clean them up when force-killed.
+func cleanupChromeTempDirs() {
+	tmpDir := os.TempDir()
+	patterns := []string{
+		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
+		filepath.Join(tmpDir, "org.chromium.Chromium.scoped_dir.*"),
+	}
+	var count int
+	for _, pattern := range patterns {
+		matches, _ := filepath.Glob(pattern)
+		for _, m := range matches {
+			if os.RemoveAll(m) == nil {
+				count++
+			}
+		}
+	}
+	if count > 0 {
+		log.Debug("cleaned up Chrome temp dirs", "count", count)
 	}
 }
 

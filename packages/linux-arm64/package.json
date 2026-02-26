@@ -1,7 +1,7 @@
 {
   "name": "@vibium/linux-arm64",
-  "version": "0.1.7",
-  "description": "Vibium clicker binary for Linux arm64",
+  "version": "26.2.0",
+  "description": "Vibium binary for Linux arm64",
   "author": "Jason Huggins <hugs@vibium.com>",
   "license": "Apache-2.0",
   "homepage": "https://vibium.com",
@@ -17,6 +17,6 @@
   },
   "os": ["linux"],
   "cpu": ["arm64"],
-  "main": "bin/clicker",
+  "main": "bin/vibium",
   "files": ["bin", "LICENSE", "NOTICE"]
 }

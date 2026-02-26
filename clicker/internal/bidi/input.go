@@ -1,6 +1,7 @@
 package bidi
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -130,6 +131,192 @@ func (c *Client) MoveMouse(context string, x, y float64) error {
 	}
 
 	return c.PerformActions(context, actions)
+}
+
+// MouseDown presses a mouse button down at the current position.
+func (c *Client) MouseDown(context string, button int) error {
+	actions := []map[string]interface{}{
+		{
+			"type": "pointer",
+			"id":   "mouse",
+			"parameters": map[string]interface{}{
+				"pointerType": "mouse",
+			},
+			"actions": []map[string]interface{}{
+				{
+					"type":   "pointerDown",
+					"button": button,
+				},
+			},
+		},
+	}
+
+	return c.PerformActions(context, actions)
+}
+
+// MouseUp releases a mouse button at the current position.
+func (c *Client) MouseUp(context string, button int) error {
+	actions := []map[string]interface{}{
+		{
+			"type": "pointer",
+			"id":   "mouse",
+			"parameters": map[string]interface{}{
+				"pointerType": "mouse",
+			},
+			"actions": []map[string]interface{}{
+				{
+					"type":   "pointerUp",
+					"button": button,
+				},
+			},
+		},
+	}
+
+	return c.PerformActions(context, actions)
+}
+
+// DragElement drags from one element to another using selectors.
+func (c *Client) DragElement(context, srcSelector, dstSelector string) error {
+	srcInfo, err := c.FindElement(context, srcSelector)
+	if err != nil {
+		return fmt.Errorf("failed to find source element: %w", err)
+	}
+	dstInfo, err := c.FindElement(context, dstSelector)
+	if err != nil {
+		return fmt.Errorf("failed to find target element: %w", err)
+	}
+
+	srcX, srcY := srcInfo.GetCenter()
+	dstX, dstY := dstInfo.GetCenter()
+
+	actions := []map[string]interface{}{
+		{
+			"type": "pointer",
+			"id":   "mouse",
+			"parameters": map[string]interface{}{
+				"pointerType": "mouse",
+			},
+			"actions": []map[string]interface{}{
+				{
+					"type":     "pointerMove",
+					"x":        int(srcX),
+					"y":        int(srcY),
+					"duration": 0,
+				},
+				{
+					"type":   "pointerDown",
+					"button": 0,
+				},
+				{
+					"type":     "pause",
+					"duration": 100,
+				},
+				{
+					"type":     "pointerMove",
+					"x":        int(dstX),
+					"y":        int(dstY),
+					"duration": 200,
+				},
+				{
+					"type":   "pointerUp",
+					"button": 0,
+				},
+			},
+		},
+	}
+
+	return c.PerformActions(context, actions)
+}
+
+// SetFiles sets files on an input[type=file] element.
+func (c *Client) SetFiles(context, selector string, files []string) error {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	// Find element to get its sharedId
+	script := `(selector) => {
+		const el = document.querySelector(selector);
+		if (!el) return null;
+		return el;
+	}`
+
+	params := map[string]interface{}{
+		"functionDeclaration": script,
+		"target":              map[string]interface{}{"context": context},
+		"arguments": []map[string]interface{}{
+			{"type": "string", "value": selector},
+		},
+		"awaitPromise":    false,
+		"resultOwnership": "root",
+	}
+
+	msg, err := c.SendCommand("script.callFunction", params)
+	if err != nil {
+		return fmt.Errorf("failed to find element: %w", err)
+	}
+
+	// Parse to get sharedId
+	var callResult struct {
+		Result struct {
+			Type     string `json:"type"`
+			SharedID string `json:"sharedId"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(msg.Result, &callResult); err != nil {
+		return fmt.Errorf("failed to parse element result: %w", err)
+	}
+
+	if callResult.Result.Type == "null" || callResult.Result.SharedID == "" {
+		return fmt.Errorf("element not found: %s", selector)
+	}
+
+	// Call input.setFiles
+	setParams := map[string]interface{}{
+		"context": context,
+		"element": map[string]interface{}{
+			"sharedId": callResult.Result.SharedID,
+		},
+		"files": files,
+	}
+
+	_, err = c.SendCommand("input.setFiles", setParams)
+	return err
+}
+
+// SetViewport sets the viewport size.
+func (c *Client) SetViewport(context string, width, height int, devicePixelRatio float64) error {
+	if context == "" {
+		tree, err := c.GetTree()
+		if err != nil {
+			return fmt.Errorf("failed to get browsing context: %w", err)
+		}
+		if len(tree.Contexts) == 0 {
+			return fmt.Errorf("no browsing contexts available")
+		}
+		context = tree.Contexts[0].Context
+	}
+
+	params := map[string]interface{}{
+		"context": context,
+		"viewport": map[string]interface{}{
+			"width":  width,
+			"height": height,
+		},
+	}
+	if devicePixelRatio > 0 {
+		params["devicePixelRatio"] = devicePixelRatio
+	}
+
+	_, err := c.SendCommand("browsingContext.setViewport", params)
+	return err
 }
 
 // TypeText types a string of text using keyboard events.

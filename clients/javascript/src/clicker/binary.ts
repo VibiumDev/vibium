@@ -3,16 +3,16 @@ import path from 'path';
 import { getPlatform, getArch } from './platform';
 
 /**
- * Resolve the path to the clicker binary.
+ * Resolve the path to the vibium binary.
  *
  * Search order:
- * 1. CLICKER_PATH environment variable
+ * 1. VIBIUM_BIN_PATH environment variable
  * 2. Platform-specific npm package (@vibium/{platform}-{arch})
  * 3. Local development paths (relative to cwd)
  */
-export function getClickerPath(): string {
+export function getVibiumBinPath(): string {
   // 1. Check environment variable
-  const envPath = process.env.CLICKER_PATH;
+  const envPath = process.env.VIBIUM_BIN_PATH;
   if (envPath && fs.existsSync(envPath)) {
     return envPath;
   }
@@ -20,7 +20,7 @@ export function getClickerPath(): string {
   const platform = getPlatform();
   const arch = getArch();
   const packageName = `@vibium/${platform}-${arch}`;
-  const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
+  const binaryName = platform === 'win32' ? 'vibium.exe' : 'vibium';
 
   // 2. Check platform-specific npm package
   try {
@@ -50,7 +50,7 @@ export function getClickerPath(): string {
   }
 
   throw new Error(
-    `Could not find clicker binary. ` +
-    `Set CLICKER_PATH environment variable or install ${packageName}`
+    `Could not find vibium binary. ` +
+    `Set VIBIUM_BIN_PATH environment variable or install ${packageName}`
   );
 }

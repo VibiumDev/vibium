@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vibium"
-version = "0.1.7"
+version = "26.2.0"
 description = "Browser automation for AI agents and humans"
 readme = "README.md"
 license = "Apache-2.0"
@@ -16,12 +16,21 @@ authors = [
 dependencies = [
     "websockets>=14.2",
     # Platform-specific binary packages
-    "vibium-darwin-arm64>=0.1.7; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "vibium-darwin-x64>=0.1.7; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "vibium-linux-x64>=0.1.7; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "vibium-linux-arm64>=0.1.7; sys_platform == 'linux' and platform_machine == 'aarch64'",
-    "vibium-win32-x64>=0.1.7; sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "vibium-darwin-arm64>=26.2.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "vibium-darwin-x64>=26.2.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "vibium-linux-x64>=26.2.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "vibium-linux-arm64>=26.2.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "vibium-win32-x64>=26.2.0; sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [project.scripts]
 vibium = "vibium.cli:main"

@@ -1,9 +1,9 @@
-"""Vibium clicker binary for Windows x64."""
+"""Vibium binary for Windows x64."""
 
 from pathlib import Path
 
-__version__ = "0.1.7"
+__version__ = "26.2.0"
 
 def get_binary_path() -> str:
-    """Get the path to the clicker binary."""
-    return str(Path(__file__).parent / "bin" / "clicker.exe")
+    """Get the path to the vibium binary."""
+    return str(Path(__file__).parent / "bin" / "vibium.exe")

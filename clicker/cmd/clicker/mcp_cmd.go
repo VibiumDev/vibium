@@ -43,19 +43,19 @@ The server provides browser automation tools:
   - browser_switch_tab: Switch tabs
   - browser_close_tab: Close a tab`,
 		Example: `  # Run directly (for testing)
-  clicker mcp
+  vibium mcp
 
   # Configure in Claude Code
-  claude mcp add vibium -- clicker mcp
+  claude mcp add vibium -- vibium mcp
 
   # Custom screenshot directory
-  clicker mcp --screenshot-dir ./screenshots
+  vibium mcp --screenshot-dir ./screenshots
 
   # Disable screenshot file saving (inline only)
-  clicker mcp --screenshot-dir ""
+  vibium mcp --screenshot-dir ""
 
   # Test with echo
-  echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}' | clicker mcp`,
+  echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}' | vibium mcp`,
 		Run: func(cmd *cobra.Command, args []string) {
 			process.WithCleanup(func() {
 				// If running in a terminal, print helpful info to stderr
@@ -71,7 +71,7 @@ The server provides browser automation tools:
 
 					if chromeErr != nil || driverErr != nil {
 						fmt.Fprintln(os.Stderr, "Chrome for Testing: not installed")
-						fmt.Fprintln(os.Stderr, "Run 'clicker install' to download Chrome for Testing and chromedriver.")
+						fmt.Fprintln(os.Stderr, "Run 'vibium install' to download Chrome for Testing and chromedriver.")
 					} else {
 						fmt.Fprintf(os.Stderr, "Chrome: %s\n", chromePath)
 						fmt.Fprintf(os.Stderr, "Chromedriver: %s\n", chromedriverPath)

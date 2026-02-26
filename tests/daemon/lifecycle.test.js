@@ -6,13 +6,11 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 // Helper to run clicker with --json and parse output
 function clicker(args, opts = {}) {
-  const result = execSync(`${CLICKER} ${args}`, {
+  const result = execSync(`${VIBIUM} ${args}`, {
     encoding: 'utf-8',
     timeout: opts.timeout || 60000,
     env: { ...process.env, ...opts.env },
@@ -28,7 +26,7 @@ function clickerJSON(args, opts = {}) {
 // Helper to stop daemon (ignore errors if not running)
 function stopDaemon() {
   try {
-    execSync(`${CLICKER} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
+    execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
   } catch (e) {
     // Daemon may not be running
   }
@@ -81,9 +79,9 @@ describe('Daemon: Multi-step workflow', () => {
     stopDaemon();
   });
 
-  test('navigate then find reuses browser session', () => {
+  test('go then find reuses browser session', () => {
     // Navigate
-    const navResult = clickerJSON('navigate https://example.com');
+    const navResult = clickerJSON('go https://example.com');
     assert.strictEqual(navResult.ok, true, 'Navigate should succeed');
     assert.ok(
       navResult.result.includes('example.com'),
@@ -120,7 +118,7 @@ describe('Daemon: Auto-start', () => {
 
   test('CLI command auto-starts daemon when not running', () => {
     // No daemon running — this should auto-start one
-    const result = clickerJSON('navigate https://example.com --headless');
+    const result = clickerJSON('go https://example.com --headless');
     assert.strictEqual(result.ok, true, 'Navigate should succeed via auto-start');
 
     // Verify daemon is now running
@@ -139,7 +137,7 @@ describe('Daemon: --oneshot bypass', () => {
   });
 
   test('--oneshot flag uses one-shot mode', () => {
-    const result = clicker('navigate https://example.com --oneshot');
+    const result = clicker('go https://example.com --oneshot');
     // One-shot mode prints verbose output (Launching browser..., etc.)
     assert.match(result, /launching|navigat/i, 'Should use one-shot mode with verbose output');
 
@@ -149,7 +147,7 @@ describe('Daemon: --oneshot bypass', () => {
   });
 
   test('VIBIUM_ONESHOT=1 env var forces oneshot mode', () => {
-    const result = clicker('navigate https://example.com', {
+    const result = clicker('go https://example.com', {
       env: { VIBIUM_ONESHOT: '1' },
     });
     assert.match(result, /launching|navigat/i, 'Should use one-shot mode');

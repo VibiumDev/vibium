@@ -11,7 +11,7 @@ func newTitleCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "title",
 		Short: "Get the current page title",
-		Example: `  clicker title
+		Example: `  vibium title
   # Prints: Example Domain`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {

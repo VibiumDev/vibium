@@ -15,14 +15,19 @@ func newScreenshotCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "screenshot [url]",
 		Short: "Capture a screenshot (optionally navigate to URL first)",
-		Example: `  clicker screenshot -o shot.png
+		Example: `  vibium screenshot -o shot.png
   # Screenshots the current page (daemon mode)
 
-  clicker screenshot https://example.com -o shot.png
-  # Navigates to URL first, then screenshots`,
+  vibium screenshot https://example.com -o shot.png
+  # Navigates to URL first, then screenshots
+
+  vibium screenshot -o full.png --full-page
+  # Capture the entire page (not just the viewport)`,
 		Args: cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
+			fullPage, _ := cmd.Flags().GetBool("full-page")
+			annotate, _ := cmd.Flags().GetBool("annotate")
 
 			// Daemon mode
 			if !oneshot {
@@ -36,7 +41,14 @@ func newScreenshotCmd() *cobra.Command {
 				}
 
 				// Take screenshot with filename
-				result, err := daemonCall("browser_screenshot", map[string]interface{}{"filename": output})
+				screenshotArgs := map[string]interface{}{"filename": output}
+				if fullPage {
+					screenshotArgs["fullPage"] = true
+				}
+				if annotate {
+					screenshotArgs["annotate"] = true
+				}
+				result, err := daemonCall("browser_screenshot", screenshotArgs)
 				if err != nil {
 					printError(err)
 					return
@@ -80,7 +92,14 @@ func newScreenshotCmd() *cobra.Command {
 				doWaitOpen()
 
 				fmt.Println("Capturing screenshot...")
-				base64Data, err := client.CaptureScreenshot("")
+				var base64Data string
+				var captureErr error
+				if fullPage {
+					base64Data, captureErr = client.CaptureFullPageScreenshot("")
+				} else {
+					base64Data, captureErr = client.CaptureScreenshot("")
+				}
+				err = captureErr
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error capturing screenshot: %v\n", err)
 					os.Exit(1)
@@ -104,5 +123,7 @@ func newScreenshotCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringP("output", "o", "screenshot.png", "Output file path")
+	cmd.Flags().Bool("full-page", false, "Capture the full page instead of just the viewport")
+	cmd.Flags().Bool("annotate", false, "Annotate interactive elements with numbered labels")
 	return cmd
 }

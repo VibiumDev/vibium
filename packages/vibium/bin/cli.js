@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Find clicker binary from platform package and run it.
-// `vibium` (no args) → `clicker` (shows help)
-// `vibium mcp` → `clicker mcp` (MCP server mode)
-// Unknown first arg → prepends `mcp` (e.g. `vibium --headless` → `clicker mcp --headless`)
+// Find vibium binary from platform package and run it.
+// `vibium` (no args) → `vibium` (shows help)
+// `vibium mcp` → `vibium mcp` (MCP server mode)
+// Unknown first arg → prepends `mcp` (e.g. `vibium --headless` → `vibium mcp --headless`)
 
 const { execFileSync } = require('child_process');
 const path = require('path');
@@ -18,22 +18,22 @@ const KNOWN_SUBCOMMANDS = new Set([
   'help', 'completion',
 ]);
 
-function getClickerPath() {
+function getVibiumBinPath() {
   const platform = os.platform();
   const arch = os.arch() === 'x64' ? 'x64' : 'arm64';
   const packageName = `@vibium/${platform}-${arch}`;
-  const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
+  const binaryName = platform === 'win32' ? 'vibium.exe' : 'vibium';
 
   try {
     const packagePath = require.resolve(`${packageName}/package.json`);
     return path.join(path.dirname(packagePath), 'bin', binaryName);
   } catch {
-    console.error(`Could not find clicker binary for ${platform}-${arch}`);
+    console.error(`Could not find vibium binary for ${platform}-${arch}`);
     process.exit(1);
   }
 }
 
-const clickerPath = getClickerPath();
+const vibiumPath = getVibiumBinPath();
 const userArgs = process.argv.slice(2);
 
 // If first arg is not a known subcommand, default to 'mcp'
@@ -41,5 +41,5 @@ const args = (userArgs.length > 0 && !KNOWN_SUBCOMMANDS.has(userArgs[0]))
   ? ['mcp', ...userArgs]
   : userArgs;
 
-const binName = path.basename(process.argv[1] || 'vibe-check', path.extname(process.argv[1] || ''));
-execFileSync(clickerPath, args, { stdio: 'inherit', argv0: binName });
+const binName = path.basename(process.argv[1] || 'vibium', path.extname(process.argv[1] || ''));
+execFileSync(vibiumPath, args, { stdio: 'inherit', argv0: binName });

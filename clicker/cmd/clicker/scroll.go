@@ -11,16 +11,16 @@ func newScrollCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scroll [direction]",
 		Short: "Scroll the page or an element",
-		Example: `  clicker scroll
+		Example: `  vibium scroll
   # Scroll down by default (daemon mode)
 
-  clicker scroll up
+  vibium scroll up
   # Scroll up
 
-  clicker scroll down --amount 5
+  vibium scroll down --amount 5
   # Scroll down 5 increments
 
-  clicker scroll down --selector "div.content"
+  vibium scroll down --selector "div.content"
   # Scroll within a specific element`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

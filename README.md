@@ -2,13 +2,13 @@
 
 **Browser automation for AI agents and humans.**
 
-Vibium gives AI agents a browser. Install the `vibe-check` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS and Python client libraries.
+Vibium gives AI agents a browser. Install the `vibium` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS and Python client libraries.
 
-**New here?** [Getting Started Tutorial](docs/tutorials/getting-started.md) — zero to hello world in 5 minutes.
+**New here?** [Getting Started Tutorial](docs/tutorials/getting-started-js.md) — zero to hello world in 5 minutes.
 
 ## Why Vibium?
 
-- **AI-native.** Install as a skill — your agent learns 22 browser commands instantly.
+- **AI-native.** Install as a skill — your agent learns 81 browser automation tools instantly.
 - **Zero config.** One install, browser downloads automatically, visible by default.
 - **Standards-based.** Built on [WebDriver BiDi](docs/explanation/webdriver-bidi.md), not proprietary protocols controlled by large corporations.
 - **Lightweight.** Single ~10MB binary. No runtime dependencies.
@@ -28,7 +28,7 @@ Vibium gives AI agents a browser. Install the `vibe-check` skill and your agent 
           ▼                  ▼
 ┌──────────────────────────────────┐
 │         Vibium binary            │
-│       (vibe-check CLI)           │
+│        (vibium CLI)              │
 │                                  │
 │  ┌───────────┐ ┌──────────────┐  │
 │  │ MCP Server│ │ CLI Commands │  │
@@ -64,17 +64,17 @@ npm install -g vibium
 npx skills add https://github.com/VibiumDev/vibium --skill vibe-check
 ```
 
-The first command installs Vibium and the `vibe-check` binary, and downloads Chrome. The second installs the skill to `{project}/.agents/skills/vibe-check`.
+The first command installs Vibium and the `vibium` binary, and downloads Chrome. The second installs the skill to `{project}/.agents/skills/vibium`.
 
 ### CLI Quick Reference
 
 ```bash
-vibe-check navigate https://example.com   # go to a page
-vibe-check text                            # get page text
-vibe-check click "a"                       # click an element
-vibe-check type "input" "hello"            # type into a field
-vibe-check screenshot -o page.png          # capture screenshot
-vibe-check eval "document.title"           # run JavaScript
+vibium go https://example.com          # go to a page
+vibium text                            # get page text
+vibium click "a"                       # click an element
+vibium type "input" "hello"            # type into a field
+vibium screenshot -o page.png          # capture screenshot
+vibium eval "document.title"           # run JavaScript
 ```
 
 Full command list: [SKILL.md](skills/vibe-check/SKILL.md)
@@ -86,7 +86,7 @@ claude mcp add vibium -- npx -y vibium mcp    # Claude Code
 gemini mcp add vibium npx -y vibium mcp       # Gemini CLI
 ```
 
-See detailed setup guides: [MCP Server](docs/tutorials/claude-code-mcp-setup.md) | [Gemini CLI](docs/tutorials/gemini-cli-mcp-setup.md)
+See [MCP setup guide](docs/tutorials/getting-started-mcp.md) for options and troubleshooting.
 
 ---
 
@@ -114,22 +114,20 @@ VIBIUM_SKIP_BROWSER_DOWNLOAD=1 npm install vibium
 ### JS/TS Client
 
 ```javascript
-// Option 1: require (REPL-friendly)
-const { browserSync } = require('vibium')
+// Sync (require-friendly)
+const { browser } = require('vibium/sync')
 
-// Option 2: dynamic import (REPL with --experimental-repl-await)
-const { browser } = await import('vibium')
-
-// Option 3: static import (in .mjs or .ts files)
-import { browser, browserSync } from 'vibium'
+// Async (import)
+import { browser } from 'vibium'
 ```
 
 **Sync API:**
 ```javascript
 const fs = require('fs')
-const { browserSync } = require('vibium')
+const { browser } = require('vibium/sync')
 
-const vibe = browserSync.launch()
+const bro = browser.launch()
+const vibe = bro.page()
 vibe.go('https://example.com')
 
 const png = vibe.screenshot()
@@ -137,15 +135,15 @@ fs.writeFileSync('screenshot.png', png)
 
 const link = vibe.find('a')
 link.click()
-vibe.quit()
+bro.close()
 ```
 
 **Async API:**
 ```javascript
-const fs = await import('fs/promises')
-const { browser } = await import('vibium')
+import { browser } from 'vibium'
 
-const vibe = await browser.launch()
+const bro = await browser.launch()
+const vibe = await bro.page()
 await vibe.go('https://example.com')
 
 const png = await vibe.screenshot()
@@ -153,20 +151,25 @@ await fs.writeFile('screenshot.png', png)
 
 const link = await vibe.find('a')
 await link.click()
-await vibe.quit()
+await bro.close()
 ```
 
 ### Python Client
 
 ```python
-from vibium import browser, browser_sync
+# Sync (default)
+from vibium import browser
+
+# Async
+from vibium.async_api import browser
 ```
 
 **Sync API:**
 ```python
-from vibium import browser_sync as browser
+from vibium import browser
 
-vibe = browser.launch()
+bro = browser.launch()
+vibe = bro.page()
 vibe.go("https://example.com")
 
 png = vibe.screenshot()
@@ -175,16 +178,17 @@ with open("screenshot.png", "wb") as f:
 
 link = vibe.find("a")
 link.click()
-vibe.quit()
+bro.close()
 ```
 
 **Async API:**
 ```python
 import asyncio
-from vibium import browser
+from vibium.async_api import browser
 
 async def main():
-    vibe = await browser.launch()
+    bro = await browser.launch()
+    vibe = await bro.page()
     await vibe.go("https://example.com")
 
     png = await vibe.screenshot()
@@ -193,7 +197,7 @@ async def main():
 
     link = await vibe.find("a")
     await link.click()
-    await vibe.quit()
+    await bro.close()
 
 asyncio.run(main())
 ```
@@ -221,7 +225,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 V1 focuses on the core loop: browser control via CLI, MCP, and client libraries.
 
-See [V2-ROADMAP.md](V2-ROADMAP.md) for planned features:
+See [ROADMAP.md](ROADMAP.md) for planned features:
 - Java client
 - Cortex (memory/navigation layer)
 - Retina (recording extension)

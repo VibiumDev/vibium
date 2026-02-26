@@ -16,3 +16,8 @@ func setProcGroup(cmd *exec.Cmd) {
 func killByPid(pid int) {
 	syscall.Kill(pid, syscall.SIGKILL)
 }
+
+// skipGracefulShutdown returns false on Unix. The graceful DELETE request
+// works fine because Unix process trees are stable and killByPid uses
+// SIGKILL on individual PIDs found via pgrep.
+func skipGracefulShutdown() bool { return false }

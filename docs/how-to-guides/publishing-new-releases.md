@@ -7,7 +7,7 @@ End-to-end checklist for releasing a new version of Vibium.
 Before your first release, ensure you have:
 
 - **npm**: Logged in (`npm login`) with access to `@vibium` org
-- **PyPI**: API token configured in `~/.pypirc` (see [pypi-publishing.md](pypi-publishing.md#authentication))
+- **PyPI**: API token from https://pypi.org/manage/account/token/
 - **GitHub**: `gh` CLI authenticated (`gh auth login`)
 
 ## Pre-release Checklist
@@ -45,11 +45,27 @@ This builds wheels for Python and prepares npm packages.
 
 ## Publish to PyPI
 
+Six packages total:
+
+| Package | Description |
+|---------|-------------|
+| `vibium` | Main package (clients/python) |
+| `vibium-darwin-arm64` | macOS Apple Silicon binary |
+| `vibium-darwin-x64` | macOS Intel binary |
+| `vibium-linux-x64` | Linux x64 binary |
+| `vibium-linux-arm64` | Linux ARM64 binary |
+| `vibium-win32-x64` | Windows x64 binary |
+
 ```bash
 # Activate the publish venv (has twine installed)
 source .venv-publish/bin/activate
 
-# Upload platform packages
+# Optional: test on TestPyPI first
+twine upload --repository testpypi packages/python/*/dist/*.whl
+twine upload --repository testpypi clients/python/dist/*.whl
+pip install --index-url https://test.pypi.org/simple/ vibium
+
+# Upload platform packages (prompts for credentials — paste API token as password)
 twine upload packages/python/*/dist/*.whl
 
 # Upload main package

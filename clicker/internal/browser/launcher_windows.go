@@ -3,7 +3,7 @@
 package browser
 
 import (
-	"os"
+	"fmt"
 	"os/exec"
 )
 
@@ -12,10 +12,13 @@ func setProcGroup(cmd *exec.Cmd) {
 	// Windows doesn't use process groups the same way
 }
 
-// killByPid kills a process by PID on Windows.
+// skipGracefulShutdown returns true on Windows because the graceful DELETE
+// request can cause chromedriver to exit before taskkill /T runs, orphaning
+// Chrome child processes. taskkill /T handles the full tree kill instead.
+func skipGracefulShutdown() bool { return true }
+
+// killByPid kills a process tree by PID on Windows.
 func killByPid(pid int) {
-	proc, err := os.FindProcess(pid)
-	if err == nil && proc != nil {
-		proc.Kill()
-	}
+	// /T kills the entire process tree, /F forces termination
+	exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid)).Run()
 }

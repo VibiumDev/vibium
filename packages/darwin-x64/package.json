@@ -1,7 +1,7 @@
 {
   "name": "@vibium/darwin-x64",
-  "version": "0.1.7",
-  "description": "Vibium clicker binary for macOS x64",
+  "version": "26.2.0",
+  "description": "Vibium binary for macOS x64",
   "author": "Jason Huggins <hugs@vibium.com>",
   "license": "Apache-2.0",
   "homepage": "https://vibium.com",
@@ -17,6 +17,6 @@
   },
   "os": ["darwin"],
   "cpu": ["x64"],
-  "main": "bin/clicker",
+  "main": "bin/vibium",
   "files": ["bin", "LICENSE", "NOTICE"]
 }

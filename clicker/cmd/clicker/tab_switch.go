@@ -12,10 +12,10 @@ func newTabSwitchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tab-switch [index or url]",
 		Short: "Switch to a browser tab by index or URL substring",
-		Example: `  clicker tab-switch 1
+		Example: `  vibium tab-switch 1
   # Switch to tab at index 1
 
-  clicker tab-switch google.com
+  vibium tab-switch google.com
   # Switch to tab containing "google.com" in URL`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

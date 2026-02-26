@@ -12,10 +12,10 @@ func newTabCloseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "tab-close [index]",
 		Short: "Close a browser tab by index (default: current tab)",
-		Example: `  clicker tab-close
+		Example: `  vibium tab-close
   # Close current tab (index 0)
 
-  clicker tab-close 1
+  vibium tab-close 1
   # Close tab at index 1`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {

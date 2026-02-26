@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vibium-linux-x64"
-version = "0.1.7"
-description = "Vibium clicker binary for Linux x64"
+version = "26.2.0"
+description = "Vibium binary for Linux x64"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

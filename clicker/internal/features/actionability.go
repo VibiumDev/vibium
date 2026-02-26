@@ -52,6 +52,7 @@ func CheckVisible(client *bidi.Client, context, selector string) (bool, error) {
 
 	var data struct {
 		Visible bool   `json:"visible"`
+		Reason  string `json:"reason,omitempty"`
 		Error   string `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(result), &data); err != nil {
@@ -60,6 +61,10 @@ func CheckVisible(client *bidi.Client, context, selector string) (bool, error) {
 
 	if data.Error != "" {
 		return false, fmt.Errorf("element %s", data.Error)
+	}
+
+	if !data.Visible && data.Reason != "" {
+		return false, fmt.Errorf("element not visible: %s", data.Reason)
 	}
 
 	return data.Visible, nil
@@ -130,6 +135,7 @@ func CheckReceivesEvents(client *bidi.Client, context, selector string) (bool, e
 
 	var data struct {
 		ReceivesEvents bool   `json:"receivesEvents"`
+		Reason         string `json:"reason,omitempty"`
 		Error          string `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(result), &data); err != nil {
@@ -138,6 +144,10 @@ func CheckReceivesEvents(client *bidi.Client, context, selector string) (bool, e
 
 	if data.Error != "" {
 		return false, fmt.Errorf("element %s", data.Error)
+	}
+
+	if !data.ReceivesEvents && data.Reason != "" {
+		return false, fmt.Errorf("element does not receive events: %s", data.Reason)
 	}
 
 	return data.ReceivesEvents, nil
@@ -185,6 +195,7 @@ func CheckEnabled(client *bidi.Client, context, selector string) (bool, error) {
 
 	var data struct {
 		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason,omitempty"`
 		Error   string `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(result), &data); err != nil {
@@ -193,6 +204,10 @@ func CheckEnabled(client *bidi.Client, context, selector string) (bool, error) {
 
 	if data.Error != "" {
 		return false, fmt.Errorf("element %s", data.Error)
+	}
+
+	if !data.Enabled && data.Reason != "" {
+		return false, fmt.Errorf("element not enabled: %s", data.Reason)
 	}
 
 	return data.Enabled, nil
@@ -261,6 +276,7 @@ func CheckEditable(client *bidi.Client, context, selector string) (bool, error) 
 
 	var data struct {
 		Editable bool   `json:"editable"`
+		Reason   string `json:"reason,omitempty"`
 		Error    string `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(result), &data); err != nil {
@@ -269,6 +285,10 @@ func CheckEditable(client *bidi.Client, context, selector string) (bool, error) 
 
 	if data.Error != "" {
 		return false, fmt.Errorf("element %s", data.Error)
+	}
+
+	if !data.Editable && data.Reason != "" {
+		return false, fmt.Errorf("element not editable: %s", data.Reason)
 	}
 
 	return data.Editable, nil

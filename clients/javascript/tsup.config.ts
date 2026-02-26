@@ -8,6 +8,14 @@ export default defineConfig([
     dts: true,
     clean: true,
   },
+  // Sync subpath entry
+  {
+    entry: { sync: "src/sync/index.ts" },
+    format: ["cjs", "esm"],
+    dts: true,
+    outDir: "dist",
+    clean: false,
+  },
   // Worker entry (CJS only, bundled standalone)
   {
     entry: ["src/sync/worker.ts"],

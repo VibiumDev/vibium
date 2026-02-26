@@ -1,6 +1,6 @@
 # vibium-darwin-arm64
 
-Vibium clicker binary for macOS ARM64 (Apple Silicon).
+Vibium binary for macOS ARM64 (Apple Silicon).
 
 This package is automatically installed as a dependency of the main `vibium` package on macOS ARM64 systems.
 

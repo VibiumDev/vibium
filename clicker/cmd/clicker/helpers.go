@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/process"
 )
 
 // doWaitOpen waits for page to load if --wait-open is set.
@@ -22,6 +24,14 @@ func waitAndClose(launchResult *browser.LaunchResult) {
 		time.Sleep(time.Duration(waitClose) * time.Second)
 	}
 	launchResult.Close()
+}
+
+// fatalExit kills all tracked browser processes and exits with code 1.
+// Use instead of os.Exit(1) in oneshot commands to ensure Chrome cleanup.
+func fatalExit(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	process.KillAll()
+	os.Exit(1)
 }
 
 // printCheck prints an actionability check result with a checkmark or X.

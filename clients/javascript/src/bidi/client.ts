@@ -10,7 +10,7 @@ export class BiDiClient {
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
   }> = new Map();
-  private eventHandler: EventHandler | null = null;
+  private eventHandlers: EventHandler[] = [];
 
   private constructor(connection: BiDiConnection) {
     this.connection = connection;
@@ -46,13 +46,17 @@ export class BiDiClient {
   }
 
   private handleEvent(event: BiDiEvent): void {
-    if (this.eventHandler) {
-      this.eventHandler(event);
+    for (const handler of this.eventHandlers) {
+      handler(event);
     }
   }
 
   onEvent(handler: EventHandler): void {
-    this.eventHandler = handler;
+    this.eventHandlers.push(handler);
+  }
+
+  offEvent(handler: EventHandler): void {
+    this.eventHandlers = this.eventHandlers.filter(h => h !== handler);
   }
 
   send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {

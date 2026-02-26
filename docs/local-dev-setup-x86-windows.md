@@ -1,7 +1,4 @@
 # Setting Up Local Vibium Dev (x86 Windows)
-
-> **Draft**: This doc has not been tested yet. Instructions may need adjustment.
-
 This doc covers Windows VM setup on an x86 Windows host for isolated development.
 
 For other platforms, see:
@@ -138,18 +135,42 @@ ipconfig
 
 ---
 
+## Allow PowerShell Scripts
+
+PowerShell blocks `.ps1` scripts by default, which breaks tools like `npm`. Run this once to allow scripts you install:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+---
+
 ## Install Dev Tools (via winget)
 
-Windows 11 includes `winget` by default. Open PowerShell:
+Windows 11 includes `winget` by default. Open a regular PowerShell (not Administrator):
 
 ```powershell
 winget install Git.Git
 winget install GitHub.cli
+winget install GnuWin32.Make
 winget install BurntSushi.ripgrep.MSVC
 winget install jqlang.jq
 ```
 
-Restart terminal after installing Git.
+Restart terminal after installing Git, then add GnuWin32 Make and Git's Unix tools to your PATH:
+
+```powershell
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files (x86)\GnuWin32\bin;C:\Program Files\Git\usr\bin", "User")
+```
+
+This adds `make` plus Unix tools (`cp`, `rm`, `mkdir`, `cat`, `bash`, etc.) that the Makefile requires. GnuWin32 Make 3.81 doesn't use the Makefile's `SHELL` variable, so these tools must be directly on PATH.
+
+Restart your terminal after updating PATH. Verify:
+
+```powershell
+make --version
+bash --version
+```
 
 ---
 
@@ -183,7 +204,7 @@ npm --version
 ## Install Claude Code
 
 ```powershell
-npm install -g @anthropic-ai/claude-code
+winget install Anthropic.ClaudeCode
 ```
 
 ---
@@ -211,7 +232,9 @@ cd vibium
 
 ## Create a GitHub Personal Access Token (PAT)
 
-In a browser:
+Now that you know which repo you're working with, create a PAT scoped to it.
+
+In a browser (on host or VM — wherever you're logged into GitHub):
 
 1. GitHub → Settings → Developer settings
 2. Personal access tokens → Fine-grained tokens
@@ -219,12 +242,27 @@ In a browser:
 
 Token settings:
 - Token name: `windows-vm` (or whatever identifies this VM)
-- Expiration: 7 days (or 30 if you prefer)
-- Repository access: Only select repositories → `VibiumDev/vibium`
+- Expiration: 7 days (or 30 if you hate rotating)
+- Resource owner: your username
+- Repository access: Only select repositories
+  - **Team members**: select `VibiumDev/vibium`
+  - **External contributors**: select `yourusername/vibium` (your fork)
 
 Permissions:
 - Contents: Read and write
+- Issues: Read and write
+- Metadata: Read-only (required, auto-selected)
+- Pull requests: Read and write
 - Everything else: No access
+
+Click "Generate token" and copy it (you won't see it again).
+
+### Why PAT instead of browser auth?
+
+Browser auth gives full account access. A fine-grained PAT limits blast radius:
+- Scoped to specific repos
+- Expires automatically
+- Contained inside the VM
 
 ---
 
@@ -232,7 +270,19 @@ Permissions:
 
 ```powershell
 gh auth login
-# Follow prompts, paste your PAT when prompted
+```
+
+Follow the prompts:
+- Account: GitHub.com
+- Protocol: HTTPS
+- Authenticate: Paste an authentication token
+
+Paste your PAT when prompted. Credentials are stored automatically.
+
+Verify it worked:
+
+```powershell
+gh auth status
 ```
 
 ---
@@ -260,12 +310,16 @@ ssh yourusername@<vm-ip>
 ## Build and Test
 
 ```powershell
-cd C:\Projects\vibium\clicker
-go build -o bin\clicker.exe .\cmd\clicker
-.\bin\clicker.exe --version
-.\bin\clicker.exe paths
-.\bin\clicker.exe install
-.\bin\clicker.exe launch-test
+cd C:\Projects\vibium
+make build
+make test
+```
+
+To verify manually:
+
+```powershell
+.\clicker\bin\vibium.exe --version
+.\clicker\bin\vibium.exe paths
 ```
 
 ---
@@ -293,6 +347,20 @@ Windows has a 260-character path limit by default. Enable long paths:
 ```powershell
 # Run as Administrator
 New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+```
+
+### PowerShell Emacs Keybindings (optional)
+
+If you're coming from Mac/Linux, PowerShell's default keybindings will feel wrong. This gives you familiar shortcuts (Ctrl+A, Ctrl+E, Ctrl+K, etc.):
+
+```powershell
+Set-PSReadLineOption -EditMode Emacs
+```
+
+To make it permanent, add it to your PowerShell profile:
+
+```powershell
+Add-Content $PROFILE "Set-PSReadLineOption -EditMode Emacs"
 ```
 
 ### Windows Defender Exclusions

@@ -2,7 +2,7 @@
 
 When you tell Vibium to click a button, you expect it to actually click the button. But web pages are dynamic—elements load asynchronously, animations play, overlays appear and disappear. A naive automation tool might try to click before the button exists, or click coordinates where a loading spinner is covering the target.
 
-Vibium solves this with **actionability checks**: a set of conditions that must all be true before an action is performed. This concept comes from Playwright, and Vibium implements it server-side in the Go clicker binary so that client libraries don't need to worry about timing issues.
+Vibium solves this with **actionability checks**: a set of conditions that must all be true before an action is performed. This concept comes from Playwright, and Vibium implements it server-side in the Go vibium binary so that client libraries don't need to worry about timing issues.
 
 ## The Five Checks
 
@@ -225,7 +225,7 @@ Vibium defines three extension commands:
 | `vibium:click` | `context`, `selector`, `timeout` | Wait for actionable, then click |
 | `vibium:type` | `context`, `selector`, `text`, `timeout` | Wait for actionable, then type |
 
-These commands are handled by the clicker proxy, not forwarded to the browser. When the proxy receives a `vibium:click` command:
+These commands are handled by the vibium proxy, not forwarded to the browser. When the proxy receives a `vibium:click` command:
 
 1. Parse selector and timeout from params
 2. Poll until element exists (`vibium:find` behavior)
@@ -295,4 +295,4 @@ async click(options?: { timeout?: number }): Promise<void> {
 }
 ```
 
-All the complexity lives in the clicker binary where it can be tested once and shared everywhere.
+All the complexity lives in the vibium binary where it can be tested once and shared everywhere.

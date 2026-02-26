@@ -1,19 +1,19 @@
 /**
  * CLI Tests: Navigation and Screenshots
- * Tests the clicker binary directly
+ * Tests the vibium binary directly
  */
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 describe('CLI: Navigation', () => {
   test('navigate command loads page and prints title', () => {
-    const result = execSync(`${CLICKER} navigate https://example.com`, {
+    const result = execSync(`${VIBIUM} go https://example.com`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -21,9 +21,9 @@ describe('CLI: Navigation', () => {
   });
 
   test('screenshot command creates valid PNG', () => {
-    const outFile = `/tmp/vibium-test-${Date.now()}.png`;
+    const outFile = path.join(os.tmpdir(), `vibium-test-${Date.now()}.png`);
     try {
-      execSync(`${CLICKER} screenshot https://example.com -o ${outFile}`, {
+      execSync(`${VIBIUM} screenshot https://example.com -o ${outFile}`, {
         encoding: 'utf-8',
         timeout: 30000,
       });
@@ -47,7 +47,7 @@ describe('CLI: Navigation', () => {
   });
 
   test('eval command executes JavaScript', () => {
-    const result = execSync(`${CLICKER} eval https://example.com "document.title"`, {
+    const result = execSync(`${VIBIUM} eval https://example.com "document.title"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });

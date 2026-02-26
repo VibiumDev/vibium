@@ -202,7 +202,9 @@ cd vibium
 
 ## Create a GitHub Personal Access Token (PAT)
 
-In a browser:
+Now that you know which repo you're working with, create a PAT scoped to it.
+
+In a browser (on host or VM — wherever you're logged into GitHub):
 
 1. GitHub → Settings → Developer settings
 2. Personal access tokens → Fine-grained tokens
@@ -210,12 +212,27 @@ In a browser:
 
 Token settings:
 - Token name: `linux-vm` (or whatever identifies this VM)
-- Expiration: 7 days (or 30 if you prefer)
-- Repository access: Only select repositories → `VibiumDev/vibium`
+- Expiration: 7 days (or 30 if you hate rotating)
+- Resource owner: your username
+- Repository access: Only select repositories
+  - **Team members**: select `VibiumDev/vibium`
+  - **External contributors**: select `yourusername/vibium` (your fork)
 
 Permissions:
 - Contents: Read and write
+- Issues: Read and write
+- Metadata: Read-only (required, auto-selected)
+- Pull requests: Read and write
 - Everything else: No access
+
+Click "Generate token" and copy it (you won't see it again).
+
+### Why PAT instead of browser auth?
+
+Browser auth gives full account access. A fine-grained PAT limits blast radius:
+- Scoped to specific repos
+- Expires automatically
+- Contained inside the VM
 
 ---
 
@@ -223,7 +240,19 @@ Permissions:
 
 ```bash
 gh auth login
-# Follow prompts, paste your PAT when prompted
+```
+
+Follow the prompts:
+- Account: GitHub.com
+- Protocol: HTTPS
+- Authenticate: Paste an authentication token
+
+Paste your PAT when prompted. Credentials are stored automatically.
+
+Verify it worked:
+
+```bash
+gh auth status
 ```
 
 ---
@@ -262,11 +291,11 @@ ssh yourusername@<vm-ip>
 
 ```bash
 cd ~/Projects/vibium/clicker
-go build -o bin/clicker ./cmd/clicker
-./bin/clicker --version
-./bin/clicker paths
-./bin/clicker install
-./bin/clicker launch-test
+go build -o bin/vibium ./cmd/clicker
+./bin/vibium --version
+./bin/vibium paths
+./bin/vibium install
+./bin/vibium launch-test
 ```
 
 ---

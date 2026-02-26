@@ -14,13 +14,13 @@ func newHTMLCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "html [selector]",
 		Short: "Get HTML content of the page or an element",
-		Example: `  clicker html
+		Example: `  vibium html
   # Get full page HTML (daemon mode)
 
-  clicker html "div.content"
+  vibium html "div.content"
   # Get innerHTML of a specific element
 
-  clicker html "div.content" --outer
+  vibium html "div.content" --outer
   # Get outerHTML of a specific element`,
 		Args: cobra.MaximumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {

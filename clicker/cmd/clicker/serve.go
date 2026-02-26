@@ -15,19 +15,19 @@ func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start WebSocket proxy server for browser automation",
-		Example: `  clicker serve
+		Example: `  vibium serve
   # Starts server on default port 9515, visible browser
 
-  clicker serve --port 8080
+  vibium serve --port 8080
   # Starts server on port 8080
 
-  clicker serve --headless
+  vibium serve --headless
   # Starts server with headless browser`,
 		Run: func(cmd *cobra.Command, args []string) {
 			process.WithCleanup(func() {
 				port, _ := cmd.Flags().GetInt("port")
 
-				fmt.Printf("Starting Clicker proxy server on port %d...\n", port)
+				fmt.Printf("Starting Vibium proxy server on port %d...\n", port)
 
 				// Create router to manage browser sessions
 				router := proxy.NewRouter(headless)
@@ -44,7 +44,7 @@ func newServeCmd() *cobra.Command {
 					os.Exit(1)
 				}
 
-				fmt.Printf("Server listening on ws://localhost:%d\n", port)
+				fmt.Printf("Server listening on ws://localhost:%d\n", server.Port())
 				fmt.Println("Press Ctrl+C to stop...")
 
 				// Wait for signal

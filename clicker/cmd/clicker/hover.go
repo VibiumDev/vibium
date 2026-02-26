@@ -14,10 +14,10 @@ func newHoverCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "hover [selector]",
 		Short: "Hover over an element by CSS selector",
-		Example: `  clicker hover "a"
+		Example: `  vibium hover "a"
   # Hover over first link (daemon mode)
 
-  clicker hover https://example.com "a"
+  vibium hover https://example.com "a"
   # Navigate then hover (oneshot mode)`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {

@@ -1,6 +1,6 @@
 {
   "name": "vibium-monorepo",
-  "version": "0.1.7",
+  "version": "26.2.0",
   "private": true,
   "workspaces": [
     "clients/javascript",

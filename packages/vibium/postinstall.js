@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Run clicker install to download Chrome for Testing
+// Run vibium install to download Chrome for Testing
 
 if (process.env.VIBIUM_SKIP_BROWSER_DOWNLOAD === '1') {
   console.log('Skipping browser download (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)');
@@ -10,11 +10,11 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 
-function getClickerPath() {
+function getVibiumBinPath() {
   const platform = os.platform();
   const arch = os.arch() === 'x64' ? 'x64' : 'arm64';
   const packageName = `@vibium/${platform}-${arch}`;
-  const binaryName = platform === 'win32' ? 'clicker.exe' : 'clicker';
+  const binaryName = platform === 'win32' ? 'vibium.exe' : 'vibium';
 
   try {
     const packagePath = require.resolve(`${packageName}/package.json`);
@@ -26,9 +26,9 @@ function getClickerPath() {
 }
 
 try {
-  const clickerPath = getClickerPath();
+  const vibiumPath = getVibiumBinPath();
   console.log('Installing Chrome for Testing...');
-  execFileSync(clickerPath, ['install'], { stdio: 'inherit' });
+  execFileSync(vibiumPath, ['install'], { stdio: 'inherit' });
 } catch (error) {
   console.warn('Warning: Failed to install browser:', error.message);
   // Don't fail the install - user can run manually later

@@ -6,12 +6,10 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execSync } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 function clicker(args, opts = {}) {
-  const result = execSync(`${CLICKER} ${args}`, {
+  const result = execSync(`${VIBIUM} ${args}`, {
     encoding: 'utf-8',
     timeout: opts.timeout || 60000,
     env: { ...process.env, ...opts.env },
@@ -26,7 +24,7 @@ function clickerJSON(args, opts = {}) {
 
 function stopDaemon() {
   try {
-    execSync(`${CLICKER} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
+    execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
   } catch (e) {
     // Daemon may not be running
   }
@@ -42,20 +40,20 @@ describe('Daemon: Rapid sequential commands', () => {
     stopDaemon();
   });
 
-  test('multiple navigate commands in sequence', () => {
+  test('multiple go commands in sequence', () => {
     // Navigate to several pages in quick succession
-    const r1 = clickerJSON('navigate https://example.com');
-    assert.strictEqual(r1.ok, true, 'First navigate should succeed');
+    const r1 = clickerJSON('go https://example.com');
+    assert.strictEqual(r1.ok, true, 'First go should succeed');
 
-    const r2 = clickerJSON('navigate https://example.com');
-    assert.strictEqual(r2.ok, true, 'Second navigate should succeed');
+    const r2 = clickerJSON('go https://example.com');
+    assert.strictEqual(r2.ok, true, 'Second go should succeed');
 
-    const r3 = clickerJSON('navigate https://example.com');
-    assert.strictEqual(r3.ok, true, 'Third navigate should succeed');
+    const r3 = clickerJSON('go https://example.com');
+    assert.strictEqual(r3.ok, true, 'Third go should succeed');
   });
 
-  test('navigate then eval then find', () => {
-    const nav = clickerJSON('navigate https://example.com');
+  test('go then eval then find', () => {
+    const nav = clickerJSON('go https://example.com');
     assert.strictEqual(nav.ok, true);
 
     const evalResult = clickerJSON('eval https://example.com "document.title"');
@@ -80,7 +78,7 @@ describe('Daemon: Error recovery', () => {
 
   test('find with bad selector returns error', () => {
     // Navigate first
-    clickerJSON('navigate https://example.com');
+    clickerJSON('go https://example.com');
 
     // Find with nonexistent selector
     try {
@@ -95,7 +93,7 @@ describe('Daemon: Error recovery', () => {
 
   test('commands still work after error', () => {
     // After a failed command, the daemon should still work
-    const result = clickerJSON('navigate https://example.com');
+    const result = clickerJSON('go https://example.com');
     assert.strictEqual(result.ok, true, 'Navigate should succeed after error');
   });
 });

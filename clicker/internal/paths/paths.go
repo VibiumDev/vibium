@@ -164,17 +164,17 @@ func GetDaemonDir() (string, error) {
 }
 
 // GetSocketPath returns the platform-specific socket path for the daemon.
-// macOS/Linux: ~/Library/Caches/vibium/clicker.sock or ~/.cache/vibium/clicker.sock
-// Windows: \\.\pipe\vibium-clicker (named pipe)
+// macOS/Linux: ~/Library/Caches/vibium/vibium.sock or ~/.cache/vibium/vibium.sock
+// Windows: \\.\pipe\vibium (named pipe)
 func GetSocketPath() (string, error) {
 	if runtime.GOOS == "windows" {
-		return `\\.\pipe\vibium-clicker`, nil
+		return `\\.\pipe\vibium`, nil
 	}
 	dir, err := GetDaemonDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "clicker.sock"), nil
+	return filepath.Join(dir, "vibium.sock"), nil
 }
 
 // GetPIDPath returns the path to the daemon PID file.
@@ -183,7 +183,7 @@ func GetPIDPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "clicker.pid"), nil
+	return filepath.Join(dir, "vibium.pid"), nil
 }
 
 // GetScreenshotDir returns the platform-specific default directory for screenshots.

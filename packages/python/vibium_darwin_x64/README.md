@@ -1,6 +1,6 @@
 # vibium-darwin-x64
 
-Vibium clicker binary for macOS x64 (Intel).
+Vibium binary for macOS x64 (Intel).
 
 This package is automatically installed as a dependency of the main `vibium` package on macOS Intel systems.
 

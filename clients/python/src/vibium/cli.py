@@ -3,7 +3,7 @@
 import subprocess
 import sys
 
-from .clicker import find_clicker
+from .binary import find_vibium_bin
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
 def install_browser():
     """Download Chrome for Testing."""
     try:
-        clicker = find_clicker()
+        clicker = find_vibium_bin()
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

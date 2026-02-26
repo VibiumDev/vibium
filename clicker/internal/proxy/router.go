@@ -3,7 +3,9 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -27,6 +29,22 @@ type BrowserSession struct {
 	internalCmds   map[int]chan json.RawMessage // id -> response channel
 	internalCmdsMu sync.Mutex
 	nextInternalID int
+
+	// WebSocket monitoring state
+	wsPreloadScriptID string // "" if not installed
+	wsSubscribed      bool   // whether script.message is subscribed
+
+	// Download support
+	downloadDir string // temp dir for downloads, cleaned up on close
+
+	// Clock support
+	clockPreloadScriptID string // "" if not installed
+
+	// Tracing support
+	traceRecorder      *TraceRecorder
+	lastContext        string // last browsing context resolved by a command
+	lastURL            string // last known page URL, updated from load/navigation events
+	screenshotInFlight int32  // atomic; 1 = screenshot capture in progress
 }
 
 // BiDi command structure for parsing incoming messages
@@ -105,6 +123,98 @@ func (r *Router) OnClientConnect(client *ClientConn) {
 
 	// Start routing messages from browser to client
 	go r.routeBrowserToClient(session)
+
+	// Subscribe to events for onPage/onPopup, network interception, dialog handling, and downloads.
+	// Events are forwarded to the JS client by routeBrowserToClient.
+	go func() {
+		r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
+			"events": []string{
+				"browsingContext.contextCreated",
+				"network.beforeRequestSent",
+				"network.responseCompleted",
+				"browsingContext.userPromptOpened",
+				"log.entryAdded",
+				"browsingContext.downloadWillBegin",
+				"browsingContext.downloadEnd",
+				"browsingContext.load",
+				"browsingContext.fragmentNavigated",
+			},
+		})
+		r.setupDownloads(session)
+	}()
+}
+
+// vibiumHandler is the signature for vibium: extension command handlers.
+type vibiumHandler func(*BrowserSession, bidiCommand)
+
+// isClickLikeAction returns true for actions where the before-state is most
+// meaningful (e.g. seeing the element about to be clicked). Only a before-
+// snapshot is captured for these. All other actions capture an after-snapshot
+// to show the result (e.g. filled text, navigated page).
+func isClickLikeAction(method string) bool {
+	switch method {
+	case "vibium:click", "vibium:dblclick", "vibium:hover", "vibium:tap",
+		"vibium:check", "vibium:uncheck", "vibium:focus",
+		"vibium:scrollIntoView", "vibium:dragTo", "vibium:dispatchEvent",
+		"vibium:mouse.click", "vibium:mouse.move", "vibium:mouse.down", "vibium:mouse.up",
+		"vibium:touch.tap":
+		return true
+	}
+	return false
+}
+
+// dispatch wraps a vibium handler with automatic action tracing.
+func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
+	go func() {
+		session.mu.Lock()
+		recorder := session.traceRecorder
+		session.mu.Unlock()
+
+		var callId string
+		clickLike := isClickLikeAction(cmd.Method)
+
+		if recorder != nil && recorder.IsRecording() {
+			callId = recorder.NextCallId()
+			opts := recorder.Options()
+
+			// Click-like actions capture a before-snapshot (what's about to be clicked).
+			// Fill-like actions skip the before-snapshot and capture after instead.
+			var beforeSnapshot string
+			if opts.Snapshots && clickLike {
+				beforeSnapshot = r.captureActionSnapshot(session, recorder, cmd.Params, callId, "before")
+			}
+
+			session.mu.Lock()
+			pageId := session.lastContext
+			session.mu.Unlock()
+
+			recorder.RecordAction(callId, cmd.Method, cmd.Params, beforeSnapshot, pageId)
+		}
+
+		handler(session, cmd)
+
+		// Capture endTime immediately after handler returns, before screenshot captures
+		endTime := time.Now()
+
+		if recorder != nil && recorder.IsRecording() {
+			opts := recorder.Options()
+
+			// Fill-like actions capture an after-snapshot (the result of the action).
+			// Click-like actions already captured their snapshot before the handler.
+			var afterSnapshot string
+			if opts.Snapshots && !clickLike {
+				afterSnapshot = r.captureActionSnapshot(session, recorder, cmd.Params, callId, "after")
+			}
+
+			// Filmstrip screenshot (CAS-guarded to avoid flooding Chrome)
+			if opts.Screenshots && atomic.CompareAndSwapInt32(&session.screenshotInFlight, 0, 1) {
+				r.capturePostActionScreenshot(session, recorder, cmd.Params)
+				atomic.StoreInt32(&session.screenshotInFlight, 0)
+			}
+
+			recorder.RecordActionEnd(callId, afterSnapshot, endTime)
+		}
+	}()
 }
 
 // OnClientMessage is called when a message is received from a client.
@@ -137,14 +247,376 @@ func (r *Router) OnClientMessage(client *ClientConn, msg string) {
 
 	// Handle vibium: extension commands (per WebDriver BiDi spec for extensions)
 	switch cmd.Method {
+	// Element interaction commands
 	case "vibium:click":
-		r.handleVibiumClick(session, cmd)
+		r.dispatch(session, cmd, r.handleVibiumClick)
+		return
+	case "vibium:dblclick":
+		r.dispatch(session, cmd, r.handleVibiumDblclick)
+		return
+	case "vibium:fill":
+		r.dispatch(session, cmd, r.handleVibiumFill)
 		return
 	case "vibium:type":
-		r.handleVibiumType(session, cmd)
+		r.dispatch(session, cmd, r.handleVibiumType)
 		return
+	case "vibium:press":
+		r.dispatch(session, cmd, r.handleVibiumPress)
+		return
+	case "vibium:clear":
+		r.dispatch(session, cmd, r.handleVibiumClear)
+		return
+	case "vibium:check":
+		r.dispatch(session, cmd, r.handleVibiumCheck)
+		return
+	case "vibium:uncheck":
+		r.dispatch(session, cmd, r.handleVibiumUncheck)
+		return
+	case "vibium:selectOption":
+		r.dispatch(session, cmd, r.handleVibiumSelectOption)
+		return
+	case "vibium:hover":
+		r.dispatch(session, cmd, r.handleVibiumHover)
+		return
+	case "vibium:focus":
+		r.dispatch(session, cmd, r.handleVibiumFocus)
+		return
+	case "vibium:dragTo":
+		r.dispatch(session, cmd, r.handleVibiumDragTo)
+		return
+	case "vibium:tap":
+		r.dispatch(session, cmd, r.handleVibiumTap)
+		return
+	case "vibium:scrollIntoView":
+		r.dispatch(session, cmd, r.handleVibiumScrollIntoView)
+		return
+	case "vibium:dispatchEvent":
+		r.dispatch(session, cmd, r.handleVibiumDispatchEvent)
+		return
+
+	// Element finding commands
 	case "vibium:find":
-		r.handleVibiumFind(session, cmd)
+		r.dispatch(session, cmd, r.handleVibiumFind)
+		return
+	case "vibium:findAll":
+		r.dispatch(session, cmd, r.handleVibiumFindAll)
+		return
+
+	// Element state commands
+	case "vibium:el.text":
+		r.dispatch(session, cmd, r.handleVibiumElText)
+		return
+	case "vibium:el.innerText":
+		r.dispatch(session, cmd, r.handleVibiumElInnerText)
+		return
+	case "vibium:el.html":
+		r.dispatch(session, cmd, r.handleVibiumElHTML)
+		return
+	case "vibium:el.value":
+		r.dispatch(session, cmd, r.handleVibiumElValue)
+		return
+	case "vibium:el.attr":
+		r.dispatch(session, cmd, r.handleVibiumElAttr)
+		return
+	case "vibium:el.bounds":
+		r.dispatch(session, cmd, r.handleVibiumElBounds)
+		return
+	case "vibium:el.isVisible":
+		r.dispatch(session, cmd, r.handleVibiumElIsVisible)
+		return
+	case "vibium:el.isHidden":
+		r.dispatch(session, cmd, r.handleVibiumElIsHidden)
+		return
+	case "vibium:el.isEnabled":
+		r.dispatch(session, cmd, r.handleVibiumElIsEnabled)
+		return
+	case "vibium:el.isChecked":
+		r.dispatch(session, cmd, r.handleVibiumElIsChecked)
+		return
+	case "vibium:el.isEditable":
+		r.dispatch(session, cmd, r.handleVibiumElIsEditable)
+		return
+	case "vibium:el.eval":
+		r.dispatch(session, cmd, r.handleVibiumElEval)
+		return
+	case "vibium:el.screenshot":
+		r.dispatch(session, cmd, r.handleVibiumElScreenshot)
+		return
+	case "vibium:el.waitFor":
+		r.dispatch(session, cmd, r.handleVibiumElWaitFor)
+		return
+
+	// Page-level input commands
+	case "vibium:keyboard.press":
+		r.dispatch(session, cmd, r.handleKeyboardPress)
+		return
+	case "vibium:keyboard.down":
+		r.dispatch(session, cmd, r.handleKeyboardDown)
+		return
+	case "vibium:keyboard.up":
+		r.dispatch(session, cmd, r.handleKeyboardUp)
+		return
+	case "vibium:keyboard.type":
+		r.dispatch(session, cmd, r.handleKeyboardType)
+		return
+	case "vibium:mouse.click":
+		r.dispatch(session, cmd, r.handleMouseClick)
+		return
+	case "vibium:mouse.move":
+		r.dispatch(session, cmd, r.handleMouseMove)
+		return
+	case "vibium:mouse.down":
+		r.dispatch(session, cmd, r.handleMouseDown)
+		return
+	case "vibium:mouse.up":
+		r.dispatch(session, cmd, r.handleMouseUp)
+		return
+	case "vibium:mouse.wheel":
+		r.dispatch(session, cmd, r.handleMouseWheel)
+		return
+	case "vibium:touch.tap":
+		r.dispatch(session, cmd, r.handleTouchTap)
+		return
+
+	// Page-level capture commands
+	case "vibium:page.screenshot":
+		r.dispatch(session, cmd, r.handlePageScreenshot)
+		return
+	case "vibium:page.pdf":
+		r.dispatch(session, cmd, r.handlePagePDF)
+		return
+
+	// Page-level evaluation commands
+	case "vibium:page.eval":
+		r.dispatch(session, cmd, r.handlePageEval)
+		return
+	case "vibium:page.evalHandle":
+		r.dispatch(session, cmd, r.handlePageEvalHandle)
+		return
+	case "vibium:page.addScript":
+		r.dispatch(session, cmd, r.handlePageAddScript)
+		return
+	case "vibium:page.addStyle":
+		r.dispatch(session, cmd, r.handlePageAddStyle)
+		return
+	case "vibium:page.expose":
+		r.dispatch(session, cmd, r.handlePageExpose)
+		return
+
+	// Page-level waiting commands
+	case "vibium:page.waitFor":
+		r.dispatch(session, cmd, r.handlePageWaitFor)
+		return
+	case "vibium:page.wait":
+		r.dispatch(session, cmd, r.handlePageWait)
+		return
+	case "vibium:page.waitForFunction":
+		r.dispatch(session, cmd, r.handlePageWaitForFunction)
+		return
+
+	// Navigation commands
+	case "vibium:page.navigate":
+		r.dispatch(session, cmd, r.handlePageNavigate)
+		return
+	case "vibium:page.back":
+		r.dispatch(session, cmd, r.handlePageBack)
+		return
+	case "vibium:page.forward":
+		r.dispatch(session, cmd, r.handlePageForward)
+		return
+	case "vibium:page.reload":
+		r.dispatch(session, cmd, r.handlePageReload)
+		return
+	case "vibium:page.url":
+		r.dispatch(session, cmd, r.handlePageURL)
+		return
+	case "vibium:page.title":
+		r.dispatch(session, cmd, r.handlePageTitle)
+		return
+	case "vibium:page.content":
+		r.dispatch(session, cmd, r.handlePageContent)
+		return
+	case "vibium:page.waitForURL":
+		r.dispatch(session, cmd, r.handlePageWaitForURL)
+		return
+	case "vibium:page.waitForLoad":
+		r.dispatch(session, cmd, r.handlePageWaitForLoad)
+		return
+
+	// Page & context lifecycle commands
+	case "vibium:browser.page":
+		r.dispatch(session, cmd, r.handleBrowserPage)
+		return
+	case "vibium:browser.newPage":
+		r.dispatch(session, cmd, r.handleBrowserNewPage)
+		return
+	case "vibium:browser.newContext":
+		r.dispatch(session, cmd, r.handleBrowserNewContext)
+		return
+	case "vibium:context.newPage":
+		r.dispatch(session, cmd, r.handleContextNewPage)
+		return
+	case "vibium:browser.pages":
+		r.dispatch(session, cmd, r.handleBrowserPages)
+		return
+	case "vibium:context.close":
+		r.dispatch(session, cmd, r.handleContextClose)
+		return
+
+	// Cookie & storage commands
+	case "vibium:context.cookies":
+		r.dispatch(session, cmd, r.handleContextCookies)
+		return
+	case "vibium:context.setCookies":
+		r.dispatch(session, cmd, r.handleContextSetCookies)
+		return
+	case "vibium:context.clearCookies":
+		r.dispatch(session, cmd, r.handleContextClearCookies)
+		return
+	case "vibium:context.storageState":
+		r.dispatch(session, cmd, r.handleContextStorageState)
+		return
+	case "vibium:context.addInitScript":
+		r.dispatch(session, cmd, r.handleContextAddInitScript)
+		return
+
+	// Frame commands
+	case "vibium:page.frames":
+		r.dispatch(session, cmd, r.handlePageFrames)
+		return
+	case "vibium:page.frame":
+		r.dispatch(session, cmd, r.handlePageFrame)
+		return
+
+	// Emulation commands
+	case "vibium:page.setViewport":
+		r.dispatch(session, cmd, r.handlePageSetViewport)
+		return
+	case "vibium:page.viewport":
+		r.dispatch(session, cmd, r.handlePageViewport)
+		return
+	case "vibium:page.emulateMedia":
+		r.dispatch(session, cmd, r.handlePageEmulateMedia)
+		return
+	case "vibium:page.setContent":
+		r.dispatch(session, cmd, r.handlePageSetContent)
+		return
+	case "vibium:page.setGeolocation":
+		r.dispatch(session, cmd, r.handlePageSetGeolocation)
+		return
+	case "vibium:page.setWindow":
+		r.dispatch(session, cmd, r.handlePageSetWindow)
+		return
+	case "vibium:page.window":
+		r.dispatch(session, cmd, r.handlePageWindow)
+		return
+
+	// Accessibility commands
+	case "vibium:page.a11yTree":
+		r.dispatch(session, cmd, r.handleVibiumPageA11yTree)
+		return
+	case "vibium:el.role":
+		r.dispatch(session, cmd, r.handleVibiumElRole)
+		return
+	case "vibium:el.label":
+		r.dispatch(session, cmd, r.handleVibiumElLabel)
+		return
+
+	case "vibium:browser.close":
+		r.dispatch(session, cmd, r.handleBrowserClose)
+		return
+	case "vibium:page.activate":
+		r.dispatch(session, cmd, r.handlePageActivate)
+		return
+	case "vibium:page.close":
+		r.dispatch(session, cmd, r.handlePageClose)
+		return
+
+	// Network interception commands
+	case "vibium:page.route":
+		r.dispatch(session, cmd, r.handlePageRoute)
+		return
+	case "vibium:page.unroute":
+		r.dispatch(session, cmd, r.handlePageUnroute)
+		return
+	case "vibium:network.continue":
+		r.dispatch(session, cmd, r.handleNetworkContinue)
+		return
+	case "vibium:network.fulfill":
+		r.dispatch(session, cmd, r.handleNetworkFulfill)
+		return
+	case "vibium:network.abort":
+		r.dispatch(session, cmd, r.handleNetworkAbort)
+		return
+	case "vibium:page.setHeaders":
+		r.dispatch(session, cmd, r.handlePageSetHeaders)
+		return
+
+	// Dialog commands
+	case "vibium:dialog.accept":
+		r.dispatch(session, cmd, r.handleDialogAccept)
+		return
+	case "vibium:dialog.dismiss":
+		r.dispatch(session, cmd, r.handleDialogDismiss)
+		return
+
+	// WebSocket monitoring
+	case "vibium:page.onWebSocket":
+		r.dispatch(session, cmd, r.handlePageOnWebSocket)
+		return
+
+	// Download & file commands
+	case "vibium:download.saveAs":
+		r.dispatch(session, cmd, r.handleDownloadSaveAs)
+		return
+	case "vibium:el.setFiles":
+		r.dispatch(session, cmd, r.handleVibiumElSetFiles)
+		return
+
+	// Tracing commands (not traced — they control tracing itself)
+	case "vibium:tracing.start":
+		go r.handleTracingStart(session, cmd)
+		return
+	case "vibium:tracing.stop":
+		go r.handleTracingStop(session, cmd)
+		return
+	case "vibium:tracing.startChunk":
+		go r.handleTracingStartChunk(session, cmd)
+		return
+	case "vibium:tracing.stopChunk":
+		go r.handleTracingStopChunk(session, cmd)
+		return
+	case "vibium:tracing.startGroup":
+		go r.handleTracingStartGroup(session, cmd)
+		return
+	case "vibium:tracing.stopGroup":
+		go r.handleTracingStopGroup(session, cmd)
+		return
+
+	// Clock commands
+	case "vibium:clock.install":
+		r.dispatch(session, cmd, r.handleClockInstall)
+		return
+	case "vibium:clock.fastForward":
+		r.dispatch(session, cmd, r.handleClockFastForward)
+		return
+	case "vibium:clock.runFor":
+		r.dispatch(session, cmd, r.handleClockRunFor)
+		return
+	case "vibium:clock.pauseAt":
+		r.dispatch(session, cmd, r.handleClockPauseAt)
+		return
+	case "vibium:clock.resume":
+		r.dispatch(session, cmd, r.handleClockResume)
+		return
+	case "vibium:clock.setFixedTime":
+		r.dispatch(session, cmd, r.handleClockSetFixedTime)
+		return
+	case "vibium:clock.setSystemTime":
+		r.dispatch(session, cmd, r.handleClockSetSystemTime)
+		return
+	case "vibium:clock.setTimezone":
+		r.dispatch(session, cmd, r.handleClockSetTimezone)
 		return
 	}
 
@@ -152,202 +624,6 @@ func (r *Router) OnClientMessage(client *ClientConn, msg string) {
 	if err := session.BidiConn.Send(msg); err != nil {
 		fmt.Printf("[router] Failed to send to browser for client %d: %v\n", client.ID, err)
 	}
-}
-
-// handleVibiumClick handles the vibium:click command with actionability checks.
-func (r *Router) handleVibiumClick(session *BrowserSession, cmd bidiCommand) {
-	selector, _ := cmd.Params["selector"].(string)
-	context, _ := cmd.Params["context"].(string)
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-
-	timeout := defaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
-
-	// Get context if not provided
-	if context == "" {
-		ctx, err := r.getContext(session)
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-		context = ctx
-	}
-
-	// Wait for element and get its position
-	info, err := r.waitForElement(session, context, selector, timeout)
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Perform the click at element center
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
-
-	clickParams := map[string]interface{}{
-		"context": context,
-		"actions": []map[string]interface{}{
-			{
-				"type": "pointer",
-				"id":   "mouse",
-				"parameters": map[string]interface{}{
-					"pointerType": "mouse",
-				},
-				"actions": []map[string]interface{}{
-					{"type": "pointerMove", "x": x, "y": y, "duration": 0},
-					{"type": "pointerDown", "button": 0},
-					{"type": "pointerUp", "button": 0},
-				},
-			},
-		},
-	}
-
-	if _, err := r.sendInternalCommand(session, "input.performActions", clickParams); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{"clicked": true})
-}
-
-// handleVibiumType handles the vibium:type command with actionability checks.
-func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
-	selector, _ := cmd.Params["selector"].(string)
-	context, _ := cmd.Params["context"].(string)
-	text, _ := cmd.Params["text"].(string)
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-
-	timeout := defaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
-
-	// Get context if not provided
-	if context == "" {
-		ctx, err := r.getContext(session)
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-		context = ctx
-	}
-
-	// Wait for element and get its position
-	info, err := r.waitForElement(session, context, selector, timeout)
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Click to focus first
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
-
-	clickParams := map[string]interface{}{
-		"context": context,
-		"actions": []map[string]interface{}{
-			{
-				"type": "pointer",
-				"id":   "mouse",
-				"parameters": map[string]interface{}{
-					"pointerType": "mouse",
-				},
-				"actions": []map[string]interface{}{
-					{"type": "pointerMove", "x": x, "y": y, "duration": 0},
-					{"type": "pointerDown", "button": 0},
-					{"type": "pointerUp", "button": 0},
-				},
-			},
-		},
-	}
-
-	if _, err := r.sendInternalCommand(session, "input.performActions", clickParams); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Build key actions for typing
-	keyActions := make([]map[string]interface{}, 0, len(text)*2)
-	for _, char := range text {
-		keyActions = append(keyActions,
-			map[string]interface{}{"type": "keyDown", "value": string(char)},
-			map[string]interface{}{"type": "keyUp", "value": string(char)},
-		)
-	}
-
-	typeParams := map[string]interface{}{
-		"context": context,
-		"actions": []map[string]interface{}{
-			{
-				"type":    "key",
-				"id":      "keyboard",
-				"actions": keyActions,
-			},
-		},
-	}
-
-	if _, err := r.sendInternalCommand(session, "input.performActions", typeParams); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{"typed": true})
-}
-
-// handleVibiumFind handles the vibium:find command with wait-for-selector.
-func (r *Router) handleVibiumFind(session *BrowserSession, cmd bidiCommand) {
-	selector, _ := cmd.Params["selector"].(string)
-	context, _ := cmd.Params["context"].(string)
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-
-	timeout := defaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
-
-	// Get context if not provided
-	if context == "" {
-		ctx, err := r.getContext(session)
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-		context = ctx
-	}
-
-	// Wait for element
-	info, err := r.waitForElement(session, context, selector, timeout)
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{
-		"tag":  info.Tag,
-		"text": info.Text,
-		"box": map[string]interface{}{
-			"x":      info.Box.X,
-			"y":      info.Box.Y,
-			"width":  info.Box.Width,
-			"height": info.Box.Height,
-		},
-	})
-}
-
-// elementInfo holds parsed element information.
-type elementInfo struct {
-	Tag  string  `json:"tag"`
-	Text string  `json:"text"`
-	Box  boxInfo `json:"box"`
-}
-
-type boxInfo struct {
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
 }
 
 // getContext retrieves the first browsing context.
@@ -371,70 +647,6 @@ func (r *Router) getContext(session *BrowserSession) (string, error) {
 		return "", fmt.Errorf("no browsing contexts available")
 	}
 	return result.Result.Contexts[0].Context, nil
-}
-
-// waitForElement polls until an element is found or timeout.
-func (r *Router) waitForElement(session *BrowserSession, context, selector string, timeout time.Duration) (*elementInfo, error) {
-	deadline := time.Now().Add(timeout)
-	interval := 100 * time.Millisecond
-
-	findScript := `
-		(selector) => {
-			const el = document.querySelector(selector);
-			if (!el) return null;
-			const rect = el.getBoundingClientRect();
-			return JSON.stringify({
-				tag: el.tagName.toLowerCase(),
-				text: (el.textContent || '').trim().substring(0, 100),
-				box: {
-					x: rect.x,
-					y: rect.y,
-					width: rect.width,
-					height: rect.height
-				}
-			});
-		}
-	`
-
-	for {
-		params := map[string]interface{}{
-			"functionDeclaration": findScript,
-			"target":              map[string]interface{}{"context": context},
-			"arguments": []map[string]interface{}{
-				{"type": "string", "value": selector},
-			},
-			"awaitPromise":    false,
-			"resultOwnership": "root",
-		}
-
-		resp, err := r.sendInternalCommand(session, "script.callFunction", params)
-		if err == nil {
-			// The BiDi response structure is nested:
-			// { "result": { "realm": "...", "result": { "type": "string", "value": "..." } } }
-			var result struct {
-				Result struct {
-					Result struct {
-						Type  string `json:"type"`
-						Value string `json:"value,omitempty"`
-					} `json:"result"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal(resp, &result); err == nil {
-				if result.Result.Result.Type == "string" && result.Result.Result.Value != "" {
-					var info elementInfo
-					if err := json.Unmarshal([]byte(result.Result.Result.Value), &info); err == nil {
-						return &info, nil
-					}
-				}
-			}
-		}
-
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timeout after %s waiting for '%s': element not found", timeout, selector)
-		}
-
-		time.Sleep(interval)
-	}
 }
 
 // sendSuccess sends a successful response to the client.
@@ -505,6 +717,40 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 				ch <- json.RawMessage(msg)
 				continue
 			}
+
+			// Drop late responses from timed-out internal commands —
+			// never forward these to the client (they'd be unrecognized).
+			if resp.ID >= 1000000 {
+				continue
+			}
+		}
+
+		// Track page URL from load/navigation events (zero extra BiDi round-trips)
+		var bidiEvent struct {
+			Method string `json:"method"`
+			Params struct {
+				URL string `json:"url"`
+			} `json:"params"`
+		}
+		if json.Unmarshal([]byte(msg), &bidiEvent) == nil {
+			if bidiEvent.Params.URL != "" && (bidiEvent.Method == "browsingContext.load" || bidiEvent.Method == "browsingContext.fragmentNavigated") {
+				session.mu.Lock()
+				session.lastURL = bidiEvent.Params.URL
+				session.mu.Unlock()
+			}
+		}
+
+		// Record event for tracing (non-blocking)
+		session.mu.Lock()
+		recorder := session.traceRecorder
+		session.mu.Unlock()
+		if recorder != nil && recorder.IsRecording() {
+			recorder.RecordBidiEvent(msg)
+		}
+
+		// Check for WebSocket channel events (intercept, don't forward raw script.message)
+		if r.isWsChannelEvent(session, msg) {
+			continue
 		}
 
 		// Forward message to client
@@ -515,8 +761,22 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 	}
 }
 
-// sendInternalCommand sends a BiDi command and waits for the response.
+// sendInternalCommand sends a BiDi command and waits for the response (60s timeout).
 func (r *Router) sendInternalCommand(session *BrowserSession, method string, params map[string]interface{}) (json.RawMessage, error) {
+	return r.sendInternalCommandWithTimeout(session, method, params, 60*time.Second)
+}
+
+// sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
+func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	// Record BiDi command in trace (opt-in via bidi: true)
+	session.mu.Lock()
+	recorder := session.traceRecorder
+	session.mu.Unlock()
+	if recorder != nil && recorder.IsRecording() && recorder.Options().Bidi {
+		callId := recorder.RecordBidiCommand(method, params)
+		defer recorder.RecordBidiCommandEnd(callId)
+	}
+
 	session.internalCmdsMu.Lock()
 	id := session.nextInternalID
 	session.nextInternalID++
@@ -545,7 +805,7 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 	select {
 	case resp := <-ch:
 		return resp, nil
-	case <-time.After(60 * time.Second):
+	case <-time.After(timeout):
 		return nil, fmt.Errorf("timeout waiting for response to %s", method)
 	case <-session.stopChan:
 		return nil, fmt.Errorf("session closed")
@@ -570,6 +830,16 @@ func (r *Router) closeSession(session *BrowserSession) {
 	// Close BiDi connection
 	if session.BidiConn != nil {
 		session.BidiConn.Close()
+	}
+
+	// Stop any active trace recorder
+	if session.traceRecorder != nil {
+		session.traceRecorder.StopScreenshots()
+	}
+
+	// Clean up download temp dir
+	if session.downloadDir != "" {
+		os.RemoveAll(session.downloadDir)
 	}
 
 	// Close browser

@@ -7,39 +7,101 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/mcp"
 	"github.com/vibium/clicker/internal/process"
 )
 
 func newFindCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "find [url] [selector]",
-		Short: "Find an element by CSS selector (optionally navigate to URL first)",
-		Example: `  clicker find "a"
-  # Finds on current page (daemon mode)
+		Short: "Find an element by CSS selector or semantic locator",
+		Example: `  vibium find "a"
+  # → @e1 [a] "More information..."
 
-  clicker find https://example.com "a"
-  # Navigates to URL first, then finds
-  # Prints: tag=A, text="Learn more", box={x,y,w,h}`,
-		Args: cobra.RangeArgs(1, 2),
+  vibium find https://example.com "a"
+  # Navigate to URL first, then find
+
+  vibium find --text "Sign In"
+  # → @e1 [button] "Sign In"
+
+  vibium find --label "Email"
+  # → @e1 [input type="email"] placeholder="Email"
+
+  vibium click @e1
+  # Use the returned @ref to interact with the found element
+
+  vibium find --role link
+  # → @e1 [a] "More information..."
+
+  vibium find --role heading --text "Example"
+  # Find heading containing "Example"
+
+  vibium find --placeholder "Search..."
+  vibium find --testid "submit-btn"
+  vibium find --xpath "//div[@class='main']"`,
+		Args: cobra.RangeArgs(0, 2),
 		Run: func(cmd *cobra.Command, args []string) {
+			// Collect semantic flags
+			semanticFlags := map[string]string{
+				"role":        "",
+				"text":        "",
+				"label":       "",
+				"placeholder": "",
+				"testid":      "",
+				"xpath":       "",
+				"alt":         "",
+				"title":       "",
+			}
+			hasSemantic := false
+			for key := range semanticFlags {
+				val, _ := cmd.Flags().GetString(key)
+				if val != "" {
+					semanticFlags[key] = val
+					hasSemantic = true
+				}
+			}
+
 			// Daemon mode
 			if !oneshot {
-				var selector string
-				if len(args) == 2 {
-					// find <url> <selector> — navigate first
-					_, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]})
-					if err != nil {
-						printError(err)
-						return
+				toolArgs := map[string]interface{}{}
+
+				if hasSemantic {
+					// Semantic find — no positional selector required
+					// But allow optional URL as first positional arg
+					if len(args) >= 1 {
+						// Check if first arg looks like a URL
+						if isURL(args[0]) {
+							_, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]})
+							if err != nil {
+								printError(err)
+								return
+							}
+						}
 					}
-					selector = args[1]
+					for key, val := range semanticFlags {
+						if val != "" {
+							toolArgs[key] = val
+						}
+					}
 				} else {
-					// find <selector> — current page
-					selector = args[0]
+					// CSS selector find (original behavior)
+					if len(args) == 0 {
+						fmt.Fprintf(os.Stderr, "Error: requires a CSS selector or semantic flag (--text, --label, etc.)\n")
+						os.Exit(1)
+					}
+					if len(args) == 2 {
+						_, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]})
+						if err != nil {
+							printError(err)
+							return
+						}
+						toolArgs["selector"] = args[1]
+					} else {
+						toolArgs["selector"] = args[0]
+					}
 				}
 
-				// Find element
-				result, err := daemonCall("browser_find", map[string]interface{}{"selector": selector})
+				result, err := daemonCall("browser_find", toolArgs)
 				if err != nil {
 					printError(err)
 					return
@@ -84,15 +146,39 @@ func newFindCmd() *cobra.Command {
 				doWaitOpen()
 
 				fmt.Printf("Finding element: %s\n", selector)
-				info, err := client.FindElement("", selector)
+				labelScript := `(selector) => {
+					` + mcp.GetLabelJS() + `
+					const el = document.querySelector(selector);
+					if (!el) return null;
+					return getLabel(el);
+				}`
+				labelResult, err := client.CallFunction("", labelScript, []interface{}{selector})
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error finding element: %v\n", err)
 					os.Exit(1)
 				}
-
-				fmt.Printf("Found: tag=%s, text=\"%s\", box={x:%.0f, y:%.0f, w:%.0f, h:%.0f}\n",
-					info.Tag, info.Text, info.Box.X, info.Box.Y, info.Box.Width, info.Box.Height)
+				if labelResult == nil {
+					fmt.Fprintf(os.Stderr, "Error: element not found: %s\n", selector)
+					os.Exit(1)
+				}
+				fmt.Printf("@e1 %v\n", labelResult)
 			})
 		},
 	}
+
+	cmd.Flags().String("role", "", "Find element by ARIA role (e.g. button, link, textbox)")
+	cmd.Flags().String("text", "", "Find element containing this text")
+	cmd.Flags().String("label", "", "Find input by associated label text")
+	cmd.Flags().String("placeholder", "", "Find element by placeholder attribute")
+	cmd.Flags().String("testid", "", "Find element by data-testid attribute")
+	cmd.Flags().String("xpath", "", "Find element by XPath expression")
+	cmd.Flags().String("alt", "", "Find element by alt attribute")
+	cmd.Flags().String("title", "", "Find element by title attribute")
+
+	return cmd
+}
+
+// isURL returns true if the string looks like a URL (starts with http:// or https://).
+func isURL(s string) bool {
+	return len(s) > 8 && (s[:7] == "http://" || s[:8] == "https://")
 }

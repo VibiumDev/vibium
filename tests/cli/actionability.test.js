@@ -6,13 +6,11 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { execSync } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 describe('CLI: Actionability', () => {
   test('check-actionable reports visibility status', () => {
-    const result = execSync(`${CLICKER} check-actionable https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} check-actionable https://example.com "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -25,7 +23,7 @@ describe('CLI: Actionability', () => {
   test('click with short timeout fails on non-existent element', () => {
     assert.throws(
       () => {
-        execSync(`${CLICKER} click https://example.com "#does-not-exist" --timeout 1s`, {
+        execSync(`${VIBIUM} click https://example.com "#does-not-exist" --timeout 1s`, {
           encoding: 'utf-8',
           timeout: 10000,
         });

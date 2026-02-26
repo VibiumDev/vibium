@@ -1,14 +1,14 @@
-import { spawn, ChildProcess } from 'child_process';
-import { getClickerPath } from './binary';
+import { spawn, execFileSync, ChildProcess } from 'child_process';
+import { getVibiumBinPath } from './binary';
 import { TimeoutError, BrowserCrashedError } from '../utils/errors';
 
-export interface ClickerProcessOptions {
+export interface VibiumProcessOptions {
   port?: number;
   headless?: boolean;
   executablePath?: string;
 }
 
-export class ClickerProcess {
+export class VibiumProcess {
   private process: ChildProcess;
   private _port: number;
   private _stopped: boolean = false;
@@ -22,14 +22,11 @@ export class ClickerProcess {
     return this._port;
   }
 
-  static async start(options: ClickerProcessOptions = {}): Promise<ClickerProcess> {
-    const binaryPath = options.executablePath || getClickerPath();
+  static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
+    const binaryPath = options.executablePath || getVibiumBinPath();
     const port = options.port || 0; // 0 means auto-select
 
-    const args = ['serve'];
-    if (port > 0) {
-      args.push('--port', port.toString());
-    }
+    const args = ['serve', '--port', port.toString()];
     if (options.headless === true) {
       args.push('--headless');
     }
@@ -45,7 +42,7 @@ export class ClickerProcess {
 
       const timeout = setTimeout(() => {
         if (!resolved) {
-          reject(new TimeoutError('clicker', 10000, 'waiting for clicker to start'));
+          reject(new TimeoutError('vibium', 10000, 'waiting for vibium to start'));
         }
       }, 10000);
 
@@ -82,8 +79,19 @@ export class ClickerProcess {
       });
     });
 
-    return new ClickerProcess(proc, actualPort);
+    const vp = new VibiumProcess(proc, actualPort);
+
+    // Clean up child process when Node exits unexpectedly (Ctrl+C, uncaught exception, etc.)
+    const cleanup = () => vp.stop();
+    process.on('exit', cleanup);
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+    vp._cleanupListeners = cleanup;
+
+    return vp;
   }
+
+  private _cleanupListeners: (() => void) | null = null;
 
   async stop(): Promise<void> {
     if (this._stopped) {
@@ -91,21 +99,41 @@ export class ClickerProcess {
     }
     this._stopped = true;
 
+    // Remove process exit listeners to avoid leaks
+    if (this._cleanupListeners) {
+      process.removeListener('exit', this._cleanupListeners);
+      process.removeListener('SIGINT', this._cleanupListeners);
+      process.removeListener('SIGTERM', this._cleanupListeners);
+      this._cleanupListeners = null;
+    }
+
     return new Promise((resolve) => {
       this.process.on('exit', () => {
         resolve();
       });
 
-      // Try graceful shutdown first
-      this.process.kill('SIGTERM');
-
-      // Force kill after timeout
-      setTimeout(() => {
-        if (!this.process.killed) {
-          this.process.kill('SIGKILL');
+      if (process.platform === 'win32') {
+        // On Windows, process.kill('SIGTERM') calls TerminateProcess() which
+        // kills only the immediate process without letting cleanup code run.
+        // Use taskkill /T to kill the entire process tree (vibium + chromedriver + Chrome).
+        try {
+          execFileSync('taskkill', ['/T', '/F', '/PID', this.process.pid!.toString()], { stdio: 'ignore' });
+        } catch {
+          // Process may have already exited
         }
         resolve();
-      }, 3000);
+      } else {
+        // Try graceful shutdown first
+        this.process.kill('SIGTERM');
+
+        // Force kill after timeout
+        setTimeout(() => {
+          if (!this.process.killed) {
+            this.process.kill('SIGKILL');
+          }
+          resolve();
+        }, 3000);
+      }
     });
   }
 }

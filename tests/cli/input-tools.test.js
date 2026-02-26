@@ -7,13 +7,11 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 const { execSync } = require('node:child_process');
-const path = require('node:path');
-
-const CLICKER = path.join(__dirname, '../../clicker/bin/clicker');
+const { VIBIUM } = require('../helpers');
 
 describe('CLI: Input Tools', () => {
   test('hover command hovers over element', () => {
-    const result = execSync(`${CLICKER} hover https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} hover https://example.com "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -21,21 +19,21 @@ describe('CLI: Input Tools', () => {
   });
 
   test('skill --stdout outputs markdown', () => {
-    const result = execSync(`${CLICKER} add-skill --stdout`, {
+    const result = execSync(`${VIBIUM} add-skill --stdout`, {
       encoding: 'utf-8',
       timeout: 5000,
     });
     assert.match(result, /# Vibium Browser Automation/, 'Should have title');
-    assert.match(result, /vibe-check navigate/, 'Should list navigate');
-    assert.match(result, /vibe-check click/, 'Should list click');
-    assert.match(result, /vibe-check screenshot/, 'Should list screenshot');
-    assert.match(result, /vibe-check tab-new/, 'Should list new tab');
-    assert.match(result, /vibe-check scroll/, 'Should list scroll');
-    assert.match(result, /vibe-check keys/, 'Should list keys');
+    assert.match(result, /vibium go/, 'Should list go');
+    assert.match(result, /vibium click/, 'Should list click');
+    assert.match(result, /vibium screenshot/, 'Should list screenshot');
+    assert.match(result, /vibium tab-new/, 'Should list new tab');
+    assert.match(result, /vibium scroll/, 'Should list scroll');
+    assert.match(result, /vibium keys/, 'Should list keys');
   });
 
   test('skill command installs to ~/.claude/skills/', () => {
-    const result = execSync(`${CLICKER} add-skill`, {
+    const result = execSync(`${VIBIUM} add-skill`, {
       encoding: 'utf-8',
       timeout: 5000,
     });
