@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -562,7 +563,7 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 
 	if hasSemantic {
 		timeout := proxy.DefaultTimeout
-		if t, ok := args["timeout"].(float64); ok {
+		if t, ok := floatArg(args, "timeout"); ok {
 			timeout = time.Duration(t) * time.Millisecond
 		}
 
@@ -964,7 +965,7 @@ func (h *Handlers) browserSwitchTab(args map[string]interface{}) (*ToolsCallResu
 	var contextID string
 
 	// Try index first
-	if idx, ok := args["index"].(float64); ok {
+	if idx, ok := floatArg(args, "index"); ok {
 		i := int(idx)
 		if i < 0 || i >= len(tabs) {
 			return nil, fmt.Errorf("tab index %d out of range (0-%d)", i, len(tabs)-1)
@@ -1014,7 +1015,7 @@ func (h *Handlers) browserCloseTab(args map[string]interface{}) (*ToolsCallResul
 	}
 
 	idx := 0
-	if i, ok := args["index"].(float64); ok {
+	if i, ok := floatArg(args, "index"); ok {
 		idx = int(i)
 	}
 
@@ -1140,7 +1141,7 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 	}
 
 	amount := 3
-	if a, ok := args["amount"].(float64); ok {
+	if a, ok := floatArg(args, "amount"); ok {
 		amount = int(a)
 	}
 
@@ -1271,7 +1272,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 	selector = h.resolveSelector(selector)
 
 	limit := 10
-	if l, ok := args["limit"].(float64); ok {
+	if l, ok := floatArg(args, "limit"); ok {
 		limit = int(l)
 	}
 
@@ -1350,7 +1351,7 @@ func (h *Handlers) browserWait(args map[string]interface{}) (*ToolsCallResult, e
 		Selector: selector,
 		Timeout:  proxy.DefaultTimeout,
 	}
-	if t, ok := args["timeout"].(float64); ok {
+	if t, ok := floatArg(args, "timeout"); ok {
 		ep.Timeout = time.Duration(t) * time.Millisecond
 	}
 
@@ -1475,7 +1476,7 @@ func (h *Handlers) pageClockInstall(args map[string]interface{}) (*ToolsCallResu
 		return nil, fmt.Errorf("failed to install clock: %w", err)
 	}
 
-	if timeVal, ok := args["time"].(float64); ok {
+	if timeVal, ok := floatArg(args, "time"); ok {
 		script := fmt.Sprintf("() => { window.__vibiumClock.setSystemTime(%v); return 'ok'; }", timeVal)
 		if _, err := proxy.EvalSimpleScript(s, ctx, script); err != nil {
 			return nil, fmt.Errorf("failed to set initial time: %w", err)
@@ -1499,7 +1500,7 @@ func (h *Handlers) pageClockFastForward(args map[string]interface{}) (*ToolsCall
 		return nil, err
 	}
 
-	ticks, ok := args["ticks"].(float64)
+	ticks, ok := floatArg(args, "ticks")
 	if !ok {
 		return nil, fmt.Errorf("ticks is required")
 	}
@@ -1525,7 +1526,7 @@ func (h *Handlers) pageClockRunFor(args map[string]interface{}) (*ToolsCallResul
 		return nil, err
 	}
 
-	ticks, ok := args["ticks"].(float64)
+	ticks, ok := floatArg(args, "ticks")
 	if !ok {
 		return nil, fmt.Errorf("ticks is required")
 	}
@@ -1551,7 +1552,7 @@ func (h *Handlers) pageClockPauseAt(args map[string]interface{}) (*ToolsCallResu
 		return nil, err
 	}
 
-	timeVal, ok := args["time"].(float64)
+	timeVal, ok := floatArg(args, "time")
 	if !ok {
 		return nil, fmt.Errorf("time is required")
 	}
@@ -1597,7 +1598,7 @@ func (h *Handlers) pageClockSetFixedTime(args map[string]interface{}) (*ToolsCal
 		return nil, err
 	}
 
-	timeVal, ok := args["time"].(float64)
+	timeVal, ok := floatArg(args, "time")
 	if !ok {
 		return nil, fmt.Errorf("time is required")
 	}
@@ -1623,7 +1624,7 @@ func (h *Handlers) pageClockSetSystemTime(args map[string]interface{}) (*ToolsCa
 		return nil, err
 	}
 
-	timeVal, ok := args["time"].(float64)
+	timeVal, ok := floatArg(args, "time")
 	if !ok {
 		return nil, fmt.Errorf("time is required")
 	}
@@ -2050,7 +2051,7 @@ func (h *Handlers) browserWaitForURL(args map[string]interface{}) (*ToolsCallRes
 	}
 
 	timeout := proxy.DefaultTimeout
-	if t, ok := args["timeout"].(float64); ok {
+	if t, ok := floatArg(args, "timeout"); ok {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
@@ -2079,7 +2080,7 @@ func (h *Handlers) browserWaitForLoad(args map[string]interface{}) (*ToolsCallRe
 	}
 
 	timeout := proxy.DefaultTimeout
-	if t, ok := args["timeout"].(float64); ok {
+	if t, ok := floatArg(args, "timeout"); ok {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
@@ -2100,9 +2101,22 @@ func (h *Handlers) browserWaitForLoad(args map[string]interface{}) (*ToolsCallRe
 	}, nil
 }
 
+// floatArg extracts a float64 from args, accepting both JSON numbers and strings.
+func floatArg(args map[string]interface{}, key string) (float64, bool) {
+	switch v := args[key].(type) {
+	case float64:
+		return v, true
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
 // browserSleep pauses execution for a specified number of milliseconds.
 func (h *Handlers) browserSleep(args map[string]interface{}) (*ToolsCallResult, error) {
-	ms, ok := args["ms"].(float64)
+	ms, ok := floatArg(args, "ms")
 	if !ok || ms <= 0 {
 		return nil, fmt.Errorf("ms is required and must be positive")
 	}
@@ -2575,7 +2589,7 @@ func (h *Handlers) browserWaitForText(args map[string]interface{}) (*ToolsCallRe
 	}
 
 	timeout := proxy.DefaultTimeout
-	if t, ok := args["timeout"].(float64); ok {
+	if t, ok := floatArg(args, "timeout"); ok {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
@@ -2608,7 +2622,7 @@ func (h *Handlers) browserWaitForFn(args map[string]interface{}) (*ToolsCallResu
 	}
 
 	timeout := proxy.DefaultTimeout
-	if t, ok := args["timeout"].(float64); ok {
+	if t, ok := floatArg(args, "timeout"); ok {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
@@ -2793,11 +2807,11 @@ func (h *Handlers) browserMouseMove(args map[string]interface{}) (*ToolsCallResu
 		return nil, err
 	}
 
-	x, ok := args["x"].(float64)
+	x, ok := floatArg(args, "x")
 	if !ok {
 		return nil, fmt.Errorf("x is required")
 	}
-	y, ok := args["y"].(float64)
+	y, ok := floatArg(args, "y")
 	if !ok {
 		return nil, fmt.Errorf("y is required")
 	}
@@ -2826,7 +2840,7 @@ func (h *Handlers) browserMouseDown(args map[string]interface{}) (*ToolsCallResu
 	}
 
 	button := 0
-	if b, ok := args["button"].(float64); ok {
+	if b, ok := floatArg(args, "button"); ok {
 		button = int(b)
 	}
 
@@ -2854,7 +2868,7 @@ func (h *Handlers) browserMouseUp(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	button := 0
-	if b, ok := args["button"].(float64); ok {
+	if b, ok := floatArg(args, "button"); ok {
 		button = int(b)
 	}
 
@@ -2882,7 +2896,7 @@ func (h *Handlers) browserMouseClick(args map[string]interface{}) (*ToolsCallRes
 	}
 
 	button := 0
-	if b, ok := args["button"].(float64); ok {
+	if b, ok := floatArg(args, "button"); ok {
 		button = int(b)
 	}
 
@@ -2892,8 +2906,8 @@ func (h *Handlers) browserMouseClick(args map[string]interface{}) (*ToolsCallRes
 		return nil, err
 	}
 
-	x, hasX := args["x"].(float64)
-	y, hasY := args["y"].(float64)
+	x, hasX := floatArg(args, "x")
+	y, hasY := floatArg(args, "y")
 	if hasX && hasY {
 		if err := proxy.MouseClick(s, ctx, int(x), int(y), button); err != nil {
 			return nil, fmt.Errorf("failed to click: %w", err)
@@ -2965,17 +2979,17 @@ func (h *Handlers) browserSetViewport(args map[string]interface{}) (*ToolsCallRe
 		return nil, err
 	}
 
-	width, ok := args["width"].(float64)
+	width, ok := floatArg(args, "width")
 	if !ok {
 		return nil, fmt.Errorf("width is required")
 	}
-	height, ok := args["height"].(float64)
+	height, ok := floatArg(args, "height")
 	if !ok {
 		return nil, fmt.Errorf("height is required")
 	}
 
 	dpr := 0.0
-	if d, ok := args["devicePixelRatio"].(float64); ok {
+	if d, ok := floatArg(args, "devicePixelRatio"); ok {
 		dpr = d
 	}
 
@@ -3053,10 +3067,10 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 	}
 
 	state, _ := args["state"].(string)
-	width, hasWidth := args["width"].(float64)
-	height, hasHeight := args["height"].(float64)
-	x, hasX := args["x"].(float64)
-	y, hasY := args["y"].(float64)
+	width, hasWidth := floatArg(args, "width")
+	height, hasHeight := floatArg(args, "height")
+	x, hasX := floatArg(args, "x")
+	y, hasY := floatArg(args, "y")
 
 	opts := proxy.SetWindowOpts{State: state}
 	if hasWidth {
@@ -3142,17 +3156,17 @@ func (h *Handlers) browserSetGeolocation(args map[string]interface{}) (*ToolsCal
 		return nil, err
 	}
 
-	latitude, ok := args["latitude"].(float64)
+	latitude, ok := floatArg(args, "latitude")
 	if !ok {
 		return nil, fmt.Errorf("latitude is required")
 	}
-	longitude, ok := args["longitude"].(float64)
+	longitude, ok := floatArg(args, "longitude")
 	if !ok {
 		return nil, fmt.Errorf("longitude is required")
 	}
 
 	accuracy := 1.0
-	if a, ok := args["accuracy"].(float64); ok {
+	if a, ok := floatArg(args, "accuracy"); ok {
 		accuracy = a
 	}
 
