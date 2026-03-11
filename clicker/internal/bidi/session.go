@@ -3,12 +3,14 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 )
 
 // Client is a BiDi client that wraps a WebSocket connection.
 type Client struct {
 	conn    *Connection
+	cmdMu   sync.Mutex
 	verbose bool
 }
 
@@ -32,6 +34,9 @@ func (c *Client) SendCommand(method string, params interface{}) (*Message, error
 
 // SendCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeout time.Duration) (*Message, error) {
+	c.cmdMu.Lock()
+	defer c.cmdMu.Unlock()
+
 	cmd := NewCommand(method, params)
 
 	data, err := cmd.Marshal()
