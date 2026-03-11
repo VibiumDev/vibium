@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,30 +27,56 @@ type Handlers struct {
 	conn           *bidi.Connection
 	screenshotDir  string
 	headless       bool
-	connectURL     string      // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header // headers for remote WebSocket connection
+	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header       // headers for remote WebSocket connection
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *recorder
 	downloadDir    string
 }
 
-// recorder records browser sessions (screenshots + snapshots).
+// recorder records browser sessions by combining the legacy snapshot output with
+// the richer proxy recorder that emits Playwright-compatible trace/network files.
 type recorder struct {
 	name        string
 	screenshots bool
 	snapshots   bool
 	startTime   time.Time
-	done        chan struct{}
+	trace       *proxy.Recorder
 	mu          sync.Mutex
-	screenData  []string // base64-encoded PNGs
-	snapData    []string // HTML snapshots
+	snapData    []string
+	screenCount int
 }
 
-func (t *recorder) addScreenshot(data string) {
+type recordingHooks struct {
+	recorder *proxy.Recorder
+}
+
+func (h *recordingHooks) OnCommandStart(method string, params map[string]interface{}) string {
+	if h == nil || h.recorder == nil || !h.recorder.IsRecording() || !h.recorder.Options().Bidi {
+		return ""
+	}
+	return h.recorder.RecordBidiCommand(method, params)
+}
+
+func (h *recordingHooks) OnCommandEnd(callID string) {
+	if h == nil || h.recorder == nil {
+		return
+	}
+	h.recorder.RecordBidiCommandEnd(callID)
+}
+
+func (h *recordingHooks) OnEvent(msg string) {
+	if h == nil || h.recorder == nil {
+		return
+	}
+	h.recorder.RecordBidiEvent(msg)
+}
+
+func (t *recorder) addScreenshot() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.screenData = append(t.screenData, data)
+	t.screenCount++
 }
 
 func (t *recorder) addSnapshot(html string) {
@@ -57,9 +85,23 @@ func (t *recorder) addSnapshot(html string) {
 	t.snapData = append(t.snapData, html)
 }
 
+func (t *recorder) stop() {
+	if t == nil || t.trace == nil {
+		return
+	}
+	t.trace.StopScreenshots()
+}
+
 func (t *recorder) writeZip(path string) error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	snapshots := append([]string(nil), t.snapData...)
+	screenCount := t.screenCount
+	t.mu.Unlock()
+
+	traceData, err := t.trace.Stop()
+	if err != nil {
+		return err
+	}
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -70,23 +112,12 @@ func (t *recorder) writeZip(path string) error {
 	w := zip.NewWriter(f)
 	defer w.Close()
 
-	// Write screenshots
-	for i, data := range t.screenData {
-		fw, err := w.Create(fmt.Sprintf("screenshots/%04d.png", i))
-		if err != nil {
-			return err
-		}
-		pngData, err := base64.StdEncoding.DecodeString(data)
-		if err != nil {
-			return err
-		}
-		if _, err := fw.Write(pngData); err != nil {
-			return err
-		}
+	if err := copyZipEntries(w, traceData); err != nil {
+		return err
 	}
 
 	// Write snapshots
-	for i, html := range t.snapData {
+	for i, html := range snapshots {
 		fw, err := w.Create(fmt.Sprintf("snapshots/%04d.html", i))
 		if err != nil {
 			return err
@@ -100,8 +131,8 @@ func (t *recorder) writeZip(path string) error {
 	meta := map[string]interface{}{
 		"name":        t.name,
 		"startTime":   t.startTime.Format(time.RFC3339),
-		"screenshots":  len(t.screenData),
-		"snapshots":   len(t.snapData),
+		"screenshots": screenCount,
+		"snapshots":   len(snapshots),
 	}
 	metaJSON, _ := json.MarshalIndent(meta, "", "  ")
 	fw, err := w.Create("metadata.json")
@@ -110,6 +141,38 @@ func (t *recorder) writeZip(path string) error {
 	}
 	_, err = fw.Write(metaJSON)
 	return err
+}
+
+func copyZipEntries(w *zip.Writer, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("failed to read generated recording zip: %w", err)
+	}
+
+	for _, file := range zr.File {
+		src, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		dst, err := w.Create(file.Name)
+		if err != nil {
+			src.Close()
+			return err
+		}
+
+		if _, err := io.Copy(dst, src); err != nil {
+			src.Close()
+			return err
+		}
+		src.Close()
+	}
+
+	return nil
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -298,6 +361,13 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 
 // Close cleans up any active browser sessions.
 func (h *Handlers) Close() {
+	if h.recorder != nil {
+		h.recorder.stop()
+		h.recorder = nil
+	}
+	if h.client != nil {
+		h.client.SetHooks(nil)
+	}
 	// Remote mode: end the BiDi session so chromedriver closes Chrome
 	if h.connectURL != "" && h.client != nil {
 		h.client.SendCommand("session.end", map[string]interface{}{})
@@ -1103,7 +1173,6 @@ func (h *Handlers) browserA11yTree(args map[string]interface{}) (*ToolsCallResul
 	}, nil
 }
 
-
 // browserHover moves the mouse over an element.
 func (h *Handlers) browserHover(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -1714,7 +1783,6 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 	}, nil
 }
 
-
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	deadline := time.Now().Add(timeout)
@@ -2171,6 +2239,38 @@ func (h *Handlers) ensureBrowser() error {
 		}
 	}
 	return nil
+}
+
+func (h *Handlers) subscribeRecordingEvents() error {
+	if h.client == nil {
+		return fmt.Errorf("browser is not running")
+	}
+
+	_, err := h.client.SendCommand("session.subscribe", map[string]interface{}{
+		"events": []string{
+			"network.beforeRequestSent",
+			"network.responseCompleted",
+			"network.fetchError",
+			"browsingContext.load",
+			"browsingContext.fragmentNavigated",
+		},
+	})
+	return err
+}
+
+func (h *Handlers) captureRecordingScreenshot() (string, string, error) {
+	s := proxy.NewMCPSession(h.client)
+	pageID, err := s.GetContextID()
+	if err != nil {
+		return "", "", err
+	}
+
+	data, err := h.client.CaptureScreenshot(pageID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return data, pageID, nil
 }
 
 // resolveSelector resolves @ref selectors to CSS selectors from the refMap.
@@ -3386,46 +3486,64 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	}
 	screenshots, _ := args["screenshots"].(bool)
 	snapshots, _ := args["snapshots"].(bool)
+	recordBidi, _ := args["bidi"].(bool)
+	format := "jpeg"
+	if rawFormat, ok := args["format"].(string); ok && (rawFormat == "png" || rawFormat == "jpeg") {
+		format = rawFormat
+	}
+	quality := 0.5
+	if rawQuality, ok := args["quality"].(float64); ok && rawQuality >= 0 && rawQuality <= 1 {
+		quality = rawQuality
+	}
 
-	h.recorder = &recorder{
+	rec := &recorder{
 		name:        name,
 		screenshots: screenshots,
 		snapshots:   snapshots,
 		startTime:   time.Now(),
+		trace:       proxy.NewRecorder(),
 	}
 
-	// Start screenshot capture loop in background
+	rec.trace.Start(proxy.RecordingStartOptions{
+		Name:        name,
+		Title:       name,
+		Screenshots: screenshots,
+		Snapshots:   snapshots,
+		Bidi:        recordBidi,
+		Format:      format,
+		Quality:     quality,
+	})
+	h.client.SetHooks(&recordingHooks{recorder: rec.trace})
+	if err := h.subscribeRecordingEvents(); err != nil {
+		h.client.SetHooks(nil)
+		return nil, fmt.Errorf("failed to subscribe to recording events: %w", err)
+	}
+
+	h.recorder = rec
+
+	// Start screenshot capture loop in background for Playwright-compatible trace output.
 	if screenshots {
-		h.recorder.done = make(chan struct{})
-		go func() {
-			ticker := time.NewTicker(500 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-h.recorder.done:
-					return
-				case <-ticker.C:
-					data, err := h.client.CaptureScreenshot("")
-					if err == nil {
-						h.recorder.addScreenshot(data)
-					}
-				}
+		rec.trace.StartScreenshotLoop(func() (string, string, error) {
+			data, pageID, err := h.captureRecordingScreenshot()
+			if err == nil && data != "" {
+				rec.addScreenshot()
 			}
-		}()
+			return data, pageID, err
+		})
 	}
 
-	// Capture snapshot if enabled
+	// Preserve the existing HTML snapshot output for callers that rely on it.
 	if snapshots {
 		html, err := h.client.Evaluate("", "document.documentElement.outerHTML")
 		if err == nil && html != nil {
-			h.recorder.addSnapshot(fmt.Sprintf("%v", html))
+			rec.addSnapshot(fmt.Sprintf("%v", html))
 		}
 	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording %q started (screenshots: %v, snapshots: %v)", name, screenshots, snapshots),
+			Text: fmt.Sprintf("Recording %q started (screenshots: %v, snapshots: %v, bidi: %v)", name, screenshots, snapshots, recordBidi),
 		}},
 	}, nil
 }
@@ -3449,9 +3567,15 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		}
 	}
 
-	// Stop screenshot loop
-	if h.recorder.done != nil {
-		close(h.recorder.done)
+	// Stop background screenshots before flushing final browser events.
+	h.recorder.stop()
+
+	// One final round-trip drains queued network events through the client hooks.
+	if h.client != nil {
+		if _, err := h.client.SessionStatus(); err != nil {
+			log.Debug("recording event flush failed", "err", err)
+		}
+		h.client.SetHooks(nil)
 	}
 
 	// Write ZIP
@@ -3540,7 +3664,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 	}
 
 	var state struct {
-		Cookies []bidi.Cookie `json:"cookies"`
+		Cookies []bidi.Cookie   `json:"cookies"`
 		Storage json.RawMessage `json:"storage"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {

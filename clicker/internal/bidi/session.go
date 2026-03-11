@@ -11,7 +11,17 @@ import (
 type Client struct {
 	conn    *Connection
 	cmdMu   sync.Mutex
+	hooksMu sync.RWMutex
+	hooks   ClientHooks
 	verbose bool
+}
+
+// ClientHooks receives lifecycle callbacks for commands and async browser events.
+// It allows higher layers to record traffic without owning the read loop.
+type ClientHooks interface {
+	OnCommandStart(method string, params map[string]interface{}) string
+	OnCommandEnd(callID string)
+	OnEvent(msg string)
 }
 
 // NewClient creates a new BiDi client from a WebSocket connection.
@@ -22,6 +32,32 @@ func NewClient(conn *Connection) *Client {
 // SetVerbose enables or disables verbose logging of JSON messages.
 func (c *Client) SetVerbose(verbose bool) {
 	c.verbose = verbose
+}
+
+// SetHooks installs lifecycle hooks for command/event observation.
+func (c *Client) SetHooks(hooks ClientHooks) {
+	c.hooksMu.Lock()
+	defer c.hooksMu.Unlock()
+	c.hooks = hooks
+}
+
+func (c *Client) currentHooks() ClientHooks {
+	c.hooksMu.RLock()
+	defer c.hooksMu.RUnlock()
+	return c.hooks
+}
+
+func cloneCommandParams(params interface{}) map[string]interface{} {
+	switch v := params.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			cloned[key] = value
+		}
+		return cloned
+	default:
+		return nil
+	}
 }
 
 // defaultCommandTimeout is the maximum time to wait for a BiDi command response.
@@ -38,6 +74,12 @@ func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeo
 	defer c.cmdMu.Unlock()
 
 	cmd := NewCommand(method, params)
+	hooks := c.currentHooks()
+	callID := ""
+	if hooks != nil {
+		callID = hooks.OnCommandStart(method, cloneCommandParams(params))
+		defer hooks.OnCommandEnd(callID)
+	}
 
 	data, err := cmd.Marshal()
 	if err != nil {
@@ -89,6 +131,9 @@ func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeo
 		if msg.IsEvent() {
 			if c.verbose {
 				fmt.Printf("       (event, skipping)\n")
+			}
+			if hooks != nil {
+				hooks.OnEvent(resp)
 			}
 			continue
 		}
