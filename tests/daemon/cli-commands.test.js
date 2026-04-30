@@ -12,11 +12,13 @@ const { VIBIUM } = require('../helpers');
 
 // Helper to run clicker and return trimmed output
 function clicker(args, opts = {}) {
-  const result = execSync(`${VIBIUM} ${args}`, {
+  const execOpts = {
     encoding: 'utf-8',
     timeout: opts.timeout || 60000,
     env: { ...process.env, ...opts.env },
-  });
+  };
+  if (opts.cwd) execOpts.cwd = opts.cwd;
+  const result = execSync(`${VIBIUM} ${args}`, execOpts);
   return result.trim();
 }
 
@@ -245,6 +247,65 @@ describe('Daemon CLI: Screenshot --full-page', () => {
     assert.ok(fs.existsSync(savedPath), `File should exist at ${savedPath}`);
     const stats = fs.statSync(savedPath);
     assert.ok(stats.size > 0, 'File should not be empty');
+  });
+});
+
+describe('Daemon CLI: Screenshot honors --output path', () => {
+  const tmpDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'vibium-shot-'));
+  const savedPaths = [];
+
+  before(() => {
+    stopDaemon();
+    clicker('daemon start --headless');
+    clicker('go https://example.com');
+  });
+
+  after(() => {
+    stopDaemon();
+    for (const p of savedPaths) {
+      try { fs.unlinkSync(p); } catch (e) {}
+    }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
+  });
+
+  test('absolute path is honored as written', () => {
+    const target = path.join(tmpDir, 'abs.png');
+    const result = clickerJSON(`screenshot -o ${target}`);
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.result.includes(target), `Should report exact path, got: ${result.result}`);
+    assert.ok(fs.existsSync(target), `File should exist at ${target}`);
+    assert.ok(fs.statSync(target).size > 0, 'File should not be empty');
+    savedPaths.push(target);
+  });
+
+  test('relative path with ./ prefix lands in CWD, not screenshot dir', () => {
+    const cwd = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'vibium-cwd-'));
+    const result = clickerJSON('screenshot -o ./rel.png', { cwd });
+    assert.strictEqual(result.ok, true);
+    const expected = path.join(cwd, 'rel.png');
+    assert.ok(fs.existsSync(expected), `File should exist at ${expected}`);
+    assert.ok(!result.result.includes(path.join('Pictures', 'Vibium')), `Relative path should not land in default screenshot dir, got ${result.result}`);
+    savedPaths.push(expected);
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch (e) {}
+  });
+
+  test('subdir relative path creates parent and saves there', () => {
+    const target = path.join(tmpDir, 'nested', 'sub.png');
+    const result = clickerJSON(`screenshot -o ${target}`);
+    assert.strictEqual(result.ok, true);
+    assert.ok(fs.existsSync(target), `File should exist at ${target}`);
+    savedPaths.push(target);
+  });
+
+  test('bare basename still goes to default screenshot dir', () => {
+    const result = clickerJSON('screenshot -o bare-basename-test.png');
+    assert.strictEqual(result.ok, true);
+    const match = result.result.match(/Screenshot saved to (.+)/);
+    assert.ok(match, 'Should report save path');
+    const saved = match[1].trim();
+    assert.ok(path.basename(saved) === 'bare-basename-test.png', 'Basename should be preserved');
+    assert.ok(saved.includes(path.join('Pictures', 'Vibium')) || saved.includes('Vibium'), `Bare basename should land in default screenshot dir, got ${saved}`);
+    savedPaths.push(saved);
   });
 });
 

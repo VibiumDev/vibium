@@ -1,6 +1,9 @@
 package main
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
@@ -9,7 +12,13 @@ func newScreenshotCmd() *cobra.Command {
 		Use:   "screenshot [url]",
 		Short: "Capture a screenshot (optionally navigate to URL first)",
 		Example: `  vibium screenshot -o shot.png
-  # Screenshots the current page
+  # Saves to the default screenshot dir (~/Pictures/Vibium/shot.png)
+
+  vibium screenshot -o ./shot.png
+  # Saves to ./shot.png in the current directory (path component honored)
+
+  vibium screenshot -o /tmp/shot.png
+  # Saves to an absolute path (honored as-is)
 
   vibium screenshot https://example.com -o shot.png
   # Navigates to URL first, then screenshots
@@ -31,6 +40,17 @@ func newScreenshotCmd() *cobra.Command {
 				}
 			}
 
+			// If --output contains a directory component, resolve it against the
+			// operator's CWD before sending — otherwise the daemon (which has its
+			// own CWD) would interpret a relative path against the wrong root.
+			// A bare basename like "shot.png" is left unchanged so the daemon's
+			// default screenshot dir still applies.
+			if strings.ContainsAny(output, "/"+string(filepath.Separator)) {
+				if abs, err := filepath.Abs(output); err == nil {
+					output = abs
+				}
+			}
+
 			// Take screenshot with filename
 			screenshotArgs := map[string]interface{}{"filename": output}
 			if fullPage {
@@ -47,7 +67,7 @@ func newScreenshotCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().StringP("output", "o", "screenshot.png", "Output file path")
+	cmd.Flags().StringP("output", "o", "screenshot.png", "Output file path. Bare filenames go to the default screenshot dir; paths with a directory component (./foo, /abs/foo, sub/foo) are honored as written.")
 	cmd.Flags().Bool("full-page", false, "Capture the full page instead of just the viewport")
 	cmd.Flags().Bool("annotate", false, "Annotate interactive elements with numbered labels")
 	return cmd
