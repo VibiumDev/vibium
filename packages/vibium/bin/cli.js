@@ -23,4 +23,9 @@ function getVibiumBinPath() {
 const vibiumPath = getVibiumBinPath();
 const args = process.argv.slice(2);
 const binName = path.basename(process.argv[1] || 'vibium', path.extname(process.argv[1] || ''));
-execFileSync(vibiumPath, args, { stdio: 'inherit', argv0: binName });
+try {
+  execFileSync(vibiumPath, args, { stdio: 'inherit', argv0: binName });
+} catch (err) {
+  // Forward the binary's exit status without dumping a Node stack trace.
+  process.exit(typeof err.status === 'number' ? err.status : 1);
+}
