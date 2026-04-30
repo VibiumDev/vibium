@@ -799,11 +799,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("screenshot file saving is disabled (use --screenshot-dir to enable)")
 		}
 
-		// Resolve the destination. A bare basename like "shot.png" goes to the
-		// configured screenshotDir (preserves the "Screenshots save to a sensible
-		// location automatically" default). A filename with any directory
-		// component — relative or absolute — is honored as written, so users
-		// can opt into custom paths with `-o ./foo.png` or `-o /tmp/foo.png`.
+		// Bare basename → screenshotDir; filename with a separator → honored as written.
 		var fullPath string
 		if filepath.Dir(filename) == "." && !strings.ContainsAny(filename, "/\\") {
 			if err := os.MkdirAll(h.screenshotDir, 0755); err != nil {
