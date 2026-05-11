@@ -20,12 +20,15 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// Create and start the recorder
 	recorder := NewRecorder()
 	recorder.Start(opts, viewport)
+	recorder.StartActionScreenshotWorker(func(context string, actionEnd time.Time) {
+		CaptureRecordingScreenshot(NewAPISession(r, session, context), recorder, actionEnd)
+	})
 
 	session.mu.Lock()
 	session.recorder = recorder
 	session.mu.Unlock()
 
-	// Screenshots are captured per-action in dispatch(), not via a background loop.
+	// Screenshots are queued per-action in dispatch(), then drained on stop.
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
 }

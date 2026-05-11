@@ -42,13 +42,12 @@ type BrowserSession struct {
 	clockPreloadScriptID string // "" if not installed
 
 	// Recording support
-	recorder           *Recorder
-	lastContext        string   // last browsing context resolved by a command
-	lastURL            string   // last known page URL, updated from load/navigation events
-	lastElementBox     *BoxInfo // last resolved element box, for recording
-	screenshotInFlight int32    // atomic; 1 = screenshot capture in progress
-	handlerScreenshot  int32    // atomic; 1 = handler already captured filmstrip screenshot
-	dispatchMu         sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
+	recorder          *Recorder
+	lastContext       string     // last browsing context resolved by a command
+	lastURL           string     // last known page URL, updated from load/navigation events
+	lastElementBox    *BoxInfo   // last resolved element box, for recording
+	handlerScreenshot int32      // atomic; 1 = handler already captured filmstrip screenshot
+	dispatchMu        sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
 }
 
 // SetLastElementBox stores the bounding box of the last resolved element for recording.
@@ -268,16 +267,24 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 
 			// Skip if handler already captured a screenshot (e.g. navigate).
 			handlerCapturedSS := atomic.CompareAndSwapInt32(&session.handlerScreenshot, 1, 0)
-			if opts.Screenshots && !handlerCapturedSS && atomic.CompareAndSwapInt32(&session.screenshotInFlight, 0, 1) {
+			if opts.Screenshots && !handlerCapturedSS {
 				context, _ := cmd.Params["context"].(string)
-				ps := NewAPISession(r, session, context)
-				CaptureRecordingScreenshot(ps, recorder, endTime)
-				atomic.StoreInt32(&session.screenshotInFlight, 0)
+				recorder.QueueActionScreenshot(endTime, actionScreenshotSettleDelay(cmd.Method), context)
 			}
 
 			recorder.RecordActionEnd(callId, afterSnapshot, endTime, box)
 		}
 	}()
+}
+
+func actionScreenshotSettleDelay(method string) time.Duration {
+	switch method {
+	case "vibium:element.click", "vibium:element.dblclick", "vibium:element.check",
+		"vibium:element.uncheck", "vibium:element.tap", "vibium:element.press",
+		"vibium:mouse.click", "vibium:keyboard.press":
+		return 500 * time.Millisecond
+	}
+	return 0
 }
 
 // OnClientMessage is called when a message is received from a client.
@@ -909,6 +916,7 @@ func (r *Router) closeSession(session *BrowserSession) {
 
 	// Stop screenshot loop before closing BiDi (captures use the connection)
 	if session.recorder != nil {
+		session.recorder.StopActionScreenshotWorker(time.Second)
 		session.recorder.StopScreenshots()
 	}
 

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vibium/clicker/internal/api"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
-	"github.com/vibium/clicker/internal/api"
 )
 
 // Handlers manages browser session state and executes tool calls.
@@ -24,14 +24,14 @@ type Handlers struct {
 	conn           *bidi.Connection
 	screenshotDir  string
 	headless       bool
-	connectURL     string      // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header // headers for remote WebSocket connection
+	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header       // headers for remote WebSocket connection
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
-	activeContext  string         // last page context switched to or created
+	activeContext  string       // last page context switched to or created
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -59,7 +59,7 @@ func (h *Handlers) newSession() *api.AgentSession {
 
 // Call executes a tool by name with the given arguments.
 // When recording is active, it wraps the dispatch with RecordAction/RecordActionEnd
-// to produce before/after events (matching the API path), and captures a
+// to produce before/after events (matching the API path), and queues a
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	log.Debug("tool call", "name", name, "args", args)
@@ -93,7 +93,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 
 	// Per-action screenshot: capture after successful non-recording commands
 	if err == nil && h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
-		api.CaptureRecordingScreenshot(h.newSession(), h.recorder, endTime)
+		h.recorder.QueueActionScreenshot(endTime, actionScreenshotSettleDelay(name), h.activeContext)
 	}
 
 	if callId != "" {
@@ -310,6 +310,15 @@ func needsFindStep(name string) bool {
 		return true
 	}
 	return false
+}
+
+func actionScreenshotSettleDelay(name string) time.Duration {
+	switch name {
+	case "browser_click", "browser_dblclick", "browser_check", "browser_uncheck",
+		"browser_mouse_click", "browser_tap", "browser_press", "browser_keys":
+		return 500 * time.Millisecond
+	}
+	return 0
 }
 
 // recordFindStep emits a complete find trace event (before + screenshot + after)
@@ -582,6 +591,10 @@ func mcpToolToMethod(name string) string {
 
 // Close cleans up any active browser sessions.
 func (h *Handlers) Close() {
+	if h.recorder != nil {
+		h.recorder.StopActionScreenshotWorker(time.Second)
+		h.recorder.StopScreenshots()
+	}
 	// Remote mode: end the BiDi session so chromedriver closes Chrome
 	if h.connectURL != "" && h.client != nil {
 		h.client.SendCommand("session.end", map[string]interface{}{})
@@ -1412,7 +1425,6 @@ func (h *Handlers) browserA11yTree(args map[string]interface{}) (*ToolsCallResul
 	}, nil
 }
 
-
 // browserHover moves the mouse over an element.
 func (h *Handlers) browserHover(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -2022,7 +2034,6 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 		Content: []Content{{Type: "text", Text: fmt.Sprintf("Timezone set to %s", tz)}},
 	}, nil
 }
-
 
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
@@ -3721,6 +3732,12 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	h.recorder = api.NewRecorder()
 	viewport := h.queryViewport()
 	h.recorder.Start(opts, viewport)
+	recorder := h.recorder
+	recorder.StartActionScreenshotWorker(func(context string, actionEnd time.Time) {
+		s := h.newSession()
+		s.Context = context
+		api.CaptureRecordingScreenshot(s, recorder, actionEnd)
+	})
 
 	// Subscribe to events and feed them to the recorder
 	h.client.SendCommand("session.subscribe", map[string]interface{}{
@@ -3736,7 +3753,7 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		},
 	})
 	h.client.SetEventHandler(func(msg string) {
-		h.recorder.RecordBidiEvent(msg)
+		recorder.RecordBidiEvent(msg)
 	})
 
 	return &ToolsCallResult{
@@ -3943,7 +3960,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 	}
 
 	var state struct {
-		Cookies []bidi.Cookie `json:"cookies"`
+		Cookies []bidi.Cookie   `json:"cookies"`
 		Storage json.RawMessage `json:"storage"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {

@@ -77,15 +77,26 @@ type groupEntry struct {
 
 // pendingRequest holds a parsed beforeRequestSent event until its response arrives.
 type pendingRequest struct {
-	context   string
-	requestID string
-	url       string
-	method    string
-	headers   []interface{} // raw BiDi header list
-	cookies   []interface{}
+	context     string
+	requestID   string
+	url         string
+	method      string
+	headers     []interface{} // raw BiDi header list
+	cookies     []interface{}
 	headersSize float64
 	bodySize    float64
 	timestamp   float64 // BiDi timestamp (ms since epoch)
+}
+
+const (
+	actionScreenshotQueueSize    = 128
+	actionScreenshotDrainTimeout = 10 * time.Second
+)
+
+type actionScreenshotJob struct {
+	actionEnd   time.Time
+	settleDelay time.Duration
+	context     string
 }
 
 // Recorder manages recording state for a browser session.
@@ -95,10 +106,10 @@ type Recorder struct {
 	mu              sync.Mutex
 	recording       bool
 	options         RecordingStartOptions
-	events          []recordEvent      // current chunk's recording events
-	network         []recordEvent      // current chunk's network events
-	resources       map[string][]byte // resource name -> binary data (JPEG/PNG)
-	groupStack      []groupEntry       // nested group entries (name + callId)
+	events          []recordEvent              // current chunk's recording events
+	network         []recordEvent              // current chunk's network events
+	resources       map[string][]byte          // resource name -> binary data (JPEG/PNG)
+	groupStack      []groupEntry               // nested group entries (name + callId)
 	pendingRequests map[string]*pendingRequest // BiDi request ID -> pending request
 	chunkIndex      int
 	startTime       int64  // unix ms
@@ -109,6 +120,13 @@ type Recorder struct {
 	// Screenshot goroutine control
 	screenshotStop chan struct{}
 	screenshotWg   sync.WaitGroup
+
+	// Per-action screenshot worker control. The worker serializes filmstrip
+	// captures so user-visible action commands do not block on screenshots.
+	actionScreenshotJobs   chan actionScreenshotJob
+	actionScreenshotDone   chan struct{}
+	actionScreenshotClosed bool
+	actionScreenshotWg     sync.WaitGroup
 }
 
 // NewRecorder creates a new recorder.
@@ -180,6 +198,8 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 
 // Stop stops recording and returns the recording zip data.
 func (t *Recorder) Stop() ([]byte, error) {
+	t.StopActionScreenshotWorker(actionScreenshotDrainTimeout)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -194,6 +214,8 @@ func (t *Recorder) Stop() ([]byte, error) {
 // StartChunk starts a new chunk within the current recording.
 // viewport is the browser viewport size (may be nil if unknown).
 func (t *Recorder) StartChunk(name, title string, viewport map[string]interface{}) {
+	t.waitActionScreenshots(actionScreenshotDrainTimeout)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -233,6 +255,8 @@ func (t *Recorder) StartChunk(name, title string, viewport map[string]interface{
 // StopChunk packages the current chunk into a zip and returns it.
 // Recording remains active for additional chunks.
 func (t *Recorder) StopChunk() ([]byte, error) {
+	t.waitActionScreenshots(actionScreenshotDrainTimeout)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -969,6 +993,115 @@ func (t *Recorder) StopScreenshots() {
 	if ch != nil {
 		close(ch)
 		t.screenshotWg.Wait()
+	}
+}
+
+// StartActionScreenshotWorker starts a single worker for per-action filmstrip
+// screenshots. Jobs are processed in order and may be drained at record stop.
+func (t *Recorder) StartActionScreenshotWorker(captureFunc func(string, time.Time)) {
+	if captureFunc == nil {
+		return
+	}
+
+	t.mu.Lock()
+	if t.actionScreenshotJobs != nil && !t.actionScreenshotClosed {
+		close(t.actionScreenshotJobs)
+	}
+	jobs := make(chan actionScreenshotJob, actionScreenshotQueueSize)
+	done := make(chan struct{})
+	t.actionScreenshotJobs = jobs
+	t.actionScreenshotDone = done
+	t.actionScreenshotClosed = false
+	t.mu.Unlock()
+
+	go func() {
+		defer close(done)
+		for job := range jobs {
+			if job.settleDelay > 0 {
+				time.Sleep(job.settleDelay)
+			}
+			if t.IsRecording() {
+				captureFunc(job.context, job.actionEnd)
+			}
+			t.actionScreenshotWg.Done()
+		}
+	}()
+}
+
+// QueueActionScreenshot queues a per-action screenshot without blocking the
+// action command. It returns false when screenshots are disabled or the queue is full.
+func (t *Recorder) QueueActionScreenshot(actionEnd time.Time, settleDelay time.Duration, context string) bool {
+	t.mu.Lock()
+	if !t.recording || !t.options.Screenshots || t.actionScreenshotJobs == nil || t.actionScreenshotClosed {
+		t.mu.Unlock()
+		return false
+	}
+
+	t.actionScreenshotWg.Add(1)
+	job := actionScreenshotJob{actionEnd: actionEnd, settleDelay: settleDelay, context: context}
+	select {
+	case t.actionScreenshotJobs <- job:
+		t.mu.Unlock()
+		return true
+	default:
+		t.actionScreenshotWg.Done()
+		t.mu.Unlock()
+		return false
+	}
+}
+
+func (t *Recorder) waitActionScreenshots(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		t.actionScreenshotWg.Wait()
+		close(done)
+	}()
+
+	if timeout <= 0 {
+		<-done
+		return true
+	}
+
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// StopActionScreenshotWorker closes the per-action screenshot queue and waits
+// for the worker to drain queued jobs up to timeout.
+func (t *Recorder) StopActionScreenshotWorker(timeout time.Duration) bool {
+	t.mu.Lock()
+	ch := t.actionScreenshotJobs
+	done := t.actionScreenshotDone
+	if ch == nil || done == nil {
+		t.mu.Unlock()
+		return true
+	}
+	if !t.actionScreenshotClosed {
+		close(ch)
+		t.actionScreenshotClosed = true
+	}
+	t.mu.Unlock()
+
+	if timeout <= 0 {
+		<-done
+		return true
+	}
+
+	select {
+	case <-done:
+		t.mu.Lock()
+		if t.actionScreenshotDone == done {
+			t.actionScreenshotJobs = nil
+			t.actionScreenshotDone = nil
+		}
+		t.mu.Unlock()
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
