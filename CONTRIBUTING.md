@@ -16,7 +16,7 @@ If you prefer to develop directly on your host machine, follow the steps below.
 - Go 1.21+
 - Node.js 18+
 - Python 3.9+ (for Python client development)
-- Java 21+ and Gradle 8+ (for Java client development)
+- Java 21+ (required for the default `make` target and Java client development)
 - GitHub CLI (optional, for managing issues/PRs from terminal):
   - macOS: `brew install gh`
   - Linux: `sudo apt install gh` or `sudo dnf install gh`
@@ -33,7 +33,9 @@ make
 make test
 ```
 
-This installs npm dependencies, builds the vibium binary and the JS client, downloads Chrome for Testing (if needed), and runs the test suite.
+`make` installs npm dependencies and builds the vibium binary, JS client, and Java client. On a fresh checkout, it needs network access for `npm install` and for the Gradle wrapper to download Gradle.
+
+`make test` downloads Chrome for Testing (if needed) and runs the full test suite. If you are only working on the Go binary or JS client, use `make build-go` or `make build-js` to avoid the Java build.
 
 ---
 
