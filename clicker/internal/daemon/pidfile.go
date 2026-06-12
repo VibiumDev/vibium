@@ -22,11 +22,17 @@ func WritePID() error {
 		return fmt.Errorf("get daemon dir: %w", err)
 	}
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create daemon dir: %w", err)
+	if err := ensureDaemonDir(dir); err != nil {
+		return err
 	}
 
-	return os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644)
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(pidPath, 0600); err != nil {
+		return fmt.Errorf("chmod pid file: %w", err)
+	}
+	return nil
 }
 
 // ReadPID reads the PID from the PID file. Returns 0 if file doesn't exist.
@@ -87,4 +93,24 @@ func CleanStale() {
 			os.Remove(socketPath)
 		}
 	}
+}
+
+func ensureDaemonDir(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create daemon dir: %w", err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return fmt.Errorf("chmod daemon dir: %w", err)
+	}
+	return nil
+}
+
+func secureSocketPath(socketPath string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	if err := os.Chmod(socketPath, 0600); err != nil {
+		return fmt.Errorf("chmod socket: %w", err)
+	}
+	return nil
 }
