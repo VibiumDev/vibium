@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,6 +32,7 @@ type ClientTransport interface {
 
 // Server is a WebSocket server that accepts client connections.
 type Server struct {
+	host       string
 	port       int
 	httpServer *http.Server
 	upgrader   websocket.Upgrader
@@ -88,13 +91,11 @@ func WithOnClose(fn func(ClientTransport)) ServerOption {
 // NewServer creates a new WebSocket server.
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
+		host: "127.0.0.1",
 		port: 9515, // default port
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  maxMessageSize,
 			WriteBufferSize: maxMessageSize,
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins
-			},
 		},
 	}
 
@@ -102,7 +103,45 @@ func NewServer(opts ...ServerOption) *Server {
 		opt(s)
 	}
 
+	s.upgrader.CheckOrigin = s.checkOrigin
+
 	return s
+}
+
+func (s *Server) listenAddr() string {
+	return fmt.Sprintf("%s:%d", s.host, s.port)
+}
+
+func (s *Server) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	originHost := parsed.Hostname()
+	if originHost == "" {
+		return false
+	}
+
+	if isLoopbackHost(s.host) {
+		return isLoopbackHost(originHost)
+	}
+
+	return strings.EqualFold(originHost, s.host)
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Port returns the port the server is listening on.
@@ -115,10 +154,8 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleWebSocket)
 
-	addr := fmt.Sprintf(":%d", s.port)
-
 	// Bind to the port (port 0 = OS-assigned random port)
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", s.listenAddr())
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %d: %w", s.port, err)
 	}
