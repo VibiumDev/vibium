@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -250,7 +251,18 @@ func chromeArgs(headless bool) []string {
 	if headless {
 		args = append(args, "--headless=new")
 	}
+	// Append any custom flags from VIBIUM_CHROME_ARGS (space-separated) so users
+	// can pass --no-sandbox etc. in root/CI/container environments where Chrome
+	// refuses to start otherwise. Empty tokens (from extra whitespace) are skipped.
+	args = append(args, customChromeArgs()...)
 	return args
+}
+
+// customChromeArgs reads extra Chrome flags from the VIBIUM_CHROME_ARGS
+// environment variable, splitting on whitespace and dropping empty tokens.
+// Returns nil when the variable is unset or contains only whitespace.
+func customChromeArgs() []string {
+	return strings.Fields(os.Getenv("VIBIUM_CHROME_ARGS"))
 }
 
 // buildCapabilities returns the capabilities map for BiDi session.new.
