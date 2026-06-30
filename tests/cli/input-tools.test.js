@@ -63,7 +63,9 @@ describe('CLI: Negative value flag parsing', () => {
   });
 
   test('fill accepts negative numeric value', () => {
-    execSync(`${VIBIUM} go https://the-internet.herokuapp.com/login`, {
+    // Hermetic fixture — avoids a third-party site so the test only exercises
+    // flag parsing, not network reachability.
+    execSync(`${VIBIUM} content '<input id="username" value="">'`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -72,13 +74,29 @@ describe('CLI: Negative value flag parsing', () => {
       timeout: 30000,
     });
     assert.doesNotMatch(result, /unknown shorthand flag/, 'Should not treat -2 as a flag');
+    assert.match(result, /Filled/, 'fill should succeed');
+    const value = execSync(`${VIBIUM} eval 'document.getElementById("username").value'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(value, /-2/, 'field value should actually be set to -2');
   });
 
   test('type accepts negative numeric value', () => {
-    const result = execSync(`${VIBIUM} type https://the-internet.herokuapp.com/login "#username" "-2"`, {
+    execSync(`${VIBIUM} content '<input id="username" value="">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} type "#username" "-2"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
     assert.doesNotMatch(result, /unknown shorthand flag/, 'Should not treat -2 as a flag');
+    assert.match(result, /Typed/, 'type should succeed');
+    const value = execSync(`${VIBIUM} eval 'document.getElementById("username").value'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(value, /-2/, 'field value should actually be set to -2');
   });
 });

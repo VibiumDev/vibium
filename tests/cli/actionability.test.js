@@ -29,6 +29,7 @@ describe('CLI: Actionability', () => {
         execSync(`${VIBIUM} click https://example.com "#does-not-exist" --timeout 1s`, {
           encoding: 'utf-8',
           timeout: 10000,
+          stdio: 'pipe', // capture the expected failure instead of leaking it to the console
         });
       },
       /timeout|not found/i,
@@ -74,6 +75,7 @@ describe('CLI: --timeout flag formats', () => {
         execSync(`${VIBIUM} click "#does-not-exist" --timeout 800`, {
           encoding: 'utf-8',
           timeout: 10000,
+          stdio: 'pipe', // capture the expected failure instead of leaking it to the console
         });
       },
       /800ms|not found/i,
@@ -84,7 +86,7 @@ describe('CLI: --timeout flag formats', () => {
   test('rejects an invalid timeout value', () => {
     assert.throws(
       () => {
-        execSync(`${VIBIUM} click "#x" --timeout 5q`, { encoding: 'utf-8', timeout: 10000 });
+        execSync(`${VIBIUM} click "#x" --timeout 5q`, { encoding: 'utf-8', timeout: 10000, stdio: 'pipe' });
       },
       /invalid timeout/i,
       'Should reject "5q" with a clear message'
