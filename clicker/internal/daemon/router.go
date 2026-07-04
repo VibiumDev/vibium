@@ -10,6 +10,7 @@ import (
 
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/paths"
 )
 
 // StatusResult is returned by daemon/status.
@@ -19,6 +20,7 @@ type StatusResult struct {
 	Uptime    string `json:"uptime"`
 	Socket    string `json:"socket"`
 	StartTime string `json:"startTime"`
+	Session   string `json:"session"`
 }
 
 // handleConnection processes a single client connection.
@@ -139,6 +141,7 @@ func (d *Daemon) handleStatus() (interface{}, *agent.Error) {
 		Uptime:    time.Since(d.startTime).Truncate(time.Second).String(),
 		Socket:    d.socketPath,
 		StartTime: d.startTime.Format(time.RFC3339),
+		Session:   paths.SessionName(),
 	}, nil
 }
 

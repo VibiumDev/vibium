@@ -146,6 +146,7 @@ func newDaemonStatusCmd() *cobra.Command {
 					"pid":     status.PID,
 					"uptime":  status.Uptime,
 					"socket":  status.Socket,
+					"session": status.Session,
 				})
 				return
 			}
@@ -155,6 +156,9 @@ func newDaemonStatusCmd() *cobra.Command {
 			fmt.Printf("pid:      %d\n", status.PID)
 			fmt.Printf("uptime:   %s\n", status.Uptime)
 			fmt.Printf("socket:   %s\n", status.Socket)
+			if status.Session != "" {
+				fmt.Printf("session:  %s\n", status.Session)
+			}
 		},
 	}
 }
