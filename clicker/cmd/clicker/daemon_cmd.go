@@ -55,7 +55,11 @@ func newDaemonStartCmd() *cobra.Command {
   # Auto-shutdown after 30 minutes of inactivity
 
   vibium daemon start --connect ws://remote:9515/session
-  # Connect to a remote browser instead of launching a local one`,
+  # Connect to a remote browser instead of launching a local one
+
+  vibium --session projA daemon start
+  # Isolated session "projA": own daemon, own browser, socket
+  # vibium-projA.sock; VIBIUM_SESSION=projA does the same`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !foreground && !internal {
 				// Daemonize: re-exec as detached child
