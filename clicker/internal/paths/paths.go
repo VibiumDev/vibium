@@ -200,6 +200,16 @@ func sessionSuffix() (string, error) {
 	return "-" + name, nil
 }
 
+// maxSocketPathLen returns the longest usable Unix socket path for this
+// platform. sockaddr_un.sun_path holds 104 bytes on macOS/BSD and 108 on
+// Linux, including the trailing NUL.
+func maxSocketPathLen() int {
+	if runtime.GOOS == "darwin" {
+		return 103
+	}
+	return 107
+}
+
 // GetSocketPath returns the platform-specific socket path for the daemon.
 // macOS/Linux: ~/Library/Caches/vibium/vibium[-<session>].sock or ~/.cache/vibium/vibium[-<session>].sock
 // Windows: \\.\pipe\vibium[-<session>] (named pipe)
@@ -215,7 +225,13 @@ func GetSocketPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "vibium"+suffix+".sock"), nil
+	path := filepath.Join(dir, "vibium"+suffix+".sock")
+	// Binding a socket beyond sun_path's capacity fails deep inside daemon
+	// startup; reject it here with an actionable message instead.
+	if len(path) > maxSocketPathLen() {
+		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or point VIBIUM_CACHE_DIR at a shorter path", path, len(path), maxSocketPathLen())
+	}
+	return path, nil
 }
 
 // GetPIDPath returns the path to the daemon PID file.

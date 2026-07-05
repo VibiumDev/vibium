@@ -30,7 +30,10 @@ vibium --session seller go https://shop.example.com/admin
 ```
 
 Both forms are equivalent; the flag takes precedence over the environment.
-Session names may use letters, digits, `-` and `_` (max 64 chars).
+Session names may use letters, digits, `-` and `_` (max 64 chars). On
+macOS/Linux the session's socket path must also fit the OS socket-path
+limit — if a long name pushes it over, vibium says so and a shorter name
+(or a shorter `VIBIUM_CACHE_DIR`) fixes it.
 
 ## Inspecting sessions
 

@@ -81,3 +81,22 @@ func TestValidateSessionName(t *testing.T) {
 		}
 	}
 }
+
+func TestSocketPathLengthLimit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("named pipes have no socket path length limit")
+	}
+
+	// Long cache dir + long session exceeds the sockaddr_un limit.
+	t.Setenv("VIBIUM_CACHE_DIR", "/tmp/"+strings.Repeat("d", 60))
+	t.Setenv("VIBIUM_SESSION", strings.Repeat("s", 40))
+	if _, err := GetSocketPath(); err == nil {
+		t.Error("GetSocketPath: want error for socket path exceeding sockaddr_un limit")
+	}
+
+	// The same session fits under a short cache dir.
+	t.Setenv("VIBIUM_CACHE_DIR", "/tmp/vib")
+	if _, err := GetSocketPath(); err != nil {
+		t.Errorf("GetSocketPath with short cache dir: %v", err)
+	}
+}

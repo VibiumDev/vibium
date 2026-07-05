@@ -242,6 +242,14 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 
 // daemonize spawns the daemon as a detached background process.
 func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+	// Resolve the socket path first: an unusable path (bad session name,
+	// over-long socket path) should fail here, not in the detached child.
+	socketPath, err := paths.GetSocketPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Clean stale files first
 	daemon.CleanStale()
 
@@ -284,7 +292,6 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 	}
 
 	// Poll for socket availability
-	socketPath, _ := paths.GetSocketPath()
 	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
 		fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
 		os.Exit(1)
