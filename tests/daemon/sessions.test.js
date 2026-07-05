@@ -8,11 +8,20 @@ const assert = require('node:assert');
 const { execSync } = require('node:child_process');
 const { VIBIUM } = require('../helpers');
 
+// Build a child env with any ambient session stripped, so bare commands
+// deterministically target the default session; tests that need a session
+// set it via overrides or --session.
+function cleanEnv(overrides) {
+  const env = { ...process.env };
+  delete env.VIBIUM_SESSION;
+  return Object.assign(env, overrides);
+}
+
 function clicker(args, opts = {}) {
   const result = execSync(`${VIBIUM} ${args}`, {
     encoding: 'utf-8',
     timeout: opts.timeout || 60000,
-    env: { ...process.env, ...opts.env },
+    env: cleanEnv(opts.env),
   });
   return result.trim();
 }
@@ -25,7 +34,11 @@ function clickerJSON(args, opts = {}) {
 function stopDaemon(session) {
   try {
     const flag = session ? `--session ${session} ` : '';
-    execSync(`${VIBIUM} ${flag}daemon stop`, { encoding: 'utf-8', timeout: 10000 });
+    execSync(`${VIBIUM} ${flag}daemon stop`, {
+      encoding: 'utf-8',
+      timeout: 10000,
+      env: cleanEnv(),
+    });
   } catch (e) {
     // Daemon may not be running
   }
