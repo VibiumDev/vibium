@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
 )
 
