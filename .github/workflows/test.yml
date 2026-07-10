@@ -67,9 +67,12 @@ jobs:
 
       # npm ci installs exactly what the lockfile pins. The lockfile is
       # generated on macOS, so rollup's Linux native module is missing from
-      # it and has to be added separately.
+      # it and has to be added separately, locked to the rollup version the
+      # lockfile installed so it cannot float to a newer release.
       - name: Install npm dependencies
-        run: npm ci && npm install --no-save @rollup/rollup-linux-x64-gnu
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
       - name: Build
         run: make
