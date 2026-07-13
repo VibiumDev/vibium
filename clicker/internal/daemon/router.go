@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"time"
 
-	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // StatusResult is returned by daemon/status.
@@ -31,14 +32,13 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 	// Set read deadline
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	scanner := bufio.NewScanner(conn)
-	// Increase scanner buffer for large requests
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
-	if !scanner.Scan() {
+	// Requests can be arbitrarily large (e.g. filling a form field with a
+	// long string), so read with bufio.Reader, which grows as needed —
+	// bufio.Scanner fails once a request exceeds its fixed buffer.
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	if len(line) == 0 || (err != nil && err != io.EOF) {
 		return
 	}
-	line := scanner.Bytes()
 
 	response := d.handleRequest(line)
 	if response == nil {

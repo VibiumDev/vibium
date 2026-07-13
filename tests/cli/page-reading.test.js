@@ -59,4 +59,29 @@ describe('CLI: Page Reading', () => {
     assert.match(result, /@e1/, 'Should contain @e1 ref');
     assert.ok(!result.includes('@e2'), 'Should not contain @e2 ref');
   });
+
+  // Regression test for #209: the daemon socket transport used a fixed-size
+  // scanner buffer, so any response over 1MB (large pages, JSON APIs) crashed
+  // with "read response: bufio.Scanner: token too long".
+  test('text command handles multi-megabyte page text', () => {
+    const size = 3 * 1024 * 1024;
+    execSync(`${VIBIUM} go https://example.com`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    execSync(
+      `${VIBIUM} eval "document.body.textContent = 'issue-209-marker ' + 'x'.repeat(${size}); 'big page ready'"`,
+      { encoding: 'utf-8', timeout: 30000 }
+    );
+    const result = execSync(`${VIBIUM} text`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.match(result, /issue-209-marker/, 'Should contain marker text');
+    assert.ok(
+      result.length > size,
+      `Should return full page text, >${size} chars (got ${result.length})`
+    );
+  });
 });

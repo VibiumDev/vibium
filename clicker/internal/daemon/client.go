@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/vibium/clicker/internal/agent"
@@ -126,17 +127,21 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	}
 
 	conn.SetReadDeadline(time.Now().Add(readTimeout))
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("read response: %w", err)
-		}
+	// Responses can be arbitrarily large (e.g. page text, a11y trees), so
+	// read with bufio.Reader, which grows as needed — bufio.Scanner fails
+	// with "token too long" once a response exceeds its fixed buffer.
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	switch {
+	case err == io.EOF && len(line) > 0:
+		// Complete response without a trailing newline; parse it as-is.
+	case err == io.EOF:
 		return nil, fmt.Errorf("daemon closed connection without response")
+	case err != nil:
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	var resp agent.Response
-	if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+	if err := json.Unmarshal(line, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
