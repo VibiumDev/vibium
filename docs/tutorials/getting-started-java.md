@@ -115,6 +115,14 @@ curl -LO https://repo1.maven.org/maven2/com/vibium/vibium/26.3.18/vibium-26.3.18
 curl -LO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
 ```
 
+Chrome for Testing and chromedriver download automatically on first `Vibium.start()`. Everything is cached in a platform-specific directory:
+
+| Platform | Cache path |
+|----------|------------|
+| Linux | `~/.cache/vibium/` |
+| macOS | `~/Library/Caches/vibium/` |
+| Windows | `%LOCALAPPDATA%\vibium\` |
+
 ---
 
 ## Step 3: Write Your First Program
@@ -238,20 +246,7 @@ Java isn't installed or isn't in your PATH. See [Step 1](#step-1-install-java) a
 
 ### "chromedriver not found" or "Chrome not found"
 
-Chrome for Testing downloads automatically on first use. If auto-install fails (e.g. behind a corporate proxy), install it manually:
-
-```bash
-# Using the CLI proxy built into the JAR
-java -jar vibium-26.3.18.jar install
-
-# Or if vibium is on your PATH
-vibium install
-```
-
-To skip the automatic download (e.g. if you provide your own Chrome), set:
-```bash
-export VIBIUM_SKIP_BROWSER_DOWNLOAD=1
-```
+Chrome for Testing downloads automatically on first use. If auto-install fails (e.g. behind a corporate proxy), see [Advanced: Manual Browser Install](#advanced-manual-browser-install) below.
 
 ### "package com.vibium does not exist"
 
@@ -269,6 +264,68 @@ Browser bro = Vibium.start(new StartOptions().headless(false));
 You might need to install dependencies for Chrome:
 ```bash
 sudo apt-get install -y libgbm1 libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libasound2
+```
+
+### Custom cache directory
+
+By default, Chrome for Testing installs to the platform-specific cache path shown in [Step 2](#step-2-create-a-project-folder). To change this (e.g. if your IT policy restricts writes to `%LOCALAPPDATA%`), set `VIBIUM_CACHE_DIR`:
+
+```bash
+# macOS/Linux
+export VIBIUM_CACHE_DIR=/path/to/allowed/dir
+
+# Windows (PowerShell)
+$env:VIBIUM_CACHE_DIR = "C:\path\to\allowed\dir"
+```
+
+---
+
+## Advanced: Manual Browser Install
+
+If Chrome for Testing fails to auto-download (e.g. behind a corporate proxy), you can trigger the install manually.
+
+### No build tool
+
+```bash
+java -jar vibium-26.3.18.jar install
+```
+
+### Maven
+
+```bash
+mvn compile exec:java -Dexec.mainClass=com.vibium.CLI -Dexec.args="install"
+```
+
+### Gradle
+
+Add a task to your `build.gradle`:
+
+```groovy
+task vibiumInstall(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.vibium.CLI'
+    args 'install'
+}
+```
+
+Then run:
+
+```bash
+gradle vibiumInstall
+```
+
+### With overrides
+
+Combine with environment variables as needed:
+
+```bash
+# Install to a custom directory
+VIBIUM_CACHE_DIR=/path/to/dir java -jar vibium-26.3.18.jar install
+VIBIUM_CACHE_DIR=/path/to/dir mvn compile exec:java -Dexec.mainClass=com.vibium.CLI -Dexec.args="install"
+VIBIUM_CACHE_DIR=/path/to/dir gradle vibiumInstall
+
+# Skip auto-download entirely (bring your own Chrome)
+export VIBIUM_SKIP_BROWSER_DOWNLOAD=1
 ```
 
 ---

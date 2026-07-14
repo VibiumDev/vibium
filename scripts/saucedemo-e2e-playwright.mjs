@@ -1,19 +1,22 @@
+// Prereq: cd scripts && npm install playwright
 import { chromium } from "./node_modules/playwright/index.mjs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const outPath = path.resolve(__dirname, "..", "saucedemo-trace.zip");
+const outPath = path.resolve(__dirname, "..", "saucedemo-playwright-trace.zip");
 
 const browser = await chromium.launch({ headless: false });
-const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+});
 const page = await context.newPage();
 
 await context.tracing.start({
     name: "saucedemo-e2e",
-    title: "SauceDemo E2E Test",
+    title: "Playwright - SauceDemo E2E Test",
     screenshots: true,
-    snapshots: false,
+    snapshots: true,
 });
 
 // 1. Logging in

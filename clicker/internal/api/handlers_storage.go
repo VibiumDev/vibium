@@ -533,6 +533,15 @@ func GetCookies(s Session, context string) ([]CookieInfo, error) {
 
 // SetCookie sets a cookie in the given browsing context.
 func SetCookie(s Session, context, name, value, domain, path string) error {
+	// BiDi storage.setCookie requires a domain. When the caller omits it, fall
+	// back to the current page's hostname so `set_cookie` works on the active
+	// site without an explicit domain, like devtools/Playwright (issue #152).
+	if domain == "" {
+		if host, err := EvalSimpleScript(s, context, "() => location.hostname"); err == nil {
+			domain = host
+		}
+	}
+
 	cookieMap := map[string]interface{}{
 		"name":  name,
 		"value": map[string]interface{}{"type": "string", "value": value},

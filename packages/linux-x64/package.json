@@ -1,6 +1,6 @@
 {
   "name": "@vibium/linux-x64",
-  "version": "26.3.18",
+  "version": "26.5.31",
   "description": "Vibium binary for Linux x64",
   "author": "Jason Huggins <hugs@vibium.com>",
   "license": "Apache-2.0",

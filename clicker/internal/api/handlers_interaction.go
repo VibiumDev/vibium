@@ -1057,7 +1057,15 @@ func buildSelectOptionScript(ep ElementParams, value string) (string, []map[stri
 				el = root.querySelector(selector);
 			}
 			if (!el) return 'element not found';
-			el.value = value;
+			if (el.tagName !== 'SELECT') return 'not a <select> element';
+			// Match by option value, then fall back to the visible label/text so
+			// passing "California" (for <option value="CA">California</option>)
+			// works. Without this, an unmatched value silently no-ops (issue #140).
+			const opts = Array.from(el.options || []);
+			const match = opts.find(o => o.value === value)
+				|| opts.find(o => ((o.label || o.text || '').trim() === value));
+			if (!match) return 'no <option> matches "' + value + '"';
+			el.value = match.value;
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));
 			return 'ok';
@@ -1089,11 +1097,17 @@ func buildSetValueScript(ep ElementParams, value string) (string, []map[string]i
 			}
 			if (!el) return 'element not found';
 			el.focus();
-			const nativeSetter = Object.getOwnPropertyDescriptor(
-				window.HTMLInputElement.prototype, 'value'
-			)?.set || Object.getOwnPropertyDescriptor(
-				window.HTMLTextAreaElement.prototype, 'value'
-			)?.set;
+			// Pick the native value setter for the element's ACTUAL type. Calling
+			// the HTMLInputElement setter on a <textarea> throws "Illegal
+			// invocation" because the setter validates its receiver (issue #117).
+			const proto = (el instanceof window.HTMLTextAreaElement)
+				? window.HTMLTextAreaElement.prototype
+				: (el instanceof window.HTMLInputElement)
+					? window.HTMLInputElement.prototype
+					: null;
+			const nativeSetter = proto
+				? Object.getOwnPropertyDescriptor(proto, 'value')?.set
+				: null;
 			if (nativeSetter) {
 				nativeSetter.call(el, value);
 			} else {

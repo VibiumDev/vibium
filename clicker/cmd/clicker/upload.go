@@ -4,19 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 func newUploadCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "upload [selector] [files...]",
 		Short: "Set files on an input[type=file] element",
 		Example: `  vibium upload "input[type=file]" ./photo.jpg
   # Upload a single file
 
   vibium upload "#file-input" ./photo.jpg ./doc.pdf
-  # Upload multiple files`,
+  # Upload multiple files
+
+  vibium upload "input[type=file]" ./photo.jpg --timeout 5s
+  # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			selector := args[0]
@@ -36,6 +41,7 @@ func newUploadCmd() *cobra.Command {
 			result, err := daemonCall("browser_upload", map[string]interface{}{
 				"selector": selector,
 				"files":    absFiles,
+				"timeout":  float64(timeout.Milliseconds()),
 			})
 			if err != nil {
 				printError(err)
@@ -44,4 +50,6 @@ func newUploadCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
+	addTimeoutFlag(cmd, &timeout)
+	return cmd
 }

@@ -39,7 +39,7 @@ before(async () => {
 });
 
 after(async () => {
-  await bro.stop();
+  if (bro) await bro.stop();
   if (server) server.close();
 });
 

@@ -214,6 +214,15 @@ describe('Page Waiting', () => {
     const result = await vibe.waitUntil('() => document.querySelector("h1") !== null');
     assert.ok(result, 'waitUntil should return truthy value');
   });
+
+  test('waitUntil(bare expression) resolves, not just functions (#123)', async () => {
+    const vibe = await bro.page();
+    await vibe.go('data:text/html,<h1>hi</h1>');
+
+    // A bare boolean expression (no "() =>") previously always timed out.
+    const result = await vibe.waitUntil(`document.readyState === 'complete'`, { timeout: 3000 });
+    assert.ok(result, 'bare-expression waitUntil should resolve');
+  });
 });
 
 // --- Fluent Chaining with State ---

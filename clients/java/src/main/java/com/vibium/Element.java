@@ -86,10 +86,14 @@ public class Element {
     /** Drag this element to a target element. */
     public void dragTo(Element target) {
         JsonObject params = elementParams();
-        params.addProperty("targetSelector", target.selector);
+        // The engine reads the target as a nested element-params object under the
+        // "target" key, not flat "targetSelector"/"targetIndex" (issue #134).
+        JsonObject targetParams = new JsonObject();
+        targetParams.addProperty("selector", target.selector);
         if (target.index > 0) {
-            params.addProperty("targetIndex", target.index);
+            targetParams.addProperty("index", target.index);
         }
+        params.add("target", targetParams);
         client.send("vibium:element.dragTo", params);
     }
 
@@ -107,7 +111,8 @@ public class Element {
     /** Dispatch a DOM event with init options. */
     public void dispatchEvent(String eventType, Map<String, Object> eventInit) {
         JsonObject params = elementParams();
-        params.addProperty("type", eventType);
+        // The engine reads the event name from "eventType", not "type" (issue #132).
+        params.addProperty("eventType", eventType);
         if (eventInit != null) {
             params.add("eventInit", GSON.toJsonTree(eventInit));
         }

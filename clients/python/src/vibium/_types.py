@@ -8,12 +8,35 @@ from typing import List, Optional, TypedDict, Union
 
 @dataclass
 class BoundingBox:
-    """Bounding box of an element."""
+    """Bounding box of an element.
+
+    Supports both attribute access (``box.width``) and dict-style access
+    (``box["width"]``, ``"width" in box``) so callers can treat it like the
+    JSON object other browser-automation libraries return (issue #147).
+    """
 
     x: float
     y: float
     width: float
     height: float
+
+    def __getitem__(self, key: str) -> float:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key) from None
+
+    def __contains__(self, key: object) -> bool:
+        return key in ("x", "y", "width", "height")
+
+    def __iter__(self):
+        return iter(("x", "y", "width", "height"))
+
+    def keys(self) -> List[str]:
+        return ["x", "y", "width", "height"]
+
+    def get(self, key: str, default: Optional[float] = None) -> Optional[float]:
+        return getattr(self, key, default)
 
 
 @dataclass

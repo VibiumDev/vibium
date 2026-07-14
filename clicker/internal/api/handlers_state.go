@@ -25,6 +25,36 @@ func (r *Router) handleVibiumElText(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"text": val})
 }
 
+// handleVibiumElHighlight handles vibium:element.highlight — briefly outlines an
+// element so a human watching the browser can see which element was targeted.
+func (r *Router) handleVibiumElHighlight(session *BrowserSession, cmd bidiCommand) {
+	ep := ExtractElementParams(cmd.Params)
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	script, args := buildElStateScript(ep, `(() => {
+		const prevOutline = el.style.outline;
+		const prevOffset = el.style.outlineOffset;
+		el.style.outline = '2px solid #ff2d95';
+		el.style.outlineOffset = '1px';
+		setTimeout(() => { el.style.outline = prevOutline; el.style.outlineOffset = prevOffset; }, 2000);
+		return 'ok';
+	})()`)
+	val, err := r.evalElementScript(session, context, script, args)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if val != "ok" {
+		r.sendError(session, cmd.ID, fmt.Errorf("highlight: %s", val))
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{"highlighted": true})
+}
+
 // handleVibiumElInnerText handles vibium:element.innerText — returns element.innerText.
 func (r *Router) handleVibiumElInnerText(session *BrowserSession, cmd bidiCommand) {
 	ep := ExtractElementParams(cmd.Params)
@@ -501,12 +531,23 @@ func (r *Router) handlePageWaitForFunction(session *BrowserSession, cmd bidiComm
 		timeout = time.Duration(timeoutMs) * time.Millisecond
 	}
 
+	// Callers pass either a full function ("() => cond", "function(){...}") or a
+	// bare boolean expression ("document.readyState === 'complete'"). A bare
+	// expression is not a valid functionDeclaration, so BiDi threw every poll and
+	// the call always timed out (issues #123, #131, #145). Wrap uniformly: evaluate
+	// the operand, and invoke it if it turned out to be a function.
+	wrapped := fmt.Sprintf(
+		"() => { const __vibiumPred = (%s); return (typeof __vibiumPred === 'function') ? __vibiumPred() : __vibiumPred; }",
+		strings.TrimRight(strings.TrimSpace(fn), ";"),
+	)
+
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
+	lastErr := ""
 
 	for {
 		resp, err := r.sendInternalCommand(session, "script.callFunction", map[string]interface{}{
-			"functionDeclaration": fn,
+			"functionDeclaration": wrapped,
 			"target":              map[string]interface{}{"context": context},
 			"arguments":           []map[string]interface{}{},
 			"awaitPromise":        true,
@@ -515,41 +556,55 @@ func (r *Router) handlePageWaitForFunction(session *BrowserSession, cmd bidiComm
 		if err == nil {
 			var result struct {
 				Result struct {
+					Type   string `json:"type"`
 					Result struct {
 						Type  string      `json:"type"`
 						Value interface{} `json:"value"`
 					} `json:"result"`
+					ExceptionDetails struct {
+						Text string `json:"text"`
+					} `json:"exceptionDetails"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(resp, &result); err == nil {
-				// Truthy check: non-null, non-undefined, non-false, non-zero, non-empty-string
-				res := result.Result.Result
-				truthy := false
-				switch res.Type {
-				case "boolean":
-					truthy = res.Value == true
-				case "number":
-					if v, ok := res.Value.(float64); ok {
-						truthy = v != 0
+				if result.Result.Type == "exception" {
+					// Keep polling — the expression may reference state that does
+					// not exist yet — but remember why for the timeout message.
+					lastErr = result.Result.ExceptionDetails.Text
+				} else {
+					// Truthy check: non-null, non-undefined, non-false, non-zero, non-empty-string
+					res := result.Result.Result
+					truthy := false
+					switch res.Type {
+					case "boolean":
+						truthy = res.Value == true
+					case "number":
+						if v, ok := res.Value.(float64); ok {
+							truthy = v != 0
+						}
+					case "string":
+						if v, ok := res.Value.(string); ok {
+							truthy = v != ""
+						}
+					case "null", "undefined":
+						truthy = false
+					default:
+						truthy = res.Value != nil
 					}
-				case "string":
-					if v, ok := res.Value.(string); ok {
-						truthy = v != ""
+					if truthy {
+						r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": res.Value})
+						return
 					}
-				case "null", "undefined":
-					truthy = false
-				default:
-					truthy = res.Value != nil
-				}
-				if truthy {
-					r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": res.Value})
-					return
 				}
 			}
 		}
 
 		if time.Now().After(deadline) {
-			r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for function to return truthy"))
+			if lastErr != "" {
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for function to return truthy (last error: %s)", lastErr))
+			} else {
+				r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for function to return truthy"))
+			}
 			return
 		}
 
@@ -870,7 +925,10 @@ func IsEnabled(s Session, context string, ep ElementParams) (bool, error) {
 
 // GetCount counts elements matching a CSS selector.
 func GetCount(s Session, context, selector string) (int, error) {
-	expr := fmt.Sprintf(`() => document.querySelectorAll(%q).length`, selector)
+	// Return the count as a string: parseScriptResult unmarshals the BiDi result
+	// value into a Go string field, so a bare numeric result fails with "cannot
+	// unmarshal number ... into ... string" (issue #149).
+	expr := fmt.Sprintf(`() => String(document.querySelectorAll(%q).length)`, selector)
 	val, err := EvalSimpleScript(s, context, expr)
 	if err != nil {
 		return 0, err
@@ -953,6 +1011,7 @@ func ResolveElementNoWait(s Session, context string, ep ElementParams) (*Element
 
 // WaitForVisible polls until the element exists and is visible, or times out.
 func WaitForVisible(s Session, context string, ep ElementParams) error {
+	ep = ep.withDefaultTimeout()
 	deadline := time.Now().Add(ep.Timeout)
 	interval := 100 * time.Millisecond
 
@@ -974,6 +1033,7 @@ func WaitForVisible(s Session, context string, ep ElementParams) error {
 
 // WaitForHidden polls until the element is either not found or not visible.
 func WaitForHidden(s Session, context string, ep ElementParams) error {
+	ep = ep.withDefaultTimeout()
 	deadline := time.Now().Add(ep.Timeout)
 	interval := 100 * time.Millisecond
 

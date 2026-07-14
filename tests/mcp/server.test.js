@@ -68,7 +68,7 @@ class MCPClient {
     return msg.id;
   }
 
-  receive(timeout = 60000) {
+  receive(timeout = 120000) {
     return new Promise((resolve, reject) => {
       // Check if we already have a response buffered
       if (this.responses.length > 0) {
@@ -1051,5 +1051,72 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     } finally {
       cleanupDir(tmpDir);
     }
+  });
+});
+
+describe('MCP Server: regression fixes', () => {
+  let client;
+
+  before(async () => {
+    client = new MCPClient();
+    await client.start();
+    await client.call('initialize', { capabilities: {} });
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: 'https://example.com' } });
+  });
+
+  after(() => {
+    client.stop();
+  });
+
+  const tool = (name, args = {}) => client.call('tools/call', { name, arguments: args });
+
+  test('browser_sleep accepts a stringified number (#85)', async () => {
+    const r = await tool('browser_sleep', { ms: '100' });
+    assert.ok(!r.result.isError, `ms:"100" should be accepted: ${JSON.stringify(r.result)}`);
+  });
+
+  test('browser_count returns an integer (#149)', async () => {
+    const r = await tool('browser_count', { selector: 'a' });
+    assert.ok(!r.result.isError, 'count should not error');
+    assert.ok(/^\d+$/.test(r.result.content[0].text.trim()), `count should be an integer, got: ${r.result.content[0].text}`);
+  });
+
+  test('browser_evaluate returning "" gives {type:text,text:""} not invalid_union (#154)', async () => {
+    const r = await tool('browser_evaluate', { expression: "[].join(',')" });
+    assert.ok(!r.result.isError, `empty result should not error: ${JSON.stringify(r.result)}`);
+    const c = r.result.content[0];
+    assert.strictEqual(c.type, 'text');
+    assert.strictEqual(c.text, '', 'empty string result must carry an explicit empty text field');
+  });
+
+  test('browser_get_attribute on an absent attribute does not error (#153)', async () => {
+    const r = await tool('browser_get_attribute', { selector: 'h1', attribute: 'data-nonexistent' });
+    assert.ok(!r.result.isError, `absent attribute should not error: ${JSON.stringify(r.result)}`);
+    assert.strictEqual(r.result.content[0].type, 'text');
+  });
+
+  test('browser_get_text on an empty element returns "" (#157)', async () => {
+    await tool('browser_navigate', { url: 'data:text/html,<div id="e"></div>' });
+    const r = await tool('browser_get_text', { selector: '#e' });
+    assert.ok(!r.result.isError, `empty text should not error: ${JSON.stringify(r.result)}`);
+    assert.strictEqual(r.result.content[0].text, '');
+    await tool('browser_navigate', { url: 'https://example.com' });
+  });
+
+  test('browser_set_cookie derives domain from the page when omitted (#152)', async () => {
+    const r = await tool('browser_set_cookie', { name: 'tc', value: 'abc' });
+    assert.ok(!r.result.isError, `set_cookie without domain should succeed: ${JSON.stringify(r.result)}`);
+  });
+
+  test('browser_storage_state parses cookies without crashing (#150)', async () => {
+    const r = await tool('browser_storage_state', {});
+    assert.ok(!r.result.isError, `storage_state should not crash: ${JSON.stringify(r.result)}`);
+  });
+
+  test('browser_screenshot annotate:true returns an image (#156)', async () => {
+    const r = await tool('browser_screenshot', { annotate: true });
+    assert.ok(!r.result.isError, `annotate should not crash: ${JSON.stringify(r.result)}`);
+    const img = r.result.content.find((c) => c.type === 'image');
+    assert.ok(img && img.data && img.data.length > 100, 'should return image data');
   });
 });

@@ -66,9 +66,9 @@ func (c *Client) Evaluate(context, expression string) (interface{}, error) {
 	}
 
 	params := map[string]interface{}{
-		"expression":    expression,
-		"target":        map[string]interface{}{"context": context},
-		"awaitPromise":  true,
+		"expression":      expression,
+		"target":          map[string]interface{}{"context": context},
+		"awaitPromise":    true,
 		"resultOwnership": "none",
 	}
 
@@ -96,7 +96,7 @@ func (c *Client) Evaluate(context, expression string) (interface{}, error) {
 		return nil, fmt.Errorf("failed to parse remote value: %w", err)
 	}
 
-	return remoteValue.Value, nil
+	return convertRemoteValue(remoteValue), nil
 }
 
 // CallFunction calls a JavaScript function with arguments.
@@ -152,7 +152,7 @@ func (c *Client) CallFunction(context, functionDeclaration string, args []interf
 		return nil, fmt.Errorf("failed to parse remote value: %w", err)
 	}
 
-	return remoteValue.Value, nil
+	return convertRemoteValue(remoteValue), nil
 }
 
 // serializeValue converts a Go value to a BiDi serialized value.
@@ -170,4 +170,65 @@ func serializeValue(v interface{}) map[string]interface{} {
 		// For complex types, try to serialize as string
 		return map[string]interface{}{"type": "string", "value": fmt.Sprintf("%v", val)}
 	}
+}
+
+// convertRemoteValue recursively converts a BiDi RemoteValue into a plain Go
+// value suitable for JSON serialization. Primitives pass through unchanged;
+// arrays and objects are reconstructed by converting each child element.
+func convertRemoteValue(rv RemoteValue) interface{} {
+	switch rv.Type {
+	case "string", "number", "boolean":
+		return rv.Value
+	case "null", "undefined":
+		return nil
+	case "array":
+		items, ok := rv.Value.([]interface{})
+		if !ok {
+			return rv.Value
+		}
+		result := make([]interface{}, len(items))
+		for i, item := range items {
+			result[i] = convertRemoteValue(remoteValueFrom(item))
+		}
+		return result
+	case "object":
+		pairs, ok := rv.Value.([]interface{})
+		if !ok {
+			return rv.Value
+		}
+		result := make(map[string]interface{}, len(pairs))
+		for _, pair := range pairs {
+			kv, ok := pair.([]interface{})
+			if !ok || len(kv) != 2 {
+				continue
+			}
+			// BiDi allows non-string keys (e.g. a Map keyed by objects), but a
+			// plain JS object always uses string keys. A non-string key can't be
+			// a Go map[string]interface{} key, so such entries are skipped.
+			key, ok := kv[0].(string)
+			if !ok {
+				continue
+			}
+			result[key] = convertRemoteValue(remoteValueFrom(kv[1]))
+		}
+		return result
+	default:
+		return rv.Value
+	}
+}
+
+// remoteValueFrom interprets a child element of an array/object RemoteValue
+// (decoded by encoding/json into interface{}) as a RemoteValue. Children arrive
+// as map[string]interface{} carrying "type"/"value" fields; anything else is
+// wrapped so its raw value passes through convertRemoteValue's default case.
+func remoteValueFrom(v interface{}) RemoteValue {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return RemoteValue{Value: v}
+	}
+	rv := RemoteValue{Value: m["value"]}
+	if t, ok := m["type"].(string); ok {
+		rv.Type = t
+	}
+	return rv
 }

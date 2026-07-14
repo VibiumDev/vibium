@@ -12,6 +12,12 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 
 const { browser } = require('../../../clients/javascript/dist');
+const { withTimeout } = require('../helpers/wait');
+
+// onWebSocket() is sync (fire-and-forget under the hood, see page.ts:945).
+// Server-side preload-script install races with the next client command.
+// 200ms is the hedge until onWebSocket becomes properly async.
+const INSTALL_BARRIER_MS = 200;
 
 // --- Local test servers ---
 
@@ -19,6 +25,7 @@ let httpServer;
 let wsServer;
 let baseURL;
 let wsURL;
+let bro;
 
 before(async () => {
   httpServer = http.createServer((req, res) => {
@@ -55,230 +62,238 @@ before(async () => {
       resolve();
     });
   });
+
+  bro = await browser.start({ headless: true });
 });
 
-after(() => {
-  if (wsServer) wsServer.close();
-  if (httpServer) httpServer.close();
+after(async () => {
+  if (bro) await bro.stop();
+  // Await closes so the event loop is actually done when after() returns.
+  // Without this, dangling sockets keep node:test waiting and trip the
+  // "Promise resolution is still pending but the event loop has already
+  // resolved" file-level warning under heavy load.
+  if (wsServer) await new Promise((resolve) => wsServer.close(resolve));
+  if (httpServer) await new Promise((resolve) => httpServer.close(resolve));
 });
+
+// Each test gets a fresh page so onWebSocket listeners don't leak between tests.
+async function freshPage() {
+  const vibe = await bro.newPage();
+  await vibe.go(baseURL);
+  return vibe;
+}
 
 // --- WebSocket Monitoring ---
 
 describe('WebSocket Monitoring: page.onWebSocket', () => {
   test('onWebSocket fires when page creates a WebSocket', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
-      let wsCreated = false;
-      vibe.onWebSocket(() => {
-        wsCreated = true;
-      });
-
-      await vibe.wait(200);
+      const wsCreated = new Promise((resolve) => vibe.onWebSocket(() => resolve()));
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
-
-      assert.ok(wsCreated, 'onWebSocket should have fired');
+      await withTimeout(wsCreated, 5000, 'onWebSocket to fire');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('ws.url() returns the correct URL', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
       let capturedUrl = '';
-      vibe.onWebSocket((ws) => {
-        capturedUrl = ws.url();
-      });
-
-      await vibe.wait(200);
+      const gotUrl = new Promise((resolve) =>
+        vibe.onWebSocket((ws) => {
+          capturedUrl = ws.url();
+          resolve();
+        }),
+      );
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
+      await withTimeout(gotUrl, 5000, 'WS URL to be captured');
 
       assert.strictEqual(capturedUrl, wsURL);
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('ws.onMessage() captures sent messages (direction: sent)', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
       const messages = [];
-      vibe.onWebSocket((ws) => {
-        ws.onMessage((data, info) => {
-          messages.push({ data, direction: info.direction });
-        });
-      });
+      const sentSeen = new Promise((resolve) =>
+        vibe.onWebSocket((ws) => {
+          ws.onMessage((data, info) => {
+            messages.push({ data, direction: info.direction });
+            if (info.direction === 'sent') resolve();
+          });
+        }),
+      );
 
-      await vibe.wait(200);
-
-      // Create WS and send a message (fire-and-forget, no Promise)
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.send('hello');
       `);
-      await vibe.wait(1000);
+      await withTimeout(sentSeen, 5000, 'sent WS message');
 
-      const sent = messages.filter(m => m.direction === 'sent');
+      const sent = messages.filter((m) => m.direction === 'sent');
       assert.ok(sent.length > 0, `Should have captured sent messages, got: ${JSON.stringify(messages)}`);
       assert.strictEqual(sent[0].data, 'hello');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('ws.onMessage() captures received messages (direction: received)', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
       const messages = [];
-      vibe.onWebSocket((ws) => {
-        ws.onMessage((data, info) => {
-          messages.push({ data, direction: info.direction });
-        });
-      });
+      const receivedSeen = new Promise((resolve) =>
+        vibe.onWebSocket((ws) => {
+          ws.onMessage((data, info) => {
+            messages.push({ data, direction: info.direction });
+            if (info.direction === 'received') resolve();
+          });
+        }),
+      );
 
-      await vibe.wait(200);
-
-      // Create WS and send — echo server echoes back
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.send('echo-me');
       `);
-      await vibe.wait(1000);
+      await withTimeout(receivedSeen, 5000, 'echoed WS message');
 
-      const received = messages.filter(m => m.direction === 'received');
+      const received = messages.filter((m) => m.direction === 'received');
       assert.ok(received.length > 0, `Should have captured received messages, got: ${JSON.stringify(messages)}`);
       assert.strictEqual(received[0].data, 'echo-me');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('ws.onClose() fires when connection closes', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
-      let closeFired = false;
       let closeCode;
-      vibe.onWebSocket((ws) => {
-        ws.onClose((code) => {
-          closeFired = true;
-          closeCode = code;
-        });
-      });
+      const closed = new Promise((resolve) =>
+        vibe.onWebSocket((ws) => {
+          ws.onClose((code) => {
+            closeCode = code;
+            resolve();
+          });
+        }),
+      );
 
-      await vibe.wait(200);
-
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.close(1000, 'done');
       `);
-      await vibe.wait(500);
+      await withTimeout(closed, 5000, 'WS close event');
 
-      assert.ok(closeFired, 'onClose should have fired');
       assert.strictEqual(closeCode, 1000);
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('ws.isClosed() returns true after close', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
       let wsInfo;
-      vibe.onWebSocket((ws) => {
-        wsInfo = ws;
-        ws.onClose(() => {});
-      });
+      const closed = new Promise((resolve) =>
+        vibe.onWebSocket((ws) => {
+          wsInfo = ws;
+          ws.onClose(() => resolve());
+        }),
+      );
 
-      await vibe.wait(200);
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.close();
       `);
-      await vibe.wait(500);
+      await withTimeout(closed, 5000, 'WS close event');
 
       assert.ok(wsInfo, 'Should have captured a WebSocket');
       assert.strictEqual(wsInfo.isClosed(), true);
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('monitoring survives page navigation (preload script persists)', async () => {
-    const bro = await browser.start({ headless: true });
+    // Use a fresh user context (not a fresh browser) so this test pays the
+    // ~3ms newContext() cost instead of ~16s for browser.start(). The
+    // preload script is bound to the page's browsing context, so a fresh
+    // user context gives us a clean slot to install it.
+    const ctx = await bro.newContext();
     try {
-      const vibe = await bro.page();
+      const vibe = await ctx.newPage();
       await vibe.go(baseURL);
 
       let wsCount = 0;
+      const wsWaiters = [];
       vibe.onWebSocket(() => {
         wsCount++;
+        const waiter = wsWaiters.shift();
+        if (waiter) waiter();
       });
+      const nextWs = () => new Promise((resolve) => wsWaiters.push(resolve));
 
-      await vibe.wait(200);
+      await vibe.wait(INSTALL_BARRIER_MS);
 
       // Create WS on first page
+      const firstSeen = nextWs();
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
+      await withTimeout(firstSeen, 5000, 'first-page WS');
       assert.strictEqual(wsCount, 1, 'Should have captured 1 WS on first page');
 
-      // Navigate to a new page
+      // Re-navigate the same page — preload script should re-fire on load.
       await vibe.go(baseURL);
-      await vibe.wait(200);
 
-      // Create WS on second page — preload script should still be active
+      const secondSeen = nextWs();
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
+      await withTimeout(secondSeen, 5000, 'second-page WS after navigation');
       assert.strictEqual(wsCount, 2, 'Should have captured 2 WS total after navigation');
     } finally {
-      await bro.stop();
+      await ctx.close();
     }
   });
 
   test("removeAllListeners('websocket') clears callbacks", async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await freshPage();
     try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
       let wsCount = 0;
-      vibe.onWebSocket(() => {
-        wsCount++;
-      });
+      const firstSeen = new Promise((resolve) =>
+        vibe.onWebSocket(() => {
+          wsCount++;
+          resolve();
+        }),
+      );
 
-      await vibe.wait(200);
+      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
+      await withTimeout(firstSeen, 5000, 'first WS captured');
       assert.strictEqual(wsCount, 1);
 
-      // Remove listeners
       vibe.removeAllListeners('websocket');
 
-      // Create another WS — should not fire callback
+      // Second WS should NOT fire the callback. Use the test WS server as a
+      // barrier: when the server sees the connection, the preload script has
+      // already emitted its ws.created channel message in Chrome. We then do
+      // a no-op eval to drain that message through vibium → client before
+      // asserting absence of the callback.
+      const secondServerConn = new Promise((resolve) => wsServer.once('connection', resolve));
       await vibe.evaluate(`window.createWS('${wsURL}')`);
-      await vibe.wait(500);
+      await withTimeout(secondServerConn, 5000, 'second WS reaching server');
+      await vibe.evaluate('1');
       assert.strictEqual(wsCount, 1, 'Should still be 1 after removing listeners');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 });

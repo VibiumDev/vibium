@@ -138,3 +138,21 @@ async def test_checkpoint(async_page, test_server):
     assert data[:4] == b"\x89PNG"
     result = await async_page.evaluate("1 + 1")
     assert result == 2
+
+
+async def test_eval_is_alias_for_evaluate(async_page, test_server):
+    # Regression #144: page.eval() did not exist (only evaluate()).
+    await async_page.go(test_server)
+    assert await async_page.eval("1 + 1") == 2
+
+
+async def test_large_message_does_not_crash_reader(async_page, test_server):
+    # Regression #110: a single pipe message larger than asyncio's 64 KiB default
+    # StreamReader limit (e.g. a base64 screenshot) raised LimitOverrunError and
+    # killed the receiver loop. A ~5 MB result must round-trip intact.
+    await async_page.go(test_server)
+    n = 5_000_000
+    big = await async_page.evaluate(f"'x'.repeat({n})")
+    assert isinstance(big, str) and len(big) == n
+    # the receiver loop must still be alive for follow-up commands
+    assert await async_page.evaluate("2 + 2") == 4

@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const outPath = path.resolve(__dirname, "..", "saucedemo-record.zip");
+const outPath = path.resolve(__dirname, "..", "saucedemo-vibium-record.zip");
 
 const bro = await browser.start();
 const vibe = await bro.page();
@@ -13,7 +13,7 @@ await vibe.setViewport({ width: 1280, height: 720 });
 
 await vibe.context.recording.start({
     name: "saucedemo-e2e",
-    title: "SauceDemo E2E Test",
+    title: "Vibium - SauceDemo E2E Test",
     screenshots: true,
     snapshots: false,
     format: "jpeg",

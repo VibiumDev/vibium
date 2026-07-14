@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vibium-darwin-arm64"
-version = "26.3.18"
+version = "26.5.31"
 description = "Vibium binary for macOS ARM64"
 readme = "README.md"
 license = "Apache-2.0"

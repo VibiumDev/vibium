@@ -347,14 +347,17 @@ func (r *LaunchResult) Close() error {
 		process.Untrack(r.ChromedriverCmd)
 	}
 
-	// Clean up the Chrome temp profile directory
+	// Clean up the Chrome temp profile directory for THIS session only.
+	// Do not glob-clean other Chrome temp dirs here: under parallel test runs
+	// (e.g. node --test --test-concurrency=4) every test file spawns its own
+	// vibium pipe + Chrome, and a glob would happily RemoveAll() sibling
+	// processes' still-active user-data-dirs — Chrome then loses the ability
+	// to create new files inside its profile and the BiDi connection hangs.
+	// Run an orphan sweep explicitly (e.g. `make double-tap`) instead.
 	if r.UserDataDir != "" {
 		log.Debug("removing Chrome user data dir", "path", r.UserDataDir)
 		os.RemoveAll(r.UserDataDir)
 	}
-
-	// Clean up orphaned Chrome temp directories
-	cleanupChromeTempDirs()
 
 	return nil
 }
@@ -406,25 +409,38 @@ func KillOrphanedChromeProcesses() {
 	}
 }
 
-// cleanupChromeTempDirs removes orphaned temp directories created by Chrome for Testing.
-// Chrome creates these in os.TempDir() and doesn't clean them up when force-killed.
-func cleanupChromeTempDirs() {
+// CleanupOrphanedChromeTempDirs removes Chrome temp directories left behind
+// by previous crashed runs. Safe to call at process start or from explicit
+// cleanup tooling (e.g. `make double-tap`). NEVER call this on a normal
+// browser shutdown — sibling vibium processes' Chrome user-data-dirs match
+// the same glob, and deleting them out from under a live Chrome breaks its
+// BiDi connection.
+//
+// The minAge filter only deletes directories whose mtime is older than the
+// given duration — anything fresher could belong to a currently-running
+// sibling process. Pass time.Minute or longer for parallel-safe cleanup.
+func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
 	tmpDir := os.TempDir()
 	patterns := []string{
 		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
 		filepath.Join(tmpDir, "org.chromium.Chromium.scoped_dir.*"),
 	}
+	cutoff := time.Now().Add(-minAge)
 	var count int
 	for _, pattern := range patterns {
 		matches, _ := filepath.Glob(pattern)
 		for _, m := range matches {
+			info, err := os.Stat(m)
+			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
 			if os.RemoveAll(m) == nil {
 				count++
 			}
 		}
 	}
 	if count > 0 {
-		log.Debug("cleaned up Chrome temp dirs", "count", count)
+		log.Debug("cleaned up orphaned Chrome temp dirs", "count", count, "minAge", minAge)
 	}
 }
 

@@ -201,6 +201,44 @@ npm --version
 
 ---
 
+## Install Java (JDK)
+
+`make build` builds the Java client with Gradle, which needs a JDK (11 or newer — the build targets Java 11).
+
+```powershell
+winget install Microsoft.OpenJDK.21
+```
+
+Restart terminal, then verify:
+```powershell
+java -version
+echo $env:JAVA_HOME
+```
+
+The Microsoft OpenJDK package sets `JAVA_HOME` automatically. If `./gradlew` still reports `JAVA_HOME is not set and no 'java' command could be found`, set it manually (point it at your JDK install — typically under `C:\Program Files\Microsoft\`) and restart the terminal:
+
+```powershell
+[Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Microsoft\jdk-21.0.x.x-hotspot", "User")
+```
+
+---
+
+## Install Python
+
+`make test` runs the Python client test suite, which needs Python 3.
+
+```powershell
+winget install Python.Python.3.12
+```
+
+Restart terminal, then verify:
+```powershell
+python --version
+pip --version
+```
+
+---
+
 ## Install Claude Code
 
 ```powershell

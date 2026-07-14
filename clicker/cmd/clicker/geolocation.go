@@ -48,5 +48,6 @@ func newGeolocationCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Float64("accuracy", 0, "Accuracy in meters (default: 1)")
+	cmd.Flags().SetInterspersed(false)
 	return cmd
 }

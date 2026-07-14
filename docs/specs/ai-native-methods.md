@@ -1,5 +1,9 @@
 # AI-Native Methods
 
+> **Status: Draft.** This document describes proposed behavior. It does
+> not reflect what is currently implemented in vibium. Do not rely on it
+> as documentation of existing functionality.
+
 Vibium's signature differentiators. No Playwright or Selenium equivalent exists.
 
 See also: [ROADMAP.md — AI-Powered Locators](../../ROADMAP.md#ai-powered-locators)

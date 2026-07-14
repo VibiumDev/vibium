@@ -15,18 +15,25 @@ const { VIBIUM } = require('../helpers');
 function getClickerChromePids() {
   try {
     const platform = process.platform;
-    let cmd;
+    let cmd, opts;
 
     if (platform === 'darwin') {
-      // Find Chrome for Testing processes that have --remote-debugging-port (our flag)
-      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging-port' 2>/dev/null || true";
+      // Find Chrome for Testing processes that have --remote-debugging-port
+      // (our flag). The [-] class stops Linux pgrep from matching the sh -c
+      // wrapper, whose command line contains this pattern.
+      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging[-]port' 2>/dev/null || true";
+      opts = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
     } else if (platform === 'linux') {
-      cmd = "pgrep -f 'chrome.*--remote-debugging-port' 2>/dev/null || true";
+      cmd = "pgrep -f 'chrome.*--remote-debugging[-]port' 2>/dev/null || true";
+      opts = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
+    } else if (platform === 'win32') {
+      cmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='chrome.exe' and commandline like '%--remote-debugging-port%'\\" | Select-Object -ExpandProperty ProcessId"`;
+      opts = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], shell: true };
     } else {
       return new Set();
     }
 
-    const result = execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    const result = execSync(cmd, opts);
     const pids = result.trim().split('\n').filter(Boolean).map(Number);
     return new Set(pids);
   } catch {
@@ -82,7 +89,8 @@ describe('CLI: Process Cleanup', () => {
     assert.ok(newPids.length > 0, 'Chrome should have been spawned');
 
     // Stop daemon — should clean up Chrome
-    execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
+    // Windows daemon stop can take 10-15s waiting for Chrome to fully exit.
+    execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 30000 });
 
     // Poll until the new Chrome processes are gone (daemon cleanup is async)
     await waitUntil(() => {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -362,6 +363,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	case "vibium:element.dispatchEvent":
 		r.dispatch(session, cmd, r.handleVibiumDispatchEvent)
+		return
+	case "vibium:element.highlight":
+		r.dispatch(session, cmd, r.handleVibiumElHighlight)
 		return
 
 	// Element finding commands (element-scoped and page-level)
@@ -742,11 +746,22 @@ func (r *Router) sendError(session *BrowserSession, id int, err error) {
 	resp := bidiResponse{
 		ID:      id,
 		Type:    "error",
-		Error:   "timeout",
+		Error:   errorCode(err),
 		Message: err.Error(),
 	}
 	data, _ := json.Marshal(resp)
 	session.Client.Send(string(data))
+}
+
+// errorCode categorizes an error for clients. Only genuine timeouts are tagged
+// "timeout" (which clients map to a TimeoutError); everything else is a generic
+// "error". Previously every error was hardcoded as "timeout", so validation and
+// not-found failures surfaced as misleading TimeoutErrors (#64).
+func errorCode(err error) string {
+	if strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		return "timeout"
+	}
+	return "error"
 }
 
 // OnClientDisconnect is called when a client disconnects.

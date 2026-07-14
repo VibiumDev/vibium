@@ -1,11 +1,13 @@
 package main
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
-	"github.com/vibium/clicker/internal/api"
 )
 
 func newTypeCmd() *cobra.Command {
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "type [url] [selector] [text]",
 		Short: "Type text into an element (optionally navigate to URL first)",
@@ -16,7 +18,7 @@ func newTypeCmd() *cobra.Command {
   # Navigates to URL first, then types
 
   vibium type https://the-internet.herokuapp.com/inputs "input" "12345" --timeout 5s
-  # Custom timeout for actionability checks`,
+  # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.RangeArgs(2, 3),
 		Run: func(cmd *cobra.Command, args []string) {
 			var selector, text string
@@ -39,6 +41,7 @@ func newTypeCmd() *cobra.Command {
 			result, err := daemonCall("browser_type", map[string]interface{}{
 				"selector": selector,
 				"text":     text,
+				"timeout":  float64(timeout.Milliseconds()),
 			})
 			if err != nil {
 				printError(err)
@@ -47,6 +50,7 @@ func newTypeCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().Duration("timeout", api.DefaultTimeout, "Timeout for actionability checks (e.g., 5s, 30s)")
+	addTimeoutFlag(cmd, &timeout)
+	cmd.Flags().SetInterspersed(false)
 	return cmd
 }

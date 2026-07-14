@@ -2,9 +2,9 @@
 
 [![npm](https://img.shields.io/npm/v/vibium)](https://www.npmjs.com/package/vibium) [![PyPI](https://img.shields.io/pypi/v/vibium)](https://pypi.org/project/vibium/) [![Maven Central](https://img.shields.io/maven-central/v/com.vibium/vibium)](https://central.sonatype.com/artifact/com.vibium/vibium) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-**Browser automation for AI agents and humans.**
+**The verification layer for coding agents.**
 
-Vibium gives AI agents a browser. Install the `vibium` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
+Vibium gives AI agents the tools they need to check their work. Install the `vibium` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
 
 **New here?** Get started in [JavaScript](docs/tutorials/getting-started-js.md), [Python](docs/tutorials/getting-started-python.md), or [Java](docs/tutorials/getting-started-java.md) — zero to hello world in 5 minutes.
 

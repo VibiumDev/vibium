@@ -1,15 +1,21 @@
 package main
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 )
 
 func newSelectCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "select [selector] [value]",
 		Short: "Select an option in a <select> element",
 		Example: `  vibium select "select#color" "blue"
-  # Select "blue" in the color dropdown`,
+  # Select "blue" in the color dropdown
+
+  vibium select "select#color" "blue" --timeout 5s
+  # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			selector := args[0]
@@ -18,6 +24,7 @@ func newSelectCmd() *cobra.Command {
 			result, err := daemonCall("browser_select", map[string]interface{}{
 				"selector": selector,
 				"value":    value,
+				"timeout":  float64(timeout.Milliseconds()),
 			})
 			if err != nil {
 				printError(err)
@@ -26,4 +33,6 @@ func newSelectCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
+	addTimeoutFlag(cmd, &timeout)
+	return cmd
 }

@@ -19,6 +19,7 @@ const { browser } = require('../../../clients/javascript/dist');
 
 let server;
 let baseURL;
+let bro;
 
 const HTML_PAGE = `
 <html>
@@ -58,9 +59,12 @@ before(async () => {
       resolve();
     });
   });
+
+  bro = await browser.start({ headless: true });
 });
 
-after(() => {
+after(async () => {
+  if (bro) await bro.stop();
   if (server) server.close();
 });
 
@@ -111,7 +115,7 @@ function readNetworkEvents(extractedDir) {
 
 describe('Recording: basic start/stop', () => {
   test('start and stop produces valid recording zip', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -155,13 +159,13 @@ describe('Recording: basic start/stop', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
 
   test('page.context.recording shortcut produces valid recording', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       // Use bro.page() instead of explicit newContext() → newPage()
@@ -186,13 +190,13 @@ describe('Recording: basic start/stop', () => {
       assert.ok(events.length > 0, 'should have recording events');
       assert.strictEqual(events[0].type, 'context-options');
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
 
   test('stop with path writes recording to file', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-recording-path-'));
     const recordPath = path.join(tmpDir, 'my-recording.zip');
     try {
@@ -209,7 +213,7 @@ describe('Recording: basic start/stop', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       cleanupDir(tmpDir);
     }
   });
@@ -217,7 +221,7 @@ describe('Recording: basic start/stop', () => {
 
 describe('Recording: screenshots', () => {
   test('screenshots option captures PNG resources', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -251,7 +255,7 @@ describe('Recording: screenshots', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
@@ -259,7 +263,7 @@ describe('Recording: screenshots', () => {
 
 describe('Recording: snapshots', () => {
   test('snapshots option produces frame-snapshot events with DOM arrays', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -327,7 +331,7 @@ describe('Recording: snapshots', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
@@ -335,7 +339,7 @@ describe('Recording: snapshots', () => {
 
 describe('Recording: chunks', () => {
   test('startChunk/stopChunk produces separate recording zips', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir1, tmpDir2;
     try {
       const ctx = await bro.newContext();
@@ -373,7 +377,7 @@ describe('Recording: chunks', () => {
       await ctx.recording.stop();
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir1) cleanupDir(tmpDir1);
       if (tmpDir2) cleanupDir(tmpDir2);
     }
@@ -382,7 +386,7 @@ describe('Recording: chunks', () => {
 
 describe('Recording: groups', () => {
   test('startGroup/stopGroup adds group markers to recording', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -412,7 +416,7 @@ describe('Recording: groups', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
@@ -420,7 +424,7 @@ describe('Recording: groups', () => {
 
 describe('Recording: network events', () => {
   test('recording captures network events as HAR resource-snapshots', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -481,7 +485,7 @@ describe('Recording: network events', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });
@@ -489,7 +493,7 @@ describe('Recording: network events', () => {
 
 describe('Recording: zip structure', () => {
   test('recording zip has correct Playwright-compatible structure', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests still use isolated contexts.
     let tmpDir;
     try {
       const ctx = await bro.newContext();
@@ -520,7 +524,7 @@ describe('Recording: zip structure', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
       if (tmpDir) cleanupDir(tmpDir);
     }
   });

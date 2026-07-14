@@ -39,9 +39,11 @@ function getClickerChromePids() {
     let cmd;
 
     if (platform === 'darwin') {
-      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging-port' 2>/dev/null || true";
+      // The [-] class stops Linux pgrep from matching the sh -c wrapper,
+      // whose command line contains this pattern.
+      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging[-]port' 2>/dev/null || true";
     } else if (platform === 'linux') {
-      cmd = "pgrep -f 'chrome.*--remote-debugging-port' 2>/dev/null || true";
+      cmd = "pgrep -f 'chrome.*--remote-debugging[-]port' 2>/dev/null || true";
     } else {
       return new Set();
     }
@@ -75,7 +77,9 @@ async function waitUntil(fn, description, { timeout = 15000, interval = 500 } = 
 }
 
 describe('JS Sync Process Cleanup', () => {
-  test('sync API cleans up Chrome on stop()', async () => {
+  // 60s: one browser.start() on macOS is ~16s; remainder is for the
+  // post-stop waitUntil() polling Chrome PIDs to disappear.
+  test('sync API cleans up Chrome on stop()', { timeout: 60000 }, async () => {
     const pidsBefore = getClickerChromePids();
 
     const bro = browserSync.start({ headless: true });

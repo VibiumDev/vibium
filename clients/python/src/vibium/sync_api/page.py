@@ -211,6 +211,10 @@ class Page:
         """Evaluate a JS expression and return the deserialized value."""
         return self._loop.run(self._async.evaluate(expression))
 
+    def eval(self, expression: str) -> Any:
+        """Alias for :meth:`evaluate` (issue #144)."""
+        return self._loop.run(self._async.evaluate(expression))
+
     def add_script(self, source: str) -> None:
         self._loop.run(self._async.add_script(source))
 

@@ -48,18 +48,34 @@ func checkBidiError(resp json.RawMessage) error {
 }
 
 // parseScriptResult parses a BiDi script.callFunction response and returns the string value.
-// Expected structure: { "result": { "result": { "type": "string", "value": "..." } } }
+// Success structure:   { "result": { "type": "success",   "result": { "type": "string", "value": "..." } } }
+// Exception structure: { "result": { "type": "exception", "exceptionDetails": { "text": "..." } } }
 func parseScriptResult(resp json.RawMessage) (string, error) {
 	var result struct {
 		Result struct {
+			Type   string `json:"type"`
 			Result struct {
 				Type  string `json:"type"`
 				Value string `json:"value,omitempty"`
 			} `json:"result"`
+			ExceptionDetails struct {
+				Text string `json:"text"`
+			} `json:"exceptionDetails"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(resp, &result); err != nil {
 		return "", fmt.Errorf("failed to parse script result: %w", err)
+	}
+
+	// A thrown exception has no result value — surface it instead of silently
+	// returning an empty string, which previously masked errors such as the
+	// "Illegal invocation" crash when filling a <textarea> (issues #117, #111).
+	if result.Result.Type == "exception" {
+		text := result.Result.ExceptionDetails.Text
+		if text == "" {
+			text = "script threw an exception"
+		}
+		return "", fmt.Errorf("%s", text)
 	}
 
 	if result.Result.Result.Type == "null" || result.Result.Result.Type == "undefined" {
@@ -138,6 +154,19 @@ type ElementParams struct {
 	Context     string
 	Timeout     time.Duration
 	Force       bool
+}
+
+// withDefaultTimeout returns ep with a default timeout applied when it is unset
+// (zero or negative). Element resolution must auto-wait — a core feature — even
+// when callers build ElementParams inline without a timeout (e.g. the CLI/MCP
+// daemon handlers). Applied at every polling-find entry point so no caller can
+// accidentally disable auto-wait. The protocol path (ExtractElementParams) sets
+// 30s explicitly, so this only affects inline callers (issue #173).
+func (ep ElementParams) withDefaultTimeout() ElementParams {
+	if ep.Timeout <= 0 {
+		ep.Timeout = DefaultTimeout
+	}
+	return ep
 }
 
 // ExtractElementParams extracts element parameters from command params.
@@ -306,6 +335,7 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 
 // ResolveElement finds an element using the given params, polling until found or timeout.
 func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, error) {
+	ep = ep.withDefaultTimeout()
 	script, args := buildActionFindScript(ep)
 	info, err := WaitForElementWithScript(s, context, script, args, ep.Timeout)
 	if err == nil && info != nil {
@@ -316,6 +346,7 @@ func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, 
 
 // ResolveElementRef finds an element and returns its BiDi sharedId.
 func ResolveElementRef(s Session, context string, ep ElementParams) (string, error) {
+	ep = ep.withDefaultTimeout()
 	script, args := buildRefFindScript(ep)
 	deadline := time.Now().Add(ep.Timeout)
 	interval := 100 * time.Millisecond

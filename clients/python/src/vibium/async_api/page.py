@@ -589,6 +589,10 @@ class Page:
         })
         return result["value"]
 
+    async def eval(self, expression: str) -> Any:
+        """Alias for :meth:`evaluate` (issue #144)."""
+        return await self.evaluate(expression)
+
     async def add_script(self, source: str) -> None:
         """Inject a script into the page. Pass a URL or inline JavaScript."""
         is_url = source.startswith("http://") or source.startswith("https://") or source.startswith("//")

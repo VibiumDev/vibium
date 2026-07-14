@@ -1,5 +1,9 @@
 # Spec: Media Channel — Async Screenshots, Live Streaming, and Remote Input
 
+> **Status: Draft.** This document describes proposed behavior. It does
+> not reflect what is currently implemented in vibium. Do not rely on it
+> as documentation of existing functionality.
+
 ## Context
 
 Recording with screenshots is slow. Benchmarking saucedemo E2E:

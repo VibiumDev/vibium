@@ -8,7 +8,14 @@ import (
 // wsMonitorPreloadScript is injected via script.addPreloadScript to wrap
 // window.WebSocket and observe all WS connections, messages, and close events.
 // It receives a BiDi channel function as its argument.
+//
+// Idempotent: bails if already installed. Since the preload now applies to
+// every context in the session, a follow-up script.callFunction injection
+// on the current page would otherwise double-wrap window.WebSocket and emit
+// every WS event twice.
 const wsMonitorPreloadScript = `(channel) => {
+	if (window.__vibiumWsMonitorInstalled) return;
+	window.__vibiumWsMonitorInstalled = true;
 	const OrigWS = window.WebSocket;
 	let nextId = 1;
 
@@ -87,6 +94,10 @@ func (r *Router) handlePageOnWebSocket(session *BrowserSession, cmd bidiCommand)
 	session.mu.Unlock()
 
 	if needPreload {
+		// Omit "contexts" so the preload applies to ALL browsing contexts in
+		// the session and re-fires on every navigation. Pinning it to one
+		// context made the script never fire on subsequent pages and made
+		// re-navigation on a fresh context drop the monitor entirely.
 		resp, err := r.sendInternalCommand(session, "script.addPreloadScript", map[string]interface{}{
 			"functionDeclaration": wsMonitorPreloadScript,
 			"arguments": []map[string]interface{}{
@@ -97,7 +108,6 @@ func (r *Router) handlePageOnWebSocket(session *BrowserSession, cmd bidiCommand)
 					},
 				},
 			},
-			"contexts": []interface{}{context},
 		})
 		if err != nil {
 			r.sendError(session, cmd.ID, err)

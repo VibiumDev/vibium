@@ -32,6 +32,7 @@ go.work.sum
 # .vscode/
 .gemini/
 .claude/
+.agents/
 
 # Node.js
 node_modules/
@@ -55,6 +56,22 @@ packages/*/bin/
 
 # Test screenshots
 screenshots/
+
+# Recording/trace artifacts
+*-record.zip
+*-trace.zip
+saucedemo-record/
+
+# External reference checkouts
+reference/
+
+# Claude Code skill install state (local-only; no companion manifest)
+skills-lock.json
+
+# Local-only deps for scripts/ utilities (e.g. playwright for the
+# trace comparison harness — install with: cd scripts && npm install playwright)
+scripts/package.json
+scripts/package-lock.json
 
 # NPM package tarballs
 *.tgz

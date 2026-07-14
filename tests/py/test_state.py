@@ -70,6 +70,18 @@ async def test_bounds(async_page, test_server):
     assert box.y >= 0
 
 
+async def test_bounds_supports_dict_access(async_page, test_server):
+    # Regression #147: bounds() returned a BoundingBox dataclass that did not
+    # support dict-style access, raising TypeError on bb["width"] / "width" in bb.
+    await async_page.go(test_server)
+    el = await async_page.find("h1")
+    box = await el.bounds()
+    assert "width" in box
+    assert box["width"] == box.width
+    assert box["x"] == box.x
+    assert set(box.keys()) == {"x", "y", "width", "height"}
+
+
 async def test_bounding_box_alias(async_page, test_server):
     await async_page.go(test_server)
     el = await async_page.find("h1")

@@ -194,8 +194,13 @@ func actionabilityCheckBody() string {
 				const tag = el.tagName.toLowerCase();
 				if (tag === 'input') {
 					const t = (el.type || 'text').toLowerCase();
-					const textTypes = ['text','password','email','number','search','tel','url'];
-					if (!textTypes.includes(t))
+					// Types whose value can be set via fill. Includes the value-bearing
+					// picker types (range/color/date/time family), not just text inputs.
+					// Excludes checkbox/radio (use check), file (use upload), and
+					// button/submit/reset/image (not value inputs).
+					const fillableTypes = ['text','password','email','number','search','tel','url',
+						'range','color','date','time','datetime-local','month','week'];
+					if (!fillableTypes.includes(t))
 						return JSON.stringify({status:'failed', check:'editable', reason:'input type ' + t + ' not editable'});
 				} else if (tag !== 'textarea' && !el.isContentEditable) {
 					return JSON.stringify({status:'failed', check:'editable', reason:'not a text input element'});
@@ -236,6 +241,7 @@ func callActionableScript(s Session, context, script string, args []map[string]i
 // Stability is checked on the Go side: after all JS-side checks pass, we sleep 50ms
 // and re-run the script to compare bounding boxes. This avoids needing awaitPromise: true.
 func WaitForActionable(s Session, context string, ep ElementParams, checks []ActionCheck) (*ElementInfo, error) {
+	ep = ep.withDefaultTimeout()
 	needStable := checksContain(checks, CheckStable)
 	// Build script without stability (handled on Go side)
 	checksWithoutStable := make([]ActionCheck, 0, len(checks))
@@ -294,6 +300,8 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 // resolveWithActionability resolves an element with actionability checks.
 // If Force is set or no checks are needed, falls back to plain ResolveElement.
 func resolveWithActionability(s Session, context string, ep ElementParams, checks []ActionCheck) (*ElementInfo, error) {
+	// Timeout normalization (auto-wait default) happens in ResolveElement /
+	// WaitForActionable, which both branches below funnel through.
 	if ep.Force || len(checks) == 0 {
 		return ResolveElement(s, context, ep)
 	}

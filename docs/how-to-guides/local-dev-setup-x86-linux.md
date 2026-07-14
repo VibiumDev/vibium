@@ -157,6 +157,30 @@ npm --version
 
 ---
 
+## Install Java (JDK)
+
+`make build` builds the Java client with Gradle, which needs a JDK (11 or newer — the build targets Java 11).
+
+```bash
+sudo apt install -y openjdk-21-jdk
+java -version
+```
+
+The apt package puts `java` on `PATH`, which is all Gradle needs.
+
+---
+
+## Install Python
+
+`make test` runs the Python client test suite, which uses a virtualenv. Ubuntu ships `python3` but not the `venv`/`pip` modules by default:
+
+```bash
+sudo apt install -y python3 python3-venv python3-pip
+python3 --version
+```
+
+---
+
 ## Install Tools
 
 ```bash

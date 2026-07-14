@@ -331,3 +331,23 @@ describe('Clock: setTimezone', () => {
     assert.strictEqual(hour, 9, `Hour in Tokyo should be 9, got ${hour}`);
   });
 });
+
+describe('Clock: not installed', () => {
+  test('setFixedTime() without install() errors clearly (#125)', async () => {
+    // Use a dedicated browser: once any test in the shared browser calls
+    // clock.install(), a session-level preload script auto-installs the clock
+    // into every new page, so "not installed" can only be observed in isolation.
+    const freshBro = await browser.start({ headless: true });
+    try {
+      const vibe = await freshBro.page();
+      await vibe.go(baseURL);
+      await assert.rejects(
+        () => vibe.clock.setFixedTime(new Date('2020-01-01T00:00:00Z').getTime()),
+        /not installed/i,
+        'should error telling the user to call clock.install() first',
+      );
+    } finally {
+      await freshBro.stop();
+    }
+  });
+});

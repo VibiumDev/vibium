@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-mcp test-daemon test-python test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -38,12 +38,31 @@ ifdef V
   override VERSION := $(V)
 endif
 
-# Per-group test timeout in seconds (override: make test TEST_TIMEOUT=600)
-TEST_TIMEOUT ?= 300
+# Per-group test timeout in seconds (override: make test TEST_TIMEOUT=300).
+# This is the outer wrapper for a whole phase (test-cli, test-js, etc.) and
+# only fires when something has gone catastrophically wrong. A healthy
+# sequential test-js phase is ~6-10 minutes because Chrome launch is ~16s
+# per file on macOS (see clients/javascript/src/clicker/process.ts). For
+# faster iteration bump JS_PARALLEL (default 3) to use more cores.
+TEST_TIMEOUT ?= 600
 TIMEOUT_CMD := node scripts/timeout.mjs $(TEST_TIMEOUT)
+# Same watchdog for recipes that cd out of the repo root (pytest, gradlew).
+# Empty on Windows: timeout.mjs spawns via cmd.exe, which can't run ./gradlew.
+ifeq ($(OS),Windows_NT)
+  TIMEOUT_CMD_ABS :=
+else
+  TIMEOUT_CMD_ABS := node $(CURDIR)/scripts/timeout.mjs $(TEST_TIMEOUT)
+endif
 
-# Node test runner flags: 60s per-test timeout + force exit on dangling handles
-TEST_FLAGS := --test-timeout=60000 --test-force-exit
+# Node test runner flags: per-test timeout + force exit on dangling handles.
+# The slowest healthy test today is ~20s (websocket "monitoring survives
+# page navigation"). 30s gives headroom while making a hung test surface
+# in 30s instead of 2 minutes — so a flake takes ~30s × N_stuck_tests to
+# trip the phase wrapper instead of ~120s × N.
+# On Node 20, --test-timeout limits each test FILE, not each test; CI
+# overrides this to file scale (see .github/workflows/test.yml).
+NODE_TEST_TIMEOUT ?= 30000
+TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 
 # Default target
 all: build
@@ -57,8 +76,11 @@ build-go: deps
 	cd clicker && go build -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
-		target="node_modules/@vibium/$$platform/bin/vibium$(EXE)"; \
-		if [ -f "$$target" ]; then cp clicker/bin/vibium$(EXE) "$$target"; fi; \
+		target_dir="node_modules/@vibium/$$platform/bin"; \
+		if [ -d "node_modules/@vibium/$$platform" ]; then \
+			mkdir -p "$$target_dir"; \
+			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE)"; \
+		fi; \
 	fi
 
 # Build JS client
@@ -141,10 +163,22 @@ serve: build-go
 	./clicker/bin/vibium$(EXE) serve
 
 # Build everything and run all tests: make test
+# test-js-sync runs OUTSIDE the parallel group on every platform. Each of
+# test-js-async/sync/python/java fans out to *_PARALLEL headless Chromes, and
+# running all of them at once over-subscribes the machine (~14 concurrent
+# browsers on a 12-core box), pushing cold Chrome launches past the client's
+# ready timeout and cascading into cancellations. Keeping test-js-sync separate
+# caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
+# reason. Bump *_PARALLEL on machines with more cores/memory.
 test: build install-browser
 	@START_TIME=$$(date +%s); \
-	"$(MAKE)" test-cli test-cleanup test-js test-cleanup test-mcp test-cleanup test-python test-cleanup test-java test-cleanup; \
+	"$(MAKE)" test-cli test-cleanup && \
+	"$(MAKE)" test-js-process test-cleanup && \
+	"$(MAKE)" -j 4 test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" test-cleanup && \
+	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
 	END_TIME=$$(date +%s); \
 	ELAPSED=$$((END_TIME - START_TIME)); \
 	MINS=$$((ELAPSED / 60)); \
@@ -157,17 +191,21 @@ test: build install-browser
 		exit $$EXIT; \
 	fi
 
-# Kill any Chrome/chromedriver processes left over from tests
+# Kill any Chrome/chromedriver processes left over from tests.
+# The bracketed characters stop Linux pkill from SIGKILLing the recipe's
+# own shell, whose command line contains the pattern.
 test-cleanup:
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f 'chromedriver' 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run CLI tests (tests the vibium binary directly)
 # Process tests run separately with --test-concurrency=1 to avoid interference
 test-cli: build-go
 	@echo "--- CLI Tests (no daemon) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js tests/cli/packaging.test.js tests/cli/wrapper.test.js
 	@echo "--- CLI Tests ---"
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
@@ -176,10 +214,24 @@ test-cli: build-go
 	@echo "--- CLI Process Tests (sequential) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js
 
-# Run JS library tests (3 consolidated groups with parallel execution)
-test-js: build-go
-	@echo "--- JS Async Tests ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 \
+# Run JS library tests
+# Each test file owns its own browser (top-level before/after), so files are
+# independent and safe to run in parallel. JS_PARALLEL controls the fan-out:
+# default 4 gives ~3x speedup vs sequential. (Previously sequential because
+# we suspected parallel-induced flakes; root cause was a cross-process Chrome
+# temp-dir cleanup race in clicker/internal/browser/launcher.go, now fixed.)
+# Process tests stay sequential because they assert on Chrome process lifecycle.
+#
+# The async/sync/process subgroups are also exposed as separate make targets
+# (test-js-async, test-js-sync, test-js-process) so `make test` can run the
+# parallel-safe groups concurrently with test-mcp/test-python/test-java via
+# `$(MAKE) -j 5`. The process group must run alone because it asserts on
+# Chrome PID baselines.
+JS_PARALLEL ?= 3
+
+test-js-async: build-go
+	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/async/async-api.test.js \
 		tests/js/async/auto-wait.test.js \
 		tests/js/async/browser-modes.test.js \
@@ -188,14 +240,14 @@ test-js: build-go
 		tests/js/async/state.test.js \
 		tests/js/async/input-eval.test.js \
 		tests/js/async/network-dialog.test.js \
-		tests/js/async/websocket.test.js \
 		tests/js/async/console-error.test.js \
-		tests/js/async/download-file.test.js \
-		tests/js/async/recording.test.js \
 		tests/js/async/clock.test.js \
 		tests/js/async/emulation.test.js \
 		tests/js/async/a11y.test.js \
 		tests/js/async/a11y-tree-tutorial.test.js \
+		tests/js/async/websocket.test.js \
+		tests/js/async/download-file.test.js \
+		tests/js/async/recording.test.js \
 		tests/js/async/downloads-tutorial.test.js \
 		tests/js/async/cookies.test.js \
 		tests/js/async/storage.test.js \
@@ -203,8 +255,10 @@ test-js: build-go
 		tests/js/async/object-model.test.js \
 		tests/js/async/navigation.test.js \
 		tests/js/async/lifecycle.test.js
-	@echo "--- JS Sync Tests ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 \
+
+test-js-sync: build-go
+	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/sync/sync-api.test.js \
 		tests/js/sync/network-events.test.js \
 		tests/js/sync/websocket-sync.test.js \
@@ -212,10 +266,15 @@ test-js: build-go
 		tests/js/sync/download-sync.test.js \
 		tests/js/sync/a11y-tree-tutorial-sync.test.js \
 		tests/js/sync/downloads-tutorial-sync.test.js
+
+test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 \
 		tests/js/async/process.test.js \
 		tests/js/sync/process.test.js
+
+# Backward-compat aggregate: run all three JS test groups sequentially.
+test-js: test-js-async test-js-sync test-js-process
 
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
@@ -228,16 +287,23 @@ test-daemon: build-go
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js
 
 # Run Python client tests
+# PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
+# so each adds ~150 MB of memory pressure. Default 4 is conservative; bump
+# for faster CI. Module-scoped browser fixture means xdist's default
+# loadfile distribution gives each file to a single worker — safe under
+# parallel since each file owns its own browser via conftest.py.
+PY_PARALLEL ?= 3
 test-python: build-go install-browser
-	@echo "--- Python Client Tests ---"
+	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
 	@cd clients/python && \
 		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
 		. $(VENV_ACTIVATE) && \
-		if ! python -c "import vibium" 2>/dev/null; then \
+		if ! python -c "import vibium, xdist" 2>/dev/null; then \
+			python -m pip install --quiet --upgrade pip && \
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
 		fi && \
 		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		python -m pytest ../../tests/py/ -v --tb=short -x
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
 # Build Java client JAR (dev — no native binaries, fast)
 build-java: build-go
@@ -245,9 +311,12 @@ build-java: build-go
 	cd clients/java && ./gradlew build -x test
 
 # Run Java client tests
+# JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
+# Default 4; bump for faster CI on machines with more memory.
+JAVA_PARALLEL ?= 3
 test-java: build-go install-browser
-	@echo "--- Java Client Tests ---"
-	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) ./gradlew test
+	@echo "--- Java Client Tests (parallel x$(JAVA_PARALLEL)) ---"
+	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
 # Package Java JAR with native binaries
 package-java: build-go-all
@@ -272,8 +341,10 @@ ifeq ($(OS),Windows_NT)
 	@cmd //c "taskkill /F /IM chrome.exe" 2>/dev/null || true
 	@cmd //c "taskkill /F /IM chromedriver.exe" 2>/dev/null || true
 else
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f chromedriver 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 endif
 	@sleep 1
 	@echo "Done."
@@ -347,6 +418,12 @@ set-version:
 	@# Regenerate package-lock.json with new versions
 	@rm -f package-lock.json
 	@npm install --package-lock-only --silent
+	@# The just-bumped @vibium/* platform packages aren't published to npm yet, so
+	@# npm leaves their lockfile entries without a version field. That crashes
+	@# `npm install` on fresh clones with "Invalid Version: " during dedupe. Backfill
+	@# the version so the lockfile is valid; npm fills in resolved/integrity on the
+	@# first real install once the packages are published.
+	@VIBIUM_VERSION="$(VERSION)" node -e 'const fs=require("fs"),f="package-lock.json",v=process.env.VIBIUM_VERSION,l=JSON.parse(fs.readFileSync(f,"utf8"));let n=0;for(const[k,e]of Object.entries(l.packages||{}))if(/(^|\/)@vibium\//.test(k)&&e&&e.version==null){e.version=v;n++}fs.writeFileSync(f,JSON.stringify(l,null,2)+"\n");console.log("Backfilled "+n+" @vibium lockfile entr"+(n===1?"y":"ies")+" with version "+v)'
 	@echo "Updated version to $(VERSION) in all files"
 	@echo "Files updated:"
 	@echo "  - VERSION"

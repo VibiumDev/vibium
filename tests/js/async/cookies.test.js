@@ -15,6 +15,7 @@ const { browser } = require('../../../clients/javascript/dist');
 
 let server;
 let baseURL;
+let bro;
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -43,9 +44,12 @@ before(async () => {
       resolve();
     });
   });
+
+  bro = await browser.start({ headless: true });
 });
 
-after(() => {
+after(async () => {
+  if (bro) await bro.stop();
   if (server) server.close();
 });
 
@@ -53,7 +57,7 @@ after(() => {
 
 describe('Cookies: context.cookies()', () => {
   test('cookies() returns server-set cookies', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -70,12 +74,12 @@ describe('Cookies: context.cookies()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 
   test('cookies(urls) filters by URL', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -96,7 +100,7 @@ describe('Cookies: context.cookies()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -105,7 +109,7 @@ describe('Cookies: context.cookies()', () => {
 
 describe('Cookies: context.setCookies()', () => {
   test('setCookies() creates readable cookies', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -122,12 +126,12 @@ describe('Cookies: context.setCookies()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 
   test('setCookies() with url (no domain) works', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -144,7 +148,7 @@ describe('Cookies: context.setCookies()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -153,7 +157,7 @@ describe('Cookies: context.setCookies()', () => {
 
 describe('Cookies: context.clearCookies()', () => {
   test('clearCookies() removes all cookies', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -172,7 +176,7 @@ describe('Cookies: context.clearCookies()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -181,7 +185,7 @@ describe('Cookies: context.clearCookies()', () => {
 
 describe('Init Scripts: context.addInitScript()', () => {
   test('addInitScript() runs before page scripts', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
 
@@ -195,12 +199,12 @@ describe('Init Scripts: context.addInitScript()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 
   test('addInitScript() persists across navigations', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
 
@@ -220,7 +224,7 @@ describe('Init Scripts: context.addInitScript()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -229,7 +233,7 @@ describe('Init Scripts: context.addInitScript()', () => {
 
 describe('Cookies & Storage Checkpoint', () => {
   test('setCookies + cookies + clearCookies round-trip', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -245,7 +249,7 @@ describe('Cookies & Storage Checkpoint', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });

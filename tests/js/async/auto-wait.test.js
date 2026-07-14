@@ -9,21 +9,22 @@ const assert = require('node:assert');
 const { browser } = require('../../../clients/javascript/dist');
 const { createTestServer } = require('../../helpers/test-server');
 
-let server, baseURL;
+let server, baseURL, bro;
 
 before(async () => {
   ({ server, baseURL } = await createTestServer());
+  bro = await browser.start({ headless: true });
 });
 
-after(() => {
+after(async () => {
+  if (bro) await bro.stop();
   if (server) server.close();
 });
 
 describe('JS Auto-Wait', () => {
   test('find() waits for element to appear', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await bro.newPage();
     try {
-      const vibe = await bro.page();
       await vibe.go(baseURL + '/dynamic_loading/1');
 
       // Click the start button to trigger dynamic loading
@@ -35,14 +36,13 @@ describe('JS Auto-Wait', () => {
       assert.ok(result, 'Should find the dynamically loaded element');
       assert.strictEqual(result.info.text, 'Hello World!', 'Should have correct text');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('click() waits for element to be actionable', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await bro.newPage();
     try {
-      const vibe = await bro.page();
       await vibe.go(baseURL + '/add_remove_elements/');
 
       // Click the "Add Element" button
@@ -53,14 +53,13 @@ describe('JS Auto-Wait', () => {
       const deleteBtn = await vibe.find('.added-manually', { timeout: 5000 });
       assert.ok(deleteBtn, 'Delete button should have appeared after click');
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('find() times out for non-existent element', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await bro.newPage();
     try {
-      const vibe = await bro.page();
       await vibe.go(baseURL + '/');
 
       await assert.rejects(
@@ -71,14 +70,13 @@ describe('JS Auto-Wait', () => {
         'Should throw timeout error'
       );
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('timeout error message is clear', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await bro.newPage();
     try {
-      const vibe = await bro.page();
       await vibe.go(baseURL + '/');
 
       try {
@@ -92,23 +90,25 @@ describe('JS Auto-Wait', () => {
         );
       }
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 
   test('navigation error message is clear', async () => {
-    const bro = await browser.start({ headless: true });
+    const vibe = await bro.newPage();
     try {
-      const vibe = await bro.page();
+      // Use a guaranteed-fast failure (port 1, connection refused) rather than
+      // a fake DNS name — DNS lookup for .invalid is fast on most systems but
+      // can stall for tens of seconds on networks with custom resolvers.
       await assert.rejects(
         async () => {
-          await vibe.go('https://test.invalid');
+          await vibe.go('http://127.0.0.1:1');
         },
-        /error/i,
-        'Should throw error for invalid domain'
+        /error|refused|fail/i,
+        'Should throw error for unreachable URL'
       );
     } finally {
-      await bro.stop();
+      await vibe.close();
     }
   });
 });

@@ -77,6 +77,25 @@ func (r *Router) handleClockInstall(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
 }
 
+// runClockOp evaluates a method call against the page's installed fake clock.
+// If the clock was never installed (window.__vibiumClock is undefined) it sends
+// a clear, actionable error instead of silently doing nothing — previously the
+// thrown ReferenceError was swallowed and the call appeared to succeed while
+// having no effect (issues #125, #137).
+func (r *Router) runClockOp(session *BrowserSession, cmd bidiCommand, context, opName, call string) {
+	res, err := r.evalSimpleScript(session, context,
+		fmt.Sprintf("() => { if (!window.__vibiumClock) return 'NOT_INSTALLED'; window.__vibiumClock.%s; return 'ok'; }", call))
+	if err != nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("clock.%s failed: %w", opName, err))
+		return
+	}
+	if res == "NOT_INSTALLED" {
+		r.sendError(session, cmd.ID, fmt.Errorf("clock not installed: call clock.install() before clock.%s()", opName))
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+}
+
 // handleClockFastForward handles vibium:clock.fastForward — jump forward N ms, fire due timers once.
 func (r *Router) handleClockFastForward(session *BrowserSession, cmd bidiCommand) {
 	context, err := r.resolveContext(session, cmd.Params)
@@ -91,14 +110,7 @@ func (r *Router) handleClockFastForward(session *BrowserSession, cmd bidiCommand
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		fmt.Sprintf("() => { window.__vibiumClock.fastForward(%v); return 'ok'; }", ticks))
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.fastForward failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "fastForward", fmt.Sprintf("fastForward(%v)", ticks))
 }
 
 // handleClockRunFor handles vibium:clock.runFor — advance N ms, fire all callbacks systematically.
@@ -115,14 +127,7 @@ func (r *Router) handleClockRunFor(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		fmt.Sprintf("() => { window.__vibiumClock.runFor(%v); return 'ok'; }", ticks))
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.runFor failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "runFor", fmt.Sprintf("runFor(%v)", ticks))
 }
 
 // handleClockPauseAt handles vibium:clock.pauseAt — jump to a time and pause.
@@ -139,14 +144,7 @@ func (r *Router) handleClockPauseAt(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		fmt.Sprintf("() => { window.__vibiumClock.pauseAt(%v); return 'ok'; }", time))
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.pauseAt failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "pauseAt", fmt.Sprintf("pauseAt(%v)", time))
 }
 
 // handleClockResume handles vibium:clock.resume — resume real-time progression.
@@ -157,14 +155,7 @@ func (r *Router) handleClockResume(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		"() => { window.__vibiumClock.resume(); return 'ok'; }")
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.resume failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "resume", "resume()")
 }
 
 // handleClockSetFixedTime handles vibium:clock.setFixedTime — freeze Date.now() at a value.
@@ -181,14 +172,7 @@ func (r *Router) handleClockSetFixedTime(session *BrowserSession, cmd bidiComman
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		fmt.Sprintf("() => { window.__vibiumClock.setFixedTime(%v); return 'ok'; }", time))
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.setFixedTime failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "setFixedTime", fmt.Sprintf("setFixedTime(%v)", time))
 }
 
 // handleClockSetSystemTime handles vibium:clock.setSystemTime — set Date.now() without firing timers.
@@ -205,14 +189,7 @@ func (r *Router) handleClockSetSystemTime(session *BrowserSession, cmd bidiComma
 		return
 	}
 
-	_, err = r.evalSimpleScript(session, context,
-		fmt.Sprintf("() => { window.__vibiumClock.setSystemTime(%v); return 'ok'; }", time))
-	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("clock.setSystemTime failed: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+	r.runClockOp(session, cmd, context, "setSystemTime", fmt.Sprintf("setSystemTime(%v)", time))
 }
 
 // handleClockSetTimezone handles vibium:clock.setTimezone — override or reset the browser timezone.

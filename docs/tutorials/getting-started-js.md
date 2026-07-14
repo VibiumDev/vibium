@@ -207,6 +207,23 @@ Try running with headless mode disabled (it's disabled by default, but just in c
 const bro = browser.start({ headless: false })
 ```
 
+### Custom cache directory
+
+By default, Chrome for Testing installs to the platform-specific cache path shown in [Step 3](#step-3-install-vibium). To change this (e.g. if your IT policy restricts writes to `%LOCALAPPDATA%`), set `VIBIUM_CACHE_DIR`:
+
+```bash
+# macOS/Linux
+export VIBIUM_CACHE_DIR=/path/to/allowed/dir
+
+# Windows (PowerShell)
+$env:VIBIUM_CACHE_DIR = "C:\path\to\allowed\dir"
+```
+
+Then reinstall:
+```bash
+npm install vibium
+```
+
 ### Permission denied (Linux)
 
 You might need to install dependencies for Chrome:

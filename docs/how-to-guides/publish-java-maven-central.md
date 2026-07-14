@@ -105,9 +105,18 @@ make build-go-all
 
 # Clean and rebuild the Java client, then stage signed artifacts
 cd clients/java
-./gradlew clean build publish
+./gradlew clean build publish -PjavaParallel=1
 cd ../..
 ```
+
+> **`-PjavaParallel=1` is intentional.** `build` runs the test suite, and each
+> test class launches its own Chrome. At the default `maxParallelForks=4`, four
+> Chromes start at once and a couple often fail to connect
+> (`VibiumConnectionException` / `IOException` at `Vibium.start()`) — a launch
+> race, not a real failure. Running the tests serially avoids it. If you've
+> already validated with `make test` and just want to stage artifacts, you can
+> skip the tests instead with `./gradlew clean build publish -x test` (the
+> published jar/sources/javadoc are identical either way).
 
 This creates the signed artifacts in `clients/java/build/staging-deploy/`.
 
@@ -175,7 +184,7 @@ This returns a deployment ID. Save it, then check the status:
 ```bash
 DEPLOYMENT_ID="<id-from-upload-response>"
 
-curl -s \
+curl -s -X POST \
   "https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID" \
   -H "Authorization: Bearer $(echo -n "$SONATYPE_USER:$SONATYPE_PASS" | base64)"
 ```
@@ -226,7 +235,8 @@ java -cp ".:vibium-$VERSION.jar:gson-2.11.0.jar" Test
 ```bash
 # Full publish flow (from repo root)
 make build-go-all
-cd clients/java && ./gradlew clean build publish && cd ../..
+# -PjavaParallel=1 runs the browser tests serially to avoid Chrome launch races
+cd clients/java && ./gradlew clean build publish -PjavaParallel=1 && cd ../..
 
 cd clients/java/build/staging-deploy && zip -r ../../../../vibium-bundle.zip com/ && cd ../../../..
 

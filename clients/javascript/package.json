@@ -1,6 +1,6 @@
 {
   "name": "vibium-client",
-  "version": "26.3.18",
+  "version": "26.5.31",
   "description": "Browser automation for AI agents and humans",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

@@ -106,4 +106,17 @@ describe('JS Navigation', () => {
       'Should timeout when URL does not match'
     );
   });
+
+  test('a non-timeout error is not mislabeled as a timeout (#64)', async () => {
+    const vibe = await bro.page();
+    let message = '';
+    try {
+      await vibe.go('http://'); // invalid URL → BiDi "invalid argument"
+      assert.fail('expected navigation to an invalid URL to throw');
+    } catch (e) {
+      message = e.message || String(e);
+    }
+    assert.match(message, /invalid argument|invalid url/i, `expected the real error, got: ${message}`);
+    assert.doesNotMatch(message, /^timeout:/i, `validation errors must not be tagged as timeouts: ${message}`);
+  });
 });

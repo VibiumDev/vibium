@@ -1,5 +1,9 @@
 # Selenium Compatibility Layer
 
+> **Status: Draft.** This document describes proposed behavior. It does
+> not reflect what is currently implemented in vibium. Do not rely on it
+> as documentation of existing functionality.
+
 **Future site:** areweseleniumyet.com
 **Goal:** Drop-in Selenium WebDriver replacement backed by Vibium's BiDi engine.
 **Depends on:** [API Reference](../reference/api.md) (core API) and [WebDriver coverage](../trackers/arewewebdriveryet.md).

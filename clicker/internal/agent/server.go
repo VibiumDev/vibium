@@ -115,6 +115,28 @@ type Content struct {
 	MimeType string `json:"mimeType,omitempty"` // For images
 }
 
+// MarshalJSON emits exactly the fields the MCP content union requires for the
+// block's type. The default `omitempty` on Text dropped the field entirely when
+// the value was an empty string, so an empty result (e.g. browser_evaluate of
+// "", an absent attribute, or text-less element) produced a `{"type":"text"}`
+// block that clients reject as invalid_union (issues #154, #153, #157). A text
+// block must always carry a (possibly empty) "text" field.
+func (c Content) MarshalJSON() ([]byte, error) {
+	switch c.Type {
+	case "image":
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Data     string `json:"data"`
+			MimeType string `json:"mimeType"`
+		}{c.Type, c.Data, c.MimeType})
+	default: // "text"
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{c.Type, c.Text})
+	}
+}
+
 // Server is the MCP server that handles JSON-RPC over stdio.
 type Server struct {
 	reader   *bufio.Reader

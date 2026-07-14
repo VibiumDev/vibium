@@ -229,18 +229,26 @@ public class Page {
         return null;
     }
 
-    /** Add a script tag to the page. */
+    /** Add a script tag to the page. Pass a URL or inline JavaScript. */
     public void addScript(String source) {
-        JsonObject params = contextParams();
-        params.addProperty("source", source);
-        client.send("vibium:page.addScript", params);
+        client.send("vibium:page.addScript", sourceParams(source));
     }
 
-    /** Add a style tag to the page. */
+    /** Add a style tag to the page. Pass a URL or inline CSS. */
     public void addStyle(String source) {
+        client.send("vibium:page.addStyle", sourceParams(source));
+    }
+
+    /**
+     * Build params for addScript/addStyle. The engine expects either a "url" or
+     * a "content" key (not "source"); send the right one based on the input
+     * (issue #130).
+     */
+    private JsonObject sourceParams(String source) {
         JsonObject params = contextParams();
-        params.addProperty("source", source);
-        client.send("vibium:page.addStyle", params);
+        boolean isUrl = source.startsWith("http://") || source.startsWith("https://") || source.startsWith("//");
+        params.addProperty(isUrl ? "url" : "content", source);
+        return params;
     }
 
     /** Expose a function to the page context. */
@@ -321,7 +329,7 @@ public class Page {
     /** Wait for URL to match a pattern with options. */
     public void waitForURL(String pattern, WaitOptions options) {
         JsonObject params = contextParams();
-        params.addProperty("url", pattern);
+        params.addProperty("pattern", pattern);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
@@ -706,10 +714,15 @@ public class Page {
                 handleDialogEvent(params);
                 break;
             case "log.entryAdded":
-                handleConsoleEvent(params);
-                break;
-            case "script.message":
-                handleErrorEvent(params);
+                // BiDi log.entryAdded carries both console output and uncaught
+                // JS errors, distinguished by "type" ("console" vs "javascript").
+                // Routing everything to the console handler meant onError() never
+                // fired (issue #136).
+                if ("javascript".equals(params.has("type") ? params.get("type").getAsString() : "")) {
+                    handleErrorEvent(params);
+                } else {
+                    handleConsoleEvent(params);
+                }
                 break;
             case "vibium:download.started":
                 handleDownloadStarted(params);

@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import { getPlatform, getArch } from './platform';
+
+// esbuild's bundled ESM `require` shim has no working `.resolve`, so calling
+// `require.resolve` from a native ESM context throws "require.resolve is not a
+// function" and the vibium binary can never be located (issue #62). Build a
+// real resolver from the current module's path instead. `__filename` is native
+// in the CJS bundle and injected into the ESM bundle by tsup's `shims` option.
+const moduleRequire = createRequire(__filename);
 
 /**
  * Resolve the path to the vibium binary.
@@ -24,7 +32,7 @@ export function getVibiumBinPath(): string {
 
   // 2. Check platform-specific npm package
   try {
-    const packagePath = require.resolve(`${packageName}/package.json`);
+    const packagePath = moduleRequire.resolve(`${packageName}/package.json`);
     const packageDir = path.dirname(packagePath);
     const binaryPath = path.join(packageDir, 'bin', binaryName);
 

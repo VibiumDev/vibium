@@ -277,3 +277,39 @@ describe('Interaction: dispatchEvent', () => {
     assert.strictEqual(fired, true, 'dispatchEvent should fire the event');
   });
 });
+
+// --- Regression: fill/select edge cases (#117, #140) ---
+
+describe('Interaction: fill/select regressions', () => {
+  const FORM = 'data:text/html,' + encodeURIComponent(
+    '<input id="i" type="text">' +
+    '<textarea id="t"></textarea>' +
+    '<select id="s"><option value="">--</option><option value="CA">California</option></select>'
+  );
+
+  test('fill works on <textarea> (no "Illegal invocation") (#117)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(FORM);
+    await vibe.find('#t').fill('hello textarea');
+    const value = await vibe.evaluate(`document.querySelector('#t').value`);
+    assert.strictEqual(value, 'hello textarea', 'textarea should be filled');
+  });
+
+  test('selectOption rejects when no option matches (#140)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(FORM);
+    await assert.rejects(
+      () => vibe.find('#s').selectOption('NoSuchValue'),
+      /option/i,
+      'selectOption should error instead of silently no-op',
+    );
+  });
+
+  test('selectOption matches by visible label (#140)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(FORM);
+    await vibe.find('#s').selectOption('California');
+    const value = await vibe.evaluate(`document.querySelector('#s').value`);
+    assert.strictEqual(value, 'CA', 'label "California" should select value "CA"');
+  });
+});

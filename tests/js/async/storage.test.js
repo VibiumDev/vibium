@@ -15,6 +15,7 @@ const { browser } = require('../../../clients/javascript/dist');
 
 let server;
 let baseURL;
+let bro;
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -29,9 +30,12 @@ before(async () => {
       resolve();
     });
   });
+
+  bro = await browser.start({ headless: true });
 });
 
-after(() => {
+after(async () => {
+  if (bro) await bro.stop();
   if (server) server.close();
 });
 
@@ -39,7 +43,7 @@ after(() => {
 
 describe('Storage: context.storage()', () => {
   test('storage() returns cookies + localStorage', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -72,7 +76,7 @@ describe('Storage: context.storage()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -81,7 +85,7 @@ describe('Storage: context.storage()', () => {
 
 describe('Storage: context.setStorage()', () => {
   test('setStorage() sets cookies and localStorage from state object', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -113,12 +117,12 @@ describe('Storage: context.setStorage()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 
   test('setStorage() round-trip: capture → clear → restore → verify', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -165,7 +169,7 @@ describe('Storage: context.setStorage()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });
@@ -174,7 +178,7 @@ describe('Storage: context.setStorage()', () => {
 
 describe('Storage: context.clearStorage()', () => {
   test('clearStorage() clears cookies + localStorage + sessionStorage', async () => {
-    const bro = await browser.start({ headless: true });
+    // Share top-level browser; tests use isolated contexts.
     try {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
@@ -204,7 +208,7 @@ describe('Storage: context.clearStorage()', () => {
 
       await ctx.close();
     } finally {
-      await bro.stop();
+
     }
   });
 });

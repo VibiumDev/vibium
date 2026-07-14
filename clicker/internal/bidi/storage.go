@@ -17,6 +17,37 @@ type Cookie struct {
 	Size     float64 `json:"size,omitempty"`
 }
 
+// UnmarshalJSON accepts the cookie value either as a plain string or as a BiDi
+// typed value object ({"type":"string","value":"..."}). storage.getCookies
+// returns the latter, which previously failed to unmarshal into the string
+// field and crashed every storage_state call (issue #150).
+func (c *Cookie) UnmarshalJSON(data []byte) error {
+	type cookieAlias Cookie // avoid recursion into this method
+	aux := struct {
+		Value json.RawMessage `json:"value"`
+		*cookieAlias
+	}{cookieAlias: (*cookieAlias)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(aux.Value) == 0 {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(aux.Value, &s); err == nil {
+		c.Value = s
+		return nil
+	}
+	var typed struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(aux.Value, &typed); err != nil {
+		return fmt.Errorf("failed to parse cookie value: %w", err)
+	}
+	c.Value = typed.Value
+	return nil
+}
+
 // PartitionKey represents a storage partition key for cookies.
 type PartitionKey struct {
 	UserContext string `json:"userContext,omitempty"`

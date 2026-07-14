@@ -32,6 +32,10 @@ tasks.test {
     useJUnitPlatform()
     // Pass VIBIUM_BIN_PATH to tests if set
     environment("VIBIUM_BIN_PATH", System.getenv("VIBIUM_BIN_PATH") ?: "")
+    // Each fork is a JVM with its own Chrome (~16s/launch on macOS). Default
+    // 4 mirrors test-js's JS_PARALLEL and test-python's PY_PARALLEL. Override
+    // with -PjavaParallel=N (Makefile: JAVA_PARALLEL).
+    maxParallelForks = (project.findProperty("javaParallel") as String?)?.toIntOrNull() ?: 4
 }
 
 // Copy native binaries into resources for JAR packaging
