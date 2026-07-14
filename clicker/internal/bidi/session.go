@@ -3,30 +3,131 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// Client is a BiDi client that wraps a WebSocket connection.
+// eventBufferSize bounds the queue between the reader and the event
+// dispatcher. When the handler falls this far behind, events are dropped
+// rather than letting them stall the socket reader.
+const eventBufferSize = 256
+
+// Client is a BiDi client that wraps a WebSocket connection. A dedicated
+// reader goroutine owns all reads on the connection and routes responses to
+// waiting callers by command ID, so commands can be sent concurrently and
+// the socket stays drained even while no command is in flight.
 type Client struct {
-	conn         *Connection
-	verbose      bool
-	eventHandler func(msg string) // optional callback for BiDi events
+	conn    *Connection
+	verbose atomic.Bool
+
+	// mu guards pending and eventHandler.
+	mu           sync.Mutex
+	pending      map[int64]chan *Message
+	eventHandler func(msg string)
+
+	events chan string
+
+	// readErr is written by the reader before it closes readerDone, so it
+	// may only be read after readerDone is closed.
+	readErr    error
+	readerDone chan struct{}
 }
 
-// NewClient creates a new BiDi client from a WebSocket connection.
+// NewClient creates a new BiDi client from a WebSocket connection and starts
+// its reader. The client owns all reads on the connection from this point;
+// nothing else may call conn.Receive for the connection's lifetime.
 func NewClient(conn *Connection) *Client {
-	return &Client{conn: conn}
+	c := &Client{
+		conn:       conn,
+		pending:    make(map[int64]chan *Message),
+		events:     make(chan string, eventBufferSize),
+		readerDone: make(chan struct{}),
+	}
+	go c.readLoop()
+	go c.dispatchEvents()
+	return c
 }
 
 // SetVerbose enables or disables verbose logging of JSON messages.
 func (c *Client) SetVerbose(verbose bool) {
-	c.verbose = verbose
+	c.verbose.Store(verbose)
 }
 
-// SetEventHandler sets a callback for BiDi events received while waiting
-// for command responses. Pass nil to stop forwarding events.
+// SetEventHandler sets a callback for BiDi events. Pass nil to stop
+// forwarding events. Safe to call while the client is in use.
 func (c *Client) SetEventHandler(handler func(msg string)) {
+	c.mu.Lock()
 	c.eventHandler = handler
+	c.mu.Unlock()
+}
+
+// readLoop is the only reader of the connection. Routing every message
+// through one goroutine keeps concurrent SendCommand callers from stealing
+// each other's responses and keeps events flowing between commands.
+func (c *Client) readLoop() {
+	defer func() {
+		close(c.readerDone)
+		close(c.events)
+		// A connection without a reader is unusable; closing it stops the
+		// ping loop and makes later sends fail instead of hang.
+		c.conn.Close()
+	}()
+
+	for {
+		raw, err := c.conn.Receive()
+		if err != nil {
+			c.readErr = fmt.Errorf("connection read failed: %w", err)
+			return
+		}
+
+		if c.verbose.Load() {
+			fmt.Printf("       <-- %s\n", raw)
+		}
+
+		msg, err := UnmarshalMessage([]byte(raw))
+		if err != nil {
+			// A single malformed frame should not take down the connection.
+			continue
+		}
+
+		if msg.ID != nil {
+			c.mu.Lock()
+			ch, ok := c.pending[*msg.ID]
+			if ok {
+				delete(c.pending, *msg.ID)
+			}
+			c.mu.Unlock()
+			// A missing entry means the caller gave up; drop the response.
+			// The channel holds one message, so the send never blocks.
+			if ok {
+				ch <- msg
+			}
+			continue
+		}
+
+		if msg.IsEvent() {
+			select {
+			case c.events <- raw:
+			default:
+				// Dropping beats stalling every command response behind a
+				// slow event handler.
+			}
+		}
+	}
+}
+
+// dispatchEvents delivers events in arrival order on its own goroutine so a
+// blocking handler can never stall the reader.
+func (c *Client) dispatchEvents() {
+	for raw := range c.events {
+		c.mu.Lock()
+		handler := c.eventHandler
+		c.mu.Unlock()
+		if handler != nil {
+			handler(raw)
+		}
+	}
 }
 
 // defaultCommandTimeout is the maximum time to wait for a BiDi command response.
@@ -46,58 +147,63 @@ func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeo
 		return nil, fmt.Errorf("failed to marshal command: %w", err)
 	}
 
-	if c.verbose {
+	if c.verbose.Load() {
 		fmt.Printf("       --> %s\n", string(data))
 	}
+
+	// Register before sending so the response cannot race past us.
+	ch := make(chan *Message, 1)
+	c.mu.Lock()
+	select {
+	case <-c.readerDone:
+		c.mu.Unlock()
+		return nil, fmt.Errorf("cannot send %s: %w", method, c.readErr)
+	default:
+	}
+	c.pending[cmd.ID] = ch
+	c.mu.Unlock()
+
+	// Unregister on every exit path so a late response finds no entry
+	// instead of a channel nobody reads.
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, cmd.ID)
+		c.mu.Unlock()
+	}()
 
 	if err := c.conn.Send(string(data)); err != nil {
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
-	// Wait for response with matching ID (with timeout)
-	deadline := time.Now().Add(timeout)
-	for {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timeout waiting for response to %s after %s", method, timeout)
-		}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 
-		resp, err := c.conn.Receive()
-		if err != nil {
-			return nil, fmt.Errorf("failed to receive response: %w", err)
+	select {
+	case msg := <-ch:
+		return responseOrError(msg)
+	case <-timer.C:
+		return nil, fmt.Errorf("timeout waiting for response to %s after %s", method, timeout)
+	case <-c.readerDone:
+		// The response may have been routed just before the reader died.
+		select {
+		case msg := <-ch:
+			return responseOrError(msg)
+		default:
 		}
-
-		if c.verbose {
-			fmt.Printf("       <-- %s\n", resp)
-		}
-
-		msg, err := UnmarshalMessage([]byte(resp))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		// Check if this is the response we're waiting for
-		if msg.ID != nil && *msg.ID == cmd.ID {
-			if msg.IsError() {
-				errData, _ := msg.GetError()
-				if errData != nil {
-					return nil, fmt.Errorf("BiDi error: %s - %s", errData.Error, errData.Message)
-				}
-				return nil, fmt.Errorf("BiDi error: %s", string(msg.Error))
-			}
-			return msg, nil
-		}
-
-		// If it's an event, forward to handler if set, otherwise skip
-		if msg.IsEvent() {
-			if c.verbose {
-				fmt.Printf("       (event, skipping)\n")
-			}
-			if c.eventHandler != nil {
-				c.eventHandler(resp)
-			}
-			continue
-		}
+		return nil, fmt.Errorf("connection lost waiting for response to %s: %w", method, c.readErr)
 	}
+}
+
+// responseOrError converts a routed response message into the caller-facing result.
+func responseOrError(msg *Message) (*Message, error) {
+	if msg.IsError() {
+		errData, _ := msg.GetError()
+		if errData != nil {
+			return nil, fmt.Errorf("BiDi error: %s - %s", errData.Error, errData.Message)
+		}
+		return nil, fmt.Errorf("BiDi error: %s", string(msg.Error))
+	}
+	return msg, nil
 }
 
 // SessionStatusResult represents the result of session.status command.
