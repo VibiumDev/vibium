@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/vibium/clicker/internal/log"
 )
@@ -143,6 +144,12 @@ type Server struct {
 	writer   io.Writer
 	handlers *Handlers
 	version  string
+
+	// busy is held (capacity 1) while a request is being handled. Close
+	// acquires it so shutdown does not tear the browser session down under
+	// an in-flight tool call, with a bounded wait so a wedged call cannot
+	// stall SIGTERM cleanup.
+	busy chan struct{}
 }
 
 // ServerOptions configures the MCP server.
@@ -159,6 +166,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 		writer:   os.Stdout,
 		handlers: NewHandlers(opts.ScreenshotDir, false, opts.ConnectURL, opts.ConnectHeaders),
 		version:  version,
+		busy:     make(chan struct{}, 1),
 	}
 }
 
@@ -178,7 +186,10 @@ func (s *Server) Run() error {
 			continue
 		}
 
+		s.busy <- struct{}{}
 		response := s.handleRequest(line)
+		<-s.busy
+
 		if response != nil {
 			if err := s.writeResponse(response); err != nil {
 				return fmt.Errorf("write error: %w", err)
@@ -324,7 +335,16 @@ func (s *Server) writeResponse(resp *Response) error {
 	return err
 }
 
-// Close cleans up the server resources.
+// Close cleans up the server resources. It waits briefly for an in-flight
+// request so the browser session is not torn down under a tool call, but a
+// wedged call cannot hold up shutdown: cleaning up Chrome promptly matters
+// more than a clean answer to a request that is about to die with the
+// process anyway.
 func (s *Server) Close() {
+	select {
+	case s.busy <- struct{}{}:
+		defer func() { <-s.busy }()
+	case <-time.After(2 * time.Second):
+	}
 	s.handlers.Close()
 }
