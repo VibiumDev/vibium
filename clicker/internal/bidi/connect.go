@@ -46,6 +46,10 @@ func SessionNewOnConn(conn *Connection, capabilities map[string]interface{}) (*S
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
+	// The deadline is only checked between messages, so a connection that
+	// goes fully silent blocks in Receive until its 120s read deadline, not
+	// this 60s one. Acceptable for a handshake-only path and matches the
+	// behavior before the single-reader refactor.
 	deadline := time.Now().Add(defaultCommandTimeout)
 	for time.Now().Before(deadline) {
 		raw, err := conn.Receive()

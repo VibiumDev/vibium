@@ -3,6 +3,7 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,10 @@ type Client struct {
 	eventHandler func(msg string)
 
 	events chan string
+
+	// droppedEvents counts events discarded because the events buffer was
+	// full. Read it with DroppedEvents.
+	droppedEvents atomic.Uint64
 
 	// readErr is written by the reader before it closes readerDone, so it
 	// may only be read after readerDone is closed.
@@ -62,6 +67,13 @@ func (c *Client) SetEventHandler(handler func(msg string)) {
 	c.mu.Unlock()
 }
 
+// DroppedEvents returns how many events have been discarded over the
+// client's lifetime because the event buffer was full. Consumers that care
+// about gaps (like the recorder) can diff this counter across an interval.
+func (c *Client) DroppedEvents() uint64 {
+	return c.droppedEvents.Load()
+}
+
 // readLoop is the only reader of the connection. Routing every message
 // through one goroutine keeps concurrent SendCommand callers from stealing
 // each other's responses and keeps events flowing between commands.
@@ -81,14 +93,23 @@ func (c *Client) readLoop() {
 			return
 		}
 
-		if c.verbose.Load() {
-			fmt.Printf("       <-- %s\n", raw)
-		}
-
 		msg, err := UnmarshalMessage([]byte(raw))
 		if err != nil {
+			if c.verbose.Load() {
+				fmt.Printf("       <-- %s\n", raw)
+			}
 			// A single malformed frame should not take down the connection.
 			continue
+		}
+
+		// Concurrent commands interleave in verbose output; the [id] prefix
+		// matches each <-- line to its --> line.
+		if c.verbose.Load() {
+			if msg.ID != nil {
+				fmt.Printf("       <-- [%d] %s\n", *msg.ID, raw)
+			} else {
+				fmt.Printf("       <-- %s\n", raw)
+			}
 		}
 
 		if msg.ID != nil {
@@ -111,7 +132,12 @@ func (c *Client) readLoop() {
 			case c.events <- raw:
 			default:
 				// Dropping beats stalling every command response behind a
-				// slow event handler.
+				// slow event handler. Warn directly on stderr (once): the
+				// default log level discards Warn, and silent data loss is
+				// the one thing that must stay visible in quiet mode.
+				if c.droppedEvents.Add(1) == 1 {
+					fmt.Fprintln(os.Stderr, "vibium: BiDi event consumer too slow; dropping events (warned once, count available via DroppedEvents)")
+				}
 			}
 		}
 	}
@@ -148,7 +174,7 @@ func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeo
 	}
 
 	if c.verbose.Load() {
-		fmt.Printf("       --> %s\n", string(data))
+		fmt.Printf("       --> [%d] %s\n", cmd.ID, string(data))
 	}
 
 	// Register before sending so the response cannot race past us.
@@ -252,7 +278,10 @@ func (c *Client) SessionNew(capabilities map[string]interface{}) (*SessionNewRes
 	return &result, nil
 }
 
-// Close closes the underlying connection.
+// Close closes the underlying connection and waits for the reader goroutine
+// to exit, so callers (tests especially) get a deterministic shutdown.
 func (c *Client) Close() error {
-	return c.conn.Close()
+	err := c.conn.Close()
+	<-c.readerDone
+	return err
 }

@@ -3,8 +3,10 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -233,12 +235,16 @@ func TestReaderDeathFailsPendingCommands(t *testing.T) {
 	for err := range errCh {
 		if err == nil {
 			t.Error("pending command succeeded after connection death, want error")
+		} else if !strings.Contains(err.Error(), "connection lost waiting for response") {
+			t.Errorf("pending command error = %q, want it to say the connection was lost", err)
 		}
 	}
 
 	start := time.Now()
 	if _, err := client.SendCommand("test.after", nil); err == nil {
 		t.Error("send after reader death succeeded, want error")
+	} else if !strings.Contains(err.Error(), "cannot send") {
+		t.Errorf("post-death send error = %q, want it to say the send was refused", err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Errorf("send after reader death took %s, want immediate failure", elapsed)
@@ -294,6 +300,145 @@ func TestLateResponseAfterTimeoutIsDiscarded(t *testing.T) {
 	}
 	if result.Which != "flush" {
 		t.Fatalf("got response %q, want %q", result.Which, "flush")
+	}
+}
+
+// TestDroppedEventsCounted blocks the event handler and floods the client
+// with more events than the buffer holds. The overflow must be counted, not
+// silently discarded, and command responses must keep flowing.
+func TestDroppedEventsCounted(t *testing.T) {
+	const eventCount = eventBufferSize + 144
+
+	client := newTestClient(t, func(s *testServerConn) {
+		for {
+			cmd, err := s.readCommand()
+			if err != nil {
+				return
+			}
+			if cmd.Method == "test.flood" {
+				for i := 0; i < eventCount; i++ {
+					s.event("test.event", map[string]interface{}{"seq": i})
+				}
+			}
+			s.respond(cmd.ID, map[string]interface{}{})
+		}
+	})
+
+	release := make(chan struct{})
+	defer close(release)
+	client.SetEventHandler(func(string) { <-release })
+
+	// The response is written after the events, so once it arrives every
+	// event has passed through the reader's buffer-or-drop select.
+	if _, err := client.SendCommandWithTimeout("test.flood", nil, 5*time.Second); err != nil {
+		t.Fatalf("command failed during event flood: %v", err)
+	}
+
+	// The blocked dispatcher holds at most one event beyond the full buffer.
+	dropped := client.DroppedEvents()
+	min := uint64(eventCount - eventBufferSize - 1)
+	max := uint64(eventCount - eventBufferSize)
+	if dropped < min || dropped > max {
+		t.Fatalf("DroppedEvents() = %d, want between %d and %d", dropped, min, max)
+	}
+}
+
+// TestFirstDropWarnsOnStderrOnce swaps stderr for a pipe and floods the
+// client twice. The drop warning must appear exactly once — visible without
+// verbose logging, but not repeated per drop or per storm.
+func TestFirstDropWarnsOnStderrOnce(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	const eventCount = eventBufferSize + 50
+	client := newTestClient(t, func(s *testServerConn) {
+		for {
+			cmd, err := s.readCommand()
+			if err != nil {
+				return
+			}
+			if cmd.Method == "test.flood" {
+				for i := 0; i < eventCount; i++ {
+					s.event("test.event", map[string]interface{}{"seq": i})
+				}
+			}
+			s.respond(cmd.ID, map[string]interface{}{})
+		}
+	})
+
+	release := make(chan struct{})
+	defer close(release)
+	client.SetEventHandler(func(string) { <-release })
+
+	// Two storms; each response arrives after its events, so all drops have
+	// happened (and warned, if they were going to) before the read below.
+	for i := 0; i < 2; i++ {
+		if _, err := client.SendCommandWithTimeout("test.flood", nil, 5*time.Second); err != nil {
+			t.Fatalf("flood %d failed: %v", i, err)
+		}
+	}
+	if client.DroppedEvents() == 0 {
+		t.Fatal("test did not force any drops")
+	}
+
+	os.Stderr = origStderr
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
+
+	warns := strings.Count(string(out), "dropping events")
+	if warns != 1 {
+		t.Fatalf("drop warning appeared %d times, want exactly 1; stderr:\n%s", warns, out)
+	}
+}
+
+// TestCloseShutsDownCleanly checks that Close returns only after the reader
+// has exited, later sends fail immediately, and no goroutines are left.
+func TestCloseShutsDownCleanly(t *testing.T) {
+	baseline := runtime.NumGoroutine()
+
+	client := newTestClient(t, func(s *testServerConn) {
+		for {
+			if _, err := s.readCommand(); err != nil {
+				return
+			}
+		}
+	})
+
+	closed := make(chan error, 1)
+	go func() { closed <- client.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return; reader never exited")
+	}
+
+	// Close waited on the reader, so readerDone is closed and the failure
+	// path is immediate, not a timeout.
+	start := time.Now()
+	if _, err := client.SendCommand("test.after", nil); err == nil {
+		t.Error("send after Close succeeded, want error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("send after Close took %s, want immediate failure", elapsed)
+	}
+
+	// Same slack for httptest-server goroutines as the reader-death test.
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > baseline+3 {
+		if time.Now().After(deadline) {
+			buf := make([]byte, 1<<20)
+			n := runtime.Stack(buf, true)
+			t.Fatalf("goroutines leaked after Close: baseline %d, now %d\n%s", baseline, runtime.NumGoroutine(), buf[:n])
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
