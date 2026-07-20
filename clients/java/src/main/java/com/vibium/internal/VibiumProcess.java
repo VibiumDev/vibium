@@ -7,7 +7,12 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Manages the vibium subprocess lifecycle.
@@ -15,6 +20,13 @@ import java.util.concurrent.TimeUnit;
  * Spawns {@code vibium pipe [--headless]} and waits for the ready signal.
  */
 public class VibiumProcess {
+
+    /** Bound on how long to wait for the ready signal per launch attempt. */
+    private static final long READY_TIMEOUT_SECONDS = 60;
+    /** Number of launch attempts before giving up (retries transient failures). */
+    private static final int MAX_START_ATTEMPTS = 2;
+    /** Backoff between launch attempts. */
+    private static final long START_RETRY_BACKOFF_MS = 500;
 
     private final Process process;
     private final BufferedWriter stdin;
@@ -57,6 +69,34 @@ public class VibiumProcess {
             BrowserInstaller.ensureInstalled(binaryPath);
         }
 
+        // Startup is slow (~16s cold) and slower when many browsers launch at
+        // once (test suites, CI), where a cold launch can blow the ready timeout
+        // or crash under resource pressure. Retry a timed-out or crashed launch a
+        // couple of times with a short backoff so a single unlucky launch doesn't
+        // fail hard.
+        VibiumConnectionException lastError = null;
+        for (int attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
+            try {
+                return startAttempt(cmd);
+            } catch (VibiumConnectionException e) {
+                lastError = e;
+                if (attempt < MAX_START_ATTEMPTS) {
+                    try {
+                        Thread.sleep(START_RETRY_BACKOFF_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    }
+                    continue;
+                }
+                throw e;
+            }
+        }
+        // Unreachable: the loop returns on success or throws on the final attempt.
+        throw lastError;
+    }
+
+    private static VibiumProcess startAttempt(List<String> cmd) {
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(false);
@@ -65,21 +105,50 @@ public class VibiumProcess {
             BufferedWriter stdin = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), "UTF-8"));
             BufferedReader stdout = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"));
 
-            // Read lines until we get the ready signal
+            // Read lines until we get the ready signal, bounded by a timeout so a
+            // hung launch (process alive but never emitting ready) can't block
+            // forever — historically this readLine() loop could hang the suite.
             List<String> preReadyLines = new ArrayList<>();
-            String line;
-            boolean ready = false;
-
-            while ((line = stdout.readLine()) != null) {
-                if (line.contains("vibium:lifecycle.ready") || line.contains("\"method\":\"vibium:lifecycle.ready\"")) {
-                    ready = true;
-                    break;
+            boolean ready;
+            ExecutorService readerPool = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "vibium-ready-wait");
+                t.setDaemon(true);
+                return t;
+            });
+            try {
+                Future<Boolean> readerTask = readerPool.submit(() -> {
+                    String line;
+                    while ((line = stdout.readLine()) != null) {
+                        if (line.contains("vibium:lifecycle.ready")) {
+                            return true;
+                        }
+                        preReadyLines.add(line);
+                    }
+                    return false; // EOF before ready — process exited
+                });
+                try {
+                    ready = readerTask.get(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                } catch (TimeoutException te) {
+                    readerTask.cancel(true);
+                    process.destroyForcibly();
+                    throw new VibiumConnectionException(
+                        "Vibium failed to start: timed out waiting for ready signal");
+                } catch (ExecutionException ee) {
+                    process.destroyForcibly();
+                    Throwable cause = ee.getCause() != null ? ee.getCause() : ee;
+                    throw new VibiumConnectionException(
+                        "Vibium failed to start: " + cause.getMessage(), cause);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    process.destroyForcibly();
+                    throw new VibiumConnectionException("Interrupted while starting vibium", ie);
                 }
-                preReadyLines.add(line);
+            } finally {
+                readerPool.shutdownNow();
             }
 
             if (!ready) {
-                // Process may have exited
+                // Process exited (EOF) before emitting ready.
                 String stderr = readStream(process.getErrorStream());
                 int exitCode = -1;
                 try {

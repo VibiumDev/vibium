@@ -707,11 +707,7 @@ func (h *Handlers) browserClick(args map[string]interface{}) (*ToolsCallResult, 
 	if err != nil {
 		return nil, err
 	}
-	ep := api.ElementParams{Selector: selector}
-	if t, ok := argFloat(args, "timeout"); ok {
-		ep.Timeout = time.Duration(t) * time.Millisecond
-	}
-	if err := api.Click(s, ctx, ep); err != nil {
+	if err := api.Click(s, ctx, elementParamsWithTimeout(selector, args)); err != nil {
 		return nil, fmt.Errorf("failed to click: %w", err)
 	}
 
@@ -745,11 +741,7 @@ func (h *Handlers) browserType(args map[string]interface{}) (*ToolsCallResult, e
 	if err != nil {
 		return nil, err
 	}
-	ep := api.ElementParams{Selector: selector}
-	if t, ok := argFloat(args, "timeout"); ok {
-		ep.Timeout = time.Duration(t) * time.Millisecond
-	}
-	if err := api.TypeInto(s, ctx, ep, text); err != nil {
+	if err := api.TypeInto(s, ctx, elementParamsWithTimeout(selector, args), text); err != nil {
 		return nil, fmt.Errorf("failed to type: %w", err)
 	}
 
@@ -1206,7 +1198,12 @@ func (h *Handlers) browserEvaluate(args map[string]interface{}) (*ToolsCallResul
 	case nil:
 		resultText = "null"
 	default:
-		resultText = fmt.Sprintf("%v", v)
+		b, err := json.Marshal(v)
+		if err != nil {
+			resultText = fmt.Sprintf("%v", v)
+		} else {
+			resultText = string(b)
+		}
 	}
 
 	return &ToolsCallResult{
@@ -1447,7 +1444,7 @@ func (h *Handlers) browserHover(args map[string]interface{}) (*ToolsCallResult, 
 	if err != nil {
 		return nil, err
 	}
-	if err := api.Hover(s, ctx, api.ElementParams{Selector: selector}); err != nil {
+	if err := api.Hover(s, ctx, elementParamsWithTimeout(selector, args)); err != nil {
 		return nil, fmt.Errorf("failed to hover: %w", err)
 	}
 
@@ -1481,7 +1478,7 @@ func (h *Handlers) browserSelect(args map[string]interface{}) (*ToolsCallResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := api.SelectOption(s, ctx, api.ElementParams{Selector: selector}, value); err != nil {
+	if err := api.SelectOption(s, ctx, elementParamsWithTimeout(selector, args), value); err != nil {
 		return nil, fmt.Errorf("failed to select: %w", err)
 	}
 
@@ -2075,12 +2072,15 @@ func (h *Handlers) browserFill(args map[string]interface{}) (*ToolsCallResult, e
 	}
 	selector = h.resolveSelector(selector)
 
-	value, _ := args["value"].(string)
-	if value == "" {
+	// Distinguish an omitted value from an intentionally empty one: an empty
+	// string is a valid value that clears the field, so key off key presence,
+	// not emptiness.
+	value, hasValue := args["value"].(string)
+	if !hasValue {
 		// Fall back to "text" for backwards compatibility with MCP clients
-		value, _ = args["text"].(string)
+		value, hasValue = args["text"].(string)
 	}
-	if value == "" {
+	if !hasValue {
 		return nil, fmt.Errorf("value is required")
 	}
 
@@ -2089,7 +2089,7 @@ func (h *Handlers) browserFill(args map[string]interface{}) (*ToolsCallResult, e
 	if err != nil {
 		return nil, err
 	}
-	if err := api.Fill(s, ctx, api.ElementParams{Selector: selector}, value); err != nil {
+	if err := api.Fill(s, ctx, elementParamsWithTimeout(selector, args), value); err != nil {
 		return nil, fmt.Errorf("failed to fill: %w", err)
 	}
 
@@ -2325,7 +2325,7 @@ func (h *Handlers) browserCheck(args map[string]interface{}) (*ToolsCallResult, 
 	if err != nil {
 		return nil, err
 	}
-	toggled, err := api.Check(s, ctx, api.ElementParams{Selector: selector})
+	toggled, err := api.Check(s, ctx, elementParamsWithTimeout(selector, args))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check: %w", err)
 	}
@@ -2360,7 +2360,7 @@ func (h *Handlers) browserUncheck(args map[string]interface{}) (*ToolsCallResult
 	if err != nil {
 		return nil, err
 	}
-	toggled, err := api.Uncheck(s, ctx, api.ElementParams{Selector: selector})
+	toggled, err := api.Uncheck(s, ctx, elementParamsWithTimeout(selector, args))
 	if err != nil {
 		return nil, fmt.Errorf("failed to uncheck: %w", err)
 	}
@@ -2395,7 +2395,7 @@ func (h *Handlers) browserScrollIntoView(args map[string]interface{}) (*ToolsCal
 	if err != nil {
 		return nil, err
 	}
-	if err := api.ScrollIntoView(s, ctx, api.ElementParams{Selector: selector}); err != nil {
+	if err := api.ScrollIntoView(s, ctx, elementParamsWithTimeout(selector, args)); err != nil {
 		return nil, fmt.Errorf("failed to scroll into view: %w", err)
 	}
 
@@ -2482,6 +2482,17 @@ func argFloat(args map[string]interface{}, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// elementParamsWithTimeout builds ElementParams for a selector, applying a
+// caller-supplied "timeout" arg (milliseconds) when present. A zero/absent
+// timeout is normalized to the default by the api layer (withDefaultTimeout).
+func elementParamsWithTimeout(selector string, args map[string]interface{}) api.ElementParams {
+	ep := api.ElementParams{Selector: selector}
+	if t, ok := argFloat(args, "timeout"); ok {
+		ep.Timeout = time.Duration(t) * time.Millisecond
+	}
+	return ep
 }
 
 // browserSleep pauses execution for a specified number of milliseconds.
@@ -2835,7 +2846,7 @@ func (h *Handlers) browserDblClick(args map[string]interface{}) (*ToolsCallResul
 	if err != nil {
 		return nil, err
 	}
-	if err := api.DblClick(s, ctx, api.ElementParams{Selector: selector}); err != nil {
+	if err := api.DblClick(s, ctx, elementParamsWithTimeout(selector, args)); err != nil {
 		return nil, fmt.Errorf("failed to double-click: %w", err)
 	}
 
@@ -2864,7 +2875,7 @@ func (h *Handlers) browserFocus(args map[string]interface{}) (*ToolsCallResult, 
 	if err != nil {
 		return nil, err
 	}
-	if err := api.FocusElement(s, ctx, api.ElementParams{Selector: selector}); err != nil {
+	if err := api.FocusElement(s, ctx, elementParamsWithTimeout(selector, args)); err != nil {
 		return nil, fmt.Errorf("failed to focus: %w", err)
 	}
 
@@ -3350,7 +3361,7 @@ func (h *Handlers) browserDrag(args map[string]interface{}) (*ToolsCallResult, e
 	if err != nil {
 		return nil, err
 	}
-	if err := api.DragTo(s, ctx, api.ElementParams{Selector: source}, api.ElementParams{Selector: target}); err != nil {
+	if err := api.DragTo(s, ctx, elementParamsWithTimeout(source, args), elementParamsWithTimeout(target, args)); err != nil {
 		return nil, fmt.Errorf("failed to drag: %w", err)
 	}
 
@@ -3722,7 +3733,7 @@ func (h *Handlers) browserUpload(args map[string]interface{}) (*ToolsCallResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := api.Upload(s, ctx, api.ElementParams{Selector: selector}, files); err != nil {
+	if err := api.Upload(s, ctx, elementParamsWithTimeout(selector, args), files); err != nil {
 		return nil, fmt.Errorf("failed to set files: %w", err)
 	}
 

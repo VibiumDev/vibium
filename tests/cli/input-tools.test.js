@@ -41,3 +41,81 @@ describe('CLI: Input Tools', () => {
     assert.match(result, /SKILL\.md/, 'Should mention SKILL.md');
   });
 });
+
+describe('CLI: Negative value flag parsing', () => {
+  test('sleep rejects negative value with meaningful error, not flag parse error', () => {
+    try {
+      execSync(`${VIBIUM} sleep -1`, { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' });
+      assert.fail('Should have thrown');
+    } catch (err) {
+      const output = err.stderr + err.stdout;
+      assert.doesNotMatch(output, /unknown shorthand flag/, 'Should not treat -1 as a flag');
+      assert.match(output, /positive|invalid/, 'Should give a meaningful error');
+    }
+  });
+
+  test('geolocation accepts negative coordinates', () => {
+    const result = execSync(`${VIBIUM} geolocation 37.7749 -122.4194`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(result, /Geolocation set/, 'Should set geolocation with negative longitude');
+  });
+
+  test('fill accepts negative numeric value', () => {
+    // Hermetic fixture — avoids a third-party site so the test only exercises
+    // flag parsing, not network reachability.
+    execSync(`${VIBIUM} content '<input id="username" value="">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} fill "#username" "-2"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.doesNotMatch(result, /unknown shorthand flag/, 'Should not treat -2 as a flag');
+    assert.match(result, /Filled/, 'fill should succeed');
+    const value = execSync(`${VIBIUM} eval 'document.getElementById("username").value'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(value, /-2/, 'field value should actually be set to -2');
+  });
+
+  test('type accepts negative numeric value', () => {
+    execSync(`${VIBIUM} content '<input id="username" value="">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} type "#username" "-2"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.doesNotMatch(result, /unknown shorthand flag/, 'Should not treat -2 as a flag');
+    assert.match(result, /Typed/, 'type should succeed');
+    const value = execSync(`${VIBIUM} eval 'document.getElementById("username").value'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(value, /-2/, 'field value should actually be set to -2');
+  });
+});
+
+describe('CLI: fill edge cases', () => {
+  test('fill "" clears an existing value (regression: #187)', () => {
+    execSync(`${VIBIUM} content '<input id="u" value="hello">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} fill "#u" ""`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(result, /Filled/, 'fill "" should succeed, not error with "value is required"');
+    const value = execSync(`${VIBIUM} eval 'document.getElementById("u").value'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.strictEqual(value.trim(), '', 'field should be cleared');
+  });
+});

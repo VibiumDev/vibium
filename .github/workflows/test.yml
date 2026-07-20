@@ -1,0 +1,76 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: |
+            clients/python/pyproject.toml
+            packages/python/vibium_linux_x64/pyproject.toml
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      # Ubuntu 24.04 restricts unprivileged user namespaces, which breaks
+      # Chrome's sandbox (HTTP 500 on session creation).
+      - name: Configure kernel for Chrome sandbox
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+      # Keyed on installer.go so installer changes fetch a fresh Chrome.
+      - name: Cache Chrome for Testing
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vibium/chrome-for-testing
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/browser/installer.go') }}
+          restore-keys: |
+            ${{ runner.os }}-chrome-
+
+      # The lockfile is generated on macOS, so rollup's Linux native module
+      # is missing from it and npm install won't add it on its own.
+      - name: Install npm dependencies
+        run: npm install && npm install --no-save @rollup/rollup-linux-x64-gnu
+
+      - name: Build
+        run: make
+
+      # xvfb: the Python suite's headed tests need a display.
+      # NODE_TEST_TIMEOUT: on Node 20, --test-timeout limits each test file,
+      # not each test, and the slowest file needs ~150s.
+      - name: Test
+        run: xvfb-run --auto-servernum make test NODE_TEST_TIMEOUT=300000
+
+      # In case the job is interrupted before make test's own cleanup runs.
+      - name: Clean up zombie processes
+        if: always()
+        run: make double-tap

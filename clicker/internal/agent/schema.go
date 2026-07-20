@@ -43,6 +43,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector for the element to click",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector"},
 				"additionalProperties": false,
@@ -61,6 +66,11 @@ func GetToolSchemas() []Tool {
 					"text": map[string]interface{}{
 						"type":        "string",
 						"description": "The text to type",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"required":             []string{"selector", "text"},
@@ -132,6 +142,11 @@ func GetToolSchemas() []Tool {
 					"title": map[string]interface{}{
 						"type":        "string",
 						"description": "Find element by title attribute",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"additionalProperties": false,
@@ -292,6 +307,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector for the element to hover over",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector"},
 				"additionalProperties": false,
@@ -310,6 +330,11 @@ func GetToolSchemas() []Tool {
 					"value": map[string]interface{}{
 						"type":        "string",
 						"description": "The value to select",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"required":             []string{"selector", "value"},
@@ -534,6 +559,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "The text to fill in",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector", "text"},
 				"additionalProperties": false,
@@ -644,6 +674,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector for the checkbox or radio button",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector"},
 				"additionalProperties": false,
@@ -659,6 +694,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector for the checkbox",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector"},
 				"additionalProperties": false,
@@ -673,6 +713,11 @@ func GetToolSchemas() []Tool {
 					"selector": map[string]interface{}{
 						"type":        "string",
 						"description": "CSS selector for the element to scroll into view",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"required":             []string{"selector"},
@@ -791,6 +836,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector or @ref for the element to double-click",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"selector"},
 				"additionalProperties": false,
@@ -805,6 +855,11 @@ func GetToolSchemas() []Tool {
 					"selector": map[string]interface{}{
 						"type":        "string",
 						"description": "CSS selector or @ref for the element to focus",
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"required":             []string{"selector"},
@@ -1056,6 +1111,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "CSS selector or @ref for the target element",
 					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
+					},
 				},
 				"required":             []string{"source", "target"},
 				"additionalProperties": false,
@@ -1250,6 +1310,11 @@ func GetToolSchemas() []Tool {
 						"items": map[string]interface{}{
 							"type": "string",
 						},
+					},
+					"timeout": map[string]interface{}{
+						"type":        "number",
+						"description": "Timeout in milliseconds (default: 30000)",
+						"default":     30000,
 					},
 				},
 				"required":             []string{"selector", "files"},

@@ -1,18 +1,24 @@
 package main
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 )
 
 func newHoverCmd() *cobra.Command {
-	return &cobra.Command{
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "hover [selector]",
 		Short: "Hover over an element by CSS selector",
 		Example: `  vibium hover "a"
   # Hover over first link
 
   vibium hover https://example.com "a"
-  # Navigate then hover`,
+  # Navigate then hover
+
+  vibium hover "a" --timeout 5s
+  # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			var selector string
@@ -27,7 +33,10 @@ func newHoverCmd() *cobra.Command {
 				selector = args[0]
 			}
 
-			result, err := daemonCall("browser_hover", map[string]interface{}{"selector": selector})
+			result, err := daemonCall("browser_hover", map[string]interface{}{
+				"selector": selector,
+				"timeout":  float64(timeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -35,4 +44,6 @@ func newHoverCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
+	addTimeoutFlag(cmd, &timeout)
+	return cmd
 }
