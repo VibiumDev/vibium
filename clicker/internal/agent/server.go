@@ -145,10 +145,9 @@ type Server struct {
 	handlers *Handlers
 	version  string
 
-	// busy is held (capacity 1) while a request is being handled. Close
-	// acquires it so shutdown does not tear the browser session down under
-	// an in-flight tool call, with a bounded wait so a wedged call cannot
-	// stall SIGTERM cleanup.
+	// busy is held (capacity 1) while a request is being handled, and by
+	// Close while it tears down the browser session. A channel rather than
+	// a mutex so Close can bound its wait.
 	busy chan struct{}
 }
 
@@ -335,16 +334,21 @@ func (s *Server) writeResponse(resp *Response) error {
 	return err
 }
 
-// Close cleans up the server resources. It waits briefly for an in-flight
-// request so the browser session is not torn down under a tool call, but a
-// wedged call cannot hold up shutdown: cleaning up Chrome promptly matters
-// more than a clean answer to a request that is about to die with the
-// process anyway.
+// closeGraceTimeout bounds how long Close waits for an in-flight request.
+// Cleaning up Chrome promptly matters more than a clean answer to a request
+// that is about to die with the process anyway.
+const closeGraceTimeout = 2 * time.Second
+
+// Close cleans up the server resources. It waits up to closeGraceTimeout for
+// an in-flight request so the browser session is not torn down under a tool
+// call. If the timeout fires, teardown proceeds concurrently with the wedged
+// call: the session fields race is narrowed to that window, and the process
+// exits right after.
 func (s *Server) Close() {
 	select {
 	case s.busy <- struct{}{}:
 		defer func() { <-s.busy }()
-	case <-time.After(2 * time.Second):
+	case <-time.After(closeGraceTimeout):
 	}
 	s.handlers.Close()
 }
