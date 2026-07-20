@@ -30,9 +30,11 @@ function getClickerChromePids() {
     let cmd;
 
     if (platform === 'darwin') {
-      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging-port' 2>/dev/null || true";
+      // The [-] class stops Linux pgrep from matching the sh -c wrapper,
+      // whose command line contains this pattern.
+      cmd = "pgrep -f 'Chrome for Testing.*--remote-debugging[-]port' 2>/dev/null || true";
     } else if (platform === 'linux') {
-      cmd = "pgrep -f 'chrome.*--remote-debugging-port' 2>/dev/null || true";
+      cmd = "pgrep -f 'chrome.*--remote-debugging[-]port' 2>/dev/null || true";
     } else {
       return new Set();
     }

@@ -46,13 +46,23 @@ endif
 # faster iteration bump JS_PARALLEL (default 3) to use more cores.
 TEST_TIMEOUT ?= 600
 TIMEOUT_CMD := node scripts/timeout.mjs $(TEST_TIMEOUT)
+# Same watchdog for recipes that cd out of the repo root (pytest, gradlew).
+# Empty on Windows: timeout.mjs spawns via cmd.exe, which can't run ./gradlew.
+ifeq ($(OS),Windows_NT)
+  TIMEOUT_CMD_ABS :=
+else
+  TIMEOUT_CMD_ABS := node $(CURDIR)/scripts/timeout.mjs $(TEST_TIMEOUT)
+endif
 
 # Node test runner flags: per-test timeout + force exit on dangling handles.
 # The slowest healthy test today is ~20s (websocket "monitoring survives
 # page navigation"). 30s gives headroom while making a hung test surface
 # in 30s instead of 2 minutes — so a flake takes ~30s × N_stuck_tests to
 # trip the phase wrapper instead of ~120s × N.
-TEST_FLAGS := --test-timeout=30000 --test-force-exit
+# On Node 20, --test-timeout limits each test FILE, not each test; CI
+# overrides this to file scale (see .github/workflows/test.yml).
+NODE_TEST_TIMEOUT ?= 30000
+TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 
 # Default target
 all: build
@@ -181,12 +191,15 @@ test: build install-browser
 		exit $$EXIT; \
 	fi
 
-# Kill any Chrome/chromedriver processes left over from tests
+# Kill any Chrome/chromedriver processes left over from tests.
+# The bracketed characters stop Linux pkill from SIGKILLing the recipe's
+# own shell, whose command line contains the pattern.
 test-cleanup:
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f 'chromedriver' 2>/dev/null || true
-	@pkill -9 -f 'sync-test-server.js' 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run CLI tests (tests the vibium binary directly)
 # Process tests run separately with --test-concurrency=1 to avoid interference
@@ -290,7 +303,7 @@ test-python: build-go install-browser
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
 		fi && \
 		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
 # Build Java client JAR (dev — no native binaries, fast)
 build-java: build-go
@@ -303,7 +316,7 @@ build-java: build-go
 JAVA_PARALLEL ?= 3
 test-java: build-go install-browser
 	@echo "--- Java Client Tests (parallel x$(JAVA_PARALLEL)) ---"
-	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
+	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
 # Package Java JAR with native binaries
 package-java: build-go-all
@@ -328,9 +341,10 @@ ifeq ($(OS),Windows_NT)
 	@cmd //c "taskkill /F /IM chrome.exe" 2>/dev/null || true
 	@cmd //c "taskkill /F /IM chromedriver.exe" 2>/dev/null || true
 else
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f chromedriver 2>/dev/null || true
-	@pkill -9 -f 'sync-test-server.js' 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 endif
 	@sleep 1
 	@echo "Done."
