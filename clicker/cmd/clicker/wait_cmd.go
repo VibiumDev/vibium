@@ -4,10 +4,11 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/vibium/clicker/internal/api"
 )
 
 func newWaitCmd() *cobra.Command {
+	var waitTimeout, urlTimeout, textTimeout, loadTimeout, fnTimeout time.Duration
+
 	cmd := &cobra.Command{
 		Use:   "wait [selector]",
 		Short: "Wait for an element, URL, text, page load, or JS condition",
@@ -17,21 +18,18 @@ func newWaitCmd() *cobra.Command {
   vibium wait "div.loaded" --state visible
   # Wait for element to be visible
 
-  vibium wait "div.spinner" --state hidden --timeout 5000
-  # Wait for spinner to disappear`,
+  vibium wait "div.spinner" --state hidden --timeout 5s
+  # Wait for spinner to disappear (5s, or 5000 for milliseconds)`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			selector := args[0]
 			state, _ := cmd.Flags().GetString("state")
-			timeoutMs, _ := cmd.Flags().GetInt("timeout")
 
-			toolArgs := map[string]interface{}{
+			result, err := daemonCall("browser_wait", map[string]interface{}{
 				"selector": selector,
 				"state":    state,
-				"timeout":  float64(timeoutMs),
-			}
-
-			result, err := daemonCall("browser_wait", toolArgs)
+				"timeout":  float64(waitTimeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -40,7 +38,7 @@ func newWaitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("state", "attached", "State to wait for: attached, visible, hidden")
-	cmd.Flags().Int("timeout", int(api.DefaultTimeout/time.Millisecond), "Timeout in milliseconds")
+	addTimeoutFlag(cmd, &waitTimeout)
 
 	urlCmd := &cobra.Command{
 		Use:   "url [pattern]",
@@ -48,19 +46,14 @@ func newWaitCmd() *cobra.Command {
 		Example: `  vibium wait url "/dashboard"
   # Wait until URL contains "/dashboard"
 
-  vibium wait url "success" --timeout 10000
-  # Wait up to 10 seconds`,
+  vibium wait url "success" --timeout 10s
+  # Wait up to 10 seconds (or 10000 for milliseconds)`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			pattern := args[0]
-			timeout, _ := cmd.Flags().GetInt("timeout")
-
-			toolArgs := map[string]interface{}{"pattern": pattern}
-			if cmd.Flags().Changed("timeout") {
-				toolArgs["timeout"] = float64(timeout)
-			}
-
-			result, err := daemonCall("browser_wait_for_url", toolArgs)
+			result, err := daemonCall("browser_wait_for_url", map[string]interface{}{
+				"pattern": args[0],
+				"timeout": float64(urlTimeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -68,7 +61,7 @@ func newWaitCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	urlCmd.Flags().Int("timeout", 30000, "Timeout in milliseconds")
+	addTimeoutFlag(urlCmd, &urlTimeout)
 
 	textCmd := &cobra.Command{
 		Use:   "text [text]",
@@ -76,18 +69,14 @@ func newWaitCmd() *cobra.Command {
 		Example: `  vibium wait text "Welcome"
   # Waits until "Welcome" appears on the page
 
-  vibium wait text "Success" --timeout 10000
-  # Wait with custom timeout (10 seconds)`,
+  vibium wait text "Success" --timeout 10s
+  # Wait with custom timeout (10s, or 10000 for milliseconds)`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			text := args[0]
-			timeout, _ := cmd.Flags().GetFloat64("timeout")
-
-			callArgs := map[string]interface{}{"text": text}
-			if timeout > 0 {
-				callArgs["timeout"] = timeout
-			}
-			result, err := daemonCall("browser_wait_for_text", callArgs)
+			result, err := daemonCall("browser_wait_for_text", map[string]interface{}{
+				"text":    args[0],
+				"timeout": float64(textTimeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -95,7 +84,7 @@ func newWaitCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	textCmd.Flags().Float64("timeout", 30000, "Timeout in milliseconds")
+	addTimeoutFlag(textCmd, &textTimeout)
 
 	loadCmd := &cobra.Command{
 		Use:   "load",
@@ -103,18 +92,13 @@ func newWaitCmd() *cobra.Command {
 		Example: `  vibium wait load
   # Wait until document.readyState is "complete"
 
-  vibium wait load --timeout 10000
-  # Wait up to 10 seconds`,
+  vibium wait load --timeout 10s
+  # Wait up to 10 seconds (or 10000 for milliseconds)`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			timeout, _ := cmd.Flags().GetInt("timeout")
-
-			toolArgs := map[string]interface{}{}
-			if cmd.Flags().Changed("timeout") {
-				toolArgs["timeout"] = float64(timeout)
-			}
-
-			result, err := daemonCall("browser_wait_for_load", toolArgs)
+			result, err := daemonCall("browser_wait_for_load", map[string]interface{}{
+				"timeout": float64(loadTimeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -122,7 +106,7 @@ func newWaitCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	loadCmd.Flags().Int("timeout", 30000, "Timeout in milliseconds")
+	addTimeoutFlag(loadCmd, &loadTimeout)
 
 	fnCmd := &cobra.Command{
 		Use:   "fn [expression]",
@@ -130,18 +114,14 @@ func newWaitCmd() *cobra.Command {
 		Example: `  vibium wait fn "document.readyState === 'complete'"
   # Wait for page to be fully loaded
 
-  vibium wait fn "window.ready === true" --timeout 10000
-  # Wait for custom condition with timeout`,
+  vibium wait fn "window.ready === true" --timeout 10s
+  # Wait for custom condition (10s, or 10000 for milliseconds)`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			expression := args[0]
-			timeout, _ := cmd.Flags().GetFloat64("timeout")
-
-			callArgs := map[string]interface{}{"expression": expression}
-			if timeout > 0 {
-				callArgs["timeout"] = timeout
-			}
-			result, err := daemonCall("browser_wait_for_fn", callArgs)
+			result, err := daemonCall("browser_wait_for_fn", map[string]interface{}{
+				"expression": args[0],
+				"timeout":    float64(fnTimeout.Milliseconds()),
+			})
 			if err != nil {
 				printError(err)
 				return
@@ -149,7 +129,7 @@ func newWaitCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	fnCmd.Flags().Float64("timeout", 30000, "Timeout in milliseconds")
+	addTimeoutFlag(fnCmd, &fnTimeout)
 
 	cmd.AddCommand(urlCmd)
 	cmd.AddCommand(textCmd)

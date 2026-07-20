@@ -9,7 +9,7 @@ import (
 )
 
 func newSleepCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "sleep [ms]",
 		Short: "Pause execution for a number of milliseconds",
 		Example: `  vibium sleep 1000
@@ -17,7 +17,8 @@ func newSleepCmd() *cobra.Command {
 
   vibium sleep 500
   # Wait 500ms`,
-		Args: cobra.ExactArgs(1),
+		DisableFlagParsing: true,
+		Args:               cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			ms, err := strconv.ParseFloat(args[0], 64)
 			if err != nil {
@@ -33,4 +34,6 @@ func newSleepCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
+	cmd.Flags().SetInterspersed(false)
+	return cmd
 }
