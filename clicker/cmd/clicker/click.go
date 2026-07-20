@@ -1,11 +1,13 @@
 package main
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
-	"github.com/vibium/clicker/internal/api"
 )
 
 func newClickCmd() *cobra.Command {
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "click [url] [selector]",
 		Short: "Click an element (optionally navigate to URL first)",
@@ -16,7 +18,7 @@ func newClickCmd() *cobra.Command {
   # Navigates to URL first, then clicks
 
   vibium click https://example.com "a" --timeout 5s
-  # Custom timeout for actionability checks`,
+  # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			var selector string
@@ -34,7 +36,6 @@ func newClickCmd() *cobra.Command {
 			}
 
 			// Click element
-			timeout, _ := cmd.Flags().GetDuration("timeout")
 			result, err := daemonCall("browser_click", map[string]interface{}{
 				"selector": selector,
 				"timeout":  float64(timeout.Milliseconds()),
@@ -46,6 +47,6 @@ func newClickCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().Duration("timeout", api.DefaultTimeout, "Timeout for actionability checks (e.g., 5s, 30s)")
+	addTimeoutFlag(cmd, &timeout)
 	return cmd
 }

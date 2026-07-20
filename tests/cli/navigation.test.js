@@ -59,4 +59,21 @@ describe('CLI: Navigation', () => {
     });
     assert.match(result, /Example Domain/i, 'Should return page title');
   });
+  test('eval returns valid JSON for objects', () => {
+    const result = execSync(`${VIBIUM} eval https://example.com "({title: document.title, url: location.href})"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const parsed = JSON.parse(result.trim());
+    assert.ok(parsed.title, 'Should have title key');
+    assert.ok(parsed.url, 'Should have url key');
+  });
+  test('eval returns valid JSON for arrays', () => {
+    const result = execSync(`${VIBIUM} eval https://example.com "[1, 2, 3]"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const parsed = JSON.parse(result.trim());
+    assert.deepStrictEqual(parsed, [1, 2, 3], 'Should return array as JSON');
+  });
 });

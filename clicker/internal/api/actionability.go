@@ -194,8 +194,13 @@ func actionabilityCheckBody() string {
 				const tag = el.tagName.toLowerCase();
 				if (tag === 'input') {
 					const t = (el.type || 'text').toLowerCase();
-					const textTypes = ['text','password','email','number','search','tel','url'];
-					if (!textTypes.includes(t))
+					// Types whose value can be set via fill. Includes the value-bearing
+					// picker types (range/color/date/time family), not just text inputs.
+					// Excludes checkbox/radio (use check), file (use upload), and
+					// button/submit/reset/image (not value inputs).
+					const fillableTypes = ['text','password','email','number','search','tel','url',
+						'range','color','date','time','datetime-local','month','week'];
+					if (!fillableTypes.includes(t))
 						return JSON.stringify({status:'failed', check:'editable', reason:'input type ' + t + ' not editable'});
 				} else if (tag !== 'textarea' && !el.isContentEditable) {
 					return JSON.stringify({status:'failed', check:'editable', reason:'not a text input element'});

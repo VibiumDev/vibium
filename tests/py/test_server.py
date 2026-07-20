@@ -5,7 +5,7 @@ All routes match the JS sync-test-server.js so tests are equivalent.
 
 import json
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
 HOME_HTML = """<html><head><title>Test App</title></head><body>
@@ -287,8 +287,16 @@ class VibiumTestHandler(BaseHTTPRequestHandler):
 
 
 def start_test_server() -> tuple:
-    """Start a test server on a random port. Returns (server, base_url)."""
-    server = HTTPServer(("127.0.0.1", 0), VibiumTestHandler)
+    """Start a test server on a random port. Returns (server, base_url).
+
+    Uses ThreadingHTTPServer so each connection is handled on its own thread.
+    A single-threaded HTTPServer serializes requests, so while it's busy
+    handling/draining one of the several parallel connections Chrome opens to
+    load a page, the main-document request waits behind it — under the
+    parallel test suite's CPU load that stall reached the 60s navigate
+    timeout and flaked (unlike the JS suite, whose server is a separate process).
+    """
+    server = ThreadingHTTPServer(("127.0.0.1", 0), VibiumTestHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

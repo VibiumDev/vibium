@@ -43,16 +43,26 @@ endif
 # only fires when something has gone catastrophically wrong. A healthy
 # sequential test-js phase is ~6-10 minutes because Chrome launch is ~16s
 # per file on macOS (see clients/javascript/src/clicker/process.ts). For
-# faster iteration use JS_PARALLEL=4 (Makefile:189) which cuts wall time ~3x.
+# faster iteration bump JS_PARALLEL (default 3) to use more cores.
 TEST_TIMEOUT ?= 600
 TIMEOUT_CMD := node scripts/timeout.mjs $(TEST_TIMEOUT)
+# Same watchdog for recipes that cd out of the repo root (pytest, gradlew).
+# Empty on Windows: timeout.mjs spawns via cmd.exe, which can't run ./gradlew.
+ifeq ($(OS),Windows_NT)
+  TIMEOUT_CMD_ABS :=
+else
+  TIMEOUT_CMD_ABS := node $(CURDIR)/scripts/timeout.mjs $(TEST_TIMEOUT)
+endif
 
 # Node test runner flags: per-test timeout + force exit on dangling handles.
 # The slowest healthy test today is ~20s (websocket "monitoring survives
 # page navigation"). 30s gives headroom while making a hung test surface
 # in 30s instead of 2 minutes — so a flake takes ~30s × N_stuck_tests to
 # trip the phase wrapper instead of ~120s × N.
-TEST_FLAGS := --test-timeout=30000 --test-force-exit
+# On Node 20, --test-timeout limits each test FILE, not each test; CI
+# overrides this to file scale (see .github/workflows/test.yml).
+NODE_TEST_TIMEOUT ?= 30000
+TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 
 # Default target
 all: build
@@ -153,10 +163,13 @@ serve: build-go
 	./clicker/bin/vibium$(EXE) serve
 
 # Build everything and run all tests: make test
-# On Windows, run JS async/sync sequentially to avoid Chrome resource starvation
-# (each group spawns JS_PARALLEL Chrome instances; too many concurrent Chromes
-# causes screenshot timeouts). Other platforms run all 5 groups in parallel.
-ifeq ($(OS),Windows_NT)
+# test-js-sync runs OUTSIDE the parallel group on every platform. Each of
+# test-js-async/sync/python/java fans out to *_PARALLEL headless Chromes, and
+# running all of them at once over-subscribes the machine (~14 concurrent
+# browsers on a 12-core box), pushing cold Chrome launches past the client's
+# ready timeout and cascading into cancellations. Keeping test-js-sync separate
+# caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
+# reason. Bump *_PARALLEL on machines with more cores/memory.
 test: build install-browser
 	@START_TIME=$$(date +%s); \
 	"$(MAKE)" test-cli test-cleanup && \
@@ -177,32 +190,16 @@ test: build install-browser
 		echo "--- Tests failed after $${MINS}m$${SECS}s ---"; \
 		exit $$EXIT; \
 	fi
-else
-test: build install-browser
-	@START_TIME=$$(date +%s); \
-	"$(MAKE)" test-cli test-cleanup && \
-	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j 5 test-js-async test-js-sync test-mcp test-python test-java; \
-	EXIT=$$?; \
-	"$(MAKE)" test-cleanup; \
-	END_TIME=$$(date +%s); \
-	ELAPSED=$$((END_TIME - START_TIME)); \
-	MINS=$$((ELAPSED / 60)); \
-	SECS=$$((ELAPSED % 60)); \
-	echo ""; \
-	if [ $$EXIT -eq 0 ]; then \
-		echo "--- All tests passed in $${MINS}m$${SECS}s ---"; \
-	else \
-		echo "--- Tests failed after $${MINS}m$${SECS}s ---"; \
-		exit $$EXIT; \
-	fi
-endif
 
-# Kill any Chrome/chromedriver processes left over from tests
+# Kill any Chrome/chromedriver processes left over from tests.
+# The bracketed characters stop Linux pkill from SIGKILLing the recipe's
+# own shell, whose command line contains the pattern.
 test-cleanup:
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f 'chromedriver' 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run CLI tests (tests the vibium binary directly)
 # Process tests run separately with --test-concurrency=1 to avoid interference
@@ -230,7 +227,7 @@ test-cli: build-go
 # parallel-safe groups concurrently with test-mcp/test-python/test-java via
 # `$(MAKE) -j 5`. The process group must run alone because it asserts on
 # Chrome PID baselines.
-JS_PARALLEL ?= 4
+JS_PARALLEL ?= 3
 
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
@@ -295,7 +292,7 @@ test-daemon: build-go
 # for faster CI. Module-scoped browser fixture means xdist's default
 # loadfile distribution gives each file to a single worker — safe under
 # parallel since each file owns its own browser via conftest.py.
-PY_PARALLEL ?= 4
+PY_PARALLEL ?= 3
 test-python: build-go install-browser
 	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
 	@cd clients/python && \
@@ -306,7 +303,7 @@ test-python: build-go install-browser
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
 		fi && \
 		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
 # Build Java client JAR (dev — no native binaries, fast)
 build-java: build-go
@@ -316,10 +313,10 @@ build-java: build-go
 # Run Java client tests
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
-JAVA_PARALLEL ?= 4
+JAVA_PARALLEL ?= 3
 test-java: build-go install-browser
 	@echo "--- Java Client Tests (parallel x$(JAVA_PARALLEL)) ---"
-	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
+	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
 # Package Java JAR with native binaries
 package-java: build-go-all
@@ -344,8 +341,10 @@ ifeq ($(OS),Windows_NT)
 	@cmd //c "taskkill /F /IM chrome.exe" 2>/dev/null || true
 	@cmd //c "taskkill /F /IM chromedriver.exe" 2>/dev/null || true
 else
-	@pkill -9 -f 'Chrome for Testing' 2>/dev/null || true
-	@pkill -9 -f chromedriver 2>/dev/null || true
+	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
+	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
+	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 endif
 	@sleep 1
 	@echo "Done."

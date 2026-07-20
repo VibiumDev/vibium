@@ -190,51 +190,72 @@ class VibiumProcess:
             for key, value in connect_headers.items():
                 args.extend(["--connect-header", f"{key}: {value}"])
 
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=(sys.platform != "win32"),
-            # Raise the StreamReader buffer well above asyncio's 64 KiB default:
-            # a single newline-delimited message (e.g. a base64 screenshot) can be
-            # several MB, and readline() raises LimitOverrunError past the limit,
-            # killing the receiver loop (issue #110).
-            limit=_STREAM_LIMIT,
-        )
-
         # Read lines from stdout until we get the vibium:lifecycle.ready signal.
-        # Events (e.g. browsingContext.contextCreated) may arrive first.
+        # Startup is slow (~16s cold) and slower still when many browsers launch
+        # at once (test suites, CI), where a cold launch can blow the ready
+        # timeout or crash under resource pressure. Retry a timed-out or crashed
+        # launch a couple of times with a short backoff so a single unlucky
+        # launch doesn't fail hard. (Setup errors like a missing binary raise
+        # before this point.)
         import json
-        pre_ready_lines = []
-        try:
-            while True:
-                line_bytes = await asyncio.wait_for(
-                    process.stdout.readline(),  # type: ignore[union-attr]
-                    timeout=30,
-                )
-                if not line_bytes:
-                    # EOF — process died
-                    stderr_bytes = await process.stderr.read() if process.stderr else b""  # type: ignore[union-attr]
-                    raise BrowserCrashedError(f"Vibium failed to start: {stderr_bytes.decode(errors='replace')}")
-                line = line_bytes.decode().strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                except (json.JSONDecodeError, ValueError):
-                    continue
-                if msg.get("method") == "vibium:lifecycle.ready":
-                    break
-                # Buffer pre-ready events for later replay
-                pre_ready_lines.append(line)
-        except asyncio.TimeoutError:
-            process.kill()
-            raise BrowserCrashedError("Vibium failed to start: timed out waiting for ready signal")
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=(sys.platform != "win32"),
+                # Raise the StreamReader buffer well above asyncio's 64 KiB default:
+                # a single newline-delimited message (e.g. a base64 screenshot) can be
+                # several MB, and readline() raises LimitOverrunError past the limit,
+                # killing the receiver loop (issue #110).
+                limit=_STREAM_LIMIT,
+            )
 
-        instance = cls(process)
-        instance._pre_ready_lines = pre_ready_lines
-        return instance
+            # Events (e.g. browsingContext.contextCreated) may arrive first.
+            pre_ready_lines = []
+            try:
+                while True:
+                    line_bytes = await asyncio.wait_for(
+                        process.stdout.readline(),  # type: ignore[union-attr]
+                        timeout=30,
+                    )
+                    if not line_bytes:
+                        # EOF — process died
+                        stderr_bytes = await process.stderr.read() if process.stderr else b""  # type: ignore[union-attr]
+                        raise BrowserCrashedError(f"Vibium failed to start: {stderr_bytes.decode(errors='replace')}")
+                    line = line_bytes.decode().strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if msg.get("method") == "vibium:lifecycle.ready":
+                        break
+                    # Buffer pre-ready events for later replay
+                    pre_ready_lines.append(line)
+            except (asyncio.TimeoutError, BrowserCrashedError) as err:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                if attempt < max_attempts:
+                    await asyncio.sleep(0.5)
+                    continue
+                if isinstance(err, asyncio.TimeoutError):
+                    raise BrowserCrashedError(
+                        "Vibium failed to start: timed out waiting for ready signal"
+                    )
+                raise
+
+            instance = cls(process)
+            instance._pre_ready_lines = pre_ready_lines
+            return instance
+
+        # Unreachable: the final attempt either returns or raises above.
+        raise BrowserCrashedError("Vibium failed to start")
 
     def _cleanup(self) -> None:
         """Kill the subprocess if still running (called at exit)."""
