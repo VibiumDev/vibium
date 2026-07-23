@@ -62,6 +62,22 @@ describe('JS Navigation', () => {
     assert.ok(url.includes('/login'), 'URL should contain /login');
   });
 
+  test('SPA history navigation updates capture.navigation() and page.url()', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL + '/');
+    const expectedURL = new URL('/simulated-spa-route', baseURL).href;
+
+    const capturedURL = await vibe.capture.navigation(
+      async () => {
+        await vibe.evaluate('history.pushState({}, "", "/simulated-spa-route")');
+      },
+      { timeout: 2000 }
+    );
+
+    assert.strictEqual(capturedURL, expectedURL);
+    assert.strictEqual(await vibe.url(), expectedURL);
+  });
+
   test('page.title() returns page title', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/');

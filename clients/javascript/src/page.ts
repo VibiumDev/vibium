@@ -288,14 +288,11 @@ export class Page {
         const logContext = source?.context;
         if (logContext && logContext !== this.contextId) return;
         this.handleLogEntryAdded(params);
-      } else if (event.method === 'browsingContext.load') {
-        const url = params.url as string | undefined;
-        if (url) {
-          for (const cb of this.navigationCallbacks) {
-            cb(url);
-          }
-        }
-      } else if (event.method === 'browsingContext.fragmentNavigated') {
+      } else if (
+        event.method === 'browsingContext.load' ||
+        event.method === 'browsingContext.fragmentNavigated' ||
+        event.method === 'browsingContext.historyUpdated'
+      ) {
         const url = params.url as string | undefined;
         if (url) {
           for (const cb of this.navigationCallbacks) {
