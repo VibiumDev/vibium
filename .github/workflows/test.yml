@@ -67,8 +67,10 @@ jobs:
       # xvfb: the Python suite's headed tests need a display.
       # NODE_TEST_TIMEOUT: on Node 20, --test-timeout limits each test file,
       # not each test, and the slowest file needs ~150s.
+      # SUITE_PARALLEL: the desktop default is 2 to keep dev machines
+      # usable; under xvfb there are no visible windows, so run wider.
       - name: Test
-        run: xvfb-run --auto-servernum make test NODE_TEST_TIMEOUT=300000
+        run: xvfb-run --auto-servernum make test NODE_TEST_TIMEOUT=300000 SUITE_PARALLEL=4
 
       # In case the job is interrupted before make test's own cleanup runs.
       - name: Clean up zombie processes

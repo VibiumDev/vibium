@@ -24,7 +24,9 @@ class MCPClient {
 
   start() {
     return new Promise((resolve, reject) => {
-      this.proc = spawn(VIBIUM, ['mcp'], {
+      // --headless: without it every suite's lazy browser launch opens a
+      // visible, focus-stealing Chrome window during the parallel test phase.
+      this.proc = spawn(VIBIUM, ['mcp', '--headless'], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 

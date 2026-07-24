@@ -148,6 +148,7 @@ type Server struct {
 // ServerOptions configures the MCP server.
 type ServerOptions struct {
 	ScreenshotDir  string      // Directory for saving screenshots (empty = disabled)
+	Headless       bool        // Launch browsers without a visible window
 	ConnectURL     string      // Remote BiDi WebSocket URL (empty = local browser)
 	ConnectHeaders http.Header // Headers for remote WebSocket connection
 }
@@ -157,7 +158,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 	return &Server{
 		reader:   bufio.NewReader(os.Stdin),
 		writer:   os.Stdout,
-		handlers: NewHandlers(opts.ScreenshotDir, false, opts.ConnectURL, opts.ConnectHeaders),
+		handlers: NewHandlers(opts.ScreenshotDir, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
 		version:  version,
 	}
 }

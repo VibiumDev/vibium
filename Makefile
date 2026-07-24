@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -170,12 +170,25 @@ serve: build-go
 # ready timeout and cascading into cancellations. Keeping test-js-sync separate
 # caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
 # reason. Bump *_PARALLEL on machines with more cores/memory.
+#
+# SUITE_PARALLEL caps how many suites the middle phase runs at once. The
+# desktop default of 1 runs suites one at a time (peak Chromes = the
+# *_PARALLEL fan-out of a single suite) so a dev machine stays usable;
+# CI overrides to 4 (see .github/workflows/test.yml).
+#
+# test-browser-modes runs in its own serial phase because its tests open
+# visible Chrome windows (headed coverage is intentional — that's what
+# humans use). Inside the parallel fan-out those windows pop up all at
+# once, steal focus, and can beachball the macOS window manager, timing
+# out unrelated suites.
+SUITE_PARALLEL ?= 1
 test: build install-browser
 	@START_TIME=$$(date +%s); \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j 4 test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
+	"$(MAKE)" test-browser-modes test-cleanup && \
 	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
@@ -234,7 +247,6 @@ test-js-async: build-go
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/async/async-api.test.js \
 		tests/js/async/auto-wait.test.js \
-		tests/js/async/browser-modes.test.js \
 		tests/js/async/elements.test.js \
 		tests/js/async/interaction.test.js \
 		tests/js/async/state.test.js \
@@ -293,17 +305,35 @@ test-daemon: build-go
 # loadfile distribution gives each file to a single worker — safe under
 # parallel since each file owns its own browser via conftest.py.
 PY_PARALLEL ?= 3
-test-python: build-go install-browser
-	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
+
+# Ensure the Python client venv exists with the client + test deps installed.
+python-venv:
 	@cd clients/python && \
 		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
 		. $(VENV_ACTIVATE) && \
 		if ! python -c "import vibium, xdist" 2>/dev/null; then \
 			python -m pip install --quiet --upgrade pip && \
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
-		fi && \
+		fi
+
+# test_browser_modes.py is excluded here and run headed + serial by
+# test-browser-modes (see the `test` target comment).
+test-python: build-go install-browser python-venv
+	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
 		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
+			--ignore=../../tests/py/test_browser_modes.py
+
+# Headed browser-mode tests, one visible Chrome window at a time.
+test-browser-modes: build-go install-browser python-venv
+	@echo "--- Browser Mode Tests (headed, serial) ---"
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/browser-modes.test.js
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
+		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/test_browser_modes.py -v --tb=short -x
 
 # Build Java client JAR (dev — no native binaries, fast)
 build-java: build-go
@@ -462,6 +492,7 @@ help:
 	@echo "  make test-mcp              - Run MCP server tests only"
 	@echo "  make test-daemon           - Run daemon lifecycle tests"
 	@echo "  make test-python           - Run Python client tests"
+	@echo "  make test-browser-modes    - Run headed browser-mode tests (JS + Python, serial)"
 	@echo "  make test-java             - Run Java client tests"
 	@echo ""
 	@echo "Other:"
