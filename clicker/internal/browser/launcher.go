@@ -153,9 +153,11 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	wsURL := fmt.Sprintf("ws://localhost:%d/session", port)
 	conn, connErr := bidi.Connect(wsURL)
 	if connErr == nil {
-		client := bidi.NewClient(conn)
 		caps := buildCapabilities(chromePath, opts.Headless)
-		result, sessionErr := client.SessionNew(caps)
+		// Handshake without NewClient: a Client's reader would own this
+		// connection forever, and the consumer of LaunchResult.BidiConn
+		// (agent or api router) must be able to take over reads itself.
+		result, sessionErr := bidi.SessionNewOnConn(conn, caps)
 		if sessionErr == nil {
 			userDataDir, _ := result.Capabilities["userDataDir"].(string)
 			log.Info("browser launched via BiDi session.new", "sessionId", result.SessionID)

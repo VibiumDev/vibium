@@ -21,7 +21,6 @@ const DefaultTimeout = 30 * time.Second
 type BrowserSession struct {
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
-	BidiClient   *bidi.Client
 	Client       ClientTransport
 	mu           sync.Mutex
 	closed       bool
@@ -97,14 +96,20 @@ func NewRouter(headless bool, connectURL string, connectHeaders http.Header) *Ro
 func (r *Router) OnClientConnect(client ClientTransport) {
 	var launchResult *browser.LaunchResult
 	var bidiConn *bidi.Connection
-	var bidiClient *bidi.Client
 	var err error
 
 	if r.connectURL != "" {
 		// Remote mode: connect to an existing BiDi endpoint and create a session
 		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), r.connectURL)
 
-		bidiConn, bidiClient, _, err = bidi.ConnectRemote(r.connectURL, r.connectHeaders)
+		// Handshake without a bidi.Client: this router reads the connection
+		// itself in routeBrowserToClient, so no client reader may own it.
+		bidiConn, err = bidi.ConnectWithHeaders(r.connectURL, r.connectHeaders)
+		if err == nil {
+			if _, err = bidi.SessionNewOnConn(bidiConn, map[string]interface{}{}); err != nil {
+				bidiConn.Close()
+			}
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to connect to remote browser for client %d: %v\n", client.ID(), err)
 			client.Send(fmt.Sprintf(`{"error":{"code":-32000,"message":"Failed to connect to remote browser: %s"}}`, err.Error()))
@@ -145,15 +150,11 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 
 			fmt.Fprintf(os.Stderr, "[router] BiDi connection established for client %d\n", client.ID())
 		}
-
-		// Local mode: browser.Launch() already called SessionNew, just wrap the connection
-		bidiClient = bidi.NewClient(bidiConn)
 	}
 
 	session := &BrowserSession{
 		LaunchResult:   launchResult,
 		BidiConn:       bidiConn,
-		BidiClient:     bidiClient,
 		Client:         client,
 		stopChan:       make(chan struct{}),
 		internalCmds:   make(map[int]chan json.RawMessage),
@@ -927,9 +928,11 @@ func (r *Router) closeSession(session *BrowserSession) {
 		session.recorder.StopScreenshots()
 	}
 
-	// Remote mode: end the BiDi session so chromedriver closes Chrome
-	if r.connectURL != "" && session.BidiClient != nil {
-		session.BidiClient.SendCommand("session.end", map[string]interface{}{})
+	// Remote mode: end the BiDi session so chromedriver closes Chrome.
+	// stopChan is already closed, so this sends the command and returns
+	// without waiting for the response; the connection is closed next anyway.
+	if r.connectURL != "" && session.BidiConn != nil {
+		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 
 	// Close BiDi connection

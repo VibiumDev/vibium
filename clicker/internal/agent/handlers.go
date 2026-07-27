@@ -29,6 +29,7 @@ type Handlers struct {
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
+	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
 	activeContext  string         // last page context switched to or created
@@ -3778,6 +3779,7 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			"browsingContext.fragmentNavigated",
 		},
 	})
+	h.recordDropBase = h.client.DroppedEvents()
 	h.client.SetEventHandler(func(msg string) {
 		h.recorder.RecordBidiEvent(msg)
 	})
@@ -3799,6 +3801,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	// Stop forwarding events to the recorder
 	if h.client != nil {
 		h.client.SetEventHandler(nil)
+		h.recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
 	}
 
 	// Stop screenshot goroutine before stopping the recorder
