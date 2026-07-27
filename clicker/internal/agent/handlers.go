@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -19,6 +20,10 @@ import (
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
+	// sessionMu guards launchResult, client, and conn. The MCP shutdown
+	// goroutine calls Close while the serve loop may be launching or
+	// quitting the browser on these same fields.
+	sessionMu      sync.Mutex
 	launchResult   *browser.LaunchResult
 	client         *bidi.Client
 	conn           *bidi.Connection
@@ -581,21 +586,25 @@ func mcpToolToMethod(name string) string {
 	}
 }
 
-// Close cleans up any active browser sessions.
+// Close cleans up any active browser sessions. Safe to call concurrently;
+// whichever caller takes the fields does the closing, the other sees an
+// already-closed session.
 func (h *Handlers) Close() {
+	h.sessionMu.Lock()
+	conn, client, launchResult := h.conn, h.client, h.launchResult
+	h.conn, h.client, h.launchResult = nil, nil, nil
+	h.sessionMu.Unlock()
+
 	// Remote mode: end the BiDi session so chromedriver closes Chrome
-	if h.connectURL != "" && h.client != nil {
-		h.client.SendCommand("session.end", map[string]interface{}{})
+	if h.connectURL != "" && client != nil {
+		client.SendCommand("session.end", map[string]interface{}{})
 	}
-	if h.conn != nil {
-		h.conn.Close()
-		h.conn = nil
+	if conn != nil {
+		conn.Close()
 	}
-	if h.launchResult != nil {
-		h.launchResult.Close()
-		h.launchResult = nil
+	if launchResult != nil {
+		launchResult.Close()
 	}
-	h.client = nil
 }
 
 // browserLaunch launches a new browser session or connects to a remote one.
@@ -616,8 +625,10 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
+		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
+		h.sessionMu.Unlock()
 
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -651,9 +662,11 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		}
 	}
 
+	h.sessionMu.Lock()
 	h.launchResult = launchResult
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
+	h.sessionMu.Unlock()
 
 	return &ToolsCallResult{
 		Content: []Content{{
