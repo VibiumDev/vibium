@@ -178,6 +178,25 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	})
 }
 
+// NoteDroppedEvents stamps into the trace that count BiDi events were
+// dropped before reaching the recorder, so a recording with holes says so.
+func (t *Recorder) NoteDroppedEvents(count uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if !t.recording || count == 0 {
+		return
+	}
+
+	t.events = append(t.events, recordEvent{
+		"type":   "event",
+		"method": "vibium.eventsDropped",
+		"params": map[string]interface{}{"count": count},
+		"time":   t.monotonicNow(),
+		"class":  "BrowserContext",
+	})
+}
+
 // Stop stops recording and returns the recording zip data.
 func (t *Recorder) Stop() ([]byte, error) {
 	t.mu.Lock()
