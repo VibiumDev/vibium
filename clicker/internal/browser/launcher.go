@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -373,40 +374,67 @@ func killProcessTree(pid int) {
 	waitForProcessDead(pid, 2*time.Second)
 }
 
-// KillOrphanedChromeProcesses finds and kills Chrome/chromedriver processes
-// that have been orphaned (reparented to init/launchd).
-func KillOrphanedChromeProcesses() {
-	// Kill orphaned chromedriver and Chrome for Testing processes
-	patterns := []string{"chromedriver", "Chrome for Testing"}
+// isVibiumProcess reports whether comm (from `ps -o comm=`: bare name on
+// Linux, full path on macOS) names a vibium binary.
+func isVibiumProcess(comm string) bool {
+	name := filepath.Base(comm)
+	return name == "vibium" || name == "clicker"
+}
 
-	for _, pattern := range patterns {
-		cmd := exec.Command("pgrep", "-f", pattern)
-		output, err := cmd.Output()
+// KillOrphanedChromeProcesses kills processes running from vibium's Chrome
+// for Testing cache dir that no live vibium process owns. Ownership is
+// checked via the process tree rather than ppid==1 because systemd
+// re-parents orphans to the session subreaper, not PID 1. Only call during
+// shutdown, after CloseAll().
+func KillOrphanedChromeProcesses() {
+	cftDir, err := paths.GetChromeForTestingDir()
+	if err != nil {
+		return
+	}
+
+	// ^ anchor: only match processes running from the dir
+	output, err := exec.Command("pgrep", "-f", "^"+cftDir).Output()
+	if err != nil {
+		// pgrep exits 1 when nothing matched, which is the normal case
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			log.Debug("orphan sweep: pgrep failed", "error", err)
+		}
+		return
+	}
+
+	// Collect matched PIDs first to tell tree roots from descendants.
+	// (PID reuse between pgrep and ps is possible; the window is tiny.)
+	matched := make(map[int]bool)
+	for _, line := range bytes.Split(bytes.TrimSpace(output), []byte("\n")) {
+		var pid int
+		if _, err := fmt.Sscanf(string(line), "%d", &pid); err == nil {
+			matched[pid] = true
+		}
+	}
+
+	myPID := os.Getpid()
+	for pid := range matched {
+		ppidOut, err := exec.Command("ps", "-o", "ppid=", "-p", fmt.Sprintf("%d", pid)).Output()
 		if err != nil {
 			continue
 		}
-
-		lines := bytes.Split(bytes.TrimSpace(output), []byte("\n"))
-		for _, line := range lines {
-			if len(line) == 0 {
-				continue
-			}
-			var pid int
-			if _, err := fmt.Sscanf(string(line), "%d", &pid); err == nil {
-				// Check if this process's parent is 1 (orphaned)
-				ppidCmd := exec.Command("ps", "-o", "ppid=", "-p", fmt.Sprintf("%d", pid))
-				ppidOut, err := ppidCmd.Output()
-				if err != nil {
-					continue
-				}
-				var ppid int
-				if _, err := fmt.Sscanf(string(bytes.TrimSpace(ppidOut)), "%d", &ppid); err == nil {
-					if ppid == 1 {
-						killProcessGroup(pid)
-						killByPid(pid)
-					}
-				}
-			}
+		var ppid int
+		if _, err := fmt.Sscanf(string(bytes.TrimSpace(ppidOut)), "%d", &ppid); err != nil {
+			continue
+		}
+		// Descendant of another matched process; handled via its root.
+		if matched[ppid] {
+			continue
+		}
+		if ppid == myPID {
+			killProcessGroup(pid)
+			killByPid(pid)
+			continue
+		}
+		parentComm, err := exec.Command("ps", "-o", "comm=", "-p", fmt.Sprintf("%d", ppid)).Output()
+		if err != nil || !isVibiumProcess(strings.TrimSpace(string(parentComm))) {
+			killProcessGroup(pid)
+			killByPid(pid)
 		}
 	}
 }

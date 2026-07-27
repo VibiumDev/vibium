@@ -5,7 +5,10 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
-const { execSync, execFileSync, spawn } = require('node:child_process');
+const { execSync, execFileSync, spawn, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
 /**
@@ -151,5 +154,56 @@ describe('CLI: Process Cleanup', () => {
       0,
       `Chrome processes should be cleaned up after SIGTERM. New PIDs remaining: ${newPids.join(', ')}`
     );
+  });
+
+  test('shutdown cleanup ignores other tools\' chromedriver processes', async (t) => {
+    // Cleanup on Windows kills by executable name, not command line
+    if (process.platform === 'win32') {
+      t.skip('POSIX-only cleanup path');
+      return;
+    }
+
+    // Stand in for another tool's chromedriver (e.g. Selenium's): a script
+    // whose command line says "chromedriver" but does not run from vibium's
+    // cache dir. Orphaned so cleanup would consider it a leftover.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'other-tool-'));
+    const decoy = path.join(dir, 'chromedriver');
+    fs.writeFileSync(decoy, '#!/bin/sh\nsleep 120\n');
+    fs.chmodSync(decoy, 0o755);
+    // The shell backgrounds the decoy, prints its PID, and exits, which
+    // orphans the decoy. detached puts the shell (and so the decoy) in its
+    // own process group, so a group kill cannot take down this test runner.
+    const pid = Number(
+      spawnSync('sh', ['-c', `"${decoy}" 120 > /dev/null 2>&1 & echo $!`], {
+        encoding: 'utf-8',
+        detached: true,
+      }).stdout.trim()
+    );
+    assert.ok(Number.isInteger(pid) && pid > 0, 'decoy failed to start');
+
+    try {
+      // Trigger vibium's shutdown cleanup, same as the SIGTERM test above
+      const server = spawn(VIBIUM, ['serve'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      await sleep(2000);
+      server.kill('SIGTERM');
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 5000);
+        server.on('exit', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+
+      let alive = true;
+      try {
+        process.kill(pid, 0);
+      } catch {
+        alive = false;
+      }
+      assert.ok(alive, 'vibium cleanup killed a chromedriver process it does not own');
+    } finally {
+      try { process.kill(pid, 'SIGKILL'); } catch {}
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
