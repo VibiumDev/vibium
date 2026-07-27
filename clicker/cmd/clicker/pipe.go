@@ -113,11 +113,8 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 		// Received SIGTERM/SIGINT
 	}
 
-	// Clean up — kill THIS process's chromedriver process tree, remove its
-	// user-data-dir, and sweep any Chrome subprocesses orphaned by the
-	// chromedriver kill (PPID=1). KillOrphanedChromeProcesses is safe
-	// under parallel runs because a sibling vibium's Chrome processes
-	// have PPID = sibling's chromedriver (not 1) — they're not matched.
+	// Clean up: kill THIS process's chromedriver process tree, remove its
+	// user-data-dir, and sweep any orphaned Chrome processes.
 	router.OnClientDisconnect(client)
 	router.CloseAll()
 	browser.KillOrphanedChromeProcesses()
