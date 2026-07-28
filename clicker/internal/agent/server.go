@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/vibium/clicker/internal/log"
 )
@@ -143,6 +144,11 @@ type Server struct {
 	writer   io.Writer
 	handlers *Handlers
 	version  string
+
+	// busy is held (capacity 1) while a request is being handled, and by
+	// Close while it tears down the browser session. A channel rather than
+	// a mutex so Close can bound its wait.
+	busy chan struct{}
 }
 
 // ServerOptions configures the MCP server.
@@ -160,6 +166,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 		writer:   os.Stdout,
 		handlers: NewHandlers(opts.ScreenshotDir, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
 		version:  version,
+		busy:     make(chan struct{}, 1),
 	}
 }
 
@@ -179,7 +186,10 @@ func (s *Server) Run() error {
 			continue
 		}
 
+		s.busy <- struct{}{}
 		response := s.handleRequest(line)
+		<-s.busy
+
 		if response != nil {
 			if err := s.writeResponse(response); err != nil {
 				return fmt.Errorf("write error: %w", err)
@@ -325,7 +335,21 @@ func (s *Server) writeResponse(resp *Response) error {
 	return err
 }
 
-// Close cleans up the server resources.
+// closeGraceTimeout bounds how long Close waits for an in-flight request.
+// Cleaning up Chrome promptly matters more than a clean answer to a request
+// that is about to die with the process anyway.
+const closeGraceTimeout = 2 * time.Second
+
+// Close cleans up the server resources. It waits up to closeGraceTimeout for
+// an in-flight request so the browser session is not torn down under a tool
+// call. If the timeout fires, teardown proceeds concurrently with the wedged
+// call: the session fields race is narrowed to that window, and the process
+// exits right after.
 func (s *Server) Close() {
+	select {
+	case s.busy <- struct{}{}:
+		defer func() { <-s.busy }()
+	case <-time.After(closeGraceTimeout):
+	}
 	s.handlers.Close()
 }
