@@ -19,6 +19,27 @@ from .errors import VibiumNotFoundError, BrowserCrashedError
 _STREAM_LIMIT = 256 * 1024 * 1024  # 256 MiB
 
 
+async def _drain_stderr(process) -> None:
+    """Continuously read the subprocess's stderr so the pipe never fills.
+
+    An unread stderr pipe blocks vibium once the OS buffer (~64 KiB) fills.
+    Forward diagnostics to our stderr when VIBIUM_STDERR is set.
+    """
+    if not process.stderr:
+        return
+    forward = bool(os.environ.get("VIBIUM_STDERR"))
+    try:
+        while True:
+            chunk = await process.stderr.read(65536)
+            if not chunk:
+                return
+            if forward:
+                sys.stderr.write(chunk.decode(errors="replace"))
+                sys.stderr.flush()
+    except (asyncio.CancelledError, OSError):
+        pass
+
+
 def get_platform_package_name() -> str:
     """Get the platform-specific package name."""
     system = sys.platform
@@ -252,6 +273,9 @@ class VibiumProcess:
 
             instance = cls(process)
             instance._pre_ready_lines = pre_ready_lines
+            # Always drain stderr: an unread pipe blocks vibium once the OS
+            # buffer fills. Forward diagnostics when VIBIUM_STDERR is set.
+            instance._stderr_task = asyncio.create_task(_drain_stderr(process))
             return instance
 
         # Unreachable: the final attempt either returns or raises above.

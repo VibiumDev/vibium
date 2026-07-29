@@ -47,6 +47,9 @@ The server provides browser automation tools:
 		Example: `  # Run directly (for testing)
   vibium mcp
 
+  # Launch browsers with no visible window (servers, CI)
+  vibium mcp --headless
+
   # Configure in Claude Code
   claude mcp add vibium -- vibium mcp
 
@@ -100,9 +103,11 @@ The server provides browser automation tools:
 				}
 
 				connectURL, connectHeaders := connectFromEnv()
+				headless, _ := cmd.Flags().GetBool("headless")
 
 				server := agent.NewServer(version, agent.ServerOptions{
 					ScreenshotDir:  screenshotDir,
+					Headless:       headless,
 					ConnectURL:     connectURL,
 					ConnectHeaders: connectHeaders,
 				})
@@ -125,5 +130,6 @@ The server provides browser automation tools:
 		},
 	}
 	cmd.Flags().String("screenshot-dir", "", "Directory for saving screenshots (default: ~/Pictures/Vibium, use \"\" to disable)")
+	cmd.Flags().Bool("headless", false, "Launch browsers in headless mode (no visible window)")
 	return cmd
 }
