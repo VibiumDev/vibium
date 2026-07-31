@@ -5,7 +5,8 @@
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
+const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
 function clicker(args, opts = {}) {
@@ -18,7 +19,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -30,11 +31,28 @@ function stopDaemon() {
   }
 }
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('Daemon: Find @refs workflow', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -42,7 +60,7 @@ describe('Daemon: Find @refs workflow', () => {
   });
 
   test('find text returns @ref', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find text "Example Domain"');
     assert.strictEqual(findResult.ok, true);
     assert.ok(findResult.result.includes('@e1'), 'find should return @e1');
@@ -50,7 +68,7 @@ describe('Daemon: Find @refs workflow', () => {
   });
 
   test('find CSS selector returns @ref and click @e1 navigates', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find "a"');
     assert.strictEqual(findResult.ok, true);
     assert.ok(findResult.result.includes('@e1'), 'find should return @e1');
@@ -59,11 +77,11 @@ describe('Daemon: Find @refs workflow', () => {
     clickerJSON('click @e1');
     clickerJSON('wait load');
     const urlResult = clickerJSON('url');
-    assert.ok(urlResult.result.includes('iana.org'), 'Should navigate to IANA after clicking');
+    assert.ok(urlResult.result.includes('/more-information'), 'Should navigate to linked page after clicking');
   });
 
   test('find role returns @ref and click @e1 navigates', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find role link');
     assert.strictEqual(findResult.ok, true);
     assert.ok(findResult.result.includes('@e1'), 'find role should return @e1');
@@ -72,11 +90,11 @@ describe('Daemon: Find @refs workflow', () => {
     clickerJSON('click @e1');
     clickerJSON('wait load');
     const urlResult = clickerJSON('url');
-    assert.ok(urlResult.result.includes('iana.org'), 'Should navigate to IANA after clicking');
+    assert.ok(urlResult.result.includes('/more-information'), 'Should navigate to linked page after clicking');
   });
 
   test('find --all returns multiple @refs', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find --all "p"');
     assert.strictEqual(findResult.ok, true);
     assert.ok(findResult.result.includes('@e1'), 'find --all should return @e1');
@@ -84,7 +102,7 @@ describe('Daemon: Find @refs workflow', () => {
   });
 
   test('find resets refMap from previous map', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     // First map to get refs
     const mapResult = clickerJSON('map');
     assert.strictEqual(mapResult.ok, true);
@@ -99,6 +117,6 @@ describe('Daemon: Find @refs workflow', () => {
     // Clicking @e1 (h1) should not navigate away
     clickerJSON('click @e1');
     const urlResult = clickerJSON('url');
-    assert.ok(urlResult.result.includes('example.com'), 'Should still be on example.com');
+    assert.ok(urlResult.result.includes('/example'), 'Should still be on /example');
   });
 });

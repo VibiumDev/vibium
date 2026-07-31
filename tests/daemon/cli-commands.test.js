@@ -5,7 +5,7 @@
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
@@ -21,7 +21,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -34,11 +34,28 @@ function stopDaemon() {
   }
 }
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('Daemon CLI: Navigation commands', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -47,7 +64,7 @@ describe('Daemon CLI: Navigation commands', () => {
 
   test('back navigates back in history', () => {
     // Navigate to a second page
-    clickerJSON('go https://example.com/');
+    clickerJSON(`go ${baseURL}/more-information`);
     const result = clickerJSON('back');
     assert.strictEqual(result.ok, true, 'back should succeed');
   });
@@ -68,7 +85,7 @@ describe('Daemon CLI: Element state commands', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -90,7 +107,7 @@ describe('Daemon CLI: Element state commands', () => {
   test('attr gets element attribute', () => {
     const result = clickerJSON('attr "a" "href"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('iana.org'), 'Should return href value');
+    assert.ok(result.result.includes('/more-information'), 'Should return href value');
   });
 });
 
@@ -98,7 +115,7 @@ describe('Daemon CLI: Accessibility and search commands', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -125,7 +142,7 @@ describe('Daemon CLI: Accessibility and search commands', () => {
   });
 
   test('find role finds element by role and name', () => {
-    const result = clickerJSON('find role link --name "Learn more"');
+    const result = clickerJSON('find role link --name "More information"');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('@e1'), 'Should return @e1 ref');
     assert.ok(result.result.includes('[a]'), 'Should find link element');
@@ -136,7 +153,7 @@ describe('Daemon CLI: Waiting commands', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -150,16 +167,18 @@ describe('Daemon CLI: Waiting commands', () => {
   });
 
   test('wait url matches current URL', () => {
-    const result = clickerJSON('wait url "example.com"');
+    const result = clickerJSON('wait url "/example"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('example.com'), 'Should match URL pattern');
+    assert.ok(result.result.includes('/example'), 'Should match URL pattern');
   });
 
   test('sleep pauses execution', () => {
     const start = Date.now();
-    const result = clickerJSON('sleep 200');
+    // sleep sets DisableFlagParsing (so negative values work), which also
+    // rejects --json — call it without JSON output
+    const result = clicker('sleep 200');
     const elapsed = Date.now() - start;
-    assert.strictEqual(result.ok, true);
+    assert.ok(result.includes('Slept') || result.includes('200'), 'Should confirm sleep');
     assert.ok(elapsed >= 150, `Should have waited ~200ms (actual: ${elapsed}ms)`);
   });
 });
@@ -175,14 +194,14 @@ describe('Daemon CLI: Interaction commands', () => {
   });
 
   test('scroll into-view scrolls element into view', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const result = clickerJSON('scroll into-view "a"');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('Scrolled'), 'Should confirm scroll');
   });
 
   test('press sends key to focused element', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const result = clickerJSON('press Tab');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('Pressed'), 'Should confirm key press');
@@ -190,7 +209,7 @@ describe('Daemon CLI: Interaction commands', () => {
 
   test('fill and value work together on input', () => {
     // Navigate to a page with an input via eval
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=test type=text>\';"');
 
     // Fill the input
@@ -204,7 +223,7 @@ describe('Daemon CLI: Interaction commands', () => {
   });
 
   test('check and uncheck toggle checkbox', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=cb type=checkbox>\';"');
 
     // Check
@@ -223,7 +242,7 @@ describe('Daemon CLI: Screenshot --full-page', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -252,15 +271,15 @@ describe('Daemon CLI: quit command', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
     stopDaemon();
   });
 
-  test('quit closes browser session', () => {
-    const result = clickerJSON('quit');
+  test('stop closes browser session', () => {
+    const result = clickerJSON('stop');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('closed'), 'Should confirm browser closed');
   });

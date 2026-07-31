@@ -3,13 +3,30 @@
  * Tests that Chrome processes are cleaned up properly
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execSync, execFileSync, spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
+
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
 
 /**
  * Get PIDs of Chrome for Testing processes spawned by clicker
@@ -82,7 +99,7 @@ describe('CLI: Process Cleanup', () => {
     execSync(`${VIBIUM} daemon start --headless`, { encoding: 'utf-8', timeout: 30000 });
 
     // Navigate to launch the browser
-    execSync(`${VIBIUM} go https://example.com`, {
+    execSync(`${VIBIUM} go ${baseURL}/example`, {
       encoding: 'utf-8',
       timeout: 30000,
     });

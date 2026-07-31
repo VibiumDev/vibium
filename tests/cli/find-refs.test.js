@@ -3,14 +3,32 @@
  * Tests that find, find --all return @refs in oneshot mode
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
+const path = require('path');
 const { VIBIUM } = require('../helpers');
+
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
 
 describe('CLI: Find @refs', () => {
   test('find CSS selector returns @ref', () => {
-    const result = execSync(`${VIBIUM} find https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} find ${baseURL}/example "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -19,7 +37,7 @@ describe('CLI: Find @refs', () => {
   });
 
   test('find --all returns multiple @refs', () => {
-    const result = execSync(`${VIBIUM} find https://example.com "p" --all`, {
+    const result = execSync(`${VIBIUM} find ${baseURL}/example "p" --all`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -28,7 +46,7 @@ describe('CLI: Find @refs', () => {
   });
 
   test('find --all --limit 1 returns single @ref', () => {
-    const result = execSync(`${VIBIUM} find https://example.com "p" --all --limit 1`, {
+    const result = execSync(`${VIBIUM} find ${baseURL}/example "p" --all --limit 1`, {
       encoding: 'utf-8',
       timeout: 30000,
     });

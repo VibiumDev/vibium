@@ -5,7 +5,6 @@ Tests are functional but could be improved:
 ## Coverage Gaps
 - [ ] `element.getAttribute()` not tested
 - [ ] `element.boundingBox()` not tested
-- [ ] CLI tests still use example.com (should use the-internet.herokuapp.com)
 
 ## Auto-Wait Tests
 - [ ] "click waits for actionable" should test element that starts hidden and becomes visible

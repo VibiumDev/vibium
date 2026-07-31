@@ -28,7 +28,7 @@ after(() => {
 
 describe('CLI: Elements', () => {
   test('find command locates element and returns @ref', () => {
-    const result = execSync(`${VIBIUM} find https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} find ${baseURL}/example "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -49,7 +49,7 @@ describe('CLI: Elements', () => {
   });
 
   test('click command navigates via link', () => {
-    const result = execSync(`${VIBIUM} click https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} click ${baseURL}/example "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
