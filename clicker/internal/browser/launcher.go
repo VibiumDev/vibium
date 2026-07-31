@@ -123,7 +123,11 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("using port", "port", port)
 
 	// Start chromedriver as a process group leader so we can kill all children
-	cmd := exec.Command(chromedriverPath, fmt.Sprintf("--port=%d", port))
+	cdArgs := []string{fmt.Sprintf("--port=%d", port)}
+	if dir := os.Getenv("VIBIUM_CHROMEDRIVER_LOG_DIR"); dir != "" {
+		cdArgs = append(cdArgs, "--verbose", fmt.Sprintf("--log-path=%s/chromedriver-%d.log", dir, port))
+	}
+	cmd := exec.Command(chromedriverPath, cdArgs...)
 	setProcGroup(cmd)
 	if opts.Verbose {
 		fmt.Println("       ------- chromedriver -------")
