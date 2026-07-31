@@ -6,6 +6,7 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
+const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
 // Helper to run clicker with --json and parse output
@@ -19,7 +20,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -31,6 +32,23 @@ function stopDaemon() {
     // Daemon may not be running
   }
 }
+
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
 
 describe('Daemon: Lifecycle', () => {
   before(() => {
@@ -81,15 +99,15 @@ describe('Daemon: Multi-step workflow', () => {
 
   test('go then find reuses browser session', () => {
     // Navigate
-    const navResult = clickerJSON('go https://example.com');
+    const navResult = clickerJSON(`go ${baseURL}/example`);
     assert.strictEqual(navResult.ok, true, 'Navigate should succeed');
     assert.ok(
-      navResult.result.includes('example.com'),
+      navResult.result.includes('/example'),
       'Should confirm navigation'
     );
 
     // Find element on same page (no URL needed — session persists)
-    const findResult = clickerJSON('find https://example.com "h1"');
+    const findResult = clickerJSON(`find ${baseURL}/example "h1"`);
     assert.strictEqual(findResult.ok, true, 'Find should succeed');
     assert.ok(
       findResult.result.includes('h1'),
@@ -98,7 +116,7 @@ describe('Daemon: Multi-step workflow', () => {
   });
 
   test('eval on current page works', () => {
-    const result = clickerJSON('eval https://example.com "document.title"');
+    const result = clickerJSON(`eval ${baseURL}/example "document.title"`);
     assert.strictEqual(result.ok, true, 'Eval should succeed');
     assert.ok(
       result.result.includes('Example Domain'),
@@ -118,7 +136,7 @@ describe('Daemon: Auto-start', () => {
 
   test('CLI command auto-starts daemon when not running', () => {
     // No daemon running — this should auto-start one
-    const result = clickerJSON('go https://example.com --headless');
+    const result = clickerJSON(`go ${baseURL}/example --headless`);
     assert.strictEqual(result.ok, true, 'Navigate should succeed via auto-start');
 
     // Verify daemon is now running

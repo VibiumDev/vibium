@@ -101,7 +101,7 @@ describe('Interaction: Click variants', () => {
 
   test('dblclick selects text', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(baseURL + '/example');
 
     const h1 = await vibe.find('h1');
     await h1.dblclick();
@@ -258,7 +258,7 @@ describe('Interaction: findAll index bug fix', () => {
 describe('Interaction: dispatchEvent', () => {
   test('dispatchEvent fires custom event', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(baseURL + '/example');
 
     // Set up an event listener
     await vibe.evaluate(`

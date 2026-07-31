@@ -28,7 +28,7 @@ after(async () => {
 describe('Element State: text and content', () => {
   test('text() returns textContent', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const text = await h1.text();
@@ -37,7 +37,7 @@ describe('Element State: text and content', () => {
 
   test('innerText() returns rendered text', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const text = await h1.innerText();
@@ -46,7 +46,7 @@ describe('Element State: text and content', () => {
 
   test('html() returns innerHTML', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const html = await h1.html();
@@ -67,16 +67,16 @@ describe('Element State: text and content', () => {
 describe('Element State: attributes', () => {
   test('attr() returns attribute value', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const link = await vibe.find('a');
     const href = await link.attr('href');
-    assert.ok(href.includes('iana.org'), `href should contain iana.org, got: ${href}`);
+    assert.ok(href.includes('/more-information'), `href should contain /more-information, got: ${href}`);
   });
 
   test('attr() returns null for missing attribute', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const val = await h1.attr('data-nonexistent');
@@ -85,7 +85,7 @@ describe('Element State: attributes', () => {
 
   test('getAttribute() is an alias for attr()', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const link = await vibe.find('a');
     const attr = await link.attr('href');
@@ -97,7 +97,7 @@ describe('Element State: attributes', () => {
 describe('Element State: bounds', () => {
   test('bounds() returns bounding box', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const box = await h1.bounds();
@@ -109,7 +109,7 @@ describe('Element State: bounds', () => {
 
   test('boundingBox() is an alias for bounds()', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const bounds = await h1.bounds();
@@ -121,7 +121,7 @@ describe('Element State: bounds', () => {
 describe('Element State: visibility', () => {
   test('isVisible() returns true for visible element', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const visible = await h1.isVisible();
@@ -130,7 +130,7 @@ describe('Element State: visibility', () => {
 
   test('isHidden() returns false for visible element', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     const hidden = await h1.isHidden();
@@ -173,7 +173,7 @@ describe('Element State: enabled/checked/editable', () => {
 describe('Element State: screenshot', () => {
   test('screenshot() returns a PNG buffer', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const link = await vibe.find('a');
     const buf = await link.screenshot();
@@ -189,7 +189,7 @@ describe('Element State: screenshot', () => {
 describe('Page Waiting', () => {
   test('find(selector) auto-waits for element', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const h1 = await vibe.find('h1');
     assert.ok(h1, 'find should return an element (auto-waits)');
@@ -199,7 +199,7 @@ describe('Page Waiting', () => {
 
   test('wait(ms) delays execution', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const start = Date.now();
     await vibe.wait(200);
@@ -209,7 +209,7 @@ describe('Page Waiting', () => {
 
   test('waitUntil(fn) resolves when function returns truthy', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const result = await vibe.waitUntil('() => document.querySelector("h1") !== null');
     assert.ok(result, 'waitUntil should return truthy value');
@@ -230,7 +230,7 @@ describe('Page Waiting', () => {
 describe('Fluent chaining: state methods', () => {
   test('find().text() chains fluently', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const text = await vibe.find('h1').text();
     assert.strictEqual(text, 'Example Domain');
@@ -238,15 +238,15 @@ describe('Fluent chaining: state methods', () => {
 
   test('find().attr() chains fluently', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const href = await vibe.find('a').attr('href');
-    assert.ok(href.includes('iana.org'));
+    assert.ok(href.includes('/more-information'));
   });
 
   test('find().isVisible() chains fluently', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const visible = await vibe.find('h1').isVisible();
     assert.strictEqual(visible, true);
@@ -258,7 +258,7 @@ describe('Fluent chaining: state methods', () => {
 describe('Element State Checkpoint', () => {
   test('full checkpoint: state queries + waiting + screenshot', async () => {
     const vibe = await bro.newPage();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const link = await vibe.find('a');
     const linkText = await link.text();
@@ -266,7 +266,7 @@ describe('Element State Checkpoint', () => {
     assert.ok(linkText.length > 0, 'link text should not be empty');
 
     console.log('attr:', await link.attr('href'));
-    assert.ok((await link.attr('href')).includes('iana.org'));
+    assert.ok((await link.attr('href')).includes('/more-information'));
 
     console.log('isVisible:', await link.isVisible());
     assert.strictEqual(await link.isVisible(), true);

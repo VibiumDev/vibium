@@ -9,6 +9,7 @@ const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
 const http = require('node:http');
 const net = require('node:net');
+const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
 // Helper to run vibium and return trimmed output
@@ -22,7 +23,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -150,6 +151,23 @@ function getBrowserPaths() {
   };
 }
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('Daemon: Remote browser connect', () => {
   let chromedriverProc;
   let chromedriverPort;
@@ -191,9 +209,9 @@ describe('Daemon: Remote browser connect', () => {
   });
 
   test('navigation works through remote connection', () => {
-    const result = clickerJSON('go https://example.com');
+    const result = clickerJSON(`go ${baseURL}/example`);
     assert.strictEqual(result.ok, true, 'Navigate should succeed');
-    assert.ok(result.result.includes('example.com'), 'Should confirm navigation');
+    assert.ok(result.result.includes('/example'), 'Should confirm navigation');
   });
 
   test('window set returns error for remote browsers', () => {
@@ -250,7 +268,7 @@ describe('Daemon: VIBIUM_CONNECT_URL env var', () => {
 
   test('VIBIUM_CONNECT_URL auto-starts daemon in connect mode', () => {
     // With no daemon running, set env var and run a command
-    const result = clickerJSON('go https://example.com --headless', {
+    const result = clickerJSON(`go ${baseURL}/example --headless`, {
       env: { VIBIUM_CONNECT_URL: bidiWsUrl },
     });
     assert.strictEqual(result.ok, true, 'Navigate should succeed via env var auto-start');
