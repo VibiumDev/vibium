@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -163,6 +163,8 @@ serve: build-go
 	./clicker/bin/vibium$(EXE) serve
 
 # Build everything and run all tests: make test
+# test-go runs first: it needs no browser and finishes in seconds, so a
+# broken unit test fails before ~18 minutes of browser suites.
 # test-js-sync runs OUTSIDE the parallel group on every platform. Each of
 # test-js-async/sync/python/java fans out to *_PARALLEL headless Chromes, and
 # running all of them at once over-subscribes the machine (~14 concurrent
@@ -187,6 +189,7 @@ serve: build-go
 SUITE_PARALLEL ?= 4
 test: build install-browser
 	@START_TIME=$$(date +%s); \
+	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
 	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
@@ -217,6 +220,11 @@ test-cleanup:
 	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
 	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
 	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
+
+# Run Go unit tests (no browser, no daemon — seconds, so run them first)
+test-go:
+	@echo "--- Go Unit Tests ---"
+	cd clicker && go test ./...
 
 # Run CLI tests (tests the vibium binary directly)
 # Process tests run separately with --test-concurrency=1 to avoid interference
