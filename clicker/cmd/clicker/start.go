@@ -97,6 +97,17 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				os.Exit(1)
 			}
 
+			// Connect now instead of leaving it to the first command that
+			// needs a browser, so a bad URL or a dead endpoint fails here,
+			// where the user typed it. A daemon that cannot reach its
+			// endpoint is no use to the next command either — take it down
+			// rather than leave it to auto-start the same failure.
+			if _, err := daemonCall("browser_start", map[string]interface{}{}); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", connectURL, err)
+				shutdownDaemonAndWait()
+				os.Exit(1)
+			}
+
 			fmt.Printf("Connected to %s (daemon pid %d)\n", connectURL, child.Process.Pid)
 		},
 	}
