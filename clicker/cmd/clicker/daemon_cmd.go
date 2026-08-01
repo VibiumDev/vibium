@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -203,6 +204,10 @@ func resolveConnect(connectFlag string, headerFlags []string) (string, http.Head
 func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
 	// Clean stale files from a previous crash
 	daemon.CleanStale()
+
+	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions
+	// (parallel-safe: the minAge filter skips any live sibling's dir).
+	browser.CleanupOrphanedChromeTempDirs(time.Minute)
 
 	if daemon.IsRunning() {
 		fmt.Fprintln(os.Stderr, "Daemon is already running.")

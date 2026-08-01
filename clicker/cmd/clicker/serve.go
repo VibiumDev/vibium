@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/api"
+	"github.com/vibium/clicker/internal/browser"
 )
 
 func newServeCmd() *cobra.Command {
@@ -29,6 +29,10 @@ func newServeCmd() *cobra.Command {
 			port, _ := cmd.Flags().GetInt("port")
 
 			fmt.Printf("Starting Vibium proxy server on port %d...\n", port)
+
+			// Reclaim Chrome profile dirs orphaned by earlier crashed/killed
+			// sessions (parallel-safe: the minAge filter skips live siblings).
+			browser.CleanupOrphanedChromeTempDirs(time.Minute)
 
 			// Create router to manage browser sessions
 			router := api.NewRouter(headless, "", nil)
