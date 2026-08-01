@@ -22,6 +22,7 @@ type BrowserSession struct {
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
 	Client       ClientTransport
+	ownsRemote   bool // remote session was created here, so closeSession ends it
 	mu           sync.Mutex
 	closed       bool
 	stopChan     chan struct{}
@@ -96,6 +97,7 @@ func NewRouter(headless bool, connectURL string, connectHeaders http.Header) *Ro
 func (r *Router) OnClientConnect(client ClientTransport) {
 	var launchResult *browser.LaunchResult
 	var bidiConn *bidi.Connection
+	var ownsRemoteSession bool
 	var err error
 
 	if r.connectURL != "" {
@@ -106,8 +108,11 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		// itself in routeBrowserToClient, so no client reader may own it.
 		bidiConn, err = bidi.ConnectWithHeaders(r.connectURL, r.connectHeaders)
 		if err == nil {
-			if _, err = bidi.SessionNewOnConn(bidiConn, map[string]interface{}{}); err != nil {
+			var session *bidi.RemoteSession
+			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, r.connectURL, map[string]interface{}{}); err != nil {
 				bidiConn.Close()
+			} else {
+				ownsRemoteSession = session.Created
 			}
 		}
 		if err != nil {
@@ -156,6 +161,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		LaunchResult:   launchResult,
 		BidiConn:       bidiConn,
 		Client:         client,
+		ownsRemote:     ownsRemoteSession,
 		stopChan:       make(chan struct{}),
 		internalCmds:   make(map[int]chan json.RawMessage),
 		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
@@ -928,10 +934,12 @@ func (r *Router) closeSession(session *BrowserSession) {
 		session.recorder.StopScreenshots()
 	}
 
-	// Remote mode: end the BiDi session so chromedriver closes Chrome.
+	// Remote mode: end the BiDi session so chromedriver closes Chrome — but
+	// only one we created. An attached session belongs to whoever handed us
+	// the URL, and ending it would close their browser.
 	// stopChan is already closed, so this sends the command and returns
 	// without waiting for the response; the connection is closed next anyway.
-	if r.connectURL != "" && session.BidiConn != nil {
+	if session.ownsRemote && session.BidiConn != nil {
 		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 

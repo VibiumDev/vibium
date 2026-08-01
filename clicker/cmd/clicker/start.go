@@ -54,22 +54,9 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 			}
 
 			// Remote connect — stop existing daemon and start fresh with --connect
-			if daemon.IsRunning() {
-				pid, _ := daemon.ReadPID()
-				if err := daemon.Shutdown(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
-					os.Exit(1)
-				}
-				// Wait for the daemon process to fully exit
-				if pid > 0 {
-					deadline := time.Now().Add(10 * time.Second)
-					for time.Now().Before(deadline) {
-						if !daemon.ProcessExists(pid) {
-							break
-						}
-						time.Sleep(100 * time.Millisecond)
-					}
-				}
+			if err := shutdownDaemonAndWait(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
+				os.Exit(1)
 			}
 
 			daemon.CleanStale()
@@ -107,6 +94,17 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 			socketPath, _ := paths.GetSocketPath()
 			if err := waitForSocket(socketPath, 5*time.Second); err != nil {
 				fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
+				os.Exit(1)
+			}
+
+			// Connect now instead of leaving it to the first command that
+			// needs a browser, so a bad URL or a dead endpoint fails here,
+			// where the user typed it. A daemon that cannot reach its
+			// endpoint is no use to the next command either — take it down
+			// rather than leave it to auto-start the same failure.
+			if _, err := daemonCall("browser_start", map[string]interface{}{}); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", connectURL, err)
+				shutdownDaemonAndWait()
 				os.Exit(1)
 			}
 

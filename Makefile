@@ -171,17 +171,20 @@ serve: build-go
 # caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
 # reason. Bump *_PARALLEL on machines with more cores/memory.
 #
-# SUITE_PARALLEL caps how many suites the middle phase runs at once. The
-# desktop default of 1 runs suites one at a time (peak Chromes = the
-# *_PARALLEL fan-out of a single suite) so a dev machine stays usable;
-# CI overrides to 4 (see .github/workflows/test.yml).
+# SUITE_PARALLEL caps how many suites the middle phase runs at once.
+# Default 4; drop to 1 on a small machine to run suites one at a time
+# (peak Chromes = the *_PARALLEL fan-out of a single suite).
 #
 # test-browser-modes runs in its own serial phase because its tests open
 # visible Chrome windows (headed coverage is intentional — that's what
 # humans use). Inside the parallel fan-out those windows pop up all at
 # once, steal focus, and can beachball the macOS window manager, timing
 # out unrelated suites.
-SUITE_PARALLEL ?= 1
+#
+# test-daemon also runs serially: its tests start and stop the one shared
+# daemon at a fixed socket path, so any suite that auto-starts a daemon
+# alongside them would fight over it.
+SUITE_PARALLEL ?= 4
 test: build install-browser
 	@START_TIME=$$(date +%s); \
 	"$(MAKE)" test-cli test-cleanup && \
@@ -189,6 +192,7 @@ test: build install-browser
 	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
 	"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-daemon test-cleanup && \
 	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \

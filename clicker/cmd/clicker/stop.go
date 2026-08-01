@@ -17,6 +17,12 @@ func newStopCmd() *cobra.Command {
 				printError(err)
 				return
 			}
+			// Full teardown: a daemon left behind keeps holding the session's
+			// connect settings, so a later command would silently reuse them.
+			if err := shutdownDaemonAndWait(); err != nil {
+				printError(err)
+				return
+			}
 			printResult(result)
 		},
 	}

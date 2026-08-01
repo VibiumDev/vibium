@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -83,6 +84,13 @@ func autoStartDaemon() error {
 // isConnectionError returns true if the error indicates the daemon is not running.
 func isConnectionError(err error) bool {
 	if err == nil {
+		return false
+	}
+	// The daemon answered, so it is up whatever the error says. Without this
+	// a remote browser refusing the connection reads as "connection refused"
+	// below and we auto-start a second daemon on top of the live one.
+	var toolErr *daemon.ToolError
+	if errors.As(err, &toolErr) {
 		return false
 	}
 	// Check for common connection-refused patterns

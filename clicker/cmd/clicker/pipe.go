@@ -114,10 +114,15 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	}
 
 	// Clean up: kill THIS process's chromedriver process tree, remove its
-	// user-data-dir, and sweep any orphaned Chrome processes.
+	// user-data-dir, and sweep any orphaned Chrome processes. Connect mode
+	// launched nothing, so it has no orphans — and the sweep matches on
+	// vibium's Chrome cache dir, which would kill a chromedriver the user
+	// started themselves on this machine and handed us the URL for.
 	router.OnClientDisconnect(client)
 	router.CloseAll()
-	browser.KillOrphanedChromeProcesses()
+	if connectURL == "" {
+		browser.KillOrphanedChromeProcesses()
+	}
 
 	protocolOut.Close()
 }

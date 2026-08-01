@@ -15,6 +15,16 @@ const (
 	readTimeout = 60 * time.Second
 )
 
+// ToolError is an error the daemon itself reported. It means the daemon was
+// reached and answered, so callers must not mistake it for the daemon being
+// down — a remote browser refusing a connection produces error text that
+// looks exactly like an unreachable daemon socket.
+type ToolError struct {
+	Msg string
+}
+
+func (e *ToolError) Error() string { return e.Msg }
+
 // Call sends a tools/call request to the daemon and returns the result.
 func Call(toolName string, args map[string]interface{}) (*agent.ToolsCallResult, error) {
 	params := agent.ToolsCallParams{
@@ -33,7 +43,7 @@ func Call(toolName string, args map[string]interface{}) (*agent.ToolsCallResult,
 	}
 
 	if resp.Error != nil {
-		return nil, fmt.Errorf("daemon error: %s", resp.Error.Message)
+		return nil, &ToolError{Msg: fmt.Sprintf("daemon error: %s", resp.Error.Message)}
 	}
 
 	// Parse the result as ToolsCallResult
@@ -49,9 +59,9 @@ func Call(toolName string, args map[string]interface{}) (*agent.ToolsCallResult,
 
 	if result.IsError {
 		if len(result.Content) > 0 {
-			return nil, fmt.Errorf("%s", result.Content[0].Text)
+			return nil, &ToolError{Msg: result.Content[0].Text}
 		}
-		return nil, fmt.Errorf("tool call failed")
+		return nil, &ToolError{Msg: "tool call failed"}
 	}
 
 	return &result, nil

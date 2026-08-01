@@ -90,23 +90,9 @@ func newDaemonStopCmd() *cobra.Command {
 				return
 			}
 
-			// Read PID before sending shutdown so we can wait for the process to exit
-			pid, _ := daemon.ReadPID()
-
-			if err := daemon.Shutdown(); err != nil {
+			if err := shutdownDaemonAndWait(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error stopping daemon: %v\n", err)
 				os.Exit(1)
-			}
-
-			// Wait for the daemon process to fully exit (including Chrome cleanup)
-			if pid > 0 {
-				deadline := time.Now().Add(10 * time.Second)
-				for time.Now().Before(deadline) {
-					if !daemon.ProcessExists(pid) {
-						break
-					}
-					time.Sleep(100 * time.Millisecond)
-				}
 			}
 
 			fmt.Println("Daemon stopped.")
@@ -153,6 +139,33 @@ func newDaemonStatusCmd() *cobra.Command {
 			fmt.Printf("socket:   %s\n", status.Socket)
 		},
 	}
+}
+
+// shutdownDaemonAndWait asks the daemon to shut down and waits for the process
+// to fully exit (including Chrome cleanup). No-op if it is not running.
+func shutdownDaemonAndWait() error {
+	if !daemon.IsRunning() {
+		return nil
+	}
+
+	// Read PID before sending shutdown so we can wait for the process to exit
+	pid, _ := daemon.ReadPID()
+
+	if err := daemon.Shutdown(); err != nil {
+		return err
+	}
+
+	if pid > 0 {
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if !daemon.ProcessExists(pid) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return nil
 }
 
 // resolveConnect merges CLI flags with env vars. Flags take precedence.
