@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -133,6 +134,10 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 	cmd := exec.Command(chromedriverPath, cdArgs...)
 	setProcGroup(cmd)
+	// Set here, not around `make`: macOS strips DYLD_* across SIP-protected execs.
+	if shim := vmFastLaunchShim(); shim != "" {
+		cmd.Env = append(os.Environ(), "DYLD_INSERT_LIBRARIES="+shim)
+	}
 	if opts.Verbose {
 		fmt.Println("       ------- chromedriver -------")
 		pw := newPrefixWriter(os.Stdout, "       ")
@@ -262,6 +267,16 @@ func chromeArgs(headless bool) []string {
 		args = append(args, "--headless=new")
 	}
 	return args
+}
+
+// vmFastLaunchShim returns a Metal-interposing dylib path for macOS VM guests
+// whose dead virtual GPU adds ~15s to every Chrome launch. Opt-in, darwin-only.
+// See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
+func vmFastLaunchShim() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	return os.Getenv("VIBIUM_VM_FAST_LAUNCH")
 }
 
 // buildCapabilities returns the capabilities map for BiDi session.new.
