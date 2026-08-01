@@ -18,6 +18,11 @@ from .errors import VibiumNotFoundError, BrowserCrashedError
 # past, raising LimitOverrunError and killing the receiver loop (issue #110).
 _STREAM_LIMIT = 256 * 1024 * 1024  # 256 MiB
 
+# Overall wall-clock budget (seconds) for one launch attempt's ready signal.
+# The per-read timeout alone can be reset forever by dribbled pre-ready output,
+# so a stuck launch could hang far past it; this bounds the whole attempt.
+_READY_TIMEOUT = 60
+
 
 async def _drain_stderr(process) -> None:
     """Continuously read the subprocess's stderr so the pipe never fills.
@@ -235,12 +240,19 @@ class VibiumProcess:
             )
 
             # Events (e.g. browsingContext.contextCreated) may arrive first.
+            # Bound the whole wait with a wall-clock deadline, not just per-read:
+            # vibium forwards pre-ready events, so a per-read timeout can be
+            # reset indefinitely by dribbled output while `ready` never arrives.
             pre_ready_lines = []
+            deadline = asyncio.get_running_loop().time() + _READY_TIMEOUT
             try:
                 while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError
                     line_bytes = await asyncio.wait_for(
                         process.stdout.readline(),  # type: ignore[union-attr]
-                        timeout=30,
+                        timeout=remaining,
                     )
                     if not line_bytes:
                         # EOF — process died
