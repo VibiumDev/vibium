@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/api"
@@ -64,6 +65,12 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// Redirect os.Stdout to stderr so any stray fmt.Print / log output
 	// doesn't corrupt the protocol stream.
 	os.Stdout = os.Stderr
+
+	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions.
+	// A clean shutdown removes a session's own dir, but any hard kill (crash,
+	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
+	// Parallel-safe: the minAge filter never touches a live sibling's dir.
+	browser.CleanupOrphanedChromeTempDirs(time.Minute)
 
 	router := api.NewRouter(headless, connectURL, connectHeaders)
 	client := api.NewPipeClientConn(protocolOut)

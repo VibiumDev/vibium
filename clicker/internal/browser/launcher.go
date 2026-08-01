@@ -19,6 +19,10 @@ import (
 	"github.com/vibium/clicker/internal/process"
 )
 
+// sessionCreateTimeout bounds the HTTP POST /session fallback (Chrome cold
+// launch ~16s) so a wedged chromedriver can't hang it indefinitely.
+const sessionCreateTimeout = 30 * time.Second
+
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
 	w      io.Writer
@@ -274,9 +278,9 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 				"args":            chromeArgs(headless),
 				"excludeSwitches": []string{"enable-automation", "enable-logging"},
 				"prefs": map[string]interface{}{
-					"credentials_enable_service":                          false,
-					"profile.password_manager_enabled":                    false,
-					"profile.password_manager_leak_detection":             false,
+					"credentials_enable_service":                           false,
+					"profile.password_manager_enabled":                     false,
+					"profile.password_manager_leak_detection":              false,
 					"profile.default_content_setting_values.notifications": 2,
 				},
 			},
@@ -300,7 +304,10 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 		fmt.Printf("       --> %s\n", string(jsonBody))
 	}
 
-	resp, err := http.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
+	// Bounded so a wedged chromedriver can't hang the HTTP fallback forever.
+	// session.new + Chrome cold-launch fit comfortably within this.
+	httpClient := &http.Client{Timeout: sessionCreateTimeout}
+	resp, err := httpClient.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", "", "", err
 	}
@@ -477,4 +484,3 @@ func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
 		log.Debug("cleaned up orphaned Chrome temp dirs", "count", count, "minAge", minAge)
 	}
 }
-
