@@ -54,22 +54,9 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 			}
 
 			// Remote connect — stop existing daemon and start fresh with --connect
-			if daemon.IsRunning() {
-				pid, _ := daemon.ReadPID()
-				if err := daemon.Shutdown(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
-					os.Exit(1)
-				}
-				// Wait for the daemon process to fully exit
-				if pid > 0 {
-					deadline := time.Now().Add(10 * time.Second)
-					for time.Now().Before(deadline) {
-						if !daemon.ProcessExists(pid) {
-							break
-						}
-						time.Sleep(100 * time.Millisecond)
-					}
-				}
+			if err := shutdownDaemonAndWait(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
+				os.Exit(1)
 			}
 
 			daemon.CleanStale()

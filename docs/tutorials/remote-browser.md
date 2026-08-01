@@ -55,6 +55,8 @@ vibium title
 vibium stop
 ```
 
+Both endpoint shapes work: a browser-level URL like `ws://host:9515/session` (vibium creates the session) and a URL for a session that already exists, such as a chromedriver `webSocketUrl` or a Selenium Grid `ws://host:4444/session/<id>/se/bidi` (vibium attaches to it).
+
 ### MCP Server
 
 The MCP server reads the same env vars, so AI agents can use a remote browser:

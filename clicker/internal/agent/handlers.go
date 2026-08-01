@@ -31,6 +31,7 @@ type Handlers struct {
 	headless       bool
 	connectURL     string      // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header // headers for remote WebSocket connection
+	ownsRemote     bool        // remote session was created here, so Close() ends it
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
@@ -592,11 +593,15 @@ func mcpToolToMethod(name string) string {
 func (h *Handlers) Close() {
 	h.sessionMu.Lock()
 	conn, client, launchResult := h.conn, h.client, h.launchResult
+	ownsRemote := h.ownsRemote
 	h.conn, h.client, h.launchResult = nil, nil, nil
+	h.ownsRemote = false
 	h.sessionMu.Unlock()
 
-	// Remote mode: end the BiDi session so chromedriver closes Chrome
-	if h.connectURL != "" && client != nil {
+	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
+	// when this process created it — an attached session belongs to whoever
+	// handed us the URL, and ending it would close their browser.
+	if ownsRemote && client != nil {
 		client.SendCommand("session.end", map[string]interface{}{})
 	}
 	if conn != nil {
@@ -621,19 +626,24 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 
 	// Remote browser connect mode
 	if h.connectURL != "" {
-		conn, client, sessionID, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
+		conn, client, session, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
 		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
+		h.ownsRemote = session.Created
 		h.sessionMu.Unlock()
 
+		verb := "Attached to"
+		if session.Created {
+			verb = "Connected to"
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("Connected to remote browser at %s (session %s)", h.connectURL, sessionID),
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
 			}},
 		}, nil
 	}
