@@ -267,18 +267,18 @@ public class Element {
 
     /** Find a child element by CSS selector with options. */
     public Element find(String childSelector, FindOptions options) {
-        JsonObject params = elementParams();
-        params.addProperty("childSelector", childSelector);
+        JsonObject params = scopedParams();
+        params.addProperty("selector", childSelector);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
         JsonObject result = client.send("vibium:element.find", params);
-        return elementFromResult(result);
+        return elementFromResult(result, childSelector);
     }
 
     /** Find a child element by semantic selector. */
     public Element find(SelectorOptions childOptions) {
-        JsonObject params = elementParams();
+        JsonObject params = scopedParams();
         for (Map.Entry<String, Object> entry : childOptions.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
@@ -293,18 +293,18 @@ public class Element {
 
     /** Find all child elements by CSS selector with options. */
     public List<Element> findAll(String childSelector, FindOptions options) {
-        JsonObject params = elementParams();
-        params.addProperty("childSelector", childSelector);
+        JsonObject params = scopedParams();
+        params.addProperty("selector", childSelector);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result);
+        return elementsFromResult(result, childSelector);
     }
 
     /** Find all child elements by semantic selector. */
     public List<Element> findAll(SelectorOptions childOptions) {
-        JsonObject params = elementParams();
+        JsonObject params = scopedParams();
         for (Map.Entry<String, Object> entry : childOptions.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
@@ -324,15 +324,37 @@ public class Element {
         return params;
     }
 
+    /** Params for a child lookup: this element becomes the scope, the child supplies the selector. */
+    private JsonObject scopedParams() {
+        JsonObject params = new JsonObject();
+        params.addProperty("context", contextId);
+        params.addProperty("scope", selector);
+        return params;
+    }
+
     private void sendAction(String method) {
         client.send(method, elementParams());
     }
 
     private Element elementFromResult(JsonObject result) {
-        String sel = result.has("selector") ? result.get("selector").getAsString() : "";
+        return elementFromResult(result, "");
+    }
+
+    // The find response carries only tag/text/box, so the child's selector has to
+    // come from the caller or the returned element cannot be re-resolved.
+    private Element elementFromResult(JsonObject result, String selector) {
         int idx = result.has("index") ? result.get("index").getAsInt() : 0;
         ElementInfo eInfo = parseElementInfo(result);
-        return new Element(client, contextId, sel, idx, eInfo);
+        return new Element(client, contextId, selector, idx, eInfo);
+    }
+
+    private List<Element> elementsFromResult(JsonObject result, String selector) {
+        List<Element> elements = new ArrayList<>();
+        com.google.gson.JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new com.google.gson.JsonArray();
+        for (int i = 0; i < arr.size(); i++) {
+            elements.add(new Element(client, contextId, selector, i, parseElementInfo(arr.get(i).getAsJsonObject())));
+        }
+        return elements;
     }
 
     private List<Element> elementsFromResult(JsonObject result) {
