@@ -42,22 +42,17 @@ before(async () => {
       resolve(data.toString().trim());
     });
   });
+  // One daemon for the whole file; each test navigates itself.
+  stopDaemon();
+  clicker('daemon start --headless');
 });
 
 after(() => {
+  stopDaemon();
   if (serverProcess) serverProcess.kill();
 });
 
 describe('Daemon: Rapid sequential commands', () => {
-  before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-  });
-
-  after(() => {
-    stopDaemon();
-  });
-
   test('multiple go commands in sequence', () => {
     // Navigate to several pages in quick succession
     const r1 = clickerJSON(`go ${baseURL}/example`);
@@ -85,15 +80,6 @@ describe('Daemon: Rapid sequential commands', () => {
 });
 
 describe('Daemon: Error recovery', () => {
-  before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-  });
-
-  after(() => {
-    stopDaemon();
-  });
-
   test('find with bad selector returns error', () => {
     // Navigate first
     clickerJSON(`go ${baseURL}/example`);
