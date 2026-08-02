@@ -310,7 +310,7 @@ public class Page {
     /** Wait for a JS function to return truthy with options. */
     public Object waitForFunction(String fn, WaitOptions options) {
         JsonObject params = contextParams();
-        params.addProperty("expression", fn);
+        params.addProperty("fn", fn);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }

@@ -1,6 +1,7 @@
 package com.vibium;
 
 import com.google.gson.JsonObject;
+import com.vibium.errors.VibiumException;
 import com.vibium.internal.BiDiClient;
 
 import java.util.concurrent.CompletableFuture;
@@ -34,9 +35,13 @@ public class Download {
 
     /** Save the download to a path. */
     public void saveAs(String path) {
+        String sourcePath = path();
+        if (sourcePath == null) {
+            throw new VibiumException("download did not complete; cannot save");
+        }
         JsonObject params = new JsonObject();
-        params.addProperty("path", path);
-        params.addProperty("url", url);
+        params.addProperty("sourcePath", sourcePath);
+        params.addProperty("destPath", path);
         client.send("vibium:download.saveAs", params);
     }
 
