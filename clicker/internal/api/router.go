@@ -42,6 +42,8 @@ type BrowserSession struct {
 	// Clock support
 	clockPreloadScriptID string // "" if not installed
 
+	activeContext string // last context foregrounded for pointer input; "" = unknown
+
 	// Recording support
 	recorder           *Recorder
 	lastContext        string   // last browsing context resolved by a command
@@ -863,6 +865,38 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 	}
 }
 
+func (s *BrowserSession) activeContextID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeContext
+}
+
+func (s *BrowserSession) setActiveContext(ctx string) {
+	s.mu.Lock()
+	s.activeContext = ctx
+	s.mu.Unlock()
+}
+
+// pointerInputContext returns the browsing context a pointer-input command
+// targets, or "" if the command is not pointer input. Keyboard input needs no
+// hit-testing and does not stall, so it is deliberately excluded.
+func pointerInputContext(method string, params map[string]interface{}) string {
+	if method != "input.performActions" {
+		return ""
+	}
+	actions, ok := params["actions"].([]map[string]interface{})
+	if !ok {
+		return ""
+	}
+	for _, a := range actions {
+		if t, _ := a["type"].(string); t == "pointer" {
+			ctx, _ := params["context"].(string)
+			return ctx
+		}
+	}
+	return ""
+}
+
 // sendInternalCommand sends a BiDi command and waits for the response (60s timeout).
 func (r *Router) sendInternalCommand(session *BrowserSession, method string, params map[string]interface{}) (json.RawMessage, error) {
 	return r.sendInternalCommandWithTimeout(session, method, params, 60*time.Second)
@@ -870,6 +904,28 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	// Chrome blocks ~5s dispatching pointer input to a backgrounded tab (#248),
+	// so foreground the target first — but only on a change of context. An
+	// activate round-trip between the two clicks of a dblclick would push them
+	// past the double-click threshold.
+	switch {
+	case method == "browsingContext.create":
+		session.setActiveContext("") // the new tab takes focus
+	case method == "browsingContext.activate":
+		if ctx, _ := params["context"].(string); ctx != "" {
+			session.setActiveContext(ctx)
+		}
+	default:
+		if ctx := pointerInputContext(method, params); ctx != "" && session.activeContextID() != ctx {
+			// Best-effort: a nested context cannot be activated, and the
+			// dispatch below works regardless — so only record on success.
+			if _, err := r.sendInternalCommandWithTimeout(session, "browsingContext.activate",
+				map[string]interface{}{"context": ctx}, timeout); err != nil {
+				session.setActiveContext("")
+			}
+		}
+	}
+
 	// Record BiDi command in recording (opt-in via bidi: true)
 	session.mu.Lock()
 	recorder := session.recorder
