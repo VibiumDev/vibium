@@ -44,13 +44,17 @@ type BrowserSession struct {
 
 	activeContext string // last context foregrounded for pointer input; "" = unknown
 
+	// prompts records which contexts have an open user prompt, so a command
+	// Chrome will not answer fails immediately instead of timing out.
+	prompts *PromptTracker
+
 	// Recording support
 	recorder           *Recorder
-	lastContext        string   // last browsing context resolved by a command
-	lastURL            string   // last known page URL, updated from load/navigation events
-	lastElementBox     *BoxInfo // last resolved element box, for recording
-	screenshotInFlight int32    // atomic; 1 = screenshot capture in progress
-	handlerScreenshot  int32    // atomic; 1 = handler already captured filmstrip screenshot
+	lastContext        string     // last browsing context resolved by a command
+	lastURL            string     // last known page URL, updated from load/navigation events
+	lastElementBox     *BoxInfo   // last resolved element box, for recording
+	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
+	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
 	dispatchMu         sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
 }
 
@@ -167,6 +171,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		stopChan:       make(chan struct{}),
 		internalCmds:   make(map[int]chan json.RawMessage),
 		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
+		prompts:        NewPromptTracker(),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -184,6 +189,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 			"network.beforeRequestSent",
 			"network.responseCompleted",
 			"browsingContext.userPromptOpened",
+			"browsingContext.userPromptClosed",
 			"log.entryAdded",
 			"browsingContext.downloadWillBegin",
 			"browsingContext.downloadEnd",
@@ -869,6 +875,9 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			}
 		}
 
+		// Track user prompts so prompt-sensitive commands can fail fast.
+		session.prompts.Observe([]byte(msg))
+
 		// Record event for recording (non-blocking)
 		session.mu.Lock()
 		recorder := session.recorder
@@ -929,6 +938,12 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	// An open user prompt means Chrome will never answer this command, so
+	// report it now rather than after the timeout.
+	if err := checkPromptBlocked(session.prompts, method, params); err != nil {
+		return nil, err
+	}
+
 	// Chrome blocks ~5s dispatching pointer input to a backgrounded tab (#248),
 	// so foreground the target first — but only on a change of context. An
 	// activate round-trip between the two clicks of a dblclick would push them
