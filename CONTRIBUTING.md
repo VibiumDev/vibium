@@ -1,17 +1,17 @@
 # Contributing to Vibium
 
-We'd like to try something a little different with this repo.
+Agents write most of the code here, so typing isn't the bottleneck — knowing what's actually broken
+is. That's the part we want from you, and it's the part that's hard to automate.
 
-Given that coding agents write most underlying code now, we'd prefer contributions in the form of
-_human-written_ text. This can be quite informal — just run your idea by us in the same way you would
-a coworker or friend, say, over Slack. If we're aligned on the change, we're happy to burn our tokens
-on the underlying implementation.
+So: tell us, in your own words. What you ran, what happened, what you expected. Informal is good — the
+register you'd use telling a coworker something is busted. If we're aligned on it, we'll spend our own
+tokens writing the fix.
 
-Please do not have AI artificially expand what you'd like to do into a formal proposal.
+One ask: don't have an AI inflate a paragraph into a formal proposal. It buries the part we need.
 
 Open an issue: https://github.com/VibiumDev/vibium/issues
 
-PS: Report any security vulnerabilities privately, not in a public issue.
+Security bugs go privately, not in a public issue.
 
 ## Development Environment
 
