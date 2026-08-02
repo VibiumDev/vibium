@@ -45,21 +45,19 @@ before(async () => {
       resolve(data.toString().trim());
     });
   });
+  // One daemon for the whole file; each describe re-navigates for a clean page.
+  stopDaemon();
+  clicker('daemon start --headless');
 });
 
 after(() => {
+  stopDaemon();
   if (serverProcess) serverProcess.kill();
 });
 
 describe('Daemon CLI: Navigation commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
-  });
-
-  after(() => {
-    stopDaemon();
   });
 
   test('back navigates back in history', () => {
@@ -83,13 +81,7 @@ describe('Daemon CLI: Navigation commands', () => {
 
 describe('Daemon CLI: Element state commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
-  });
-
-  after(() => {
-    stopDaemon();
   });
 
   test('is visible returns true for visible element', () => {
@@ -113,13 +105,7 @@ describe('Daemon CLI: Element state commands', () => {
 
 describe('Daemon CLI: Accessibility and search commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
-  });
-
-  after(() => {
-    stopDaemon();
   });
 
   test('a11y-tree returns accessibility tree', () => {
@@ -151,13 +137,7 @@ describe('Daemon CLI: Accessibility and search commands', () => {
 
 describe('Daemon CLI: Waiting commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
-  });
-
-  after(() => {
-    stopDaemon();
   });
 
   test('wait load succeeds on loaded page', () => {
@@ -184,15 +164,6 @@ describe('Daemon CLI: Waiting commands', () => {
 });
 
 describe('Daemon CLI: Interaction commands', () => {
-  before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-  });
-
-  after(() => {
-    stopDaemon();
-  });
-
   test('scroll into-view scrolls element into view', () => {
     clicker(`go ${baseURL}/example`);
     const result = clickerJSON('scroll into-view "a"');
@@ -240,13 +211,10 @@ describe('Daemon CLI: Screenshot --full-page', () => {
   let savedPath = null;
 
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
-    stopDaemon();
     // Clean up screenshot file
     if (savedPath) {
       try { fs.unlinkSync(savedPath); } catch (e) {}
@@ -269,13 +237,7 @@ describe('Daemon CLI: Screenshot --full-page', () => {
 
 describe('Daemon CLI: quit command', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
     clicker(`go ${baseURL}/example`);
-  });
-
-  after(() => {
-    stopDaemon();
   });
 
   test('stop closes browser session', () => {
