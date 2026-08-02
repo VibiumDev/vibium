@@ -141,6 +141,7 @@ const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <input type="text" id="username" name="username" />
   <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Logo image" />
   <button data-testid="submit-btn">Submit</button>
+  <input type="submit" value="Login" />
   <div class="container"><span class="inner-text">Hello from span</span></div>
 </body></html>`;
 

@@ -1107,6 +1107,12 @@ func findBySemanticScript() string {
 				const assocLabel = document.querySelector('label[for="' + el.id + '"]');
 				if (assocLabel) return (assocLabel.textContent || '').trim();
 			}
+			if (el.tagName === 'INPUT') {
+				const it = (el.getAttribute('type') || '').toLowerCase();
+				if ((it === 'submit' || it === 'reset' || it === 'button' || it === 'image') && el.value) {
+					return el.value;
+				}
+			}
 			const ph = el.getAttribute('placeholder');
 			if (ph) return ph;
 			const altAttr = el.getAttribute('alt');
@@ -1151,9 +1157,11 @@ func findBySemanticScript() string {
 				found.push(node);
 			}
 			if (found.length === 0) return null;
-			// Pick best: prefer shortest text match if text filter is used
+			// Pick best: prefer shortest text match when a name-ish filter is
+			// used. --name populates label, so gating on text alone would
+			// return tree-order first (usually an ancestor) instead.
 			el = found[0];
-			if (text && found.length > 1) {
+			if ((text || label) && found.length > 1) {
 				let bestLen = (el.textContent || '').length;
 				for (let i = 1; i < found.length; i++) {
 					const len = (found[i].textContent || '').length;
