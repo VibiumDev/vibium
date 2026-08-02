@@ -72,6 +72,17 @@ describe('CLI: Negative value flag parsing', () => {
     }
   });
 
+  test('sleep rejects a value over the cap instead of silently clamping', () => {
+    try {
+      execSync(`${VIBIUM} sleep 999999`, { encoding: 'utf-8', timeout: 60000, stdio: 'pipe' });
+      assert.fail('Should have thrown');
+    } catch (err) {
+      const output = err.stderr + err.stdout;
+      assert.match(output, /30000 or less/, 'Should say what the limit is');
+      assert.doesNotMatch(output, /Slept for/, 'Should not report a shorter sleep as success');
+    }
+  });
+
   test('geolocation accepts negative coordinates', () => {
     const result = execSync(`${VIBIUM} geolocation 37.7749 -122.4194`, {
       encoding: 'utf-8',

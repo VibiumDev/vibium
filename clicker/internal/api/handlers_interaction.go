@@ -539,6 +539,11 @@ func (r *Router) handleVibiumElSetFiles(session *BrowserSession, cmd bidiCommand
 		files[i] = s
 	}
 
+	if err := RequireFileInput(NewAPISession(r, session, context), context, ep); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
 	// Resolve the element to get its BiDi sharedId
 	sharedID, err := r.resolveElementRef(session, context, ep)
 	if err != nil {
@@ -893,6 +898,11 @@ func IsChecked(s Session, context string, ep ElementParams) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// check/uncheck all resolve state through here, so gating the script covers
+	// every entry point rather than each of the four separately.
+	if val != "true" && val != "false" {
+		return false, fmt.Errorf("%s", val)
+	}
 	return val == "true", nil
 }
 
@@ -1029,6 +1039,13 @@ func buildIsCheckedScript(ep ElementParams) (string, []map[string]interface{}) {
 				el = root.querySelector(selector);
 			}
 			if (!el) return 'false';
+			const t = el.tagName === 'INPUT' ? (el.type || '').toLowerCase() : '';
+			const role = (el.getAttribute('role') || '').toLowerCase();
+			if (t !== 'checkbox' && t !== 'radio' &&
+				role !== 'checkbox' && role !== 'radio' && role !== 'switch') {
+				return 'not a checkbox or radio element';
+			}
+			if (t === '') return el.getAttribute('aria-checked') === 'true' ? 'true' : 'false';
 			return el.checked ? 'true' : 'false';
 		}
 	`

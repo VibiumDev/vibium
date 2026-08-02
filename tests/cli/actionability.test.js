@@ -171,3 +171,43 @@ describe('CLI: fillable input types', () => {
     );
   });
 });
+
+describe('CLI: operation preconditions', () => {
+  test('check refuses a non-checkbox instead of silently succeeding (#195)', () => {
+    execSync(`${VIBIUM} content '<p id="p">not a checkbox</p><input type="checkbox" id="cb">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+
+    assert.throws(
+      () => {
+        execSync(`${VIBIUM} check "#p"`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
+      },
+      /not a checkbox or radio/i,
+      'check on a <p> should be refused, not reported as checked'
+    );
+
+    // The real checkbox must still work.
+    const ok = execSync(`${VIBIUM} check "#cb"`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(ok, /Checked/);
+  });
+
+  test('upload refuses a non-file-input with a readable error (#197)', () => {
+    execSync(`${VIBIUM} content '<p id="p">not an input</p>'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+
+    assert.throws(
+      () => {
+        execSync(`${VIBIUM} upload "#p" /etc/hosts`, {
+          encoding: 'utf-8',
+          timeout: 30000,
+          stdio: 'pipe',
+        });
+      },
+      /input type="file"/i,
+      'should name the expected element type rather than surfacing a raw BiDi error'
+    );
+  });
+});
