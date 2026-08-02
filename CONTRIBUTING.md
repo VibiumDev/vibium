@@ -3,9 +3,14 @@
 Agents write most of the code here, so typing isn't the bottleneck — knowing what's actually broken
 is. That's the part we want from you, and it's the part that's hard to automate.
 
-So: tell us, in your own words. What you ran, what happened, what you expected. Informal is good — the
-register you'd use telling a coworker something is busted. If we're aligned on it, we'll spend our own
-tokens writing the fix.
+So we'd genuinely rather have a few sentences than a patch. Tell us what you ran, what happened, and
+what you expected, in the register you'd use telling a coworker something is busted. If we're aligned
+on it, we'll spend our own tokens writing the fix.
+
+That's a real preference, not politeness. An unprompted code PR here tends to sit, or get superseded
+by a fix we write differently — usually because the same bug turns out to be in three other places
+too. We'd rather you didn't spend a weekend finding that out. (Typos, broken links, a doc that's
+plainly wrong — just send those, obviously.)
 
 One ask: don't have an AI inflate a paragraph into a formal proposal. It buries the part we need.
 
