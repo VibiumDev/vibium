@@ -18,7 +18,7 @@ Open an issue: https://github.com/VibiumDev/vibium/issues
 
 Security bugs go privately, not in a public issue.
 
-(We took this approach from [qm](https://github.com/yc-software/qm/blob/main/CONTRIBUTING.md).)
+Inspired by [qm](https://github.com/yc-software/qm/blob/main/CONTRIBUTING.md).
 
 ## Development Environment
 
