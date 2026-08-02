@@ -29,7 +29,7 @@ func newContentCmd() *cobra.Command {
 					os.Exit(1)
 				}
 				html = string(data)
-			} else if len(args) == 1 {
+			} else if len(args) == 1 && args[0] != "" {
 				html = args[0]
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: html argument or --stdin flag is required\n")

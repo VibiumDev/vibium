@@ -327,8 +327,34 @@ func SetContent(s Session, context, html string) error {
 	return err
 }
 
+// RequireFileInput errors unless the element resolves to an <input type="file">.
+//
+// It deliberately does not go through actionability: file inputs are routinely
+// display:none, and a visibility check would reject the very elements upload is
+// most often used on.
+func RequireFileInput(s Session, context string, ep ElementParams) error {
+	script, args := buildElStateScript(ep,
+		`(el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'file') ? 'ok' : 'not an <input type="file"> element'`)
+	resp, err := CallScript(s, context, script, args)
+	if err != nil {
+		return err
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return err
+	}
+	if val != "ok" {
+		return fmt.Errorf("upload: %s", val)
+	}
+	return nil
+}
+
 // Upload sets files on an <input type="file"> element.
 func Upload(s Session, context string, ep ElementParams, files []string) error {
+	if err := RequireFileInput(s, context, ep); err != nil {
+		return err
+	}
+
 	sharedID, err := ResolveElementRef(s, context, ep)
 	if err != nil {
 		return err

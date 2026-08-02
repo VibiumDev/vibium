@@ -27,6 +27,15 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// `daemon status` exits non-zero when nothing is running, which is the contract.
+function clickerAllowExit(args, opts = {}) {
+  try {
+    return clicker(args, opts);
+  } catch (e) {
+    return ((e.stdout || '') + (e.stderr || '')).trim();
+  }
+}
+
 // Run vibium command but don't throw on non-zero exit (for error responses)
 function clickerJSONSafe(args, opts = {}) {
   try {
@@ -230,7 +239,7 @@ describe('Daemon: Remote browser connect', () => {
     assert.ok(result, 'Should return a result');
 
     // Verify daemon is not running
-    const status = clicker('daemon status');
+    const status = clickerAllowExit('daemon status');
     assert.match(status, /not running/i, 'Daemon should not be running');
   });
 });
