@@ -18,6 +18,8 @@ Open an issue: https://github.com/VibiumDev/vibium/issues
 
 Security bugs go privately, not in a public issue.
 
+(We took this approach from [qm](https://github.com/yc-software/qm/blob/main/CONTRIBUTING.md).)
+
 ## Development Environment
 
 We recommend developing inside a VM to limit the blast radius of AI-assisted tools like Claude Code. Check the [system requirements](docs/reference/mac-system-requirements.md) for hardware specs, then see the setup guide for your platform:
