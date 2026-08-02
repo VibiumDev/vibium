@@ -79,7 +79,8 @@ build-go: deps
 		target_dir="node_modules/@vibium/$$platform/bin"; \
 		if [ -d "node_modules/@vibium/$$platform" ]; then \
 			mkdir -p "$$target_dir"; \
-			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE)"; \
+			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE).new" && \
+			mv -f "$$target_dir/vibium$(EXE).new" "$$target_dir/vibium$(EXE)"; \
 		fi; \
 	fi
 
