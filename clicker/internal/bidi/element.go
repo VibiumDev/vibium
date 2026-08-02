@@ -73,37 +73,24 @@ func (c *Client) FindElement(context, selector string) (*ElementInfo, error) {
 		return nil, err
 	}
 
-	// Parse the result
-	var callResult struct {
-		Type   string          `json:"type"`
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(msg.Result, &callResult); err != nil {
-		return nil, fmt.Errorf("failed to parse script.callFunction result: %w", err)
-	}
-
-	if callResult.Type == "exception" {
-		return nil, fmt.Errorf("script exception: %s", string(callResult.Result))
-	}
-
-	// Parse the remote value (string containing JSON)
-	var remoteValue struct {
-		Type  string `json:"type"`
-		Value string `json:"value,omitempty"`
-	}
-
-	if err := json.Unmarshal(callResult.Result, &remoteValue); err != nil {
-		return nil, fmt.Errorf("failed to parse remote value: %w", err)
+	sr, err := ParseScriptResult(msg.Result)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if element was found
-	if remoteValue.Type == "null" {
+	if sr.Result.Type == "null" {
 		return nil, &errs.ElementNotFoundError{Selector: selector, Context: context}
 	}
 
-	// Parse the JSON string value
+	// The script returns a JSON string to avoid BiDi object serialization
+	payload, ok := sr.Result.Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse remote value: expected string, got %s", sr.Result.Type)
+	}
+
 	var info ElementInfo
-	if err := json.Unmarshal([]byte(remoteValue.Value), &info); err != nil {
+	if err := json.Unmarshal([]byte(payload), &info); err != nil {
 		return nil, fmt.Errorf("failed to parse element info: %w", err)
 	}
 
@@ -169,29 +156,18 @@ func (c *Client) FindAllElements(context, selector string, limit int) ([]Element
 		return nil, err
 	}
 
-	var callResult struct {
-		Type   string          `json:"type"`
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(msg.Result, &callResult); err != nil {
-		return nil, fmt.Errorf("failed to parse script.callFunction result: %w", err)
+	sr, err := ParseScriptResult(msg.Result)
+	if err != nil {
+		return nil, err
 	}
 
-	if callResult.Type == "exception" {
-		return nil, fmt.Errorf("script exception: %s", string(callResult.Result))
-	}
-
-	var remoteValue struct {
-		Type  string `json:"type"`
-		Value string `json:"value,omitempty"`
-	}
-
-	if err := json.Unmarshal(callResult.Result, &remoteValue); err != nil {
-		return nil, fmt.Errorf("failed to parse remote value: %w", err)
+	payload, ok := sr.Result.Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse remote value: expected string, got %s", sr.Result.Type)
 	}
 
 	var elements []ElementInfo
-	if err := json.Unmarshal([]byte(remoteValue.Value), &elements); err != nil {
+	if err := json.Unmarshal([]byte(payload), &elements); err != nil {
 		return nil, fmt.Errorf("failed to parse elements: %w", err)
 	}
 
