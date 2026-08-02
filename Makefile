@@ -43,7 +43,7 @@ endif
 # only fires when something has gone catastrophically wrong. A healthy
 # sequential test-js phase is ~6-10 minutes because Chrome launch is ~16s
 # per file on macOS (see clients/javascript/src/clicker/process.ts). For
-# faster iteration bump JS_PARALLEL (default 3) to use more cores.
+# faster iteration bump JS_PARALLEL (see DEFAULT_PARALLEL) to use more cores.
 TEST_TIMEOUT ?= 600
 TIMEOUT_CMD := node scripts/timeout.mjs $(TEST_TIMEOUT)
 # Same watchdog for recipes that cd out of the repo root (pytest, gradlew).
@@ -188,6 +188,17 @@ serve: build-go
 # alongside them would fight over it.
 SUITE_PARALLEL ?= 4
 
+# Per-suite browser fan-out, derived from core count: half the cores, floor 3.
+# A 12-core dev box gets 6; CI's 4-vCPU runner stays at the long-standing 3.
+# Measured here at 12 cores: 3 -> 335s, 6 -> 268s, 8 -> 259s. 8 is only 9s
+# better than 6 but runs ~20 concurrent Chromes, near the oversubscription
+# that used to wedge the suite, so the default stops at half.
+ifeq ($(OS),Windows_NT)
+DEFAULT_PARALLEL := 3
+else
+DEFAULT_PARALLEL := $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4); n=$$((n / 2)); [ $$n -lt 3 ] && n=3; echo $$n)
+endif
+
 # macOS VM guests with a dead virtual GPU pay ~15s per Chrome launch.
 # VM_FAST_LAUNCH=1 builds a Metal shim and points vibium at it. Probe first.
 # See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
@@ -258,8 +269,8 @@ test-cli: build-go
 
 # Run JS library tests
 # Each test file owns its own browser (top-level before/after), so files are
-# independent and safe to run in parallel. JS_PARALLEL controls the fan-out:
-# default 4 gives ~3x speedup vs sequential. (Previously sequential because
+# independent and safe to run in parallel. JS_PARALLEL controls the fan-out.
+# (Previously sequential because
 # we suspected parallel-induced flakes; root cause was a cross-process Chrome
 # temp-dir cleanup race in clicker/internal/browser/launcher.go, now fixed.)
 # Process tests stay sequential because they assert on Chrome process lifecycle.
@@ -269,7 +280,7 @@ test-cli: build-go
 # parallel-safe groups concurrently with test-mcp/test-python/test-java via
 # `$(MAKE) -j 5`. The process group must run alone because it asserts on
 # Chrome PID baselines.
-JS_PARALLEL ?= 3
+JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
@@ -329,11 +340,11 @@ test-daemon: build-go
 
 # Run Python client tests
 # PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
-# so each adds ~150 MB of memory pressure. Default 4 is conservative; bump
-# for faster CI. Module-scoped browser fixture means xdist's default
+# so each adds ~150 MB of memory pressure. Module-scoped browser fixture means
+# xdist's default
 # loadfile distribution gives each file to a single worker — safe under
 # parallel since each file owns its own browser via conftest.py.
-PY_PARALLEL ?= 3
+PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 # Ensure the Python client venv exists with the client + test deps installed.
 python-venv:
