@@ -107,13 +107,16 @@ func newDaemonStatusCmd() *cobra.Command {
 		Short: "Show daemon status",
 		Run: func(cmd *cobra.Command, args []string) {
 			if !daemon.IsRunning() {
-				fmt.Println("Daemon is not running.")
+				// Exit non-zero so `vibium daemon status` is usable in a
+				// conditional, and keep the human line out of --json output.
 				if jsonOutput {
 					printJSON(map[string]interface{}{
 						"running": false,
 					})
+				} else {
+					fmt.Println("Daemon is not running.")
 				}
-				return
+				os.Exit(1)
 			}
 
 			status, err := daemon.Status()

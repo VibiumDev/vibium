@@ -24,6 +24,16 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// `daemon status` exits non-zero when nothing is running, which is the contract.
+// Use this where the output matters but the exit code is expected to be non-zero.
+function clickerAllowExit(args, opts = {}) {
+  try {
+    return clicker(args, opts);
+  } catch (e) {
+    return ((e.stdout || '') + (e.stderr || '')).trim();
+  }
+}
+
 // Helper to stop daemon (ignore errors if not running)
 function stopDaemon() {
   try {
@@ -62,7 +72,7 @@ describe('Daemon: Lifecycle', () => {
   });
 
   test('daemon status reports not running when stopped', () => {
-    const result = clicker('daemon status');
+    const result = clickerAllowExit('daemon status');
     assert.match(result, /not running/i, 'Should report not running');
   });
 
@@ -81,7 +91,7 @@ describe('Daemon: Lifecycle', () => {
     assert.match(result, /stopped/i, 'Should confirm daemon stopped');
 
     // Verify not running
-    const status = clicker('daemon status');
+    const status = clickerAllowExit('daemon status');
     assert.match(status, /not running/i, 'Should report not running');
   });
 });
@@ -145,3 +155,39 @@ describe('Daemon: Auto-start', () => {
   });
 });
 
+
+describe('Daemon: status exit code', () => {
+  before(() => {
+    stopDaemon();
+  });
+
+  after(() => {
+    stopDaemon();
+  });
+
+  test('exits non-zero when the daemon is stopped', () => {
+    try {
+      execSync(`${VIBIUM} daemon status`, { encoding: 'utf-8', timeout: 10000, stdio: 'pipe' });
+      assert.fail('daemon status should exit non-zero when nothing is running');
+    } catch (err) {
+      assert.match(err.stdout + err.stderr, /not running/i);
+    }
+  });
+
+  test('--json emits only JSON when the daemon is stopped', () => {
+    try {
+      execSync(`${VIBIUM} --json daemon status`, { encoding: 'utf-8', timeout: 10000, stdio: 'pipe' });
+      assert.fail('daemon status should exit non-zero when nothing is running');
+    } catch (err) {
+      // The human-readable line used to be printed alongside the JSON, which
+      // broke any consumer piping this to a parser.
+      assert.deepStrictEqual(JSON.parse(err.stdout.trim()), { running: false });
+    }
+  });
+
+  test('exits zero when the daemon is running', () => {
+    clicker('daemon start --headless');
+    const status = clicker('daemon status');
+    assert.match(status, /running/i);
+  });
+});

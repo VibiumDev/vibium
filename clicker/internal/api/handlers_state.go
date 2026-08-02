@@ -319,8 +319,9 @@ func (r *Router) handleVibiumElIsChecked(session *BrowserSession, cmd bidiComman
 		return
 	}
 
-	script, args := buildElBoolScript(ep, `return !!el.checked;`)
-	checked, err := r.evalBoolScript(session, context, script, args)
+	// Share IsChecked rather than a second `!!el.checked` script, so this and
+	// check/uncheck agree on what counts as a checkable element.
+	checked, err := IsChecked(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
