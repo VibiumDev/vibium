@@ -1,23 +1,17 @@
 # Contributing to Vibium
 
-## Start with an issue, not a PR
+We'd like to try something a little different with this repo.
 
-The most useful thing you can send us is a clear bug report. Tell us what you ran, what happened, and
-what you expected. That is genuinely the hard part — we can burn our own tokens on the fix.
+Given that coding agents write most underlying code now, we'd prefer contributions in the form of
+_human-written_ text. This can be quite informal — just run your idea by us in the same way you would
+a coworker or friend, say, over Slack. If we're aligned on the change, we're happy to burn our tokens
+on the underlying implementation.
 
-We would rather you did **not** open a code PR unprompted. Not because the code is unwelcome, but
-because a patch usually fixes the one call site you hit, and the same bug is often copy-pasted in
-three other places we then have to go find anyway. If you tell us what broke, we can fix the whole
-class.
+Please do not have AI artificially expand what you'd like to do into a formal proposal.
 
-If you want to propose a change rather than report a bug, open an issue and describe it informally —
-the way you would explain it to a coworker. Please don't have an AI expand a one-paragraph idea into
-a formal proposal; it makes it harder to tell what you actually want.
+Open an issue: https://github.com/VibiumDev/vibium/issues
 
-If we agree on the shape of it and you would like to implement it yourself, say so and we will hand
-it to you. The setup below is for that case.
-
-Report security vulnerabilities privately rather than in a public issue.
+PS: Report any security vulnerabilities privately, not in a public issue.
 
 ## Development Environment
 
