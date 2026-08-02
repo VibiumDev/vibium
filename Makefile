@@ -306,6 +306,7 @@ test-js-async: build-go
 		tests/js/async/storage.test.js \
 		tests/js/async/frames.test.js \
 		tests/js/async/object-model.test.js \
+		tests/js/async/dispatch-concurrency.test.js \
 		tests/js/async/navigation.test.js \
 		tests/js/async/lifecycle.test.js
 

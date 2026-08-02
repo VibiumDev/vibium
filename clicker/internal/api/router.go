@@ -221,14 +221,39 @@ func handlerCapturesBefore(method string) bool {
 }
 
 // dispatch wraps a vibium handler with automatic action recording.
+// unblocksAnotherCommand reports whether a method exists to release a browser
+// state that is blocking some other in-flight command. Such a method must never
+// wait on dispatchMu: the command it would wait for is the one it is meant to
+// unblock, which is a deadlock with a 60s fuse.
+//
+// Chrome is launched with unhandledPromptBehavior "ignore", so a dialog opened
+// by a click stays open and Chrome answers nothing else for that context until
+// browsingContext.handleUserPrompt arrives.
+func unblocksAnotherCommand(method string) bool {
+	switch method {
+	case "vibium:dialog.accept", "vibium:dialog.dismiss":
+		return true
+	}
+	return false
+}
+
 func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
 	go func() {
-		session.dispatchMu.Lock()
-		defer session.dispatchMu.Unlock()
-
 		session.mu.Lock()
 		recorder := session.recorder
 		session.mu.Unlock()
+
+		// dispatchMu orders actions so a recording's before/after snapshots see
+		// the page state its own action produced. Nothing outside recording
+		// needs it — the BiDi client is already safe for concurrent commands,
+		// and every session field this function touches (lastElementBox,
+		// handlerScreenshot, screenshotInFlight) is read only while recording.
+		// Taking it unconditionally serialized all 104 dispatched methods on
+		// every session, recording or not.
+		if recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
+			session.dispatchMu.Lock()
+			defer session.dispatchMu.Unlock()
+		}
 
 		var callId string
 
