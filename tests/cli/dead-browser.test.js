@@ -24,11 +24,30 @@ function run(args) {
   }
 }
 
+// Same patterns as the Makefile's double-tap target: the macOS process name and
+// the cache path, which is what matches on Linux.
+const KILL_PATTERNS = ["Chrome for [T]esting", "chrome-for-testin[g]"];
+
+function browserCount() {
+  let total = 0;
+  for (const pattern of KILL_PATTERNS) {
+    try {
+      const out = execSync(`pgrep -f '${pattern}' || true`, { encoding: 'utf-8' });
+      total += out.split('\n').filter(Boolean).length;
+    } catch {
+      /* pgrep exits non-zero when nothing matches */
+    }
+  }
+  return total;
+}
+
 function killBrowser() {
-  try {
-    execSync("pkill -f 'Chrome for Testing' || true", { encoding: 'utf-8' });
-  } catch {
-    /* nothing to kill */
+  for (const pattern of KILL_PATTERNS) {
+    try {
+      execSync(`pkill -9 -f '${pattern}' || true`, { encoding: 'utf-8' });
+    } catch {
+      /* nothing to kill */
+    }
   }
 }
 
@@ -53,8 +72,12 @@ describe('CLI: browser closed externally', () => {
     run(`go ${baseURL}/example`);
     assert.match(run('title'), /Example Domain/, 'setup: the page should load');
 
+    assert.ok(browserCount() > 0, 'setup: a browser process should be running');
     killBrowser();
     execSync('sleep 2');
+    // Assert the kill worked, so a platform where the patterns miss fails here
+    // rather than further down with a confusing assertion about the message.
+    assert.strictEqual(browserCount(), 0, 'the browser process should be gone');
 
     const afterKill = run('title');
     assert.match(
