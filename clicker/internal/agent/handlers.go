@@ -2587,13 +2587,45 @@ func (h *Handlers) browserSleep(args map[string]interface{}) (*ToolsCallResult, 
 // ensureBrowser checks that a browser session is active.
 // If no browser is running, it auto-launches one (lazy launch).
 func (h *Handlers) ensureBrowser() error {
-	if h.client == nil {
-		_, err := h.browserLaunch(map[string]interface{}{})
-		if err != nil {
-			return fmt.Errorf("auto-launch failed: %w", err)
+	h.sessionMu.Lock()
+	client := h.client
+	h.sessionMu.Unlock()
+
+	if client != nil {
+		// A browser closed or crashed externally leaves this handle in place,
+		// so without a liveness check every later command fails with a raw
+		// transport error ("write: broken pipe") and never recovers (#219).
+		if dead, cause := client.Dead(); dead {
+			h.discardSession()
+			return fmt.Errorf("the browser is no longer running (%v) — run the command again to start a new one", cause)
 		}
+		return nil
+	}
+
+	if _, err := h.browserLaunch(map[string]interface{}{}); err != nil {
+		return fmt.Errorf("auto-launch failed: %w", err)
 	}
 	return nil
+}
+
+// discardSession drops a dead browser handle along with the state that only
+// meant anything alongside it. Element refs (@e1, …) name nodes in a document
+// that no longer exists, so carrying them into a freshly launched browser would
+// turn a clear failure into confidently wrong results.
+func (h *Handlers) discardSession() {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+
+	if h.launchResult != nil {
+		h.launchResult.Close()
+		h.launchResult = nil
+	}
+	h.client = nil
+	h.conn = nil
+	h.prompts = nil
+	h.refMap = nil
+	h.lastMap = ""
+	h.activeContext = ""
 }
 
 // resolveRefsInArgs returns a copy of args with any @ref selector resolved

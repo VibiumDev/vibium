@@ -266,7 +266,7 @@ test-cli: build-go
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js tests/cli/prompt-blocked.test.js
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@echo "--- CLI Process Tests (sequential) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js
 
 # Run JS library tests
 # Each test file owns its own browser (top-level before/after), so files are

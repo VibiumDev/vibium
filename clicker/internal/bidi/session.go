@@ -74,6 +74,22 @@ func (c *Client) DroppedEvents() uint64 {
 	return c.droppedEvents.Load()
 }
 
+// Dead reports whether the reader has exited, which means the connection to the
+// browser is gone — it crashed, the user closed it, or the socket dropped. The
+// returned error says why.
+//
+// Holders of a Client have no other way to notice: the reader records the cause
+// and stops, but nothing pushes that outward, so every later command fails one
+// at a time with a raw transport error.
+func (c *Client) Dead() (bool, error) {
+	select {
+	case <-c.readerDone:
+		return true, c.readErr
+	default:
+		return false, nil
+	}
+}
+
 // readLoop is the only reader of the connection. Routing every message
 // through one goroutine keeps concurrent SendCommand callers from stealing
 // each other's responses and keeps events flowing between commands.
