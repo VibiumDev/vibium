@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -187,7 +187,24 @@ serve: build-go
 # daemon at a fixed socket path, so any suite that auto-starts a daemon
 # alongside them would fight over it.
 SUITE_PARALLEL ?= 4
-test: build install-browser
+
+# macOS VM guests with a dead virtual GPU pay ~15s per Chrome launch.
+# VM_FAST_LAUNCH=1 builds a Metal shim and points vibium at it. Probe first.
+# See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
+MTLSHIM := $(CURDIR)/clicker/bin/mtlshim.dylib
+ifeq ($(VM_FAST_LAUNCH),1)
+ifeq ($(UNAME_S),Darwin)
+FAST_LAUNCH_DEP := mtlshim
+export VIBIUM_VM_FAST_LAUNCH := $(MTLSHIM)
+endif
+endif
+
+mtlshim:
+	@mkdir -p $(dir $(MTLSHIM))
+	clang -fno-objc-arc -dynamiclib -framework Metal -framework Foundation \
+		-o $(MTLSHIM) scripts/mtlshim.m
+
+test: build install-browser $(FAST_LAUNCH_DEP)
 	@START_TIME=$$(date +%s); \
 	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
@@ -506,6 +523,8 @@ help:
 	@echo "  make test-python           - Run Python client tests"
 	@echo "  make test-browser-modes    - Run headed browser-mode tests (JS + Python, serial)"
 	@echo "  make test-java             - Run Java client tests"
+	@echo "  make test VM_FAST_LAUNCH=1 - macOS VM only: skip the ~15s dead-GPU"
+	@echo "                               stall on every Chrome launch"
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"
