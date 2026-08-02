@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vibium/clicker/internal/api"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
-	"github.com/vibium/clicker/internal/api"
 )
 
 // Handlers manages browser session state and executes tool calls.
@@ -29,16 +29,20 @@ type Handlers struct {
 	conn           *bidi.Connection
 	screenshotDir  string
 	headless       bool
-	connectURL     string      // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header // headers for remote WebSocket connection
-	ownsRemote     bool        // remote session was created here, so Close() ends it
+	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header       // headers for remote WebSocket connection
+	ownsRemote     bool              // remote session was created here, so Close() ends it
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
-	activeContext  string         // last page context switched to or created
+	activeContext  string       // last page context switched to or created
+
+	// prompts records which contexts have an open user prompt, so a command
+	// Chrome will not answer fails immediately instead of timing out.
+	prompts *api.PromptTracker
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -58,6 +62,7 @@ func NewHandlers(screenshotDir string, headless bool, connectURL string, connect
 func (h *Handlers) newSession() *api.AgentSession {
 	s := api.NewAgentSession(h.client)
 	s.Context = h.activeContext
+	s.Prompts = h.prompts
 	s.OnBoxSet = func(box *api.BoxInfo) {
 		h.lastElementBox = box
 	}
@@ -635,6 +640,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		h.client = client
 		h.ownsRemote = session.Created
 		h.sessionMu.Unlock()
+		h.startPromptTracking()
 
 		verb := "Attached to"
 		if session.Created {
@@ -677,6 +683,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
 	h.sessionMu.Unlock()
+	h.startPromptTracking()
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -684,6 +691,44 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 			Text: fmt.Sprintf("Browser launched (headless: %v)", useHeadless),
 		}},
 	}, nil
+}
+
+// startPromptTracking subscribes to user-prompt events and keeps h.prompts in
+// sync. bidi.Client has a single event-handler slot, so one handler feeds both
+// the tracker and the recorder rather than recording replacing prompt tracking.
+func (h *Handlers) startPromptTracking() {
+	tracker := api.NewPromptTracker()
+
+	h.sessionMu.Lock()
+	h.prompts = tracker
+	client := h.client
+	h.sessionMu.Unlock()
+
+	if client == nil {
+		return
+	}
+
+	client.SendCommand("session.subscribe", map[string]interface{}{
+		"events": []string{
+			"browsingContext.userPromptOpened",
+			"browsingContext.userPromptClosed",
+		},
+	})
+	client.SetEventHandler(h.handleBidiEvent)
+}
+
+// handleBidiEvent is the single BiDi event handler for the agent session.
+func (h *Handlers) handleBidiEvent(msg string) {
+	h.sessionMu.Lock()
+	tracker := h.prompts
+	recorder := h.recorder
+	h.sessionMu.Unlock()
+
+	tracker.Observe([]byte(msg))
+
+	if recorder != nil && recorder.IsRecording() {
+		recorder.RecordBidiEvent(msg)
+	}
 }
 
 // browserNavigate navigates to a URL.
@@ -1450,7 +1495,6 @@ func (h *Handlers) browserA11yTree(args map[string]interface{}) (*ToolsCallResul
 	}, nil
 }
 
-
 // browserHover moves the mouse over an element.
 func (h *Handlers) browserHover(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -2060,7 +2104,6 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 		Content: []Content{{Type: "text", Text: fmt.Sprintf("Timezone set to %s", tz)}},
 	}, nil
 }
-
 
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
@@ -3803,9 +3846,8 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		},
 	})
 	h.recordDropBase = h.client.DroppedEvents()
-	h.client.SetEventHandler(func(msg string) {
-		h.recorder.RecordBidiEvent(msg)
-	})
+	// handleBidiEvent already forwards to the recorder; replacing the handler
+	// here would silently turn off prompt tracking for the recording's duration.
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -3821,9 +3863,9 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		return nil, fmt.Errorf("no recording in progress")
 	}
 
-	// Stop forwarding events to the recorder
+	// h.recorder is cleared below, which stops handleBidiEvent forwarding.
+	// The handler itself stays installed so prompt tracking survives.
 	if h.client != nil {
-		h.client.SetEventHandler(nil)
 		h.recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
 	}
 
@@ -4012,7 +4054,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 	}
 
 	var state struct {
-		Cookies []bidi.Cookie `json:"cookies"`
+		Cookies []bidi.Cookie   `json:"cookies"`
 		Storage json.RawMessage `json:"storage"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
