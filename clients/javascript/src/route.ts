@@ -55,7 +55,7 @@ export class Route {
       if (overrides?.url) params.url = overrides.url;
       if (overrides?.method) params.method = overrides.method;
       if (overrides?.headers) params.headers = overrides.headers;
-      if (overrides?.postData) params.postData = overrides.postData;
+      if (overrides?.postData) params.body = overrides.postData;
       await this.client.send('vibium:network.continue', params);
     } catch (e) {
       if (isRaceConditionError(e)) return;

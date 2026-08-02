@@ -66,7 +66,7 @@ class Route:
             if headers is not None:
                 params["headers"] = headers
             if post_data is not None:
-                params["postData"] = post_data
+                params["body"] = post_data
             await self._client.send("vibium:network.continue", params)
         except Exception as e:
             if _is_race_error(e):
