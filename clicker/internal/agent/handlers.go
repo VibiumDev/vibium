@@ -973,12 +973,14 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 
 	hasSemantic := role != "" || text != "" || label != "" || placeholder != "" || testid != "" || xpath != "" || alt != "" || title != ""
 
-	if hasSemantic {
-		timeout := api.DefaultTimeout
-		if t, ok := argFloat(args, "timeout"); ok {
-			timeout = time.Duration(t) * time.Millisecond
-		}
+	// Shared by both branches: the CSS path polls too, so --timeout is not
+	// silently inert on the most common form of find (#206).
+	timeout := api.DefaultTimeout
+	if t, ok := argFloat(args, "timeout"); ok {
+		timeout = time.Duration(t) * time.Millisecond
+	}
 
+	if hasSemantic {
 		script := findBySemanticScript()
 		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title}, timeout)
 		if err != nil {
@@ -1037,9 +1039,13 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		}
 		return getLabel(el);
 	}`
-	labelResult, err := h.client.CallFunction(h.activeContext, labelScript, []interface{}{selector})
+	// Poll like the semantic branch does, so --timeout means something here and
+	// a CSS find waits for an element that has not rendered yet (#206). The
+	// single non-polling call also returned nil for a miss and still minted a
+	// @e1 ref, so `find` reported "@e1 <nil>" with exit 0.
+	labelResult, err := pollCallFunction(h, labelScript, []interface{}{selector}, timeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
 	}
 
 	// Store ref in refMap
