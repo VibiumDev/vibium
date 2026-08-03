@@ -7,7 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vibium/clicker/internal/log"
 )
+
+// screenshotTimeout bounds both the wait for an in-flight navigation and the
+// capture command itself.
+const screenshotTimeout = 5 * time.Second
 
 // handleRecordingStart handles vibium:recording.start — starts recording.
 // Options: name, screenshots, snapshots, sources, title.
@@ -366,13 +372,30 @@ func CaptureRecordingScreenshot(s Session, recorder *Recorder, actionEnd time.Ti
 		return
 	}
 
+	// captureScreenshot does not answer while the context is navigating, so
+	// issuing one now would burn the whole timeout and return nothing. Wait for
+	// the navigation instead: it usually settles in well under the timeout, and
+	// the frame we then get is the result of the action rather than nothing at
+	// all (#289).
 	opts := recorder.Options()
-	resp, err := s.SendBidiCommandWithTimeout("browsingContext.captureScreenshot", ScreenshotParams(context, opts), 5*time.Second)
+
+	// A navigation triggered by the action we just ran is not reported until
+	// ~10ms after that action's command returns, so there is no way to check
+	// for one before capturing: the capture always wins the race. Instead run
+	// the capture and watch for a navigation starting underneath it. Chrome
+	// will not answer a capture across a navigation, so if one begins we
+	// abandon that attempt, wait for the page to settle, and take a fresh
+	// screenshot. Without this the doomed attempt burns its whole timeout and
+	// yields no frame at all (#289).
+	resp, err := captureWithNavigationRetry(s, context, opts)
 	if err != nil {
+		// Swallowing this is what let a 5s stall go unnoticed for months (#289).
+		log.Debug("recording screenshot failed", "context", context, "error", err)
 		return
 	}
 
 	if bidiErr := checkBidiError(resp); bidiErr != nil {
+		log.Debug("recording screenshot returned an error", "context", context, "error", bidiErr)
 		return
 	}
 
@@ -415,4 +438,50 @@ func (r *Router) queryViewport(session *BrowserSession) map[string]interface{} {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h}
+}
+
+// captureWithNavigationRetry takes a screenshot, restarting the attempt if a
+// navigation begins while it is in flight. See the call site for why this
+// cannot be decided up front.
+func captureWithNavigationRetry(s Session, context string, opts RecordingStartOptions) (json.RawMessage, error) {
+	nav := s.NavTracker()
+	send := func() (json.RawMessage, error) {
+		return s.SendBidiCommandWithTimeout("browsingContext.captureScreenshot",
+			ScreenshotParams(context, opts), screenshotTimeout)
+	}
+
+	if nav == nil {
+		return send()
+	}
+
+	// Already navigating: no point starting an attempt that cannot be answered.
+	if nav.IsNavigating(context) {
+		nav.WaitForSettled(context, screenshotTimeout)
+		return send()
+	}
+
+	started, cancel := nav.NotifyStart(context)
+	defer cancel()
+
+	type result struct {
+		resp json.RawMessage
+		err  error
+	}
+	// Buffered so the abandoned attempt can finish writing and exit.
+	done := make(chan result, 1)
+	go func() {
+		resp, err := send()
+		done <- result{resp, err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.resp, r.err
+	case <-started:
+		// That attempt is now stuck behind the navigation and will time out on
+		// its own. Wait for the page to settle and take the frame that shows
+		// what the action actually did.
+		nav.WaitForSettled(context, screenshotTimeout)
+		return send()
+	}
 }

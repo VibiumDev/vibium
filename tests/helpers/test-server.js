@@ -35,6 +35,14 @@ const HOME_HTML = `<html><head><title>The Internet</title></head><body>
   </div>
 </body></html>`;
 
+const FORM_REDIRECT_HTML = `<html><head><title>Form Redirect</title></head><body>
+  <h2>Form Redirect</h2>
+  <form id="f" action="/form-redirect" method="post">
+    <input type="text" name="q" id="q" value="hello" />
+    <button type="submit" id="go">Submit</button>
+  </form>
+</body></html>`;
+
 const LOGIN_HTML = `<html><head><title>The Internet - Login</title></head><body>
   <h2>Login Page</h2>
   <form id="login" action="/authenticate" method="post">
@@ -196,9 +204,19 @@ const routes = {
   '/example': EXAMPLE_HTML,
   '/more-information': MORE_INFORMATION_HTML,
   '/selectors': SELECTORS_HTML,
+  '/form-redirect': FORM_REDIRECT_HTML,
 };
 
 function handleRequest(req, res) {
+  // Form POST that 302s back to the same page. The redirect leaves a navigation
+  // in flight just as a filmstrip screenshot is taken, which used to stall the
+  // action for the full capture timeout (#289).
+  if (req.url === '/form-redirect' && req.method === 'POST') {
+    res.writeHead(302, { Location: '/form-redirect' });
+    res.end();
+    return;
+  }
+
   // Handle login form POST → redirect to /secure
   if (req.url === '/authenticate' && req.method === 'POST') {
     res.writeHead(302, { 'Location': '/secure' });
