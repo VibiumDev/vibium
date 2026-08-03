@@ -79,14 +79,15 @@ func buildCSSActionableScript(ep ElementParams, checkVisible, checkReceivesEvent
 
 	script := `
 		(scope, selector, index, hasIndex, chkVisible, chkEvents, chkEnabled, chkEditable) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({status:'not_found'});
 			let el;
 			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
+				const all = pierceQueryAll(root, selector);
 				el = all[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			if (!el) return JSON.stringify({status:'not_found'});
 
@@ -130,7 +131,8 @@ func buildSemanticActionableScript(ep ElementParams, checkVisible, checkReceives
 
 	script := `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, chkVisible, chkEvents, chkEnabled, chkEditable) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({status:'not_found'});
 	` + semanticMatchesHelper() + `
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -226,7 +228,15 @@ func actionabilityCheckBody() string {
 			}
 			if (chkEvents) {
 				const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
-				const hit = document.elementFromPoint(cx, cy);
+				// document.elementFromPoint stops at a shadow host, so an element
+				// inside a shadow root always looked obscured. Descend through
+				// each root at the same point to find what is really on top.
+				let hit = document.elementFromPoint(cx, cy);
+				while (hit && hit.shadowRoot) {
+					const inner = hit.shadowRoot.elementFromPoint(cx, cy);
+					if (!inner || inner === hit) break;
+					hit = inner;
+				}
 				if (!hit || (el !== hit && !el.contains(hit)))
 					return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element is obscured'});
 			}

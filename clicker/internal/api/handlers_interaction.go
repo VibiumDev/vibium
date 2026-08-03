@@ -1071,7 +1071,8 @@ func buildElActionScript(ep ElementParams, extraNames []string, extraArgs []map[
 		args := append(buildElSemanticArgs(ep), extraArgs...)
 		script := fmt.Sprintf(`
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex%s) => {
-			const root = scope ? document.querySelector(scope) : document;
+			`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return 'element not found';
 		`+semanticMatchesHelper()+`
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -1091,13 +1092,14 @@ func buildElActionScript(ep ElementParams, extraNames []string, extraArgs []map[
 	args := append(buildElBaseArgs(ep), extraArgs...)
 	script := fmt.Sprintf(`
 		(scope, selector, index, hasIndex%s) => {
-			const root = scope ? document.querySelector(scope) : document;
+			`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return 'element not found';
 			let el;
 			if (hasIndex) {
-				el = root.querySelectorAll(selector)[index];
+				el = pierceQueryAll(root, selector)[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			if (!el) return 'element not found';
 			%s

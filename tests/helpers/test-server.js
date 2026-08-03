@@ -154,8 +154,35 @@ const FRAMES_HTML = `<html><head><title>Frames</title></head><body>
   <iframe src="/frame-inner" name="myframe"></iframe>
 </body></html>`;
 
+const SHADOW_HTML = `<html><head><title>Shadow</title></head><body>
+  <my-card></my-card>
+  <div id="out"></div>
+  <script>
+    class NestedEl extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML =
+          '<button id="deep">Deep Button</button>';
+      }
+    }
+    class MyCard extends HTMLElement {
+      constructor() {
+        super();
+        const r = this.attachShadow({ mode: 'open' });
+        r.innerHTML = '<p>shadow text</p><input id="i"><button id="b">Shadow Button</button><nested-el></nested-el>';
+        r.getElementById('b').onclick = () => {
+          document.getElementById('out').textContent = 'clicked:' + r.getElementById('i').value;
+        };
+      }
+    }
+    customElements.define('nested-el', NestedEl);
+    customElements.define('my-card', MyCard);
+  </script>
+</body></html>`;
+
 const routes = {
   '/': HOME_HTML,
+  '/shadow': SHADOW_HTML,
   '/frames': FRAMES_HTML,
   '/frame-inner': FRAME_INNER_HTML,
   '/login': LOGIN_HTML,

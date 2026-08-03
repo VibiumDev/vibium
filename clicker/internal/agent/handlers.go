@@ -1030,7 +1030,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 	// Run getLabel in browser to get consistent label format (with scroll-into-view)
 	labelScript := `(selector) => {
 		` + GetLabelJS() + `
-		const el = document.querySelector(selector);
+		` + api.PierceQueryJS() + `
+		const el = pierceQuery(document, selector);
 		if (!el) return null;
 		if (el.scrollIntoViewIfNeeded) {
 			el.scrollIntoViewIfNeeded(true);
@@ -2770,12 +2771,22 @@ func mapScript() string {
 	return `(scopeSelector) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
+		` + api.PierceQueryJS() + `
 
 		const interactive = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="switch"], [onclick], [tabindex]:not([tabindex="-1"]), summary, details';
 
-		const root = scopeSelector ? document.querySelector(scopeSelector) : document;
+		const root = scopeSelector ? pierceQuery(document, scopeSelector) : document;
 		if (!root) return JSON.stringify([]);
-		const els = root.querySelectorAll(interactive);
+		// Walk shadow roots too: querySelectorAll stops at the boundary, so
+		// web-component UIs listed as empty (#203).
+		const els = [];
+		{
+			const roots = __shadowRootsUnder(root);
+			for (let r = 0; r < roots.length; r++) {
+				const found = roots[r].querySelectorAll(interactive);
+				for (let f = 0; f < found.length; f++) els.push(found[f]);
+			}
+		}
 		const results = [];
 		const seen = new Set();
 
