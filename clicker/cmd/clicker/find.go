@@ -101,7 +101,10 @@ func newFindCmd() *cobra.Command {
 			toolArgs := map[string]interface{}{"role": args[0]}
 			name, _ := cmd.Flags().GetString("name")
 			if name != "" {
-				toolArgs["text"] = name
+				// "label" is the accessible-name filter; "text" is a raw
+				// textContent match, which is "" for a void element like
+				// <input type="submit">.
+				toolArgs["label"] = name
 			}
 			result, err := daemonCall("browser_find", toolArgs)
 			if err != nil {

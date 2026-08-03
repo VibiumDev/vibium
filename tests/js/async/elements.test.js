@@ -19,6 +19,7 @@ const PAGE_HTML = `<html><head><title>Elements Test</title></head><body>
   <p>First paragraph with some text.</p>
   <p>Second paragraph with more content.</p>
   <p><a href="/other">Learn more about testing</a></p>
+  <input type="submit" value="Login" />
 </body></html>`;
 
 before(async () => {
@@ -117,6 +118,17 @@ describe('Element Finding', () => {
     const link = await vibe.find({ role: 'link' });
     assert.ok(link, 'Should find element with role=link');
     assert.ok(link.info.tag === 'a', 'Element with role=link should be an <a>');
+  });
+
+  test('find({ role: "button", label: "Login" }) matches a submit input by value (#204)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    // <input type="submit"> has no textContent; per HTML-AAM its accessible
+    // name comes from the value attribute.
+    const el = await vibe.find({ role: 'button', label: 'Login' });
+    assert.ok(el, 'Should find the submit input by its accessible name');
+    assert.strictEqual(el.info.tag, 'input');
   });
 
   test('find({ text: "Learn more" }) finds element by text', async () => {

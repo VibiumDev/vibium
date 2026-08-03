@@ -264,6 +264,14 @@ func semanticMatchesHelper() string {
 						const assocLabel = document.querySelector('label[for="' + el.id + '"]');
 						if (assocLabel) labelText = labelText || (assocLabel.textContent || '').trim();
 					}
+					if (!labelText && el.tagName === 'INPUT') {
+						// Per HTML-AAM the value attribute is the accessible name
+						// for these input types.
+						const it = (el.getAttribute('type') || '').toLowerCase();
+						if (it === 'submit' || it === 'reset' || it === 'button' || it === 'image') {
+							labelText = el.value || '';
+						}
+					}
 					if (!labelText.includes(label)) return false;
 				}
 				if (placeholder && el.getAttribute('placeholder') !== placeholder) return false;

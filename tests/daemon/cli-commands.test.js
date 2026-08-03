@@ -133,6 +133,15 @@ describe('Daemon CLI: Accessibility and search commands', () => {
     assert.ok(result.result.includes('@e1'), 'Should return @e1 ref');
     assert.ok(result.result.includes('[a]'), 'Should find link element');
   });
+
+  test('find role button --name matches a submit input by its value (#204)', () => {
+    // <input type="submit" value="Login"> has no textContent, so --name used to
+    // land on a textContent filter and poll to the 30s timeout.
+    clicker(`go ${baseURL}/selectors`);
+    const result = clickerJSON('find role button --name "Login"');
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.result.includes('[input'), `Should find the submit input, got: ${result.result}`);
+  });
 });
 
 describe('Daemon CLI: Waiting commands', () => {
