@@ -1,6 +1,7 @@
 package com.vibium;
 
 import com.vibium.types.A11yNode;
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.A11yOptions;
 import com.vibium.types.StartOptions;
 import com.vibium.types.WaitOptions;
@@ -103,6 +104,23 @@ class WireContractTest {
         assertTrue(everything > interesting,
             "everything(true) should include uninteresting nodes: "
                 + everything + " vs " + interesting);
+    }
+
+    /**
+     * A semantically-found element has selector "", so unless it carries the
+     * locator it was found by, every follow-up command resolves nothing (#106).
+     */
+    @Test
+    void semanticallyFoundElementSupportsFollowUpCommands() {
+        page.go(server.baseUrl() + "/form");
+
+        Element field = page.find(new SelectorOptions().label("Name"));
+        assertEquals("input", field.info().tag());
+
+        // These all re-resolve server-side from the element's own params.
+        field.fill("Ada");
+        assertEquals("Ada", field.value());
+        assertTrue(field.isVisible());
     }
 
     private static int countNodes(A11yNode node) {

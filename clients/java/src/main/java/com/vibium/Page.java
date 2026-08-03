@@ -154,7 +154,7 @@ public class Page {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, "", 0);
+        return elementFromResult(result, "", 0, locatorParams(options));
     }
 
     /** Find all matching elements by CSS selector. */
@@ -180,7 +180,7 @@ public class Page {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, "");
+        return elementsFromResult(result, "", locatorParams(options));
     }
 
     // ── Screenshots & PDF ───────────────────────────────────────
@@ -630,17 +630,34 @@ public class Page {
     }
 
     private Element elementFromResult(JsonObject result, String selector, int index) {
+        return elementFromResult(result, selector, index, null);
+    }
+
+    private Element elementFromResult(JsonObject result, String selector, int index,
+                                      Map<String, Object> locator) {
         ElementInfo info = parseElementInfo(result);
-        return new Element(client, contextId, selector, index, info);
+        return new Element(client, contextId, selector, index, info, locator);
+    }
+
+    /** The locator an element was found by, minus per-call options. */
+    private static Map<String, Object> locatorParams(SelectorOptions options) {
+        Map<String, Object> p = new LinkedHashMap<>(options.toParams());
+        p.remove("timeout");
+        return p;
     }
 
     private List<Element> elementsFromResult(JsonObject result, String selector) {
+        return elementsFromResult(result, selector, null);
+    }
+
+    private List<Element> elementsFromResult(JsonObject result, String selector,
+                                             Map<String, Object> locator) {
         List<Element> elements = new ArrayList<>();
         JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new JsonArray();
         for (int i = 0; i < arr.size(); i++) {
             JsonObject el = arr.get(i).getAsJsonObject();
             ElementInfo info = parseElementInfo(el);
-            elements.add(new Element(client, contextId, selector, i, info));
+            elements.add(new Element(client, contextId, selector, i, info, locator));
         }
         return elements;
     }
