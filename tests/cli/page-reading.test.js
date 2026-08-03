@@ -26,6 +26,28 @@ after(() => {
   if (serverProcess) serverProcess.kill();
 });
 
+describe('CLI: large payloads', () => {
+  test('page text over the old 1MB daemon cap survives the round trip (#209)', () => {
+    // The CLI<->daemon socket read used a fixed 1MB bufio.Scanner buffer, so
+    // any larger response died with "bufio.Scanner: token too long".
+    const size = 3 * 1024 * 1024;
+    execSync(
+      `${VIBIUM} eval "document.body.innerHTML = '<p>' + 'x'.repeat(${size}) + '</p>'; 'ok'"`,
+      { encoding: 'utf-8', timeout: 60000 }
+    );
+
+    const out = execSync(`${VIBIUM} text`, {
+      encoding: 'utf-8',
+      timeout: 60000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.ok(
+      out.length >= size,
+      `expected at least ${size} bytes back, got ${out.length}`
+    );
+  });
+});
+
 describe('CLI: Page Reading', () => {
   test('text command returns page text', () => {
     const result = execSync(`${VIBIUM} text ${baseURL}/example`, {
