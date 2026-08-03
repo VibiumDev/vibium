@@ -101,6 +101,21 @@ describe('Daemon CLI: Element state commands', () => {
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('/more-information'), 'Should return href value');
   });
+
+  test('attr distinguishes a present-but-empty attribute from an absent one (#198)', () => {
+    clicker(`content '<button id="b" disabled>Go</button>'`);
+
+    // Present but valueless: empty string, and a success exit.
+    const present = clickerJSON('attr "#b" "disabled"');
+    assert.strictEqual(present.ok, true);
+    assert.strictEqual(present.result, '', 'a valueless attribute is present with an empty value');
+
+    // Absent: a distinct value, but still a normal result — erroring here is
+    // what #153 was about.
+    const absent = clickerJSON('attr "#b" "nonexistent"');
+    assert.strictEqual(absent.ok, true, 'an absent attribute must not error (#153)');
+    assert.strictEqual(absent.result, 'null', 'absent must be distinguishable from present-but-empty');
+  });
 });
 
 describe('Daemon CLI: Accessibility and search commands', () => {
