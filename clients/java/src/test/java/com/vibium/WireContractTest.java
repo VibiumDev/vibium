@@ -6,6 +6,13 @@ import com.vibium.types.A11yOptions;
 import com.vibium.types.StartOptions;
 import com.vibium.types.WaitOptions;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.util.List;
 
@@ -121,6 +128,34 @@ class WireContractTest {
         field.fill("Ada");
         assertEquals("Ada", field.value());
         assertTrue(field.isVisible());
+    }
+
+    /**
+     * onDownload could never fire: the client listened for vibium:download.*
+     * events the engine does not emit, and read navigationId where the BiDi
+     * payload carries navigation (#255).
+     */
+    @Test
+    void onDownloadFiresAndSaveAsWritesTheFile(@TempDir Path tmp) throws Exception {
+        page.go(server.baseUrl() + "/download");
+
+        CountDownLatch started = new CountDownLatch(1);
+        AtomicReference<Download> seen = new AtomicReference<>();
+        page.onDownload(d -> {
+            seen.set(d);
+            started.countDown();
+        });
+
+        page.find("#download-link").click();
+        assertTrue(started.await(30, TimeUnit.SECONDS), "onDownload should fire");
+        assertEquals("test.txt", seen.get().suggestedFilename());
+
+        // saveAs needs the completed temp path, which only arrives via
+        // downloadEnd — so this also covers the completion half.
+        Path dest = tmp.resolve("saved.txt");
+        seen.get().saveAs(dest.toString());
+        assertTrue(Files.exists(dest), "saveAs should have written the file");
+        assertEquals("download content", Files.readString(dest).trim());
     }
 
     private static int countNodes(A11yNode node) {
