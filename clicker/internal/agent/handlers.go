@@ -917,18 +917,22 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 
 	// If filename provided, save to file (only if screenshotDir is configured)
 	if filename, ok := args["filename"].(string); ok && filename != "" {
-		if h.screenshotDir == "" {
-			return nil, fmt.Errorf("screenshot file saving is disabled (use --screenshot-dir to enable)")
+		// An absolute path is an explicit destination and is written as given;
+		// the CLI resolves -o against the user's shell so it always arrives in
+		// that form. A bare name has no directory to honor, so it lands in the
+		// configured screenshot dir — the MCP case, where the caller has no
+		// working directory to reason about (#119).
+		fullPath := filename
+		if !filepath.IsAbs(filename) {
+			if h.screenshotDir == "" {
+				return nil, fmt.Errorf("screenshot file saving is disabled (use --screenshot-dir to enable)")
+			}
+			fullPath = filepath.Join(h.screenshotDir, filepath.Base(filename))
 		}
 
-		// Create directory if it doesn't exist
-		if err := os.MkdirAll(h.screenshotDir, 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			return nil, fmt.Errorf("failed to create screenshot directory: %w", err)
 		}
-
-		// Use only the basename to prevent path traversal
-		safeName := filepath.Base(filename)
-		fullPath := filepath.Join(h.screenshotDir, safeName)
 
 		pngData, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
