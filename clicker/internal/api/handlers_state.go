@@ -336,7 +336,9 @@ func (r *Router) handleVibiumElIsEditable(session *BrowserSession, cmd bidiComma
 		return
 	}
 
-	script, args := buildElBoolScript(ep, `return !el.disabled && !el.readOnly;`)
+	// Same question as the fill path and `is actionable`, so the same predicate:
+	// !disabled && !readOnly alone called a <div> editable.
+	script, args := buildElBoolScript(ep, `return `+EditablePredicateJS+`;`)
 	editable, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)

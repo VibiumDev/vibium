@@ -163,6 +163,25 @@ func buildSemanticActionableScript(ep ElementParams, checkVisible, checkReceives
 // actionabilityCheckBody returns the shared JS check body appended after
 // element finding + scroll. Uses the boolean flags passed as arguments.
 // Stability is NOT checked here — it's handled on the Go side via two calls.
+// FillableInputTypesJS is a JS array literal of the input types whose value
+// fill can set: text-like inputs plus the value-bearing pickers. Excludes
+// checkbox/radio (use check), file (use upload) and button/submit/reset/image.
+//
+// One definition, because the action path, `vibium is actionable` and
+// element.isEditable each had their own copy and they had already drifted —
+// fill worked on input[type=range] while `is actionable` called it not
+// editable (#264).
+const FillableInputTypesJS = `['text','password','email','number','search','tel','url',` +
+	`'range','color','date','time','datetime-local','month','week']`
+
+// EditablePredicateJS is a JS expression, evaluated with `el` in scope, that is
+// true when fill can set this element's value.
+const EditablePredicateJS = `(!el.disabled && !el.readOnly && el.getAttribute('aria-readonly') !== 'true' && (
+	el.tagName.toLowerCase() === 'input'
+		? ` + FillableInputTypesJS + `.includes((el.type || 'text').toLowerCase())
+		: (el.tagName.toLowerCase() === 'textarea' || el.isContentEditable)
+))`
+
 func actionabilityCheckBody() string {
 	return `
 			if (chkVisible) {
@@ -198,8 +217,7 @@ func actionabilityCheckBody() string {
 					// picker types (range/color/date/time family), not just text inputs.
 					// Excludes checkbox/radio (use check), file (use upload), and
 					// button/submit/reset/image (not value inputs).
-					const fillableTypes = ['text','password','email','number','search','tel','url',
-						'range','color','date','time','datetime-local','month','week'];
+					const fillableTypes = ` + FillableInputTypesJS + `;
 					if (!fillableTypes.includes(t))
 						return JSON.stringify({status:'failed', check:'editable', reason:'input type ' + t + ' not editable'});
 				} else if (tag !== 'textarea' && !el.isContentEditable) {

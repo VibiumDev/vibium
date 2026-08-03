@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // GetCacheDir returns the platform-specific cache directory for Vibium.
@@ -65,55 +68,91 @@ func GetChromeForTestingDir() (string, error) {
 	return filepath.Join(cacheDir, "chrome-for-testing"), nil
 }
 
+// resolveVersionDir returns the newest cached version directory containing BOTH
+// Chrome and chromedriver.
+//
+// They used to be resolved independently, each taking the first directory that
+// held its own binary, so a cache with Chrome under 146.x and chromedriver under
+// 147.x produced a mismatched pair that IsInstalled() certified as fine — the
+// failure surfaced later as chromedriver's "only supports Chrome version N"
+// (#265). Newest-first also replaces os.ReadDir's lexical order, under which
+// "99.0" sorts above "100.0".
+func resolveVersionDir() (string, error) {
+	cftDir, err := GetChromeForTestingDir()
+	if err != nil {
+		return "", err
+	}
+
+	entries, err := os.ReadDir(cftDir)
+	if err != nil {
+		return "", err
+	}
+
+	var complete []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(cftDir, entry.Name())
+		if _, err := os.Stat(getChromePathInVersion(dir)); err != nil {
+			continue
+		}
+		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			continue
+		}
+		complete = append(complete, entry.Name())
+	}
+	if len(complete) == 0 {
+		return "", os.ErrNotExist
+	}
+
+	sort.Slice(complete, func(i, j int) bool {
+		return compareVersions(complete[i], complete[j]) > 0
+	})
+	return filepath.Join(cftDir, complete[0]), nil
+}
+
+// compareVersions orders dotted numeric versions, falling back to string order
+// for anything that does not parse.
+func compareVersions(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var ai, bi int
+		if i < len(as) {
+			ai, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			bi, _ = strconv.Atoi(bs[i])
+		}
+		if ai != bi {
+			if ai > bi {
+				return 1
+			}
+			return -1
+		}
+	}
+	return strings.Compare(a, b)
+}
+
 // GetChromeExecutable returns the path to Chrome for Testing executable.
 // Only checks Vibium cache - does not fall back to system Chrome.
 func GetChromeExecutable() (string, error) {
-	cftDir, err := GetChromeForTestingDir()
+	dir, err := resolveVersionDir()
 	if err != nil {
 		return "", err
 	}
-
-	// Look for version directories
-	entries, err := os.ReadDir(cftDir)
-	if err != nil {
-		return "", err
-	}
-
-	// Use the first (or latest) version found
-	for _, entry := range entries {
-		if entry.IsDir() {
-			chromePath := getChromePathInVersion(filepath.Join(cftDir, entry.Name()))
-			if _, err := os.Stat(chromePath); err == nil {
-				return chromePath, nil
-			}
-		}
-	}
-
-	return "", os.ErrNotExist
+	return getChromePathInVersion(dir), nil
 }
 
-// GetChromedriverPath returns the path to the cached chromedriver.
+// GetChromedriverPath returns the path to the cached chromedriver. It resolves
+// from the same version directory as GetChromeExecutable, so the two always
+// match.
 func GetChromedriverPath() (string, error) {
-	cftDir, err := GetChromeForTestingDir()
+	dir, err := resolveVersionDir()
 	if err != nil {
 		return "", err
 	}
-
-	entries, err := os.ReadDir(cftDir)
-	if err != nil {
-		return "", err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			driverPath := getChromedriverPathInVersion(filepath.Join(cftDir, entry.Name()))
-			if _, err := os.Stat(driverPath); err == nil {
-				return driverPath, nil
-			}
-		}
-	}
-
-	return "", os.ErrNotExist
+	return getChromedriverPathInVersion(dir), nil
 }
 
 // getChromePathInVersion returns the Chrome executable path within a version directory.

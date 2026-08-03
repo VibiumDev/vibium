@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vibium/clicker/internal/api"
 
 	"github.com/spf13/cobra"
 )
@@ -122,7 +123,7 @@ func newIsCmd() *cobra.Command {
 					const tag = el.tagName.toLowerCase();
 					if (tag === 'input') {
 						const t = (el.type || 'text').toLowerCase();
-						editable = ['text','password','email','number','search','tel','url'].includes(t);
+						editable = ` + api.FillableInputTypesJS + `.includes(t);
 					} else if (tag !== 'textarea' && !el.isContentEditable) {
 						editable = false;
 					}
