@@ -1744,7 +1744,8 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 	findAllScript := `(selector, limit) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
-		const els = document.querySelectorAll(selector);
+		` + api.PierceQueryJS() + `
+		const els = pierceQueryAll(document, selector);
 		const results = [];
 		const n = Math.min(els.length, limit);
 		for (let i = 0; i < n; i++) {

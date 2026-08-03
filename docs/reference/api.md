@@ -4,6 +4,8 @@ Command reference for every Vibium surface: wire protocol, CLI, MCP tools, JS cl
 
 **Legend:** Filled cell = implemented. `⬜` = planned, not yet done. `—` = not applicable for this surface.
 
+For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, and semantic locators — see [Selectors](selectors.md).
+
 ---
 
 ## Browser

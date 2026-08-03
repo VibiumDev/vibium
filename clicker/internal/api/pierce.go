@@ -22,7 +22,10 @@ func PierceQueryJS() string {
 
 		function __shadowRootsUnder(root) {
 			const roots = [];
+			// A host passed in directly owns a shadow root that is not reachable
+			// by querying its light-DOM children, so seed with it explicitly.
 			const stack = [root];
+			if (root.shadowRoot) stack.push(root.shadowRoot);
 			while (stack.length) {
 				const r = stack.pop();
 				if (!r) continue;
