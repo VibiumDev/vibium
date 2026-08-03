@@ -5,7 +5,8 @@
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
+const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
 // Build a child env with any ambient session stripped, so bare commands
@@ -30,6 +31,17 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(clicker(`${args} --json`, opts));
 }
 
+// `daemon status` exits non-zero when the daemon is stopped, which execSync
+// treats as a throw. Tests that assert "not running" need the output, not the
+// exit code.
+function clickerStatus(args, opts = {}) {
+  try {
+    return clicker(args, opts);
+  } catch (e) {
+    return `${e.stdout || ''}${e.stderr || ''}`.trim();
+  }
+}
+
 // Helper to stop a session's daemon (ignore errors if not running)
 function stopDaemon(session) {
   try {
@@ -50,9 +62,22 @@ function stopAll() {
   stopDaemon('s2');
 }
 
+let serverProcess, baseURL;
+
 describe('Daemon: Named sessions', () => {
-  before(stopAll);
-  after(stopAll);
+  before(async () => {
+    stopAll();
+    serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    baseURL = await new Promise((resolve) => {
+      serverProcess.stdout.once('data', (d) => resolve(d.toString().trim()));
+    });
+  });
+  after(() => {
+    stopAll();
+    if (serverProcess) serverProcess.kill();
+  });
 
   test('two sessions run separate daemons concurrently', () => {
     clicker('--session s1 daemon start --headless');
@@ -68,14 +93,14 @@ describe('Daemon: Named sessions', () => {
     assert.notStrictEqual(s1.pid, s2.pid, 'sessions should be separate processes');
     assert.notStrictEqual(s1.socket, s2.socket, 'sessions should use separate sockets');
 
-    const def = clicker('daemon status');
+    const def = clickerStatus('daemon status');
     assert.match(def, /not running/i, 'default session should be unaffected');
   });
 
   test('stopping one session leaves the other running', () => {
     clicker('--session s1 daemon stop');
 
-    const s1 = clicker('--session s1 daemon status');
+    const s1 = clickerStatus('--session s1 daemon status');
     assert.match(s1, /not running/i, 's1 should be stopped');
 
     const s2 = clickerJSON('--session s2 daemon status');
@@ -89,7 +114,7 @@ describe('Daemon: Named sessions', () => {
   });
 
   test('auto-start uses the named session', () => {
-    const nav = clickerJSON('go https://example.com --headless', {
+    const nav = clickerJSON(`go ${baseURL}/example --headless`, {
       env: { VIBIUM_SESSION: 's1' },
     });
     assert.strictEqual(nav.ok, true, 'navigate should auto-start the s1 daemon');
@@ -97,7 +122,7 @@ describe('Daemon: Named sessions', () => {
     const s1 = clickerJSON('--session s1 daemon status');
     assert.strictEqual(s1.running, true, 's1 should be running after auto-start');
 
-    const def = clicker('daemon status');
+    const def = clickerStatus('daemon status');
     assert.match(def, /not running/i, 'default session should be unaffected');
   });
 
