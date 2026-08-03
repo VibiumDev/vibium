@@ -56,7 +56,11 @@ func newDaemonStartCmd() *cobra.Command {
   # Auto-shutdown after 30 minutes of inactivity
 
   vibium daemon start --connect ws://remote:9515/session
-  # Connect to a remote browser instead of launching a local one`,
+  # Connect to a remote browser instead of launching a local one
+
+  vibium --session projA daemon start
+  # Isolated session "projA": own daemon, own browser, socket
+  # vibium-projA.sock; VIBIUM_SESSION=projA does the same`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !foreground && !internal {
 				// Daemonize: re-exec as detached child
@@ -132,6 +136,7 @@ func newDaemonStatusCmd() *cobra.Command {
 					"pid":     status.PID,
 					"uptime":  status.Uptime,
 					"socket":  status.Socket,
+					"session": status.Session,
 				})
 				return
 			}
@@ -141,6 +146,9 @@ func newDaemonStatusCmd() *cobra.Command {
 			fmt.Printf("pid:      %d\n", status.PID)
 			fmt.Printf("uptime:   %s\n", status.Uptime)
 			fmt.Printf("socket:   %s\n", status.Socket)
+			if status.Session != "" {
+				fmt.Printf("session:  %s\n", status.Session)
+			}
 		},
 	}
 }
@@ -255,6 +263,14 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 
 // daemonize spawns the daemon as a detached background process.
 func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+	// Resolve the socket path first: an unusable path (bad session name,
+	// over-long socket path) should fail here, not in the detached child.
+	socketPath, err := paths.GetSocketPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Clean stale files first
 	daemon.CleanStale()
 
@@ -297,7 +313,6 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 	}
 
 	// Poll for socket availability
-	socketPath, _ := paths.GetSocketPath()
 	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
 		fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
 		os.Exit(1)

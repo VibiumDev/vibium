@@ -1,8 +1,10 @@
 package paths
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -203,27 +205,85 @@ func GetDaemonDir() (string, error) {
 	return GetCacheDir()
 }
 
+// SessionName returns the daemon session name from the VIBIUM_SESSION
+// environment variable. Empty means the default (shared) session.
+// Named sessions get their own daemon socket, PID file, and browser,
+// so concurrent CLI users on one host stay isolated.
+func SessionName() string {
+	return os.Getenv("VIBIUM_SESSION")
+}
+
+var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// ValidateSessionName checks that a session name is safe to embed in
+// socket filenames and Windows named-pipe names.
+func ValidateSessionName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if !sessionNameRe.MatchString(name) {
+		return fmt.Errorf("invalid session name %q: use only letters, digits, '-' and '_' (max 64 chars)", name)
+	}
+	return nil
+}
+
+// sessionSuffix returns "-<name>" for a named session, "" for the default.
+func sessionSuffix() (string, error) {
+	name := SessionName()
+	if err := ValidateSessionName(name); err != nil {
+		return "", err
+	}
+	if name == "" {
+		return "", nil
+	}
+	return "-" + name, nil
+}
+
+// maxSocketPathLen returns the longest usable Unix socket path for this
+// platform. sockaddr_un.sun_path holds 104 bytes on macOS/BSD and 108 on
+// Linux, including the trailing NUL.
+func maxSocketPathLen() int {
+	if runtime.GOOS == "darwin" {
+		return 103
+	}
+	return 107
+}
+
 // GetSocketPath returns the platform-specific socket path for the daemon.
-// macOS/Linux: ~/Library/Caches/vibium/vibium.sock or ~/.cache/vibium/vibium.sock
-// Windows: \\.\pipe\vibium (named pipe)
+// macOS/Linux: ~/Library/Caches/vibium/vibium[-<session>].sock or ~/.cache/vibium/vibium[-<session>].sock
+// Windows: \\.\pipe\vibium[-<session>] (named pipe)
 func GetSocketPath() (string, error) {
+	suffix, err := sessionSuffix()
+	if err != nil {
+		return "", err
+	}
 	if runtime.GOOS == "windows" {
-		return `\\.\pipe\vibium`, nil
+		return `\\.\pipe\vibium` + suffix, nil
 	}
 	dir, err := GetDaemonDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "vibium.sock"), nil
+	path := filepath.Join(dir, "vibium"+suffix+".sock")
+	// Binding a socket beyond sun_path's capacity fails deep inside daemon
+	// startup; reject it here with an actionable message instead.
+	if len(path) > maxSocketPathLen() {
+		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or point VIBIUM_CACHE_DIR at a shorter path", path, len(path), maxSocketPathLen())
+	}
+	return path, nil
 }
 
 // GetPIDPath returns the path to the daemon PID file.
 func GetPIDPath() (string, error) {
+	suffix, err := sessionSuffix()
+	if err != nil {
+		return "", err
+	}
 	dir, err := GetDaemonDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "vibium.pid"), nil
+	return filepath.Join(dir, "vibium"+suffix+".pid"), nil
 }
 
 // GetScreenshotDir returns the platform-specific default directory for screenshots.

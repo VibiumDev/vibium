@@ -6,3 +6,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Every pin lives in the same workflow file, so ungrouped updates arrive
+    # as N PRs that all edit one line each and conflict with each other the
+    # moment one merges. One PR per run instead.
+    groups:
+      actions:
+        patterns:
+          - "*"

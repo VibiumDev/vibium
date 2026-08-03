@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/paths"
 )
 
 // connectFromEnv reads VIBIUM_CONNECT_URL and VIBIUM_CONNECT_API_KEY from the environment.
@@ -32,6 +33,7 @@ var (
 	headless   bool
 	verbose    bool
 	jsonOutput bool
+	session    string
 )
 
 func main() {
@@ -40,11 +42,19 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   progName,
 		Short: "Browser automation for AI agents and humans",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// Enable logging only if --verbose is used
 			if verbose {
 				log.Setup(log.LevelVerbose)
 			}
+			// Bridge the flag to the env var so the paths package and any
+			// auto-started daemon child process resolve the same session.
+			if session != "" {
+				if err := os.Setenv("VIBIUM_SESSION", session); err != nil {
+					return err
+				}
+			}
+			return paths.ValidateSessionName(paths.SessionName())
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
@@ -55,6 +65,7 @@ func main() {
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
+	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")
 
 	// Cobra's built-in completion command emits a bare `compdef` call, which
 	// fails when the script is sourced before compinit has run (#201).

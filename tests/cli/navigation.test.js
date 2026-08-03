@@ -69,6 +69,25 @@ describe('CLI: Navigation', () => {
     }
   });
 
+  test('screenshot honors -o paths instead of redirecting to the screenshot dir (#119)', () => {
+    // The daemon used to reduce -o to its basename and join it with
+    // ~/Pictures/Vibium, so every path the user typed was discarded.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-shot-'));
+    const nested = path.join(dir, 'sub', 'deep.png');
+    try {
+      const result = execSync(`${VIBIUM} screenshot ${baseURL}/example -o ${nested}`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      assert.match(result, new RegExp(nested.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+        `should report the path it was given, got: ${result}`);
+      assert.ok(fs.existsSync(nested), 'screenshot should be at the requested path');
+      assert.ok(fs.statSync(nested).size > 1000, 'should be a real PNG');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('eval command executes JavaScript', () => {
     const result = execSync(`${VIBIUM} eval ${baseURL}/example "document.title"`, {
       encoding: 'utf-8',
