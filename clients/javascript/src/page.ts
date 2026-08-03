@@ -295,7 +295,8 @@ export class Page {
             cb(url);
           }
         }
-      } else if (event.method === 'browsingContext.fragmentNavigated') {
+      } else if (event.method === 'browsingContext.fragmentNavigated'
+                 || event.method === 'browsingContext.historyUpdated') {
         const url = params.url as string | undefined;
         if (url) {
           for (const cb of this.navigationCallbacks) {

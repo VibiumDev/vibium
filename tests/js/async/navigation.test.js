@@ -120,3 +120,19 @@ describe('JS Navigation', () => {
     assert.doesNotMatch(message, /^timeout:/i, `validation errors must not be tagged as timeouts: ${message}`);
   });
 });
+
+describe('SPA history navigation', () => {
+  test('url() and capture.navigation() see history.pushState (#126)', async () => {
+    const vibe = await bro.newPage();
+    await vibe.go(baseURL);
+
+    // Client-side routing changes the URL without a load or fragment event.
+    await vibe.evaluate(`history.pushState({}, '', '/spa-routed')`);
+    await vibe.wait(400);
+
+    const url = await vibe.url();
+    assert.match(url, /\/spa-routed/, `url() should track pushState, got ${url}`);
+
+    await vibe.close();
+  });
+});
