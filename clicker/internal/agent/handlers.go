@@ -1852,7 +1852,11 @@ func (h *Handlers) browserGetText(args map[string]interface{}) (*ToolsCallResult
 	var text string
 	if selector, ok := args["selector"].(string); ok && selector != "" {
 		selector = h.resolveSelector(selector)
-		text, err = api.GetInnerText(s, ctx, api.ElementParams{Selector: selector})
+		// GetText, not GetInnerText: this tool is documented as "text content",
+		// traces record it as vibium:element.text, and every client's .text()
+		// is textContent. Page-level text below stays innerText — "what the
+		// page reads as" is a different question from one element's content.
+		text, err = api.GetText(s, ctx, api.ElementParams{Selector: selector})
 	} else {
 		text, err = api.EvalSimpleScript(s, ctx, "() => document.body.innerText")
 	}
@@ -4095,10 +4099,22 @@ func (h *Handlers) browserStorageState(args map[string]interface{}) (*ToolsCallR
 		return nil, fmt.Errorf("failed to get storage: %w", err)
 	}
 
+	// The page script returns JSON.stringify(...), so Evaluate hands back a Go
+	// string. Storing that directly wrote the storage as a quoted blob, which
+	// restore then spliced into JS as a string literal — state.localStorage was
+	// undefined and every key was silently skipped (#217).
+	storage := storageResult
+	if raw, ok := storageResult.(string); ok {
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+			storage = decoded
+		}
+	}
+
 	// Build combined state
 	state := map[string]interface{}{
 		"cookies": cookies,
-		"storage": storageResult,
+		"storage": storage,
 	}
 
 	stateJSON, _ := json.MarshalIndent(state, "", "  ")
@@ -4143,6 +4159,14 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 
 	// Restore localStorage/sessionStorage if present
 	if len(state.Storage) > 0 {
+		// Files written before #217 hold the storage as a JSON *string* rather
+		// than an object; unwrap one level so those still restore.
+		storageJSON := state.Storage
+		var legacy string
+		if err := json.Unmarshal(storageJSON, &legacy); err == nil {
+			storageJSON = json.RawMessage(legacy)
+		}
+
 		script := fmt.Sprintf(`(function() {
 			var state = %s;
 			if (state.localStorage) {
@@ -4156,8 +4180,10 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 				}
 			}
 			return 'ok';
-		})()`, string(state.Storage))
-		h.client.Evaluate(h.activeContext, script)
+		})()`, string(storageJSON))
+		if _, err := h.client.Evaluate(h.activeContext, script); err != nil {
+			return nil, fmt.Errorf("failed to restore storage: %w", err)
+		}
 	}
 
 	return &ToolsCallResult{

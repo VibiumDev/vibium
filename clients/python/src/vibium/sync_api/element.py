@@ -60,6 +60,10 @@ class Element:
     def focus(self, timeout: Optional[int] = None) -> None:
         self._loop.run(self._async.focus(timeout))
 
+    def highlight(self, timeout: Optional[int] = None) -> None:
+        """Briefly outline the element so a human watching can see it."""
+        self._loop.run(self._async.highlight(timeout))
+
     def drag_to(self, target: Element, timeout: Optional[int] = None) -> None:
         self._loop.run(self._async.drag_to(target._async, timeout))
 

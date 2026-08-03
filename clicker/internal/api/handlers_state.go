@@ -19,8 +19,7 @@ func (r *Router) handleVibiumElText(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
-	val, err := r.evalElementScript(session, context, script, args)
+	val, err := GetText(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -67,8 +66,7 @@ func (r *Router) handleVibiumElInnerText(session *BrowserSession, cmd bidiComman
 		return
 	}
 
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
-	val, err := r.evalElementScript(session, context, script, args)
+	val, err := GetInnerText(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -819,9 +817,10 @@ func (r *Router) resolveElementNoWait(session *BrowserSession, context string, e
 // Exported standalone state query functions — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
-// GetText returns the visible text of an element (innerText).
+// GetText returns the element's textContent, trimmed. GetInnerText is the
+// rendered-text variant; keeping both on innerText made them the same command.
 func GetText(s Session, context string, ep ElementParams) (string, error) {
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
+	script, args := buildElStateScript(ep, `(el.textContent || '').trim()`)
 	return EvalElementScript(s, context, script, args)
 }
 
