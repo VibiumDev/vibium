@@ -108,6 +108,8 @@ class TestServer {
         + "<input type=\"checkbox\" id=\"cb\" checked />"
         + "<button disabled>Disabled Button</button>"
         + "</main>"
+        // Generic containers carry no role, so they appear only when everything=true.
+        + "<div><div><span>plain wrapper text</span></div></div>"
         + "</body></html>";
 
     private static final String DOWNLOAD_HTML = "<html><head><title>Download</title></head><body>"

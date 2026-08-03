@@ -77,8 +77,9 @@ func (p *APISession) SetLastElementBox(box *BoxInfo) {
 // safe no-op.
 type AgentSession struct {
 	Client   *bidi.Client
-	Context  string              // optional explicit context override (active tab)
-	OnBoxSet func(box *BoxInfo)  // optional callback when element box is set
+	Context  string             // optional explicit context override (active tab)
+	OnBoxSet func(box *BoxInfo) // optional callback when element box is set
+	Prompts  *PromptTracker     // optional; when set, prompt-blocked commands fail fast
 }
 
 // NewAgentSession creates an AgentSession.
@@ -87,6 +88,9 @@ func NewAgentSession(client *bidi.Client) *AgentSession {
 }
 
 func (m *AgentSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
+		return nil, err
+	}
 	msg, err := m.Client.SendCommand(method, params)
 	if err != nil {
 		return nil, err
@@ -101,6 +105,9 @@ func (m *AgentSession) SendBidiCommand(method string, params map[string]interfac
 }
 
 func (m *AgentSession) SendBidiCommandWithTimeout(method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
+		return nil, err
+	}
 	msg, err := m.Client.SendCommandWithTimeout(method, params, timeout)
 	if err != nil {
 		return nil, err

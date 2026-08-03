@@ -127,3 +127,53 @@ describe('CLI: Page Context Tracking', () => {
     assert.ok(!pages.includes('[1]'), 'Should only have one page remaining');
   });
 });
+
+describe('CLI: active context reaches script-backed commands', () => {
+  // The commands above only exercised `title`, which routes through
+  // newSession(). eval/find/map called the BiDi client with an empty context,
+  // which resolves to "the first context" — so they silently ignored both page
+  // switches and frame switches (#205).
+
+  test('eval and find follow a page switch', () => {
+    execSync(`${VIBIUM} go ${baseURL}/`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} page new ${baseURL}/login`, { encoding: 'utf-8', timeout: 30000 });
+
+    const onNewPage = execSync(`${VIBIUM} eval "location.pathname"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.match(onNewPage, /\/login/, 'eval should run on the newly opened page');
+
+    execSync(`${VIBIUM} page switch 0`, { encoding: 'utf-8', timeout: 30000 });
+    const backOnHome = execSync(`${VIBIUM} eval "location.pathname"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(backOnHome, '/', 'eval should follow the switch back to page 0');
+
+    execSync(`${VIBIUM} page switch 1`, { encoding: 'utf-8', timeout: 30000 });
+    const found = execSync(`${VIBIUM} find h2`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(found, /Login/, 'find should search the active page');
+
+    execSync(`${VIBIUM} page close`, { encoding: 'utf-8', timeout: 30000 });
+  });
+
+  test('eval follows a frame switch and persists to the next command (#205)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/frames`, { encoding: 'utf-8', timeout: 30000 });
+
+    const outer = execSync(`${VIBIUM} eval "document.querySelector('h1').id"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(outer, 'outer', 'setup: should start on the top-level document');
+
+    execSync(`${VIBIUM} frame myframe`, { encoding: 'utf-8', timeout: 30000 });
+
+    // Separate process — the frame only persists if the daemon recorded it.
+    const inner = execSync(`${VIBIUM} eval "document.querySelector('h1').id"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(inner, 'inner', 'eval should run inside the switched frame');
+  });
+});

@@ -53,7 +53,9 @@ You'll see:
 2. The page load
 3. The AI respond with the screenshot
 
-Screenshots are saved to `~/Pictures/Vibium/` (macOS/Linux) or `Pictures\Vibium\` (Windows).
+Screenshots are saved to `~/Pictures/Vibium/` (macOS/Linux) or `Pictures\Vibium\` (Windows). The AI has no working directory you can see, so they go somewhere you can reliably find them. Change it with `--screenshot-dir` below.
+
+The `vibium` CLI is different: there you *do* have a working directory, so `vibium screenshot` writes to it. See [Screenshots](../how-to-guides/screenshots.md).
 
 ---
 

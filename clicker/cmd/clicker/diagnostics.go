@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/bidi"
@@ -112,6 +113,11 @@ func newWSTestCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			url := args[0]
+			if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+				ws := strings.Replace(strings.Replace(url, "https://", "wss://", 1), "http://", "ws://", 1)
+				fmt.Fprintf(os.Stderr, "Error: %s is not a WebSocket URL. Try: %s\n", url, ws)
+				os.Exit(1)
+			}
 			fmt.Printf("Connecting to %s...\n", url)
 
 			conn, err := bidi.Connect(url)
@@ -164,13 +170,22 @@ func newBiDiTestCmd() *cobra.Command {
 			fmt.Printf("       Session ID: %s\n", launchResult.SessionID)
 
 			fmt.Println("[2/5] WebDriver session created with BiDi enabled")
-			fmt.Printf("       WebSocket URL: %s\n", launchResult.WebSocketURL)
 
-			fmt.Println("[3/5] Connecting to BiDi WebSocket...")
-			conn, err := bidi.Connect(launchResult.WebSocketURL)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
-				os.Exit(1)
+			// The BiDi-first launch path hands back the open connection and
+			// leaves WebSocketURL empty; only the HTTP fallback needs a dial.
+			var conn *bidi.Connection
+			if launchResult.BidiConn != nil {
+				fmt.Println("[3/5] Reusing BiDi WebSocket from launch...")
+				conn = launchResult.BidiConn
+			} else {
+				fmt.Printf("       WebSocket URL: %s\n", launchResult.WebSocketURL)
+				fmt.Println("[3/5] Connecting to BiDi WebSocket...")
+				var err error
+				conn, err = bidi.Connect(launchResult.WebSocketURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error connecting: %v\n", err)
+					os.Exit(1)
+				}
 			}
 			defer conn.Close()
 			fmt.Println("       Connected!")

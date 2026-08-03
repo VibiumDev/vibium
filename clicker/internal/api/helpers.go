@@ -2,8 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/vibium/clicker/internal/bidi"
 )
 
 // resolveContext extracts the "context" param or returns the first context from getTree.
@@ -51,38 +54,33 @@ func checkBidiError(resp json.RawMessage) error {
 // Success structure:   { "result": { "type": "success",   "result": { "type": "string", "value": "..." } } }
 // Exception structure: { "result": { "type": "exception", "exceptionDetails": { "text": "..." } } }
 func parseScriptResult(resp json.RawMessage) (string, error) {
-	var result struct {
-		Result struct {
-			Type   string `json:"type"`
-			Result struct {
-				Type  string `json:"type"`
-				Value string `json:"value,omitempty"`
-			} `json:"result"`
-			ExceptionDetails struct {
-				Text string `json:"text"`
-			} `json:"exceptionDetails"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return "", fmt.Errorf("failed to parse script result: %w", err)
-	}
-
 	// A thrown exception has no result value — surface it instead of silently
 	// returning an empty string, which previously masked errors such as the
 	// "Illegal invocation" crash when filling a <textarea> (issues #117, #111).
-	if result.Result.Type == "exception" {
-		text := result.Result.ExceptionDetails.Text
-		if text == "" {
-			text = "script threw an exception"
+	sr, err := bidi.ParseScriptResponse(resp)
+	if err != nil {
+		var se *bidi.ScriptException
+		if errors.As(err, &se) {
+			if se.Text == "" {
+				return "", fmt.Errorf("script threw an exception")
+			}
+			return "", fmt.Errorf("%s", se.Text)
 		}
-		return "", fmt.Errorf("%s", text)
+		return "", err
 	}
 
-	if result.Result.Result.Type == "null" || result.Result.Result.Type == "undefined" {
-		return "", fmt.Errorf("script returned %s", result.Result.Result.Type)
+	if sr.Result.Type == "null" || sr.Result.Type == "undefined" {
+		return "", fmt.Errorf("script returned %s", sr.Result.Type)
 	}
 
-	return result.Result.Result.Value, nil
+	// Callers of this helper inject scripts that return a string (typically
+	// JSON.stringify'd); anything else is a bug in the caller's script.
+	value, ok := sr.Result.Value.(string)
+	if !ok {
+		return "", fmt.Errorf("script returned %s, expected string", sr.Result.Type)
+	}
+
+	return value, nil
 }
 
 // resolveElementRef finds an element and returns its BiDi sharedId.

@@ -5,7 +5,7 @@
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
@@ -21,7 +21,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -34,20 +34,35 @@ function stopDaemon() {
   }
 }
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+  // One daemon for the whole file; each describe re-navigates for a clean page.
+  stopDaemon();
+  clicker('daemon start --headless');
+});
+
+after(() => {
+  stopDaemon();
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('Daemon CLI: Navigation commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
-  });
-
-  after(() => {
-    stopDaemon();
+    clicker(`go ${baseURL}/example`);
   });
 
   test('back navigates back in history', () => {
     // Navigate to a second page
-    clickerJSON('go https://example.com/');
+    clickerJSON(`go ${baseURL}/more-information`);
     const result = clickerJSON('back');
     assert.strictEqual(result.ok, true, 'back should succeed');
   });
@@ -66,13 +81,7 @@ describe('Daemon CLI: Navigation commands', () => {
 
 describe('Daemon CLI: Element state commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
-  });
-
-  after(() => {
-    stopDaemon();
+    clicker(`go ${baseURL}/example`);
   });
 
   test('is visible returns true for visible element', () => {
@@ -90,19 +99,80 @@ describe('Daemon CLI: Element state commands', () => {
   test('attr gets element attribute', () => {
     const result = clickerJSON('attr "a" "href"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('iana.org'), 'Should return href value');
+    assert.ok(result.result.includes('/more-information'), 'Should return href value');
+  });
+
+  test('is --fail exits non-zero on a false answer (#206)', () => {
+    clicker(`content '<h1 id="h">hi</h1>'`);
+
+    // Default exit code is unchanged — a well-formed "false" is a successful query.
+    const plain = clickerJSON('is visible "#nope"');
+    assert.strictEqual(plain.ok, true);
+    assert.strictEqual(plain.result.trim(), 'false');
+
+    assert.throws(
+      () => clicker('is visible "#nope" --fail'),
+      /.*/,
+      '--fail should turn a false answer into a non-zero exit'
+    );
+    // A true answer still succeeds with the flag on.
+    assert.match(clicker('is visible "#h" --fail'), /true/);
+  });
+
+  test('find honours --timeout and errors on a miss (#206)', () => {
+    clicker(`content '<h1 id="h">hi</h1>'`);
+
+    const started = Date.now();
+    assert.throws(
+      () => clicker(`find "#nothing" --timeout 2s`),
+      /element not found/,
+      'a CSS miss should error, not return "@e1 <nil>" with exit 0'
+    );
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 15000, `--timeout 2s should bound the wait, took ${elapsed}ms`);
+
+    assert.match(clicker('find "#h"'), /@e1/, 'a real element still resolves');
+  });
+
+  test('text returns textContent, not rendered text (#215)', () => {
+    clicker(`content '<div id="d">vis<span style="display:none">HIDDEN</span></div>'`);
+
+    const el = clickerJSON('text "#d"');
+    assert.strictEqual(el.result, 'visHIDDEN', 'element text is textContent, so hidden text is included');
+
+    // Page-level text is a different question and stays rendered text.
+    const page = clickerJSON('text');
+    assert.ok(!page.result.includes('HIDDEN'), 'page text stays innerText');
+  });
+
+  test('is actionable accepts a bare selector like its siblings (#199)', () => {
+    clicker(`go ${baseURL}/example`);
+    const out = clicker('is actionable "h1"');
+    assert.match(out, /Visible/, `1-arg form should work, got: ${out.slice(0, 120)}`);
+
+    const withUrl = clicker(`is actionable ${baseURL}/example "h1"`);
+    assert.match(withUrl, /Visible/, 'the 2-arg form must keep working');
+  });
+
+  test('attr distinguishes a present-but-empty attribute from an absent one (#198)', () => {
+    clicker(`content '<button id="b" disabled>Go</button>'`);
+
+    // Present but valueless: empty string, and a success exit.
+    const present = clickerJSON('attr "#b" "disabled"');
+    assert.strictEqual(present.ok, true);
+    assert.strictEqual(present.result, '', 'a valueless attribute is present with an empty value');
+
+    // Absent: a distinct value, but still a normal result — erroring here is
+    // what #153 was about.
+    const absent = clickerJSON('attr "#b" "nonexistent"');
+    assert.strictEqual(absent.ok, true, 'an absent attribute must not error (#153)');
+    assert.strictEqual(absent.result, 'null', 'absent must be distinguishable from present-but-empty');
   });
 });
 
 describe('Daemon CLI: Accessibility and search commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
-  });
-
-  after(() => {
-    stopDaemon();
+    clicker(`go ${baseURL}/example`);
   });
 
   test('a11y-tree returns accessibility tree', () => {
@@ -125,22 +195,25 @@ describe('Daemon CLI: Accessibility and search commands', () => {
   });
 
   test('find role finds element by role and name', () => {
-    const result = clickerJSON('find role link --name "Learn more"');
+    const result = clickerJSON('find role link --name "More information"');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('@e1'), 'Should return @e1 ref');
     assert.ok(result.result.includes('[a]'), 'Should find link element');
+  });
+
+  test('find role button --name matches a submit input by its value (#204)', () => {
+    // <input type="submit" value="Login"> has no textContent, so --name used to
+    // land on a textContent filter and poll to the 30s timeout.
+    clicker(`go ${baseURL}/selectors`);
+    const result = clickerJSON('find role button --name "Login"');
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.result.includes('[input'), `Should find the submit input, got: ${result.result}`);
   });
 });
 
 describe('Daemon CLI: Waiting commands', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
-  });
-
-  after(() => {
-    stopDaemon();
+    clicker(`go ${baseURL}/example`);
   });
 
   test('wait load succeeds on loaded page', () => {
@@ -150,39 +223,32 @@ describe('Daemon CLI: Waiting commands', () => {
   });
 
   test('wait url matches current URL', () => {
-    const result = clickerJSON('wait url "example.com"');
+    const result = clickerJSON('wait url "/example"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('example.com'), 'Should match URL pattern');
+    assert.ok(result.result.includes('/example'), 'Should match URL pattern');
   });
 
   test('sleep pauses execution', () => {
     const start = Date.now();
-    const result = clickerJSON('sleep 200');
+    // sleep sets DisableFlagParsing (so negative values work), which also
+    // rejects --json — call it without JSON output
+    const result = clicker('sleep 200');
     const elapsed = Date.now() - start;
-    assert.strictEqual(result.ok, true);
+    assert.ok(result.includes('Slept') || result.includes('200'), 'Should confirm sleep');
     assert.ok(elapsed >= 150, `Should have waited ~200ms (actual: ${elapsed}ms)`);
   });
 });
 
 describe('Daemon CLI: Interaction commands', () => {
-  before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-  });
-
-  after(() => {
-    stopDaemon();
-  });
-
   test('scroll into-view scrolls element into view', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const result = clickerJSON('scroll into-view "a"');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('Scrolled'), 'Should confirm scroll');
   });
 
   test('press sends key to focused element', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     const result = clickerJSON('press Tab');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('Pressed'), 'Should confirm key press');
@@ -190,7 +256,7 @@ describe('Daemon CLI: Interaction commands', () => {
 
   test('fill and value work together on input', () => {
     // Navigate to a page with an input via eval
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=test type=text>\';"');
 
     // Fill the input
@@ -204,7 +270,7 @@ describe('Daemon CLI: Interaction commands', () => {
   });
 
   test('check and uncheck toggle checkbox', () => {
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=cb type=checkbox>\';"');
 
     // Check
@@ -221,13 +287,10 @@ describe('Daemon CLI: Screenshot --full-page', () => {
   let savedPath = null;
 
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
-    stopDaemon();
     // Clean up screenshot file
     if (savedPath) {
       try { fs.unlinkSync(savedPath); } catch (e) {}
@@ -250,17 +313,11 @@ describe('Daemon CLI: Screenshot --full-page', () => {
 
 describe('Daemon CLI: quit command', () => {
   before(() => {
-    stopDaemon();
-    clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
-  after(() => {
-    stopDaemon();
-  });
-
-  test('quit closes browser session', () => {
-    const result = clickerJSON('quit');
+  test('stop closes browser session', () => {
+    const result = clickerJSON('stop');
     assert.strictEqual(result.ok, true);
     assert.ok(result.result.includes('closed'), 'Should confirm browser closed');
   });

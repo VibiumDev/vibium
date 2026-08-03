@@ -22,7 +22,8 @@ public class ContinueOptions {
         if (url != null) params.put("url", url);
         if (method != null) params.put("method", method);
         if (headers != null) params.put("headers", headers);
-        if (postData != null) params.put("postData", postData);
+        // The engine reads the request body from "body", not "postData".
+        if (postData != null) params.put("body", postData);
         return params;
     }
 }

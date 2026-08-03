@@ -924,7 +924,7 @@ class Page:
             if url:
                 for cb in self._navigation_callbacks:
                     cb(url)
-        elif method == "browsingContext.fragmentNavigated":
+        elif method in ("browsingContext.fragmentNavigated", "browsingContext.historyUpdated"):
             url = params.get("url", "")
             if url:
                 for cb in self._navigation_callbacks:

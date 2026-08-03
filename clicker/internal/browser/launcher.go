@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -17,6 +19,10 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 	"github.com/vibium/clicker/internal/process"
 )
+
+// sessionCreateTimeout bounds the HTTP POST /session fallback (Chrome cold
+// launch ~16s) so a wedged chromedriver can't hang it indefinitely.
+const sessionCreateTimeout = 30 * time.Second
 
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
@@ -122,8 +128,16 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("using port", "port", port)
 
 	// Start chromedriver as a process group leader so we can kill all children
-	cmd := exec.Command(chromedriverPath, fmt.Sprintf("--port=%d", port))
+	cdArgs := []string{fmt.Sprintf("--port=%d", port)}
+	if dir := os.Getenv("VIBIUM_CHROMEDRIVER_LOG_DIR"); dir != "" {
+		cdArgs = append(cdArgs, "--verbose", fmt.Sprintf("--log-path=%s/chromedriver-%d.log", dir, port))
+	}
+	cmd := exec.Command(chromedriverPath, cdArgs...)
 	setProcGroup(cmd)
+	// Set here, not around `make`: macOS strips DYLD_* across SIP-protected execs.
+	if shim := vmFastLaunchShim(); shim != "" {
+		cmd.Env = append(os.Environ(), "DYLD_INSERT_LIBRARIES="+shim)
+	}
 	if opts.Verbose {
 		fmt.Println("       ------- chromedriver -------")
 		pw := newPrefixWriter(os.Stdout, "       ")
@@ -152,9 +166,11 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	wsURL := fmt.Sprintf("ws://localhost:%d/session", port)
 	conn, connErr := bidi.Connect(wsURL)
 	if connErr == nil {
-		client := bidi.NewClient(conn)
 		caps := buildCapabilities(chromePath, opts.Headless)
-		result, sessionErr := client.SessionNew(caps)
+		// Handshake without NewClient: a Client's reader would own this
+		// connection forever, and the consumer of LaunchResult.BidiConn
+		// (agent or api router) must be able to take over reads itself.
+		result, sessionErr := bidi.SessionNewOnConn(conn, caps)
 		if sessionErr == nil {
 			userDataDir, _ := result.Capabilities["userDataDir"].(string)
 			log.Info("browser launched via BiDi session.new", "sessionId", result.SessionID)
@@ -253,6 +269,16 @@ func chromeArgs(headless bool) []string {
 	return args
 }
 
+// vmFastLaunchShim returns a Metal-interposing dylib path for macOS VM guests
+// whose dead virtual GPU adds ~15s to every Chrome launch. Opt-in, darwin-only.
+// See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
+func vmFastLaunchShim() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	return os.Getenv("VIBIUM_VM_FAST_LAUNCH")
+}
+
 // buildCapabilities returns the capabilities map for BiDi session.new.
 func buildCapabilities(chromePath string, headless bool) map[string]interface{} {
 	return map[string]interface{}{
@@ -267,9 +293,9 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 				"args":            chromeArgs(headless),
 				"excludeSwitches": []string{"enable-automation", "enable-logging"},
 				"prefs": map[string]interface{}{
-					"credentials_enable_service":                          false,
-					"profile.password_manager_enabled":                    false,
-					"profile.password_manager_leak_detection":             false,
+					"credentials_enable_service":                           false,
+					"profile.password_manager_enabled":                     false,
+					"profile.password_manager_leak_detection":              false,
 					"profile.default_content_setting_values.notifications": 2,
 				},
 			},
@@ -293,20 +319,27 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 		fmt.Printf("       --> %s\n", string(jsonBody))
 	}
 
-	resp, err := http.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
+	// Bounded so a wedged chromedriver can't hang the HTTP fallback forever.
+	// session.new + Chrome cold-launch fit comfortably within this.
+	httpClient := &http.Client{Timeout: sessionCreateTimeout}
+	resp, err := httpClient.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", "", "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", "", "", fmt.Errorf("failed to create session: HTTP %d", resp.StatusCode)
-	}
-
 	// Read response body for logging and parsing
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to read session response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		// The body carries the real reason — a version mismatch, a bad binary
+		// path, a sandbox failure. Returning only the status code (#107) left
+		// users with "HTTP 500" and nothing to act on.
+		return "", "", "", fmt.Errorf("failed to create session: HTTP %d: %s",
+			resp.StatusCode, driverErrorMessage(respBody))
 	}
 
 	if verbose {
@@ -371,40 +404,67 @@ func killProcessTree(pid int) {
 	waitForProcessDead(pid, 2*time.Second)
 }
 
-// KillOrphanedChromeProcesses finds and kills Chrome/chromedriver processes
-// that have been orphaned (reparented to init/launchd).
-func KillOrphanedChromeProcesses() {
-	// Kill orphaned chromedriver and Chrome for Testing processes
-	patterns := []string{"chromedriver", "Chrome for Testing"}
+// isVibiumProcess reports whether comm (from `ps -o comm=`: bare name on
+// Linux, full path on macOS) names a vibium binary.
+func isVibiumProcess(comm string) bool {
+	name := filepath.Base(comm)
+	return name == "vibium" || name == "clicker"
+}
 
-	for _, pattern := range patterns {
-		cmd := exec.Command("pgrep", "-f", pattern)
-		output, err := cmd.Output()
+// KillOrphanedChromeProcesses kills processes running from vibium's Chrome
+// for Testing cache dir that no live vibium process owns. Ownership is
+// checked via the process tree rather than ppid==1 because systemd
+// re-parents orphans to the session subreaper, not PID 1. Only call during
+// shutdown, after CloseAll().
+func KillOrphanedChromeProcesses() {
+	cftDir, err := paths.GetChromeForTestingDir()
+	if err != nil {
+		return
+	}
+
+	// ^ anchor: only match processes running from the dir
+	output, err := exec.Command("pgrep", "-f", "^"+cftDir).Output()
+	if err != nil {
+		// pgrep exits 1 when nothing matched, which is the normal case
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			log.Debug("orphan sweep: pgrep failed", "error", err)
+		}
+		return
+	}
+
+	// Collect matched PIDs first to tell tree roots from descendants.
+	// (PID reuse between pgrep and ps is possible; the window is tiny.)
+	matched := make(map[int]bool)
+	for _, line := range bytes.Split(bytes.TrimSpace(output), []byte("\n")) {
+		var pid int
+		if _, err := fmt.Sscanf(string(line), "%d", &pid); err == nil {
+			matched[pid] = true
+		}
+	}
+
+	myPID := os.Getpid()
+	for pid := range matched {
+		ppidOut, err := exec.Command("ps", "-o", "ppid=", "-p", fmt.Sprintf("%d", pid)).Output()
 		if err != nil {
 			continue
 		}
-
-		lines := bytes.Split(bytes.TrimSpace(output), []byte("\n"))
-		for _, line := range lines {
-			if len(line) == 0 {
-				continue
-			}
-			var pid int
-			if _, err := fmt.Sscanf(string(line), "%d", &pid); err == nil {
-				// Check if this process's parent is 1 (orphaned)
-				ppidCmd := exec.Command("ps", "-o", "ppid=", "-p", fmt.Sprintf("%d", pid))
-				ppidOut, err := ppidCmd.Output()
-				if err != nil {
-					continue
-				}
-				var ppid int
-				if _, err := fmt.Sscanf(string(bytes.TrimSpace(ppidOut)), "%d", &ppid); err == nil {
-					if ppid == 1 {
-						killProcessGroup(pid)
-						killByPid(pid)
-					}
-				}
-			}
+		var ppid int
+		if _, err := fmt.Sscanf(string(bytes.TrimSpace(ppidOut)), "%d", &ppid); err != nil {
+			continue
+		}
+		// Descendant of another matched process; handled via its root.
+		if matched[ppid] {
+			continue
+		}
+		if ppid == myPID {
+			killProcessGroup(pid)
+			killByPid(pid)
+			continue
+		}
+		parentComm, err := exec.Command("ps", "-o", "comm=", "-p", fmt.Sprintf("%d", ppid)).Output()
+		if err != nil || !isVibiumProcess(strings.TrimSpace(string(parentComm))) {
+			killProcessGroup(pid)
+			killByPid(pid)
 		}
 	}
 }
@@ -444,3 +504,29 @@ func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
 	}
 }
 
+// driverErrorMessage pulls the human-readable part out of a WebDriver error
+// response, falling back to the raw body when it is not the expected shape.
+func driverErrorMessage(body []byte) string {
+	var e struct {
+		Value struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil {
+		switch {
+		case e.Value.Message != "":
+			return strings.TrimSpace(e.Value.Message)
+		case e.Value.Error != "":
+			return e.Value.Error
+		}
+	}
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "(empty response body)"
+	}
+	if len(trimmed) > 500 {
+		return trimmed[:500] + "…"
+	}
+	return trimmed
+}

@@ -65,6 +65,7 @@ describe('Sync API: Multi-page', () => {
     assert.ok(page2, 'Should return a new PageSync');
     const allPages = bro.pages();
     assert.ok(allPages.length >= 2, 'Should have at least 2 pages');
+    page2.close();
   });
 });
 

@@ -140,8 +140,8 @@ func newRecordCmd() *cobra.Command {
 	}
 
 	groupStopCmd := &cobra.Command{
-		Use:   "stop",
-		Short: "End the current recording group",
+		Use:     "stop",
+		Short:   "End the current recording group",
 		Example: `  vibium record group stop`,
 		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {

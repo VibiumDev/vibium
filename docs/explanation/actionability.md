@@ -16,6 +16,21 @@ Before performing an action, Vibium verifies a subset of these conditions:
 | **Enabled** | Element isn't `disabled`, `aria-disabled="true"`, or inside a disabled `<fieldset>` | Disabled controls don't respond to input |
 | **Editable** | Element accepts text input (text-type `<input>`, `<textarea>`, or `contentEditable`), and isn't `readOnly` or `aria-readonly` | Only checked for fill actions |
 
+### ReceivesEvents and shadow DOM
+
+`document.elementFromPoint()` returns the shadow **host**, not what is rendered
+inside it. Taken literally that makes every element in a shadow root look
+covered by its own component, so nothing inside a web component could be
+clicked.
+
+The check therefore descends: after the first hit, it calls
+`elementFromPoint()` on that element's shadow root at the same coordinates, and
+repeats until the answer stops changing. What comes back is the element actually
+on top, wherever it lives.
+
+This only affects the hit test. Everything else about the check is unchanged —
+an element genuinely behind an overlay still fails, shadow root or not.
+
 ## Which Actions Run Which Checks
 
 Different actions require different check sets. These are defined as Go slices in `actionability.go`:

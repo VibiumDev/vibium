@@ -7,30 +7,33 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 
 const { browser } = require('../../../clients/javascript/dist');
+const { createTestServer } = require('../../helpers/test-server');
 
-let bro, vibe;
+let server, baseURL, bro, vibe;
 
 before(async () => {
+  ({ server, baseURL } = await createTestServer());
   bro = await browser.start({ headless: true });
   vibe = await bro.page();
 });
 
 after(async () => {
   if (bro) await bro.stop();
+  if (server) server.close();
 });
 
 // --- el.role() ---
 
 describe('Element Accessibility: role()', () => {
   test('role() returns "link" for <a> element', async () => {
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
     const link = await vibe.find('a');
     const role = await link.role();
     assert.strictEqual(role, 'link');
   });
 
   test('role() returns "heading" for <h1> element', async () => {
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
     const h1 = await vibe.find('h1');
     const role = await h1.role();
     assert.strictEqual(role, 'heading');
@@ -44,7 +47,7 @@ describe('Element Accessibility: role()', () => {
   });
 
   test('fluent: find().role() chains', async () => {
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
     const role = await vibe.find('a').role();
     assert.strictEqual(role, 'link');
   });
@@ -54,7 +57,7 @@ describe('Element Accessibility: role()', () => {
 
 describe('Element Accessibility: label()', () => {
   test('label() returns accessible name for a link', async () => {
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
     const link = await vibe.find('a');
     const label = await link.label();
     assert.ok(label.length > 0, `label should not be empty, got: "${label}"`);
@@ -98,15 +101,15 @@ describe('Element Accessibility: label()', () => {
 
 describe('Page Accessibility: a11yTree()', () => {
   test('returns tree with WebArea root and document title', async () => {
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
     const tree = await vibe.a11yTree();
     assert.strictEqual(tree.role, 'WebArea');
     assert.strictEqual(tree.name, 'Example Domain');
     assert.ok(Array.isArray(tree.children), 'tree should have children');
   });
 
-  test('tree contains heading and link roles on example.com', async () => {
-    await vibe.go('https://example.com');
+  test('tree contains heading and link roles on the example page', async () => {
+    await vibe.go(`${baseURL}/example`);
     const tree = await vibe.a11yTree();
 
     function findRoles(node) {

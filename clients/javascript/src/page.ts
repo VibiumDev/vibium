@@ -225,32 +225,32 @@ export class Page {
     this.capture = {
       response(pattern: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<Response> {
         const promise = self._captureResponse(pattern, options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
       request(pattern: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<Request> {
         const promise = self._captureRequest(pattern, options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
       navigation(fn?: () => Promise<void>, options?: { timeout?: number }): Promise<string> {
         const promise = self._captureNavigation(options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
       download(fn?: () => Promise<void>, options?: { timeout?: number }): Promise<Download> {
         const promise = self._captureDownload(options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
       dialog(fn?: () => Promise<void>, options?: { timeout?: number }): Promise<Dialog> {
         const promise = self._captureDialog(options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
       event(name: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<unknown> {
         const promise = self._captureEvent(name, options);
-        if (fn) return fn().then(() => promise);
+        if (fn) return Promise.all([promise, fn()]).then(([v]) => v);
         return promise;
       },
     };
@@ -295,7 +295,8 @@ export class Page {
             cb(url);
           }
         }
-      } else if (event.method === 'browsingContext.fragmentNavigated') {
+      } else if (event.method === 'browsingContext.fragmentNavigated'
+                 || event.method === 'browsingContext.historyUpdated') {
         const url = params.url as string | undefined;
         if (url) {
           for (const cb of this.navigationCallbacks) {
