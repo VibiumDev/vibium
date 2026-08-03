@@ -83,6 +83,38 @@ describe('CLI: Negative value flag parsing', () => {
     }
   });
 
+  test('trailing flags work alongside negative positionals (#241)', () => {
+    // sleep used DisableFlagParsing and fill/type/geolocation used
+    // SetInterspersed(false); both kept negatives working by swallowing any
+    // flag that came after a positional.
+    const json = execSync(`${VIBIUM} sleep 1 --json`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(JSON.parse(json.trim()).ok, true, 'sleep should honour a trailing --json');
+
+    execSync(`${VIBIUM} content '<input id="x"><input id="y">'`, { encoding: 'utf-8', timeout: 30000 });
+
+    assert.match(
+      execSync(`${VIBIUM} fill "#x" val --timeout 5s`, { encoding: 'utf-8', timeout: 30000 }),
+      /Filled/,
+      'fill should accept a trailing --timeout'
+    );
+    assert.match(
+      execSync(`${VIBIUM} type "#y" hi --timeout 5s`, { encoding: 'utf-8', timeout: 30000 }),
+      /Typed/,
+      'type should accept a trailing --timeout'
+    );
+
+    const geo = execSync(`${VIBIUM} geolocation 37.8 -122.4 --json`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(JSON.parse(geo.trim()).ok, true, 'a negative arg and a trailing flag together');
+  });
+
+  test('an unknown flag errors instead of being swallowed (#241)', () => {
+    assert.throws(
+      () => execSync(`${VIBIUM} sleep 1 --bogus`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' }),
+      /unknown flag/,
+      'should report the flag, not treat it as a positional or panic'
+    );
+  });
+
   test('geolocation accepts negative coordinates', () => {
     const result = execSync(`${VIBIUM} geolocation 37.7749 -122.4194`, {
       encoding: 'utf-8',
