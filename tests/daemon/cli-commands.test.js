@@ -102,6 +102,26 @@ describe('Daemon CLI: Element state commands', () => {
     assert.ok(result.result.includes('/more-information'), 'Should return href value');
   });
 
+  test('text returns textContent, not rendered text (#215)', () => {
+    clicker(`content '<div id="d">vis<span style="display:none">HIDDEN</span></div>'`);
+
+    const el = clickerJSON('text "#d"');
+    assert.strictEqual(el.result, 'visHIDDEN', 'element text is textContent, so hidden text is included');
+
+    // Page-level text is a different question and stays rendered text.
+    const page = clickerJSON('text');
+    assert.ok(!page.result.includes('HIDDEN'), 'page text stays innerText');
+  });
+
+  test('is actionable accepts a bare selector like its siblings (#199)', () => {
+    clicker(`go ${baseURL}/example`);
+    const out = clicker('is actionable "h1"');
+    assert.match(out, /Visible/, `1-arg form should work, got: ${out.slice(0, 120)}`);
+
+    const withUrl = clicker(`is actionable ${baseURL}/example "h1"`);
+    assert.match(withUrl, /Visible/, 'the 2-arg form must keep working');
+  });
+
   test('attr distinguishes a present-but-empty attribute from an absent one (#198)', () => {
     clicker(`content '<button id="b" disabled>Go</button>'`);
 
