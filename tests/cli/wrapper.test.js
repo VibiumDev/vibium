@@ -56,6 +56,16 @@ describe('CLI: shell completion', () => {
     assert.match(lines[0], /^#compdef/, 'fpath installs need #compdef on line 1');
     assert.match(lines[1], /\$\+functions\[compdef\]/, 'guard must come right after it');
 
+    // Executing it needs zsh, which CI runners do not all have. The structural
+    // checks above are the real guard; this confirms the behavior where we can.
+    let haveZsh = true;
+    try {
+      execSync('command -v zsh', { encoding: 'utf-8', stdio: 'pipe' });
+    } catch {
+      haveZsh = false;
+    }
+    if (!haveZsh) return;
+
     // zsh -f skips rc files, so compdef is undefined unless the guard loads it.
     const out = execSync(
       `zsh -f -c 'source <(${VIBIUM} completion zsh) && echo SOURCED'`,
