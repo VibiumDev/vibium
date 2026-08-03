@@ -147,9 +147,10 @@ func BuildFindScript(params map[string]interface{}, findAll bool) (string, []map
 func buildCSSFindScript() string {
 	return `
 		(scope, selector) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
-			const el = root.querySelector(selector);
+			const el = pierceQuery(root, selector);
 			if (!el) return null;
 			if (el.scrollIntoViewIfNeeded) {
 				el.scrollIntoViewIfNeeded(true);
@@ -169,9 +170,10 @@ func buildCSSFindScript() string {
 func buildCSSFindAllScript() string {
 	return `
 		(scope, selector, hasText, has) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return '[]';
-			let els = Array.from(root.querySelectorAll(selector));
+			let els = Array.from(pierceQueryAll(root, selector));
 			if (hasText) {
 				els = els.filter(el => (el.textContent || '').includes(hasText));
 			}
@@ -332,7 +334,8 @@ func semanticMatchesHelper() string {
 func buildSemanticFindScript() string {
 	return `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 ` + semanticMatchesHelper() + `
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -351,7 +354,8 @@ func buildSemanticFindScript() string {
 func buildSemanticFindAllScript() string {
 	return `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, hasText, has) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return '[]';
 ` + semanticMatchesHelper() + `
 			let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);

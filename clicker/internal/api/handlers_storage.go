@@ -105,10 +105,10 @@ func (r *Router) handleContextSetCookies(session *BrowserSession, cmd bidiComman
 		}
 
 		bidiCookie := map[string]interface{}{
-			"name":  name,
-			"value": map[string]interface{}{"type": "string", "value": value},
+			"name":   name,
+			"value":  map[string]interface{}{"type": "string", "value": value},
 			"domain": domain,
-			"path":  "/",
+			"path":   "/",
 		}
 
 		if path, ok := c["path"].(string); ok && path != "" {
@@ -479,14 +479,14 @@ func (r *Router) handleContextAddInitScript(session *BrowserSession, cmd bidiCom
 
 // CookieInfo holds parsed cookie information.
 type CookieInfo struct {
-	Name     string  `json:"name"`
-	Value    string  `json:"value"`
-	Domain   string  `json:"domain"`
-	Path     string  `json:"path"`
-	Size     int     `json:"size"`
-	HTTPOnly bool    `json:"httpOnly"`
-	Secure   bool    `json:"secure"`
-	SameSite string  `json:"sameSite"`
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Domain   string `json:"domain"`
+	Path     string `json:"path"`
+	Size     int    `json:"size"`
+	HTTPOnly bool   `json:"httpOnly"`
+	Secure   bool   `json:"secure"`
+	SameSite string `json:"sameSite"`
 }
 
 // GetCookies returns cookies for the given browsing context.
