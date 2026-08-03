@@ -43,6 +43,10 @@ type Handlers struct {
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
 	prompts *api.PromptTracker
+
+	// launchedHeadless is the mode the running browser was actually launched
+	// with, which is not necessarily the daemon's default.
+	launchedHeadless bool
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -619,8 +623,15 @@ func (h *Handlers) Close() {
 
 // browserLaunch launches a new browser session or connects to a remote one.
 func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult, error) {
-	// If browser is already running, return success (no-op)
+	// If browser is already running, return success (no-op) — unless the
+	// caller asked for a different mode than the one it is running in.
+	// Silently attaching them to the other mode is what #194 reported.
 	if h.client != nil {
+		if want, ok := args["headless"].(bool); ok && want != h.launchedHeadless {
+			return nil, fmt.Errorf(
+				"browser is already running %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
+				modeName(h.launchedHeadless), modeName(want))
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
@@ -682,6 +693,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.launchResult = launchResult
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
+	h.launchedHeadless = useHeadless
 	h.sessionMu.Unlock()
 	h.startPromptTracking()
 
@@ -691,6 +703,14 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 			Text: fmt.Sprintf("Browser launched (headless: %v)", useHeadless),
 		}},
 	}, nil
+}
+
+// modeName renders a launch mode the way the user typed it.
+func modeName(headless bool) string {
+	if headless {
+		return "headless"
+	}
+	return "headed"
 }
 
 // startPromptTracking subscribes to user-prompt events and keeps h.prompts in
