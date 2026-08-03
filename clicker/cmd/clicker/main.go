@@ -56,6 +56,11 @@ func main() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 
+	// Cobra's built-in completion command emits a bare `compdef` call, which
+	// fails when the script is sourced before compinit has run (#201).
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.AddCommand(newCompletionCmd(rootCmd))
+
 	// Register all commands
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newPathsCmd())
