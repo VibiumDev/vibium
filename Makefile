@@ -200,10 +200,23 @@ else
 DEFAULT_PARALLEL := $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4); n=$$((n / 2)); [ $$n -lt 3 ] && n=3; echo $$n)
 endif
 
-# macOS VM guests with a dead virtual GPU pay ~15s per Chrome launch.
-# VM_FAST_LAUNCH=1 builds a Metal shim and points vibium at it. Probe first.
+# macOS VM guests with a dead virtual GPU pay ~15s per Chrome launch, which is
+# most of a local `make test`. A Metal shim skips it.
+#
+# This is decided by probing THIS machine, not by detecting a VM: a guest with
+# working GPU passthrough must not be shimmed, because the shim hides the GPU
+# rather than speeding it up. The probe costs ~15s once, then is cached.
+# Override with VM_FAST_LAUNCH=1 or =0.
 # See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
 MTLSHIM := $(CURDIR)/clicker/bin/mtlshim.dylib
+MTLVERDICT := $(CURDIR)/clicker/bin/.mtl-verdict
+
+ifeq ($(UNAME_S),Darwin)
+ifeq ($(origin VM_FAST_LAUNCH),undefined)
+VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT))
+endif
+endif
+
 ifeq ($(VM_FAST_LAUNCH),1)
 ifeq ($(UNAME_S),Darwin)
 FAST_LAUNCH_DEP := mtlshim
