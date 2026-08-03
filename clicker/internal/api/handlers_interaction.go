@@ -1001,7 +1001,7 @@ func ScrollWheel(s Session, context string, x, y, deltaX, deltaY int) error {
 				"id":   "wheel",
 				"actions": []map[string]interface{}{
 					{
-						"type":    "scroll",
+						"type":   "scroll",
 						"x":      x,
 						"y":      y,
 						"deltaX": deltaX,
@@ -1020,25 +1020,7 @@ func ScrollWheel(s Session, context string, x, y, deltaX, deltaY int) error {
 
 // buildIsCheckedScript builds a JS function to check if an element is checked.
 func buildIsCheckedScript(ep ElementParams) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-	}
-
-	script := `
-		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
-			if (!root) return 'false';
-			let el;
-			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
-				el = all[index];
-			} else {
-				el = root.querySelector(selector);
-			}
-			if (!el) return 'false';
+	return buildElActionScript(ep, nil, nil, `
 			const t = el.tagName === 'INPUT' ? (el.type || '').toLowerCase() : '';
 			const role = (el.getAttribute('role') || '').toLowerCase();
 			if (t !== 'checkbox' && t !== 'radio' &&
@@ -1047,33 +1029,15 @@ func buildIsCheckedScript(ep ElementParams) (string, []map[string]interface{}) {
 			}
 			if (t === '') return el.getAttribute('aria-checked') === 'true' ? 'true' : 'false';
 			return el.checked ? 'true' : 'false';
-		}
-	`
-	return script, args
+		`)
 }
 
 // buildSelectOptionScript builds a JS function to set a select element's value.
 func buildSelectOptionScript(ep ElementParams, value string) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-		{"type": "string", "value": value},
-	}
-
-	script := `
-		(scope, selector, index, hasIndex, value) => {
-			const root = scope ? document.querySelector(scope) : document;
-			if (!root) return 'element not found';
-			let el;
-			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
-				el = all[index];
-			} else {
-				el = root.querySelector(selector);
-			}
-			if (!el) return 'element not found';
+	return buildElActionScript(ep,
+		[]string{"value"},
+		[]map[string]interface{}{{"type": "string", "value": value}},
+		`
 			if (el.tagName !== 'SELECT') return 'not a <select> element';
 			// Match by option value, then fall back to the visible label/text so
 			// passing "California" (for <option value="CA">California</option>)
@@ -1086,33 +1050,67 @@ func buildSelectOptionScript(ep ElementParams, value string) (string, []map[stri
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));
 			return 'ok';
-		}
-	`
-	return script, args
+		`)
 }
 
 // buildSetValueScript builds a JS function to set an element's value and dispatch events.
-func buildSetValueScript(ep ElementParams, value string) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-		{"type": "string", "value": value},
+// buildElActionScript wraps an action body in the same element-resolution
+// prologue the state builders use, so an element found semantically (role/text/
+// label/...) resolves here too. Without it these builders did a CSS-only
+// querySelector(selector), and selector is "" for a semantic find — issue #108.
+//
+// body runs with `el` bound and returns a string; extraNames/extraArgs append
+// parameters after the resolution ones.
+func buildElActionScript(ep ElementParams, extraNames []string, extraArgs []map[string]interface{}, body string) (string, []map[string]interface{}) {
+	joined := ""
+	for _, n := range extraNames {
+		joined += ", " + n
 	}
 
-	script := `
-		(scope, selector, index, hasIndex, value) => {
+	if hasSemantic(ep) {
+		args := append(buildElSemanticArgs(ep), extraArgs...)
+		script := fmt.Sprintf(`
+		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex%s) => {
+			const root = scope ? document.querySelector(scope) : document;
+			if (!root) return 'element not found';
+		`+semanticMatchesHelper()+`
+			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+			let el;
+			if (hasIndex) {
+				el = found[index];
+			} else {
+				el = pickBest(found, text);
+			}
+			if (!el) return 'element not found';
+			%s
+		}
+	`, joined, body)
+		return script, args
+	}
+
+	args := append(buildElBaseArgs(ep), extraArgs...)
+	script := fmt.Sprintf(`
+		(scope, selector, index, hasIndex%s) => {
 			const root = scope ? document.querySelector(scope) : document;
 			if (!root) return 'element not found';
 			let el;
 			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
-				el = all[index];
+				el = root.querySelectorAll(selector)[index];
 			} else {
 				el = root.querySelector(selector);
 			}
 			if (!el) return 'element not found';
+			%s
+		}
+	`, joined, body)
+	return script, args
+}
+
+func buildSetValueScript(ep ElementParams, value string) (string, []map[string]interface{}) {
+	return buildElActionScript(ep,
+		[]string{"value"},
+		[]map[string]interface{}{{"type": "string", "value": value}},
+		`
 			el.focus();
 			// Pick the native value setter for the element's ACTUAL type. Calling
 			// the HTMLInputElement setter on a <textarea> throws "Illegal
@@ -1133,67 +1131,28 @@ func buildSetValueScript(ep ElementParams, value string) (string, []map[string]i
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));
 			return 'ok';
-		}
-	`
-	return script, args
+		`)
 }
 
 // buildFocusScript builds a JS function to focus an element.
 func buildFocusScript(ep ElementParams) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-	}
-
-	script := `
-		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
-			if (!root) return 'not found';
-			let el;
-			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
-				el = all[index];
-			} else {
-				el = root.querySelector(selector);
-			}
-			if (!el) return 'not found';
+	return buildElActionScript(ep, nil, nil, `
 			el.focus();
 			return 'ok';
-		}
-	`
-	return script, args
+		`)
 }
 
 // buildDispatchEventScript builds a JS function to dispatch an event on an element.
 func buildDispatchEventScript(ep ElementParams, eventType, initJSON string) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-		{"type": "string", "value": eventType},
-		{"type": "string", "value": initJSON},
-	}
-
-	script := `
-		(scope, selector, index, hasIndex, eventType, initJSON) => {
-			const root = scope ? document.querySelector(scope) : document;
-			if (!root) return 'not found';
-			let el;
-			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
-				el = all[index];
-			} else {
-				el = root.querySelector(selector);
-			}
-			if (!el) return 'not found';
+	return buildElActionScript(ep,
+		[]string{"eventType", "initJSON"},
+		[]map[string]interface{}{
+			{"type": "string", "value": eventType},
+			{"type": "string", "value": initJSON},
+		},
+		`
 			const init = JSON.parse(initJSON);
 			el.dispatchEvent(new Event(eventType, init));
 			return 'ok';
-		}
-	`
-	return script, args
+		`)
 }
-
