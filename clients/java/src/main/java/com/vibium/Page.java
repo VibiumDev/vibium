@@ -741,10 +741,10 @@ public class Page {
                     handleConsoleEvent(params);
                 }
                 break;
-            case "vibium:download.started":
+            case "browsingContext.downloadWillBegin":
                 handleDownloadStarted(params);
                 break;
-            case "vibium:download.completed":
+            case "browsingContext.downloadEnd":
                 handleDownloadCompleted(params);
                 break;
             case "vibium:network.intercepted":
@@ -800,7 +800,7 @@ public class Page {
     private void handleDownloadStarted(JsonObject params) {
         if (downloadListeners.isEmpty()) return;
         Download download = new Download(client, params);
-        String navId = params.has("navigationId") ? params.get("navigationId").getAsString() : "";
+        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
         if (!navId.isEmpty()) {
             activeDownloads.put(navId, download);
         }
@@ -810,11 +810,11 @@ public class Page {
     }
 
     private void handleDownloadCompleted(JsonObject params) {
-        String navId = params.has("navigationId") ? params.get("navigationId").getAsString() : "";
+        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
         Download download = activeDownloads.remove(navId);
         if (download != null) {
-            String status = params.has("status") ? params.get("status").getAsString() : "";
-            String path = params.has("path") ? params.get("path").getAsString() : null;
+            String status = params.has("status") ? params.get("status").getAsString() : "complete";
+            String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
             download.complete(status, path);
         }
     }
