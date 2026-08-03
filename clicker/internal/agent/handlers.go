@@ -871,7 +871,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			}
 			return JSON.stringify({count: count});
 		}`
-		if _, err := h.client.CallFunction("", annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
+		if _, err := h.client.CallFunction(h.activeContext, annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
 			return nil, fmt.Errorf("failed to annotate: %w", err)
 		}
 	}
@@ -892,7 +892,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			document.querySelectorAll('.__vibium_annotation').forEach(el => el.remove());
 			return 'cleaned';
 		}`
-		h.client.CallFunction("", cleanupScript, nil)
+		h.client.CallFunction(h.activeContext, cleanupScript, nil)
 	}
 
 	// If filename provided, save to file (only if screenshotDir is configured)
@@ -1017,7 +1017,7 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		}
 		return getLabel(el);
 	}`
-	labelResult, err := h.client.CallFunction("", labelScript, []interface{}{selector})
+	labelResult, err := h.client.CallFunction(h.activeContext, labelScript, []interface{}{selector})
 	if err != nil {
 		return nil, err
 	}
@@ -1262,7 +1262,7 @@ func (h *Handlers) browserEvaluate(args map[string]interface{}) (*ToolsCallResul
 		return nil, fmt.Errorf("expression is required")
 	}
 
-	result, err := h.client.Evaluate("", expression)
+	result, err := h.client.Evaluate(h.activeContext, expression)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate: %w", err)
 	}
@@ -1726,7 +1726,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		}
 		return JSON.stringify(results);
 	}`
-	result, err := h.client.CallFunction("", findAllScript, []interface{}{selector, limit})
+	result, err := h.client.CallFunction(h.activeContext, findAllScript, []interface{}{selector, limit})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find elements: %w", err)
 	}
@@ -2119,7 +2119,7 @@ func pollCallFunction(h *Handlers, script string, args []interface{}, timeout ti
 	interval := 100 * time.Millisecond
 
 	for {
-		result, err := h.client.CallFunction("", script, args)
+		result, err := h.client.CallFunction(h.activeContext, script, args)
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {
@@ -2766,7 +2766,7 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	if sel, ok := args["selector"].(string); ok && sel != "" {
 		scopeSelector = sel
 	}
-	result, err := h.client.CallFunction("", mapScript(), []interface{}{scopeSelector})
+	result, err := h.client.CallFunction(h.activeContext, mapScript(), []interface{}{scopeSelector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to map elements: %w", err)
 	}
@@ -2920,7 +2920,7 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 		return 'highlighted';
 	}`
 
-	result, err := h.client.CallFunction("", script, []interface{}{selector})
+	result, err := h.client.CallFunction(h.activeContext, script, []interface{}{selector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to highlight: %w", err)
 	}
@@ -3794,6 +3794,10 @@ func (h *Handlers) browserFrame(args map[string]interface{}) (*ToolsCallResult, 
 		return nil, fmt.Errorf("no frame matching %q", nameOrURL)
 	}
 
+	// The daemon is the only thing that survives between CLI invocations, so
+	// without this the frame is forgotten before the next command runs.
+	h.activeContext = frame.Context
+
 	result, _ := json.Marshal(frame)
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -4058,7 +4062,7 @@ func (h *Handlers) browserStorageState(args map[string]interface{}) (*ToolsCallR
 		})()
 	})`
 
-	storageResult, err := h.client.Evaluate("", script)
+	storageResult, err := h.client.Evaluate(h.activeContext, script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage: %w", err)
 	}
@@ -4125,7 +4129,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 			}
 			return 'ok';
 		})()`, string(state.Storage))
-		h.client.Evaluate("", script)
+		h.client.Evaluate(h.activeContext, script)
 	}
 
 	return &ToolsCallResult{

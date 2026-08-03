@@ -145,8 +145,19 @@ const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <div class="container"><span class="inner-text">Hello from span</span></div>
 </body></html>`;
 
+const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
+  <h1 id="inner">Inside the frame</h1>
+</body></html>`;
+
+const FRAMES_HTML = `<html><head><title>Frames</title></head><body>
+  <h1 id="outer">Outer page</h1>
+  <iframe src="/frame-inner" name="myframe"></iframe>
+</body></html>`;
+
 const routes = {
   '/': HOME_HTML,
+  '/frames': FRAMES_HTML,
+  '/frame-inner': FRAME_INNER_HTML,
   '/login': LOGIN_HTML,
   '/secure': SECURE_HTML,
   '/checkboxes': CHECKBOXES_HTML,
