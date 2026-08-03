@@ -68,24 +68,28 @@ func newIsCmd() *cobra.Command {
 	actionableCmd := &cobra.Command{
 		Use:   "actionable [url] [selector]",
 		Short: "Check actionability of an element (Visible, Stable, ReceivesEvents, Enabled, Editable)",
-		Example: `  vibium is actionable https://example.com "a"
+		Example: `  vibium is actionable "a"
   # Output:
   # Checking actionability for selector: a
   # ✓ Visible: true
   # ✓ Stable: true
   # ✓ ReceivesEvents: true
   # ✓ Enabled: true
-  # ✗ Editable: false`,
-		Args: cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			url := args[0]
-			selector := args[1]
+  # ✗ Editable: false
 
-			// Navigate to URL
-			_, err := daemonCall("browser_navigate", map[string]interface{}{"url": url})
-			if err != nil {
-				printError(err)
-				return
+  vibium is actionable https://example.com "a"
+  # Navigate first, then check`,
+		Args: cobra.RangeArgs(1, 2),
+		Run: func(cmd *cobra.Command, args []string) {
+			// The optional leading [url] matches the other is-commands and
+			// `find`; requiring it here made this the odd one out (#199).
+			selector := args[0]
+			if len(args) == 2 {
+				if _, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]}); err != nil {
+					printError(err)
+					return
+				}
+				selector = args[1]
 			}
 
 			fmt.Printf("\nChecking actionability for selector: %s\n", selector)
