@@ -8,8 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/paths"
 )
 
 // StatusResult is returned by daemon/status.
@@ -19,6 +20,7 @@ type StatusResult struct {
 	Uptime    string `json:"uptime"`
 	Socket    string `json:"socket"`
 	StartTime string `json:"startTime"`
+	Session   string `json:"session"`
 }
 
 // handleConnection processes a single client connection.
@@ -31,14 +33,12 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 	// Set read deadline
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	scanner := bufio.NewScanner(conn)
-	// Increase scanner buffer for large requests
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
-	if !scanner.Scan() {
+	// bufio.Reader grows as needed; bufio.Scanner fails once a message exceeds
+	// its fixed buffer, and raising that cap only moves the ceiling (#209).
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	if err != nil && len(line) == 0 {
 		return
 	}
-	line := scanner.Bytes()
 
 	response := d.handleRequest(line)
 	if response == nil {
@@ -139,6 +139,7 @@ func (d *Daemon) handleStatus() (interface{}, *agent.Error) {
 		Uptime:    time.Since(d.startTime).Truncate(time.Second).String(),
 		Socket:    d.socketPath,
 		StartTime: d.startTime.Format(time.RFC3339),
+		Session:   paths.SessionName(),
 	}, nil
 }
 

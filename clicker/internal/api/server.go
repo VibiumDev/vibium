@@ -43,13 +43,100 @@ type Server struct {
 	onClose    func(ClientTransport)
 }
 
+// clientWriteDeadline bounds a single socket write. Without it a client that
+// stops reading blocks the writer forever and the queue grows without limit.
+const clientWriteDeadline = 60 * time.Second
+
 // ClientConn represents a connected WebSocket client.
+//
+// Sends are queued and drained by a single writer goroutine, with the socket
+// write performed outside the lock. The browser→client pump calls Send for
+// every forwarded message, so a synchronous write here would let one client
+// that stops reading stall the whole session.
 type ClientConn struct {
 	id     uint64
 	conn   *websocket.Conn
-	mu     sync.Mutex
+	mu     sync.Mutex // guards queue, closed, writeStart
+	cond   *sync.Cond
+	queue  []string
 	closed bool
+	done   chan struct{}
 	server *Server
+
+	writeStart int64 // unix nanos of the in-progress write, 0 when idle
+}
+
+// startWriter begins draining queued messages. Called once per connection.
+func (c *ClientConn) startWriter() {
+	c.cond = sync.NewCond(&c.mu)
+	c.done = make(chan struct{})
+	go c.writeLoop()
+	go c.watchStalledWrite()
+}
+
+// writeLoop drains the queue, writing with the lock released so a stalled
+// client never blocks Send callers.
+func (c *ClientConn) writeLoop() {
+	defer close(c.done)
+	for {
+		c.mu.Lock()
+		for len(c.queue) == 0 && !c.closed {
+			c.cond.Wait()
+		}
+		if len(c.queue) == 0 && c.closed {
+			c.mu.Unlock()
+			return
+		}
+		batch := c.queue
+		c.queue = nil
+		c.writeStart = time.Now().UnixNano()
+		c.mu.Unlock()
+
+		var err error
+		for _, msg := range batch {
+			c.conn.SetWriteDeadline(time.Now().Add(clientWriteDeadline))
+			if err = c.conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+				break
+			}
+		}
+
+		c.mu.Lock()
+		c.writeStart = 0
+		if err != nil {
+			// The client is gone or wedged — stop accepting messages so the
+			// queue can't grow unboundedly against a reader that never drains.
+			c.closed = true
+			c.mu.Unlock()
+			fmt.Fprintf(os.Stderr, "[proxy] Client %d write failed, dropping connection: %v\n", c.id, err)
+			c.conn.Close()
+			return
+		}
+		c.mu.Unlock()
+	}
+}
+
+// watchStalledWrite reports a write that is currently blocked — the signature
+// of a client that stopped reading its socket.
+func (c *ClientConn) watchStalledWrite() {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-t.C:
+			c.mu.Lock()
+			start := c.writeStart
+			depth := len(c.queue)
+			c.mu.Unlock()
+			if start != 0 {
+				if blocked := time.Since(time.Unix(0, start)); blocked > 5*time.Second {
+					fmt.Fprintf(os.Stderr, "[proxy] client %d write blocked for %.0fs (%d messages queued) — client not reading\n",
+						c.id, blocked.Seconds(), depth)
+				}
+			}
+		}
+	}
 }
 
 // ID returns the client connection ID.
@@ -205,6 +292,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		conn:   conn,
 		server: s,
 	}
+	client.startWriter()
 
 	s.clients.Store(client.id, client)
 	fmt.Fprintf(os.Stderr, "[proxy] Client %d connected from %s\n", client.id, r.RemoteAddr)
@@ -254,7 +342,7 @@ func (s *Server) handleClient(client *ClientConn) {
 	}
 }
 
-// Send sends a text message to the client.
+// Send queues a message for the client. It never blocks and never drops.
 func (c *ClientConn) Send(msg string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -263,21 +351,26 @@ func (c *ClientConn) Send(msg string) error {
 		return fmt.Errorf("connection closed")
 	}
 
-	return c.conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	c.queue = append(c.queue, msg)
+	c.cond.Signal()
+	return nil
 }
 
-// Close closes the client connection.
+// Close stops accepting messages, waits for the queue to drain, then closes
+// the socket.
 func (c *ClientConn) Close() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil
 	}
-
 	c.closed = true
+	c.cond.Signal()
+	c.mu.Unlock()
 
-	// Send close message
+	<-c.done
+
+	c.conn.SetWriteDeadline(time.Now().Add(clientWriteDeadline))
 	c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 
 	return c.conn.Close()

@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python test-java test-cleanup double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -43,7 +43,7 @@ endif
 # only fires when something has gone catastrophically wrong. A healthy
 # sequential test-js phase is ~6-10 minutes because Chrome launch is ~16s
 # per file on macOS (see clients/javascript/src/clicker/process.ts). For
-# faster iteration bump JS_PARALLEL (default 3) to use more cores.
+# faster iteration bump JS_PARALLEL (see DEFAULT_PARALLEL) to use more cores.
 TEST_TIMEOUT ?= 600
 TIMEOUT_CMD := node scripts/timeout.mjs $(TEST_TIMEOUT)
 # Same watchdog for recipes that cd out of the repo root (pytest, gradlew).
@@ -79,7 +79,8 @@ build-go: deps
 		target_dir="node_modules/@vibium/$$platform/bin"; \
 		if [ -d "node_modules/@vibium/$$platform" ]; then \
 			mkdir -p "$$target_dir"; \
-			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE)"; \
+			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE).new" && \
+			mv -f "$$target_dir/vibium$(EXE).new" "$$target_dir/vibium$(EXE)"; \
 		fi; \
 	fi
 
@@ -163,6 +164,8 @@ serve: build-go
 	./clicker/bin/vibium$(EXE) serve
 
 # Build everything and run all tests: make test
+# test-go runs first: it needs no browser and finishes in seconds, so a
+# broken unit test fails before ~18 minutes of browser suites.
 # test-js-sync runs OUTSIDE the parallel group on every platform. Each of
 # test-js-async/sync/python/java fans out to *_PARALLEL headless Chromes, and
 # running all of them at once over-subscribes the machine (~14 concurrent
@@ -170,12 +173,71 @@ serve: build-go
 # ready timeout and cascading into cancellations. Keeping test-js-sync separate
 # caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
 # reason. Bump *_PARALLEL on machines with more cores/memory.
-test: build install-browser
+#
+# SUITE_PARALLEL caps how many suites the middle phase runs at once.
+# Default 4; drop to 1 on a small machine to run suites one at a time
+# (peak Chromes = the *_PARALLEL fan-out of a single suite).
+#
+# test-browser-modes runs in its own serial phase because its tests open
+# visible Chrome windows (headed coverage is intentional — that's what
+# humans use). Inside the parallel fan-out those windows pop up all at
+# once, steal focus, and can beachball the macOS window manager, timing
+# out unrelated suites.
+#
+# test-daemon also runs serially: its tests start and stop the one shared
+# daemon at a fixed socket path, so any suite that auto-starts a daemon
+# alongside them would fight over it.
+SUITE_PARALLEL ?= 4
+
+# Per-suite browser fan-out, derived from core count: half the cores, floor 3.
+# A 12-core dev box gets 6; CI's 4-vCPU runner stays at the long-standing 3.
+# Measured here at 12 cores: 3 -> 335s, 6 -> 268s, 8 -> 259s. 8 is only 9s
+# better than 6 but runs ~20 concurrent Chromes, near the oversubscription
+# that used to wedge the suite, so the default stops at half.
+ifeq ($(OS),Windows_NT)
+DEFAULT_PARALLEL := 3
+else
+DEFAULT_PARALLEL := $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4); n=$$((n / 2)); [ $$n -lt 3 ] && n=3; echo $$n)
+endif
+
+# macOS VM guests with a dead virtual GPU pay ~15s per Chrome launch, which is
+# most of a local `make test`. A Metal shim skips it.
+#
+# This is decided by probing THIS machine, not by detecting a VM: a guest with
+# working GPU passthrough must not be shimmed, because the shim hides the GPU
+# rather than speeding it up. The probe costs ~15s once, then is cached.
+# Override with VM_FAST_LAUNCH=1 or =0.
+# See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
+MTLSHIM := $(CURDIR)/clicker/bin/mtlshim.dylib
+MTLVERDICT := $(CURDIR)/clicker/bin/.mtl-verdict
+
+ifeq ($(UNAME_S),Darwin)
+ifeq ($(origin VM_FAST_LAUNCH),undefined)
+VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT))
+endif
+endif
+
+ifeq ($(VM_FAST_LAUNCH),1)
+ifeq ($(UNAME_S),Darwin)
+FAST_LAUNCH_DEP := mtlshim
+export VIBIUM_VM_FAST_LAUNCH := $(MTLSHIM)
+endif
+endif
+
+mtlshim:
+	@mkdir -p $(dir $(MTLSHIM))
+	clang -fno-objc-arc -dynamiclib -framework Metal -framework Foundation \
+		-o $(MTLSHIM) scripts/mtlshim.m
+
+test: build install-browser $(FAST_LAUNCH_DEP)
 	@START_TIME=$$(date +%s); \
+	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j 4 test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
+	"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-daemon test-cleanup && \
 	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
@@ -201,6 +263,11 @@ test-cleanup:
 	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
 	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
+# Run Go unit tests (no browser, no daemon — seconds, so run them first)
+test-go:
+	@echo "--- Go Unit Tests ---"
+	cd clicker && go test ./...
+
 # Run CLI tests (tests the vibium binary directly)
 # Process tests run separately with --test-concurrency=1 to avoid interference
 test-cli: build-go
@@ -209,15 +276,15 @@ test-cli: build-go
 	@echo "--- CLI Tests ---"
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js tests/cli/prompt-blocked.test.js
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@echo "--- CLI Process Tests (sequential) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js
 
 # Run JS library tests
 # Each test file owns its own browser (top-level before/after), so files are
-# independent and safe to run in parallel. JS_PARALLEL controls the fan-out:
-# default 4 gives ~3x speedup vs sequential. (Previously sequential because
+# independent and safe to run in parallel. JS_PARALLEL controls the fan-out.
+# (Previously sequential because
 # we suspected parallel-induced flakes; root cause was a cross-process Chrome
 # temp-dir cleanup race in clicker/internal/browser/launcher.go, now fixed.)
 # Process tests stay sequential because they assert on Chrome process lifecycle.
@@ -227,14 +294,13 @@ test-cli: build-go
 # parallel-safe groups concurrently with test-mcp/test-python/test-java via
 # `$(MAKE) -j 5`. The process group must run alone because it asserts on
 # Chrome PID baselines.
-JS_PARALLEL ?= 3
+JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/async/async-api.test.js \
 		tests/js/async/auto-wait.test.js \
-		tests/js/async/browser-modes.test.js \
 		tests/js/async/elements.test.js \
 		tests/js/async/interaction.test.js \
 		tests/js/async/state.test.js \
@@ -253,6 +319,8 @@ test-js-async: build-go
 		tests/js/async/storage.test.js \
 		tests/js/async/frames.test.js \
 		tests/js/async/object-model.test.js \
+		tests/js/async/dispatch-concurrency.test.js \
+		tests/js/async/prompt-blocked.test.js \
 		tests/js/async/navigation.test.js \
 		tests/js/async/lifecycle.test.js
 
@@ -284,26 +352,44 @@ test-mcp: build-go
 # Run daemon tests (sequential - daemon lifecycle)
 test-daemon: build-go
 	@echo "--- Daemon Tests ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js
 
 # Run Python client tests
 # PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
-# so each adds ~150 MB of memory pressure. Default 4 is conservative; bump
-# for faster CI. Module-scoped browser fixture means xdist's default
+# so each adds ~150 MB of memory pressure. Module-scoped browser fixture means
+# xdist's default
 # loadfile distribution gives each file to a single worker — safe under
 # parallel since each file owns its own browser via conftest.py.
-PY_PARALLEL ?= 3
-test-python: build-go install-browser
-	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
+PY_PARALLEL ?= $(DEFAULT_PARALLEL)
+
+# Ensure the Python client venv exists with the client + test deps installed.
+python-venv:
 	@cd clients/python && \
 		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
 		. $(VENV_ACTIVATE) && \
 		if ! python -c "import vibium, xdist" 2>/dev/null; then \
 			python -m pip install --quiet --upgrade pip && \
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
-		fi && \
+		fi
+
+# test_browser_modes.py is excluded here and run headed + serial by
+# test-browser-modes (see the `test` target comment).
+test-python: build-go install-browser python-venv
+	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
 		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
+			--ignore=../../tests/py/test_browser_modes.py
+
+# Headed browser-mode tests, one visible Chrome window at a time.
+test-browser-modes: build-go install-browser python-venv
+	@echo "--- Browser Mode Tests (headed, serial) ---"
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/browser-modes.test.js
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
+		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/test_browser_modes.py -v --tb=short -x
 
 # Build Java client JAR (dev — no native binaries, fast)
 build-java: build-go
@@ -462,7 +548,10 @@ help:
 	@echo "  make test-mcp              - Run MCP server tests only"
 	@echo "  make test-daemon           - Run daemon lifecycle tests"
 	@echo "  make test-python           - Run Python client tests"
+	@echo "  make test-browser-modes    - Run headed browser-mode tests (JS + Python, serial)"
 	@echo "  make test-java             - Run Java client tests"
+	@echo "  make test VM_FAST_LAUNCH=1 - macOS VM only: skip the ~15s dead-GPU"
+	@echo "                               stall on every Chrome launch"
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"

@@ -18,6 +18,32 @@ from .errors import VibiumNotFoundError, BrowserCrashedError
 # past, raising LimitOverrunError and killing the receiver loop (issue #110).
 _STREAM_LIMIT = 256 * 1024 * 1024  # 256 MiB
 
+# Overall wall-clock budget (seconds) for one launch attempt's ready signal.
+# The per-read timeout alone can be reset forever by dribbled pre-ready output,
+# so a stuck launch could hang far past it; this bounds the whole attempt.
+_READY_TIMEOUT = 60
+
+
+async def _drain_stderr(process) -> None:
+    """Continuously read the subprocess's stderr so the pipe never fills.
+
+    An unread stderr pipe blocks vibium once the OS buffer (~64 KiB) fills.
+    Forward diagnostics to our stderr when VIBIUM_STDERR is set.
+    """
+    if not process.stderr:
+        return
+    forward = bool(os.environ.get("VIBIUM_STDERR"))
+    try:
+        while True:
+            chunk = await process.stderr.read(65536)
+            if not chunk:
+                return
+            if forward:
+                sys.stderr.write(chunk.decode(errors="replace"))
+                sys.stderr.flush()
+    except (asyncio.CancelledError, OSError):
+        pass
+
 
 def get_platform_package_name() -> str:
     """Get the platform-specific package name."""
@@ -214,12 +240,19 @@ class VibiumProcess:
             )
 
             # Events (e.g. browsingContext.contextCreated) may arrive first.
+            # Bound the whole wait with a wall-clock deadline, not just per-read:
+            # vibium forwards pre-ready events, so a per-read timeout can be
+            # reset indefinitely by dribbled output while `ready` never arrives.
             pre_ready_lines = []
+            deadline = asyncio.get_running_loop().time() + _READY_TIMEOUT
             try:
                 while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError
                     line_bytes = await asyncio.wait_for(
                         process.stdout.readline(),  # type: ignore[union-attr]
-                        timeout=30,
+                        timeout=remaining,
                     )
                     if not line_bytes:
                         # EOF — process died
@@ -252,6 +285,9 @@ class VibiumProcess:
 
             instance = cls(process)
             instance._pre_ready_lines = pre_ready_lines
+            # Always drain stderr: an unread pipe blocks vibium once the OS
+            # buffer fills. Forward diagnostics when VIBIUM_STDERR is set.
+            instance._stderr_task = asyncio.create_task(_drain_stderr(process))
             return instance
 
         # Unreachable: the final attempt either returns or raises above.

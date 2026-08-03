@@ -22,6 +22,7 @@ type BrowserSession struct {
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
 	Client       ClientTransport
+	ownsRemote   bool // remote session was created here, so closeSession ends it
 	mu           sync.Mutex
 	closed       bool
 	stopChan     chan struct{}
@@ -41,13 +42,19 @@ type BrowserSession struct {
 	// Clock support
 	clockPreloadScriptID string // "" if not installed
 
+	activeContext string // last context foregrounded for pointer input; "" = unknown
+
+	// prompts records which contexts have an open user prompt, so a command
+	// Chrome will not answer fails immediately instead of timing out.
+	prompts *PromptTracker
+
 	// Recording support
 	recorder           *Recorder
-	lastContext        string   // last browsing context resolved by a command
-	lastURL            string   // last known page URL, updated from load/navigation events
-	lastElementBox     *BoxInfo // last resolved element box, for recording
-	screenshotInFlight int32    // atomic; 1 = screenshot capture in progress
-	handlerScreenshot  int32    // atomic; 1 = handler already captured filmstrip screenshot
+	lastContext        string     // last browsing context resolved by a command
+	lastURL            string     // last known page URL, updated from load/navigation events
+	lastElementBox     *BoxInfo   // last resolved element box, for recording
+	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
+	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
 	dispatchMu         sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
 }
 
@@ -96,6 +103,7 @@ func NewRouter(headless bool, connectURL string, connectHeaders http.Header) *Ro
 func (r *Router) OnClientConnect(client ClientTransport) {
 	var launchResult *browser.LaunchResult
 	var bidiConn *bidi.Connection
+	var ownsRemoteSession bool
 	var err error
 
 	if r.connectURL != "" {
@@ -106,8 +114,11 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		// itself in routeBrowserToClient, so no client reader may own it.
 		bidiConn, err = bidi.ConnectWithHeaders(r.connectURL, r.connectHeaders)
 		if err == nil {
-			if _, err = bidi.SessionNewOnConn(bidiConn, map[string]interface{}{}); err != nil {
+			var session *bidi.RemoteSession
+			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, r.connectURL, map[string]interface{}{}); err != nil {
 				bidiConn.Close()
+			} else {
+				ownsRemoteSession = session.Created
 			}
 		}
 		if err != nil {
@@ -156,9 +167,11 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		LaunchResult:   launchResult,
 		BidiConn:       bidiConn,
 		Client:         client,
+		ownsRemote:     ownsRemoteSession,
 		stopChan:       make(chan struct{}),
 		internalCmds:   make(map[int]chan json.RawMessage),
 		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
+		prompts:        NewPromptTracker(),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -176,11 +189,15 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 			"network.beforeRequestSent",
 			"network.responseCompleted",
 			"browsingContext.userPromptOpened",
+			"browsingContext.userPromptClosed",
 			"log.entryAdded",
 			"browsingContext.downloadWillBegin",
 			"browsingContext.downloadEnd",
 			"browsingContext.load",
 			"browsingContext.fragmentNavigated",
+			// SPA routing via history.pushState/replaceState changes the URL
+			// without a load or fragment event (#126).
+			"browsingContext.historyUpdated",
 		},
 	})
 	if err != nil {
@@ -213,14 +230,39 @@ func handlerCapturesBefore(method string) bool {
 }
 
 // dispatch wraps a vibium handler with automatic action recording.
+// unblocksAnotherCommand reports whether a method exists to release a browser
+// state that is blocking some other in-flight command. Such a method must never
+// wait on dispatchMu: the command it would wait for is the one it is meant to
+// unblock, which is a deadlock with a 60s fuse.
+//
+// Chrome is launched with unhandledPromptBehavior "ignore", so a dialog opened
+// by a click stays open and Chrome answers nothing else for that context until
+// browsingContext.handleUserPrompt arrives.
+func unblocksAnotherCommand(method string) bool {
+	switch method {
+	case "vibium:dialog.accept", "vibium:dialog.dismiss":
+		return true
+	}
+	return false
+}
+
 func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
 	go func() {
-		session.dispatchMu.Lock()
-		defer session.dispatchMu.Unlock()
-
 		session.mu.Lock()
 		recorder := session.recorder
 		session.mu.Unlock()
+
+		// dispatchMu orders actions so a recording's before/after snapshots see
+		// the page state its own action produced. Nothing outside recording
+		// needs it — the BiDi client is already safe for concurrent commands,
+		// and every session field this function touches (lastElementBox,
+		// handlerScreenshot, screenshotInFlight) is read only while recording.
+		// Taking it unconditionally serialized all 104 dispatched methods on
+		// every session, recording or not.
+		if recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
+			session.dispatchMu.Lock()
+			defer session.dispatchMu.Unlock()
+		}
 
 		var callId string
 
@@ -829,12 +871,15 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			} `json:"params"`
 		}
 		if json.Unmarshal([]byte(msg), &bidiEvent) == nil {
-			if bidiEvent.Params.URL != "" && (bidiEvent.Method == "browsingContext.load" || bidiEvent.Method == "browsingContext.fragmentNavigated") {
+			if bidiEvent.Params.URL != "" && (bidiEvent.Method == "browsingContext.load" || bidiEvent.Method == "browsingContext.fragmentNavigated" || bidiEvent.Method == "browsingContext.historyUpdated") {
 				session.mu.Lock()
 				session.lastURL = bidiEvent.Params.URL
 				session.mu.Unlock()
 			}
 		}
+
+		// Track user prompts so prompt-sensitive commands can fail fast.
+		session.prompts.Observe([]byte(msg))
 
 		// Record event for recording (non-blocking)
 		session.mu.Lock()
@@ -857,6 +902,38 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 	}
 }
 
+func (s *BrowserSession) activeContextID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeContext
+}
+
+func (s *BrowserSession) setActiveContext(ctx string) {
+	s.mu.Lock()
+	s.activeContext = ctx
+	s.mu.Unlock()
+}
+
+// pointerInputContext returns the browsing context a pointer-input command
+// targets, or "" if the command is not pointer input. Keyboard input needs no
+// hit-testing and does not stall, so it is deliberately excluded.
+func pointerInputContext(method string, params map[string]interface{}) string {
+	if method != "input.performActions" {
+		return ""
+	}
+	actions, ok := params["actions"].([]map[string]interface{})
+	if !ok {
+		return ""
+	}
+	for _, a := range actions {
+		if t, _ := a["type"].(string); t == "pointer" {
+			ctx, _ := params["context"].(string)
+			return ctx
+		}
+	}
+	return ""
+}
+
 // sendInternalCommand sends a BiDi command and waits for the response (60s timeout).
 func (r *Router) sendInternalCommand(session *BrowserSession, method string, params map[string]interface{}) (json.RawMessage, error) {
 	return r.sendInternalCommandWithTimeout(session, method, params, 60*time.Second)
@@ -864,6 +941,34 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	// An open user prompt means Chrome will never answer this command, so
+	// report it now rather than after the timeout.
+	if err := checkPromptBlocked(session.prompts, method, params); err != nil {
+		return nil, err
+	}
+
+	// Chrome blocks ~5s dispatching pointer input to a backgrounded tab (#248),
+	// so foreground the target first — but only on a change of context. An
+	// activate round-trip between the two clicks of a dblclick would push them
+	// past the double-click threshold.
+	switch {
+	case method == "browsingContext.create":
+		session.setActiveContext("") // the new tab takes focus
+	case method == "browsingContext.activate":
+		if ctx, _ := params["context"].(string); ctx != "" {
+			session.setActiveContext(ctx)
+		}
+	default:
+		if ctx := pointerInputContext(method, params); ctx != "" && session.activeContextID() != ctx {
+			// Best-effort: a nested context cannot be activated, and the
+			// dispatch below works regardless — so only record on success.
+			if _, err := r.sendInternalCommandWithTimeout(session, "browsingContext.activate",
+				map[string]interface{}{"context": ctx}, timeout); err != nil {
+				session.setActiveContext("")
+			}
+		}
+	}
+
 	// Record BiDi command in recording (opt-in via bidi: true)
 	session.mu.Lock()
 	recorder := session.recorder
@@ -928,10 +1033,12 @@ func (r *Router) closeSession(session *BrowserSession) {
 		session.recorder.StopScreenshots()
 	}
 
-	// Remote mode: end the BiDi session so chromedriver closes Chrome.
+	// Remote mode: end the BiDi session so chromedriver closes Chrome — but
+	// only one we created. An attached session belongs to whoever handed us
+	// the URL, and ending it would close their browser.
 	// stopChan is already closed, so this sends the command and returns
 	// without waiting for the response; the connection is closed next anyway.
-	if r.connectURL != "" && session.BidiConn != nil {
+	if session.ownsRemote && session.BidiConn != nil {
 		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 

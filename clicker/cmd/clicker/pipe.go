@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/api"
@@ -65,6 +66,12 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// doesn't corrupt the protocol stream.
 	os.Stdout = os.Stderr
 
+	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions.
+	// A clean shutdown removes a session's own dir, but any hard kill (crash,
+	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
+	// Parallel-safe: the minAge filter never touches a live sibling's dir.
+	browser.CleanupOrphanedChromeTempDirs(time.Minute)
+
 	router := api.NewRouter(headless, connectURL, connectHeaders)
 	client := api.NewPipeClientConn(protocolOut)
 
@@ -114,10 +121,15 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	}
 
 	// Clean up: kill THIS process's chromedriver process tree, remove its
-	// user-data-dir, and sweep any orphaned Chrome processes.
+	// user-data-dir, and sweep any orphaned Chrome processes. Connect mode
+	// launched nothing, so it has no orphans — and the sweep matches on
+	// vibium's Chrome cache dir, which would kill a chromedriver the user
+	// started themselves on this machine and handed us the URL for.
 	router.OnClientDisconnect(client)
 	router.CloseAll()
-	browser.KillOrphanedChromeProcesses()
+	if connectURL == "" {
+		browser.KillOrphanedChromeProcesses()
+	}
 
 	protocolOut.Close()
 }

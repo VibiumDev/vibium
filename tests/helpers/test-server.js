@@ -120,6 +120,20 @@ const ADD_REMOVE_HTML = `<html><head><title>The Internet - Add/Remove</title></h
   </script>
 </body></html>`;
 
+const EXAMPLE_HTML = `<html><head><title>Example Domain</title></head><body>
+  <div>
+    <h1>Example Domain</h1>
+    <p>This domain is for use in illustrative examples in documents. You may use this
+    domain in literature without prior coordination or asking for permission.</p>
+    <p><a href="/more-information">More information...</a></p>
+  </div>
+</body></html>`;
+
+const MORE_INFORMATION_HTML = `<html><head><title>More information</title></head><body>
+  <h1>More information</h1>
+  <p>You followed the example link. This page is served locally.</p>
+</body></html>`;
+
 const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <h1>Selector Strategies Test</h1>
   <input type="text" id="search" placeholder="Search..." data-testid="search-input" title="Search field" />
@@ -127,11 +141,50 @@ const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <input type="text" id="username" name="username" />
   <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Logo image" />
   <button data-testid="submit-btn">Submit</button>
+  <input type="submit" value="Login" />
   <div class="container"><span class="inner-text">Hello from span</span></div>
+</body></html>`;
+
+const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
+  <h1 id="inner">Inside the frame</h1>
+</body></html>`;
+
+const FRAMES_HTML = `<html><head><title>Frames</title></head><body>
+  <h1 id="outer">Outer page</h1>
+  <iframe src="/frame-inner" name="myframe"></iframe>
+</body></html>`;
+
+const SHADOW_HTML = `<html><head><title>Shadow</title></head><body>
+  <my-card></my-card>
+  <div id="out"></div>
+  <script>
+    class NestedEl extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML =
+          '<button id="deep">Deep Button</button>';
+      }
+    }
+    class MyCard extends HTMLElement {
+      constructor() {
+        super();
+        const r = this.attachShadow({ mode: 'open' });
+        r.innerHTML = '<p>shadow text</p><input id="i"><button id="b">Shadow Button</button><nested-el></nested-el>';
+        r.getElementById('b').onclick = () => {
+          document.getElementById('out').textContent = 'clicked:' + r.getElementById('i').value;
+        };
+      }
+    }
+    customElements.define('nested-el', NestedEl);
+    customElements.define('my-card', MyCard);
+  </script>
 </body></html>`;
 
 const routes = {
   '/': HOME_HTML,
+  '/shadow': SHADOW_HTML,
+  '/frames': FRAMES_HTML,
+  '/frame-inner': FRAME_INNER_HTML,
   '/login': LOGIN_HTML,
   '/secure': SECURE_HTML,
   '/checkboxes': CHECKBOXES_HTML,
@@ -140,6 +193,8 @@ const routes = {
   '/inputs': INPUTS_HTML,
   '/dynamic_loading/1': DYNAMIC_LOADING_HTML,
   '/add_remove_elements/': ADD_REMOVE_HTML,
+  '/example': EXAMPLE_HTML,
+  '/more-information': MORE_INFORMATION_HTML,
   '/selectors': SELECTORS_HTML,
 };
 

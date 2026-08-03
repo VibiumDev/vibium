@@ -5,7 +5,7 @@
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -23,7 +23,7 @@ function clicker(args, opts = {}) {
 }
 
 function clickerJSON(args, opts = {}) {
-  const result = clicker(`${args} --json`, opts);
+  const result = clicker(`--json ${args}`, opts);
   return JSON.parse(result);
 }
 
@@ -73,6 +73,23 @@ function readRecordingEvents(extractedDir) {
   return events;
 }
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('Daemon CLI: Recording', () => {
   const tmpFiles = [];
   const tmpDirs = [];
@@ -86,7 +103,7 @@ describe('Daemon CLI: Recording', () => {
   before(() => {
     stopDaemon();
     clicker('daemon start --headless');
-    clicker('go https://example.com');
+    clicker(`go ${baseURL}/example`);
   });
 
   after(() => {
@@ -123,7 +140,7 @@ describe('Daemon CLI: Recording', () => {
 
   test('record stop saves valid Playwright-compatible zip', () => {
     clickerJSON('record start');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
 
     const zipPath = tmpPath('valid-zip.zip');
     const result = clickerJSON(`record stop -o "${zipPath}"`);
@@ -169,7 +186,7 @@ describe('Daemon CLI: Recording', () => {
 
   test('record start --screenshots captures per-action screenshots', () => {
     clickerJSON('record start --screenshots');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
     clickerJSON('click "a"');
 
     const zipPath = tmpPath('screenshots.zip');
@@ -196,7 +213,7 @@ describe('Daemon CLI: Recording', () => {
   test('record group start / group stop adds group markers', () => {
     clickerJSON('record start');
     clickerJSON('record group start "Login"');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
     clickerJSON('record group stop');
 
     const zipPath = tmpPath('groups.zip');
@@ -218,7 +235,7 @@ describe('Daemon CLI: Recording', () => {
 
   test('record chunk start / chunk stop saves chunk zip', () => {
     clickerJSON('record start');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
 
     // Stop first chunk
     const chunkPath1 = tmpPath('chunk1.zip');
@@ -227,7 +244,7 @@ describe('Daemon CLI: Recording', () => {
 
     // Start second chunk
     clickerJSON('record chunk start');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
 
     // Stop second chunk
     const chunkPath2 = tmpPath('chunk2.zip');
@@ -253,7 +270,7 @@ describe('Daemon CLI: Recording', () => {
 
   test('record start --title sets trace viewer title', () => {
     clickerJSON('record start --title "CLI Title"');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
 
     const zipPath = tmpPath('title.zip');
     clickerJSON(`record stop -o "${zipPath}"`);
@@ -266,7 +283,7 @@ describe('Daemon CLI: Recording', () => {
 
   test('recording with multiple actions captures multiple screenshots', () => {
     clickerJSON('record start --screenshots');
-    clickerJSON('go https://example.com');
+    clickerJSON(`go ${baseURL}/example`);
 
     // Inject interactive elements
     clicker('eval "document.body.innerHTML = \'<input id=inp type=text><button id=btn1>A</button><button id=btn2>B</button>\';"');

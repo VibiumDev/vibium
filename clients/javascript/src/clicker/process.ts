@@ -57,6 +57,12 @@ export class VibiumProcess {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
+      // Always drain stderr: an unread pipe blocks vibium once the OS buffer
+      // fills. Forward diagnostics to our stderr when VIBIUM_STDERR is set.
+      proc.stderr?.on('data', (chunk: Buffer) => {
+        if (process.env.VIBIUM_STDERR) process.stderr.write(chunk);
+      });
+
       // If the ready-wait throws — timeout, the caller's await being interrupted
       // by a test-runner timeout, an unhandled rejection — we must SIGKILL the
       // spawned child. Otherwise its pipes stay open, keep Node's event loop

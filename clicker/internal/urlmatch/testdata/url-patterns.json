@@ -1,0 +1,239 @@
+{
+ "_comment": "Generated from Playwright's globToRegexPattern (reference/playwright/packages/isomorphic/urlMatch.ts). Shared conformance fixture: every vibium client and the Go engine must agree with these.",
+ "cases": [
+  {
+   "pattern": "**/api/data",
+   "url": "http://h/api/data",
+   "match": true
+  },
+  {
+   "pattern": "**/api/data",
+   "url": "http://h/api/data?x=1",
+   "match": false
+  },
+  {
+   "pattern": "**/api/data",
+   "url": "http://h/xapi/datay",
+   "match": false
+  },
+  {
+   "pattern": "**/api/data",
+   "url": "http://h/v1/api/data",
+   "match": true
+  },
+  {
+   "pattern": "**/api/*",
+   "url": "http://h/api/v1/data",
+   "match": false
+  },
+  {
+   "pattern": "**/api/*",
+   "url": "http://h/api/data",
+   "match": true
+  },
+  {
+   "pattern": "*/api",
+   "url": "http://h/v1/api",
+   "match": false
+  },
+  {
+   "pattern": "*/api",
+   "url": "h/api",
+   "match": true
+  },
+  {
+   "pattern": "**/*.{png,jpg}",
+   "url": "http://h/c.jpg",
+   "match": true
+  },
+  {
+   "pattern": "**/*.{png,jpg}",
+   "url": "http://h/c.png",
+   "match": true
+  },
+  {
+   "pattern": "**/*.{png,jpg}",
+   "url": "http://h/c.gif",
+   "match": false
+  },
+  {
+   "pattern": "**/*.{png,jpg}",
+   "url": "http://h/a/b/c.jpg",
+   "match": true
+  },
+  {
+   "pattern": "/api/data",
+   "url": "http://h/v2/api/data?q=1",
+   "match": false
+  },
+  {
+   "pattern": "/api/data",
+   "url": "/api/data",
+   "match": true
+  },
+  {
+   "pattern": "*.js",
+   "url": "https://h/a/b/foo.js",
+   "match": false
+  },
+  {
+   "pattern": "*.js",
+   "url": "foo.js",
+   "match": true
+  },
+  {
+   "pattern": "https://foo/**/bar.js",
+   "url": "https://foo/bar.js",
+   "match": true
+  },
+  {
+   "pattern": "https://foo/**/bar.js",
+   "url": "https://foo/a/bar.js",
+   "match": true
+  },
+  {
+   "pattern": "https://foo/**/bar.js",
+   "url": "https://foo/a/b/bar.js",
+   "match": true
+  },
+  {
+   "pattern": "**/get?test=1",
+   "url": "http://h/getXtest=1",
+   "match": false
+  },
+  {
+   "pattern": "**/get?test=1",
+   "url": "http://h/get?test=1",
+   "match": true
+  },
+  {
+   "pattern": "**/v[0-9]",
+   "url": "http://h/v1",
+   "match": false
+  },
+  {
+   "pattern": "**/v[0-9]",
+   "url": "http://h/v[0-9]",
+   "match": true
+  },
+  {
+   "pattern": "**/json",
+   "url": "http://h/json",
+   "match": true
+  },
+  {
+   "pattern": "**/json",
+   "url": "http://h/json/extra",
+   "match": false
+  },
+  {
+   "pattern": "**/json",
+   "url": "http://h/a/json",
+   "match": true
+  },
+  {
+   "pattern": "{*.png,*.jpg}",
+   "url": "logo.png",
+   "match": true
+  },
+  {
+   "pattern": "{*.png,*.jpg}",
+   "url": "logo.jpg",
+   "match": true
+  },
+  {
+   "pattern": "{*.png,*.jpg}",
+   "url": "logo.gif",
+   "match": false
+  },
+  {
+   "pattern": "**",
+   "url": "http://h/anything",
+   "match": true
+  },
+  {
+   "pattern": "**",
+   "url": "",
+   "match": true
+  },
+  {
+   "pattern": "**/*.png",
+   "url": "http://h/a/b.png",
+   "match": true
+  },
+  {
+   "pattern": "**/*.png",
+   "url": "http://h/b.png",
+   "match": true
+  },
+  {
+   "pattern": "**/text",
+   "url": "http://127.0.0.1:1/text",
+   "match": true
+  },
+  {
+   "pattern": "**/api/echo",
+   "url": "http://127.0.0.1:1/api/echo",
+   "match": true
+  },
+  {
+   "pattern": "**/subpage",
+   "url": "http://127.0.0.1:1/subpage",
+   "match": true
+  },
+  {
+   "pattern": "a,b",
+   "url": "a,b",
+   "match": true
+  },
+  {
+   "pattern": "**/*.{png,jpg,jpeg,gif,svg,webp,ico}",
+   "url": "http://h/x.webp",
+   "match": true
+  },
+  {
+   "pattern": "**/*.{png,jpg,jpeg,gif,svg,webp,ico}",
+   "url": "http://h/x.txt",
+   "match": false
+  },
+  {
+   "pattern": "**/get*",
+   "url": "http://h/getfoo",
+   "match": true
+  },
+  {
+   "pattern": "**/get*",
+   "url": "http://h/get",
+   "match": true
+  },
+  {
+   "pattern": "{a,{b,c}}",
+   "url": "http://h/x",
+   "error": true
+  },
+  {
+   "pattern": "}bad",
+   "url": "http://h/x",
+   "error": true
+  },
+  {
+   "pattern": "{unclosed",
+   "url": "http://h/x",
+   "error": true
+  }
+ ],
+ "vibiumDeviations": [
+  {
+   "pattern": "http://a.com",
+   "url": "http://a.com/",
+   "match": true,
+   "why": "A pattern with no glob syntax that parses as an absolute URL is normalized (lowercase scheme+host, empty path becomes \"/\") so it matches the URL shape browsers actually report. Raw Playwright glob would say false."
+  },
+  {
+   "pattern": "http://a.com",
+   "url": "http://a.com",
+   "match": false,
+   "why": "Same normalization: the pattern becomes http://a.com/, so the path-less form no longer matches."
+  }
+ ]
+}
