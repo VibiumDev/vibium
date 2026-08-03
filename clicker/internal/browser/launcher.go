@@ -328,14 +328,18 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", "", "", fmt.Errorf("failed to create session: HTTP %d", resp.StatusCode)
-	}
-
 	// Read response body for logging and parsing
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to read session response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		// The body carries the real reason — a version mismatch, a bad binary
+		// path, a sandbox failure. Returning only the status code (#107) left
+		// users with "HTTP 500" and nothing to act on.
+		return "", "", "", fmt.Errorf("failed to create session: HTTP %d: %s",
+			resp.StatusCode, driverErrorMessage(respBody))
 	}
 
 	if verbose {
@@ -498,4 +502,31 @@ func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
 	if count > 0 {
 		log.Debug("cleaned up orphaned Chrome temp dirs", "count", count, "minAge", minAge)
 	}
+}
+
+// driverErrorMessage pulls the human-readable part out of a WebDriver error
+// response, falling back to the raw body when it is not the expected shape.
+func driverErrorMessage(body []byte) string {
+	var e struct {
+		Value struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil {
+		switch {
+		case e.Value.Message != "":
+			return strings.TrimSpace(e.Value.Message)
+		case e.Value.Error != "":
+			return e.Value.Error
+		}
+	}
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "(empty response body)"
+	}
+	if len(trimmed) > 500 {
+		return trimmed[:500] + "…"
+	}
+	return trimmed
 }
