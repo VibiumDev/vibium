@@ -191,3 +191,37 @@ describe('Daemon: status exit code', () => {
     assert.match(status, /running/i);
   });
 });
+
+describe('Daemon: browser mode mismatch', () => {
+  before(() => {
+    stopDaemon();
+  });
+
+  after(() => {
+    stopDaemon();
+  });
+
+  test('requesting a different mode than the running browser is refused (#194)', () => {
+    // Headless daemon, so the request below asks for the opposite.
+    clicker('daemon start --headless');
+    clicker(`go ${baseURL}/example`);
+
+    try {
+      execSync(`${VIBIUM} --headless=false start`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+        stdio: 'pipe',
+      });
+      assert.fail('should refuse to attach a headed request to a headless browser');
+    } catch (err) {
+      const out = err.stdout + err.stderr;
+      assert.match(out, /already running headless/, `got: ${out.slice(0, 200)}`);
+      assert.match(out, /vibium stop/, 'should say how to resolve it');
+    }
+
+    // Matching mode still attaches, and so does no flag at all — the flag must
+    // only assert a mode when the user actually typed it.
+    assert.match(clicker('--headless start'), /already running/i);
+    assert.match(clicker('start'), /already running/i);
+  });
+});

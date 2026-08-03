@@ -43,8 +43,16 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 			}
 
 			if connectURL == "" {
-				// Local launch — just ensure daemon is running (lazy browser launch)
-				result, err := daemonCall("browser_start", map[string]interface{}{})
+				// Local launch — just ensure daemon is running (lazy browser launch).
+				// Carry --headless on the call: the flag otherwise only reaches a
+				// daemon we spawn ourselves, so it is silently dropped whenever one
+				// is already up. Only when explicitly given, so a bare `start`
+				// does not override a daemon deliberately started headless.
+				startArgs := map[string]interface{}{}
+				if cmd.Flags().Changed("headless") {
+					startArgs["headless"] = headless
+				}
+				result, err := daemonCall("browser_start", startArgs)
 				if err != nil {
 					printError(err)
 					return
