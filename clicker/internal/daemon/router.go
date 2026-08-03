@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // StatusResult is returned by daemon/status.
@@ -31,14 +31,12 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 	// Set read deadline
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-	scanner := bufio.NewScanner(conn)
-	// Increase scanner buffer for large requests
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
-	if !scanner.Scan() {
+	// bufio.Reader grows as needed; bufio.Scanner fails once a message exceeds
+	// its fixed buffer, and raising that cap only moves the ceiling (#209).
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	if err != nil && len(line) == 0 {
 		return
 	}
-	line := scanner.Bytes()
 
 	response := d.handleRequest(line)
 	if response == nil {
