@@ -62,8 +62,9 @@ screenshots/
 *-trace.zip
 saucedemo-record/
 
-# External reference checkouts
-reference/
+# External reference checkouts (root only — an unanchored pattern also
+# swallows docs/reference/, so new docs there could never be added)
+/reference/
 
 # Claude Code skill install state (local-only; no companion manifest)
 skills-lock.json
