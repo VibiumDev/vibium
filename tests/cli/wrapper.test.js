@@ -47,3 +47,26 @@ describe('CLI: ws-test scheme hint', () => {
     }
   });
 });
+
+describe('CLI: shell completion', () => {
+  test('zsh script sources without compinit already loaded (#201)', () => {
+    const script = execSync(`${VIBIUM} completion zsh`, { encoding: 'utf-8', timeout: 30000 });
+
+    const lines = script.split('\n');
+    assert.match(lines[0], /^#compdef/, 'fpath installs need #compdef on line 1');
+    assert.match(lines[1], /\$\+functions\[compdef\]/, 'guard must come right after it');
+
+    // zsh -f skips rc files, so compdef is undefined unless the guard loads it.
+    const out = execSync(
+      `zsh -f -c 'source <(${VIBIUM} completion zsh) && echo SOURCED'`,
+      { encoding: 'utf-8', timeout: 30000 }
+    );
+    assert.match(out, /SOURCED/);
+    assert.doesNotMatch(out, /command not found/);
+  });
+
+  test('other shells still generate', () => {
+    assert.match(execSync(`${VIBIUM} completion bash`, { encoding: 'utf-8', timeout: 30000 }), /bash completion/);
+    assert.ok(execSync(`${VIBIUM} completion fish`, { encoding: 'utf-8', timeout: 30000 }).length > 0);
+  });
+});
