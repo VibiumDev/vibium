@@ -181,8 +181,8 @@ func newFindCmd() *cobra.Command {
 	}
 
 	altCmd := &cobra.Command{
-		Use:   "alt [alt]",
-		Short: "Find element by alt attribute",
+		Use:     "alt [alt]",
+		Short:   "Find element by alt attribute",
 		Example: `  vibium find alt "Logo"`,
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -196,8 +196,8 @@ func newFindCmd() *cobra.Command {
 	}
 
 	titleCmd := &cobra.Command{
-		Use:   "title [title]",
-		Short: "Find element by title attribute",
+		Use:     "title [title]",
+		Short:   "Find element by title attribute",
 		Example: `  vibium find title "Close"`,
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
