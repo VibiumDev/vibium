@@ -77,12 +77,12 @@ type groupEntry struct {
 
 // pendingRequest holds a parsed beforeRequestSent event until its response arrives.
 type pendingRequest struct {
-	context   string
-	requestID string
-	url       string
-	method    string
-	headers   []interface{} // raw BiDi header list
-	cookies   []interface{}
+	context     string
+	requestID   string
+	url         string
+	method      string
+	headers     []interface{} // raw BiDi header list
+	cookies     []interface{}
 	headersSize float64
 	bodySize    float64
 	timestamp   float64 // BiDi timestamp (ms since epoch)
@@ -95,10 +95,10 @@ type Recorder struct {
 	mu              sync.Mutex
 	recording       bool
 	options         RecordingStartOptions
-	events          []recordEvent      // current chunk's recording events
-	network         []recordEvent      // current chunk's network events
-	resources       map[string][]byte // resource name -> binary data (JPEG/PNG)
-	groupStack      []groupEntry       // nested group entries (name + callId)
+	events          []recordEvent              // current chunk's recording events
+	network         []recordEvent              // current chunk's network events
+	resources       map[string][]byte          // resource name -> binary data (JPEG/PNG)
+	groupStack      []groupEntry               // nested group entries (name + callId)
 	pendingRequests map[string]*pendingRequest // BiDi request ID -> pending request
 	chunkIndex      int
 	startTime       int64  // unix ms

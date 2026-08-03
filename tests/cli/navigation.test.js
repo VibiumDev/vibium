@@ -3,7 +3,7 @@
  * Tests the vibium binary directly
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -11,20 +11,37 @@ const os = require('node:os');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('CLI: Navigation', () => {
   test('navigate command loads page and prints title', () => {
-    const result = execSync(`${VIBIUM} go https://example.com`, {
+    const result = execSync(`${VIBIUM} go ${baseURL}/example`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
-    assert.match(result, /example/i, 'Should show example.com content');
+    assert.match(result, /example/i, 'Should show example page content');
   });
 
   test('screenshot command creates valid PNG', () => {
     const filename = `vibium-test-${Date.now()}.png`;
     let savedPath;
     try {
-      const result = execSync(`${VIBIUM} screenshot https://example.com -o ${filename}`, {
+      const result = execSync(`${VIBIUM} screenshot ${baseURL}/example -o ${filename}`, {
         encoding: 'utf-8',
         timeout: 30000,
       });
@@ -52,15 +69,34 @@ describe('CLI: Navigation', () => {
     }
   });
 
+  test('screenshot honors -o paths instead of redirecting to the screenshot dir (#119)', () => {
+    // The daemon used to reduce -o to its basename and join it with
+    // ~/Pictures/Vibium, so every path the user typed was discarded.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-shot-'));
+    const nested = path.join(dir, 'sub', 'deep.png');
+    try {
+      const result = execSync(`${VIBIUM} screenshot ${baseURL}/example -o ${nested}`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      assert.match(result, new RegExp(nested.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+        `should report the path it was given, got: ${result}`);
+      assert.ok(fs.existsSync(nested), 'screenshot should be at the requested path');
+      assert.ok(fs.statSync(nested).size > 1000, 'should be a real PNG');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('eval command executes JavaScript', () => {
-    const result = execSync(`${VIBIUM} eval https://example.com "document.title"`, {
+    const result = execSync(`${VIBIUM} eval ${baseURL}/example "document.title"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
     assert.match(result, /Example Domain/i, 'Should return page title');
   });
   test('eval returns valid JSON for objects', () => {
-    const result = execSync(`${VIBIUM} eval https://example.com "({title: document.title, url: location.href})"`, {
+    const result = execSync(`${VIBIUM} eval ${baseURL}/example "({title: document.title, url: location.href})"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -69,7 +105,7 @@ describe('CLI: Navigation', () => {
     assert.ok(parsed.url, 'Should have url key');
   });
   test('eval returns valid JSON for arrays', () => {
-    const result = execSync(`${VIBIUM} eval https://example.com "[1, 2, 3]"`, {
+    const result = execSync(`${VIBIUM} eval ${baseURL}/example "[1, 2, 3]"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });

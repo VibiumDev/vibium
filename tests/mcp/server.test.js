@@ -24,7 +24,9 @@ class MCPClient {
 
   start() {
     return new Promise((resolve, reject) => {
-      this.proc = spawn(VIBIUM, ['mcp'], {
+      // --headless: without it every suite's lazy browser launch opens a
+      // visible, focus-stealing Chrome window during the parallel test phase.
+      this.proc = spawn(VIBIUM, ['mcp', '--headless'], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
@@ -111,6 +113,23 @@ class MCPClient {
     }
   }
 }
+
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
 
 describe('MCP Server: Protocol', () => {
   let client;
@@ -220,13 +239,13 @@ describe('MCP Server: Browser Tools', () => {
   test('browser_navigate auto-launches browser (lazy launch)', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     assert.ok(response.result, 'Should have result');
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('example.com'),
+      response.result.content[0].text.includes('/example'),
       'Should confirm navigation'
     );
   });
@@ -249,13 +268,13 @@ describe('MCP Server: Browser Tools', () => {
   test('browser_navigate goes to URL', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     assert.ok(response.result, 'Should have result');
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('example.com'),
+      response.result.content[0].text.includes('/example'),
       'Should confirm navigation'
     );
   });
@@ -319,6 +338,22 @@ describe('MCP Server: Browser Tools', () => {
       response.result.content[0].text.includes('Clicked'),
       'Should confirm click'
     );
+
+    // Navigation commits asynchronously after the click — poll briefly
+    let urlText;
+    for (let i = 0; i < 50; i++) {
+      const urlResponse = await client.call('tools/call', {
+        name: 'browser_get_url',
+        arguments: {},
+      });
+      urlText = urlResponse.result.content[0].text;
+      if (urlText.includes('/more-information')) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(
+      urlText.includes('/more-information'),
+      `Should land on /more-information after clicking the link, got: ${urlText}`
+    );
   });
 
   test('browser_stop closes session', async () => {
@@ -354,10 +389,10 @@ describe('MCP Server: New Tools', () => {
     await client.start();
     await client.call('initialize', { capabilities: {} });
 
-    // Navigate to example.com for testing
+    // Navigate to the local example page for testing
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
   });
 
@@ -403,8 +438,8 @@ describe('MCP Server: New Tools', () => {
     assert.ok(response.result, 'Should have result');
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('example.com'),
-      'Should contain example.com URL'
+      response.result.content[0].text.includes('/example'),
+      'Should contain /example URL'
     );
   });
 
@@ -704,10 +739,10 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     await client.start();
     await client.call('initialize', { capabilities: {} });
 
-    // Navigate to example.com so browser is launched
+    // Navigate to the local example page so browser is launched
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
   });
 
@@ -778,7 +813,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     // Navigate to generate events
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     // Stop and save
@@ -859,7 +894,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     // Perform actions to trigger screenshots
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
     await client.call('tools/call', {
       name: 'browser_click',
@@ -929,7 +964,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     // Perform action inside group
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     // Stop group
@@ -972,7 +1007,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     // First chunk: navigate
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     // Stop first chunk
@@ -993,7 +1028,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
     // Navigate again
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     // Stop second chunk
@@ -1035,7 +1070,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
 
     await client.call('tools/call', {
       name: 'browser_navigate',
-      arguments: { url: 'https://example.com' },
+      arguments: { url: `${baseURL}/example` },
     });
 
     const zipPath = tmpPath('title.zip');
@@ -1061,7 +1096,7 @@ describe('MCP Server: regression fixes', () => {
     client = new MCPClient();
     await client.start();
     await client.call('initialize', { capabilities: {} });
-    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: 'https://example.com' } });
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: `${baseURL}/example` } });
   });
 
   after(() => {
@@ -1100,7 +1135,7 @@ describe('MCP Server: regression fixes', () => {
     const r = await tool('browser_get_text', { selector: '#e' });
     assert.ok(!r.result.isError, `empty text should not error: ${JSON.stringify(r.result)}`);
     assert.strictEqual(r.result.content[0].text, '');
-    await tool('browser_navigate', { url: 'https://example.com' });
+    await tool('browser_navigate', { url: `${baseURL}/example` });
   });
 
   test('browser_set_cookie derives domain from the page when omitted (#152)', async () => {

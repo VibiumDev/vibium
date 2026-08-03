@@ -141,7 +141,7 @@ describe('Mouse: page-level input', () => {
 describe('Screenshots: options', () => {
   test('screenshot() returns a PNG buffer', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const buf = await vibe.screenshot();
     assert.ok(Buffer.isBuffer(buf), 'screenshot() should return a Buffer');
@@ -156,7 +156,7 @@ describe('Screenshots: options', () => {
 
   test('screenshot({ fullPage: true }) captures full page', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const viewportShot = await vibe.screenshot();
     const fullShot = await vibe.screenshot({ fullPage: true });
@@ -167,7 +167,7 @@ describe('Screenshots: options', () => {
 
   test('screenshot({ clip }) captures a specific region', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const clipShot = await vibe.screenshot({
       clip: { x: 0, y: 0, width: 100, height: 100 },
@@ -179,7 +179,7 @@ describe('Screenshots: options', () => {
 
   test('pdf() returns a PDF buffer', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const buf = await vibe.pdf();
     assert.ok(Buffer.isBuffer(buf), 'pdf() should return a Buffer');
@@ -196,7 +196,7 @@ describe('Screenshots: options', () => {
 describe('Evaluation: page-level', () => {
   test('eval() evaluates an expression', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const result = await vibe.evaluate('1 + 1');
     assert.strictEqual(result, 2);
@@ -204,7 +204,7 @@ describe('Evaluation: page-level', () => {
 
   test('eval() returns strings', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const result = await vibe.evaluate('document.title');
     assert.strictEqual(result, 'Example Domain');
@@ -212,7 +212,7 @@ describe('Evaluation: page-level', () => {
 
   test('eval() returns null for undefined', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     const result = await vibe.evaluate('undefined');
     assert.strictEqual(result, null);
@@ -220,7 +220,7 @@ describe('Evaluation: page-level', () => {
 
   test('addScript() injects inline JS', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     await vibe.addScript('window.__testVar = 42;');
 
@@ -230,7 +230,7 @@ describe('Evaluation: page-level', () => {
 
   test('addStyle() injects inline CSS', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     await vibe.addStyle('body { background-color: rgb(255, 0, 0) !important; }');
 
@@ -240,7 +240,7 @@ describe('Evaluation: page-level', () => {
 
   test('expose() injects a named function on window', async () => {
     const vibe = await bro.page();
-    await vibe.go('https://example.com');
+    await vibe.go(`${baseURL}/example`);
 
     await vibe.expose('myAdd', '(a, b) => a + b');
 

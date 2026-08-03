@@ -154,7 +154,7 @@ public class Page {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, "", 0);
+        return elementFromResult(result, "", 0, locatorParams(options));
     }
 
     /** Find all matching elements by CSS selector. */
@@ -180,7 +180,7 @@ public class Page {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, "");
+        return elementsFromResult(result, "", locatorParams(options));
     }
 
     // ── Screenshots & PDF ───────────────────────────────────────
@@ -310,7 +310,7 @@ public class Page {
     /** Wait for a JS function to return truthy with options. */
     public Object waitForFunction(String fn, WaitOptions options) {
         JsonObject params = contextParams();
-        params.addProperty("expression", fn);
+        params.addProperty("fn", fn);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
@@ -630,17 +630,34 @@ public class Page {
     }
 
     private Element elementFromResult(JsonObject result, String selector, int index) {
+        return elementFromResult(result, selector, index, null);
+    }
+
+    private Element elementFromResult(JsonObject result, String selector, int index,
+                                      Map<String, Object> locator) {
         ElementInfo info = parseElementInfo(result);
-        return new Element(client, contextId, selector, index, info);
+        return new Element(client, contextId, selector, index, info, locator);
+    }
+
+    /** The locator an element was found by, minus per-call options. */
+    private static Map<String, Object> locatorParams(SelectorOptions options) {
+        Map<String, Object> p = new LinkedHashMap<>(options.toParams());
+        p.remove("timeout");
+        return p;
     }
 
     private List<Element> elementsFromResult(JsonObject result, String selector) {
+        return elementsFromResult(result, selector, null);
+    }
+
+    private List<Element> elementsFromResult(JsonObject result, String selector,
+                                             Map<String, Object> locator) {
         List<Element> elements = new ArrayList<>();
         JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new JsonArray();
         for (int i = 0; i < arr.size(); i++) {
             JsonObject el = arr.get(i).getAsJsonObject();
             ElementInfo info = parseElementInfo(el);
-            elements.add(new Element(client, contextId, selector, i, info));
+            elements.add(new Element(client, contextId, selector, i, info, locator));
         }
         return elements;
     }
@@ -724,10 +741,10 @@ public class Page {
                     handleConsoleEvent(params);
                 }
                 break;
-            case "vibium:download.started":
+            case "browsingContext.downloadWillBegin":
                 handleDownloadStarted(params);
                 break;
-            case "vibium:download.completed":
+            case "browsingContext.downloadEnd":
                 handleDownloadCompleted(params);
                 break;
             case "vibium:network.intercepted":
@@ -783,7 +800,7 @@ public class Page {
     private void handleDownloadStarted(JsonObject params) {
         if (downloadListeners.isEmpty()) return;
         Download download = new Download(client, params);
-        String navId = params.has("navigationId") ? params.get("navigationId").getAsString() : "";
+        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
         if (!navId.isEmpty()) {
             activeDownloads.put(navId, download);
         }
@@ -793,11 +810,11 @@ public class Page {
     }
 
     private void handleDownloadCompleted(JsonObject params) {
-        String navId = params.has("navigationId") ? params.get("navigationId").getAsString() : "";
+        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
         Download download = activeDownloads.remove(navId);
         if (download != null) {
-            String status = params.has("status") ? params.get("status").getAsString() : "";
-            String path = params.has("path") ? params.get("path").getAsString() : null;
+            String status = params.has("status") ? params.get("status").getAsString() : "complete";
+            String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
             download.complete(status, path);
         }
     }

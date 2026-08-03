@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/bidi"
@@ -112,6 +113,11 @@ func newWSTestCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			url := args[0]
+			if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+				ws := strings.Replace(strings.Replace(url, "https://", "wss://", 1), "http://", "ws://", 1)
+				fmt.Fprintf(os.Stderr, "Error: %s is not a WebSocket URL. Try: %s\n", url, ws)
+				os.Exit(1)
+			}
 			fmt.Printf("Connecting to %s...\n", url)
 
 			conn, err := bidi.Connect(url)

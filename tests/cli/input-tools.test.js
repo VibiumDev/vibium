@@ -4,14 +4,32 @@
  * Note: scroll, keys, select require daemon mode and are tested via MCP
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
+const path = require('path');
 const { VIBIUM } = require('../helpers');
+
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
 
 describe('CLI: Input Tools', () => {
   test('hover command hovers over element', () => {
-    const result = execSync(`${VIBIUM} hover https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} hover ${baseURL}/example "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -52,6 +70,49 @@ describe('CLI: Negative value flag parsing', () => {
       assert.doesNotMatch(output, /unknown shorthand flag/, 'Should not treat -1 as a flag');
       assert.match(output, /positive|invalid/, 'Should give a meaningful error');
     }
+  });
+
+  test('sleep rejects a value over the cap instead of silently clamping', () => {
+    try {
+      execSync(`${VIBIUM} sleep 999999`, { encoding: 'utf-8', timeout: 60000, stdio: 'pipe' });
+      assert.fail('Should have thrown');
+    } catch (err) {
+      const output = err.stderr + err.stdout;
+      assert.match(output, /30000 or less/, 'Should say what the limit is');
+      assert.doesNotMatch(output, /Slept for/, 'Should not report a shorter sleep as success');
+    }
+  });
+
+  test('trailing flags work alongside negative positionals (#241)', () => {
+    // sleep used DisableFlagParsing and fill/type/geolocation used
+    // SetInterspersed(false); both kept negatives working by swallowing any
+    // flag that came after a positional.
+    const json = execSync(`${VIBIUM} sleep 1 --json`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(JSON.parse(json.trim()).ok, true, 'sleep should honour a trailing --json');
+
+    execSync(`${VIBIUM} content '<input id="x"><input id="y">'`, { encoding: 'utf-8', timeout: 30000 });
+
+    assert.match(
+      execSync(`${VIBIUM} fill "#x" val --timeout 5s`, { encoding: 'utf-8', timeout: 30000 }),
+      /Filled/,
+      'fill should accept a trailing --timeout'
+    );
+    assert.match(
+      execSync(`${VIBIUM} type "#y" hi --timeout 5s`, { encoding: 'utf-8', timeout: 30000 }),
+      /Typed/,
+      'type should accept a trailing --timeout'
+    );
+
+    const geo = execSync(`${VIBIUM} geolocation 37.8 -122.4 --json`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(JSON.parse(geo.trim()).ok, true, 'a negative arg and a trailing flag together');
+  });
+
+  test('an unknown flag errors instead of being swallowed (#241)', () => {
+    assert.throws(
+      () => execSync(`${VIBIUM} sleep 1 --bogus`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' }),
+      /unknown flag/,
+      'should report the flag, not treat it as a positional or panic'
+    );
   });
 
   test('geolocation accepts negative coordinates', () => {

@@ -50,6 +50,78 @@ type RemoteValue struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
+// ExceptionDetails carries the details of a thrown script exception. A BiDi
+// exception response has no "result" member, so this is the only place the
+// failure text exists.
+type ExceptionDetails struct {
+	Text         string       `json:"text"`
+	LineNumber   int          `json:"lineNumber"`
+	ColumnNumber int          `json:"columnNumber"`
+	Exception    *RemoteValue `json:"exception,omitempty"`
+}
+
+// ScriptResult is the payload of a script.evaluate or script.callFunction
+// response: either a success carrying a RemoteValue, or an exception carrying
+// ExceptionDetails.
+type ScriptResult struct {
+	Type             string           `json:"type"`
+	Result           RemoteValue      `json:"result"`
+	ExceptionDetails ExceptionDetails `json:"exceptionDetails"`
+	Realm            string           `json:"realm,omitempty"`
+}
+
+// ScriptException is returned when a script throws. It carries the text from
+// exceptionDetails rather than the absent result member.
+type ScriptException struct {
+	Text       string
+	LineNumber int
+}
+
+func (e *ScriptException) Error() string {
+	if e.Text == "" {
+		return "script threw an exception"
+	}
+	return "script exception: " + e.Text
+}
+
+// ParseScriptResult decodes the payload of a script.evaluate or
+// script.callFunction response — the value of the response's "result" member.
+// A thrown exception is returned as *ScriptException.
+func ParseScriptResult(raw json.RawMessage) (*ScriptResult, error) {
+	var sr ScriptResult
+	if err := json.Unmarshal(raw, &sr); err != nil {
+		return nil, fmt.Errorf("failed to parse script result: %w", err)
+	}
+	if sr.Type == "exception" {
+		return nil, &ScriptException{
+			Text:       sr.ExceptionDetails.Text,
+			LineNumber: sr.ExceptionDetails.LineNumber,
+		}
+	}
+	return &sr, nil
+}
+
+// ParseScriptResponse decodes a full BiDi response envelope, { "result": ... },
+// as returned by the proxy's internal command path. See ParseScriptResult.
+func ParseScriptResponse(raw json.RawMessage) (*ScriptResult, error) {
+	var env struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("failed to parse script result: %w", err)
+	}
+	if len(env.Result) == 0 {
+		return nil, fmt.Errorf("failed to parse script result: no result member")
+	}
+	return ParseScriptResult(env.Result)
+}
+
+// ConvertRemoteValue converts a BiDi RemoteValue into a plain Go value,
+// recursing through arrays and objects.
+func ConvertRemoteValue(rv RemoteValue) interface{} {
+	return convertRemoteValue(rv)
+}
+
 // Evaluate evaluates a JavaScript expression and returns the result.
 // If context is empty, it uses the first available context.
 func (c *Client) Evaluate(context, expression string) (interface{}, error) {
@@ -77,26 +149,12 @@ func (c *Client) Evaluate(context, expression string) (interface{}, error) {
 		return nil, err
 	}
 
-	// Parse the result
-	var evalResult struct {
-		Type   string          `json:"type"`
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(msg.Result, &evalResult); err != nil {
-		return nil, fmt.Errorf("failed to parse script.evaluate result: %w", err)
+	sr, err := ParseScriptResult(msg.Result)
+	if err != nil {
+		return nil, err
 	}
 
-	if evalResult.Type == "exception" {
-		return nil, fmt.Errorf("script exception: %s", string(evalResult.Result))
-	}
-
-	// Parse the remote value
-	var remoteValue RemoteValue
-	if err := json.Unmarshal(evalResult.Result, &remoteValue); err != nil {
-		return nil, fmt.Errorf("failed to parse remote value: %w", err)
-	}
-
-	return convertRemoteValue(remoteValue), nil
+	return convertRemoteValue(sr.Result), nil
 }
 
 // CallFunction calls a JavaScript function with arguments.
@@ -133,26 +191,12 @@ func (c *Client) CallFunction(context, functionDeclaration string, args []interf
 		return nil, err
 	}
 
-	// Parse the result
-	var callResult struct {
-		Type   string          `json:"type"`
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(msg.Result, &callResult); err != nil {
-		return nil, fmt.Errorf("failed to parse script.callFunction result: %w", err)
+	sr, err := ParseScriptResult(msg.Result)
+	if err != nil {
+		return nil, err
 	}
 
-	if callResult.Type == "exception" {
-		return nil, fmt.Errorf("script exception: %s", string(callResult.Result))
-	}
-
-	// Parse the remote value
-	var remoteValue RemoteValue
-	if err := json.Unmarshal(callResult.Result, &remoteValue); err != nil {
-		return nil, fmt.Errorf("failed to parse remote value: %w", err)
-	}
-
-	return convertRemoteValue(remoteValue), nil
+	return convertRemoteValue(sr.Result), nil
 }
 
 // serializeValue converts a Go value to a BiDi serialized value.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 	"github.com/vibium/clicker/internal/process"
 )
+
+// sessionCreateTimeout bounds the HTTP POST /session fallback (Chrome cold
+// launch ~16s) so a wedged chromedriver can't hang it indefinitely.
+const sessionCreateTimeout = 30 * time.Second
 
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
@@ -123,8 +128,16 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("using port", "port", port)
 
 	// Start chromedriver as a process group leader so we can kill all children
-	cmd := exec.Command(chromedriverPath, fmt.Sprintf("--port=%d", port))
+	cdArgs := []string{fmt.Sprintf("--port=%d", port)}
+	if dir := os.Getenv("VIBIUM_CHROMEDRIVER_LOG_DIR"); dir != "" {
+		cdArgs = append(cdArgs, "--verbose", fmt.Sprintf("--log-path=%s/chromedriver-%d.log", dir, port))
+	}
+	cmd := exec.Command(chromedriverPath, cdArgs...)
 	setProcGroup(cmd)
+	// Set here, not around `make`: macOS strips DYLD_* across SIP-protected execs.
+	if shim := vmFastLaunchShim(); shim != "" {
+		cmd.Env = append(os.Environ(), "DYLD_INSERT_LIBRARIES="+shim)
+	}
 	if opts.Verbose {
 		fmt.Println("       ------- chromedriver -------")
 		pw := newPrefixWriter(os.Stdout, "       ")
@@ -256,6 +269,16 @@ func chromeArgs(headless bool) []string {
 	return args
 }
 
+// vmFastLaunchShim returns a Metal-interposing dylib path for macOS VM guests
+// whose dead virtual GPU adds ~15s to every Chrome launch. Opt-in, darwin-only.
+// See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
+func vmFastLaunchShim() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	return os.Getenv("VIBIUM_VM_FAST_LAUNCH")
+}
+
 // buildCapabilities returns the capabilities map for BiDi session.new.
 func buildCapabilities(chromePath string, headless bool) map[string]interface{} {
 	return map[string]interface{}{
@@ -270,9 +293,9 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 				"args":            chromeArgs(headless),
 				"excludeSwitches": []string{"enable-automation", "enable-logging"},
 				"prefs": map[string]interface{}{
-					"credentials_enable_service":                          false,
-					"profile.password_manager_enabled":                    false,
-					"profile.password_manager_leak_detection":             false,
+					"credentials_enable_service":                           false,
+					"profile.password_manager_enabled":                     false,
+					"profile.password_manager_leak_detection":              false,
 					"profile.default_content_setting_values.notifications": 2,
 				},
 			},
@@ -296,20 +319,27 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 		fmt.Printf("       --> %s\n", string(jsonBody))
 	}
 
-	resp, err := http.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
+	// Bounded so a wedged chromedriver can't hang the HTTP fallback forever.
+	// session.new + Chrome cold-launch fit comfortably within this.
+	httpClient := &http.Client{Timeout: sessionCreateTimeout}
+	resp, err := httpClient.Post(baseURL+"/session", "application/json", bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", "", "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", "", "", fmt.Errorf("failed to create session: HTTP %d", resp.StatusCode)
-	}
-
 	// Read response body for logging and parsing
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to read session response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		// The body carries the real reason — a version mismatch, a bad binary
+		// path, a sandbox failure. Returning only the status code (#107) left
+		// users with "HTTP 500" and nothing to act on.
+		return "", "", "", fmt.Errorf("failed to create session: HTTP %d: %s",
+			resp.StatusCode, driverErrorMessage(respBody))
 	}
 
 	if verbose {
@@ -474,3 +504,29 @@ func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
 	}
 }
 
+// driverErrorMessage pulls the human-readable part out of a WebDriver error
+// response, falling back to the raw body when it is not the expected shape.
+func driverErrorMessage(body []byte) string {
+	var e struct {
+		Value struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil {
+		switch {
+		case e.Value.Message != "":
+			return strings.TrimSpace(e.Value.Message)
+		case e.Value.Error != "":
+			return e.Value.Error
+		}
+	}
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "(empty response body)"
+	}
+	if len(trimmed) > 500 {
+		return trimmed[:500] + "…"
+	}
+	return trimmed
+}

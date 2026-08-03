@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/vibium/clicker/internal/bidi"
 )
 
 // handleVibiumElText handles vibium:element.text — returns element.textContent.
@@ -16,8 +19,7 @@ func (r *Router) handleVibiumElText(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
-	val, err := r.evalElementScript(session, context, script, args)
+	val, err := GetText(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -64,8 +66,7 @@ func (r *Router) handleVibiumElInnerText(session *BrowserSession, cmd bidiComman
 		return
 	}
 
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
-	val, err := r.evalElementScript(session, context, script, args)
+	val, err := GetInnerText(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -127,7 +128,8 @@ func (r *Router) handleVibiumElAttr(session *BrowserSession, cmd bidiCommand) {
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, name) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
 		` + semanticMatchesHelper() + `
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -147,13 +149,14 @@ func (r *Router) handleVibiumElAttr(session *BrowserSession, cmd bidiCommand) {
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
 			(scope, selector, index, hasIndex, name) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
 				let el;
 				if (hasIndex) {
-					el = root.querySelectorAll(selector)[index];
+					el = pierceQueryAll(root, selector)[index];
 				} else {
-					el = root.querySelector(selector);
+					el = pierceQuery(root, selector);
 				}
 				if (!el) return JSON.stringify({error: 'element not found'});
 				const v = el.getAttribute(name);
@@ -316,8 +319,9 @@ func (r *Router) handleVibiumElIsChecked(session *BrowserSession, cmd bidiComman
 		return
 	}
 
-	script, args := buildElBoolScript(ep, `return !!el.checked;`)
-	checked, err := r.evalBoolScript(session, context, script, args)
+	// Share IsChecked rather than a second `!!el.checked` script, so this and
+	// check/uncheck agree on what counts as a checkable element.
+	checked, err := IsChecked(NewAPISession(r, session, context), context, ep)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -334,7 +338,9 @@ func (r *Router) handleVibiumElIsEditable(session *BrowserSession, cmd bidiComma
 		return
 	}
 
-	script, args := buildElBoolScript(ep, `return !el.disabled && !el.readOnly;`)
+	// Same question as the fill path and `is actionable`, so the same predicate:
+	// !disabled && !readOnly alone called a <div> editable.
+	script, args := buildElBoolScript(ep, `return `+EditablePredicateJS+`;`)
 	editable, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
@@ -554,47 +560,36 @@ func (r *Router) handlePageWaitForFunction(session *BrowserSession, cmd bidiComm
 			"resultOwnership":     "root",
 		})
 		if err == nil {
-			var result struct {
-				Result struct {
-					Type   string `json:"type"`
-					Result struct {
-						Type  string      `json:"type"`
-						Value interface{} `json:"value"`
-					} `json:"result"`
-					ExceptionDetails struct {
-						Text string `json:"text"`
-					} `json:"exceptionDetails"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal(resp, &result); err == nil {
-				if result.Result.Type == "exception" {
-					// Keep polling — the expression may reference state that does
-					// not exist yet — but remember why for the timeout message.
-					lastErr = result.Result.ExceptionDetails.Text
-				} else {
-					// Truthy check: non-null, non-undefined, non-false, non-zero, non-empty-string
-					res := result.Result.Result
-					truthy := false
-					switch res.Type {
-					case "boolean":
-						truthy = res.Value == true
-					case "number":
-						if v, ok := res.Value.(float64); ok {
-							truthy = v != 0
-						}
-					case "string":
-						if v, ok := res.Value.(string); ok {
-							truthy = v != ""
-						}
-					case "null", "undefined":
-						truthy = false
-					default:
-						truthy = res.Value != nil
+			sr, parseErr := bidi.ParseScriptResponse(resp)
+			var se *bidi.ScriptException
+			switch {
+			case errors.As(parseErr, &se):
+				// Keep polling — the expression may reference state that does
+				// not exist yet — but remember why for the timeout message.
+				lastErr = se.Text
+			case parseErr == nil:
+				// Truthy check: non-null, non-undefined, non-false, non-zero, non-empty-string
+				res := sr.Result
+				truthy := false
+				switch res.Type {
+				case "boolean":
+					truthy = res.Value == true
+				case "number":
+					if v, ok := res.Value.(float64); ok {
+						truthy = v != 0
 					}
-					if truthy {
-						r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": res.Value})
-						return
+				case "string":
+					if v, ok := res.Value.(string); ok {
+						truthy = v != ""
 					}
+				case "null", "undefined":
+					truthy = false
+				default:
+					truthy = res.Value != nil
+				}
+				if truthy {
+					r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": res.Value})
+					return
 				}
 			}
 		}
@@ -649,7 +644,8 @@ func buildElStateScript(ep ElementParams, expr string) (string, []map[string]int
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		`+semanticMatchesHelper()+`
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -669,13 +665,14 @@ func buildElStateScript(ep ElementParams, expr string) (string, []map[string]int
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 			let el;
 			if (hasIndex) {
-				el = root.querySelectorAll(selector)[index];
+				el = pierceQueryAll(root, selector)[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			if (!el) return null;
 			return %s;
@@ -691,7 +688,8 @@ func buildElBoolScript(ep ElementParams, body string) (string, []map[string]inte
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return 'error:root not found';
 		`+semanticMatchesHelper()+`
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -712,13 +710,14 @@ func buildElBoolScript(ep ElementParams, body string) (string, []map[string]inte
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return 'error:root not found';
 			let el;
 			if (hasIndex) {
-				el = root.querySelectorAll(selector)[index];
+				el = pierceQueryAll(root, selector)[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			if (!el) return 'error:element not found';
 			const _check = (el) => { %s };
@@ -735,7 +734,8 @@ func buildElJSONScript(ep ElementParams, body string) (string, []map[string]inte
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
 		`+semanticMatchesHelper()+`
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -755,13 +755,14 @@ func buildElJSONScript(ep ElementParams, body string) (string, []map[string]inte
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			`+PierceQueryJS()+`
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({error: 'root not found'});
 			let el;
 			if (hasIndex) {
-				el = root.querySelectorAll(selector)[index];
+				el = pierceQueryAll(root, selector)[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			if (!el) return JSON.stringify({error: 'element not found'});
 			%s
@@ -826,9 +827,10 @@ func (r *Router) resolveElementNoWait(session *BrowserSession, context string, e
 // Exported standalone state query functions — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
-// GetText returns the visible text of an element (innerText).
+// GetText returns the element's textContent, trimmed. GetInnerText is the
+// rendered-text variant; keeping both on innerText made them the same command.
 func GetText(s Session, context string, ep ElementParams) (string, error) {
-	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
+	script, args := buildElStateScript(ep, `(el.textContent || '').trim()`)
 	return EvalElementScript(s, context, script, args)
 }
 
@@ -856,8 +858,10 @@ func GetValue(s Session, context string, ep ElementParams) (string, error) {
 	return EvalElementScript(s, context, script, args)
 }
 
-// GetAttribute returns the value of an HTML attribute on an element.
-func GetAttribute(s Session, context string, ep ElementParams, name string) (string, error) {
+// GetAttribute returns the value of an HTML attribute, or nil when the
+// attribute is absent. A present-but-empty attribute (<button disabled>) and a
+// missing one are different things, and a plain string cannot tell them apart.
+func GetAttribute(s Session, context string, ep ElementParams, name string) (*string, error) {
 	var args []map[string]interface{}
 	var script string
 
@@ -866,7 +870,8 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (str
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, name) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -878,7 +883,7 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (str
 				}
 				if (!el) return null;
 				const v = el.getAttribute(name);
-				return v === null ? '' : v;
+				return JSON.stringify({value: v});
 			}
 		`
 	} else {
@@ -886,22 +891,34 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (str
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
 			(scope, selector, index, hasIndex, name) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 				let el;
 				if (hasIndex) {
-					el = root.querySelectorAll(selector)[index];
+					el = pierceQueryAll(root, selector)[index];
 				} else {
-					el = root.querySelector(selector);
+					el = pierceQuery(root, selector);
 				}
 				if (!el) return null;
 				const v = el.getAttribute(name);
-				return v === null ? '' : v;
+				return JSON.stringify({value: v});
 			}
 		`
 	}
 
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var out struct {
+		Value *string `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(val), &out); err != nil {
+		return nil, fmt.Errorf("attr parse failed: %w", err)
+	}
+	return out.Value, nil
 }
 
 // IsVisible checks if an element is visible (not hidden, not zero-size).
@@ -1241,57 +1258,12 @@ func (r *Router) handlePageExpose(session *BrowserSession, cmd bidiCommand) {
 }
 
 // deserializeScriptResult extracts a usable value from a BiDi script result.
-// Handles primitives (string, number, boolean, null, undefined) and objects/arrays.
+// Handles primitives (string, number, boolean, null, undefined) and nested
+// objects/arrays. A thrown exception is surfaced as an error rather than null.
 func deserializeScriptResult(resp json.RawMessage) (interface{}, error) {
-	var result struct {
-		Result struct {
-			Result struct {
-				Type   string      `json:"type"`
-				Value  interface{} `json:"value"`
-				Handle string      `json:"handle,omitempty"`
-			} `json:"result"`
-		} `json:"result"`
+	sr, err := bidi.ParseScriptResponse(resp)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse script result: %w", err)
-	}
-
-	r := result.Result.Result
-	switch r.Type {
-	case "null", "undefined":
-		return nil, nil
-	case "string", "number", "boolean":
-		return r.Value, nil
-	case "array":
-		// BiDi returns arrays as {type: "array", value: [{type, value}, ...]}
-		if items, ok := r.Value.([]interface{}); ok {
-			out := make([]interface{}, len(items))
-			for i, item := range items {
-				if m, ok := item.(map[string]interface{}); ok {
-					out[i] = m["value"]
-				} else {
-					out[i] = item
-				}
-			}
-			return out, nil
-		}
-		return r.Value, nil
-	case "object":
-		// BiDi returns objects as {type: "object", value: [[key, {type, value}], ...]}
-		if pairs, ok := r.Value.([]interface{}); ok {
-			out := make(map[string]interface{})
-			for _, pair := range pairs {
-				if kv, ok := pair.([]interface{}); ok && len(kv) == 2 {
-					key, _ := kv[0].(string)
-					if m, ok := kv[1].(map[string]interface{}); ok {
-						out[key] = m["value"]
-					}
-				}
-			}
-			return out, nil
-		}
-		return r.Value, nil
-	default:
-		return r.Value, nil
-	}
+	return bidi.ConvertRemoteValue(sr.Result), nil
 }

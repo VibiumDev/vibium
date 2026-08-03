@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 func newFindCmd() *cobra.Command {
+	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "find [selector]",
 		Short: "Find elements by CSS selector or semantic locator",
@@ -47,6 +49,8 @@ func newFindCmd() *cobra.Command {
 				toolArgs["selector"] = args[0]
 			}
 
+			toolArgs["timeout"] = float64(timeout.Milliseconds())
+
 			if all {
 				limit, _ := cmd.Flags().GetInt("limit")
 				toolArgs["limit"] = float64(limit)
@@ -68,10 +72,12 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	addTimeoutFlag(cmd, &timeout)
 	cmd.Flags().Bool("all", false, "Find all matching elements")
 	cmd.Flags().Int("limit", 10, "Maximum number of elements to return (with --all)")
 
 	// Semantic locator subcommands
+	var textCmdTimeout time.Duration
 	textCmd := &cobra.Command{
 		Use:   "text [text]",
 		Short: "Find element by text content",
@@ -79,7 +85,7 @@ func newFindCmd() *cobra.Command {
   # → @e1 [button] "Sign In"`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"text": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"text": args[0], "timeout": float64(textCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -88,6 +94,7 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var roleCmdTimeout time.Duration
 	roleCmd := &cobra.Command{
 		Use:   "role [role]",
 		Short: "Find element by ARIA role",
@@ -101,8 +108,12 @@ func newFindCmd() *cobra.Command {
 			toolArgs := map[string]interface{}{"role": args[0]}
 			name, _ := cmd.Flags().GetString("name")
 			if name != "" {
-				toolArgs["text"] = name
+				// "label" is the accessible-name filter; "text" is a raw
+				// textContent match, which is "" for a void element like
+				// <input type="submit">.
+				toolArgs["label"] = name
 			}
+			toolArgs["timeout"] = float64(roleCmdTimeout.Milliseconds())
 			result, err := daemonCall("browser_find", toolArgs)
 			if err != nil {
 				printError(err)
@@ -113,6 +124,7 @@ func newFindCmd() *cobra.Command {
 	}
 	roleCmd.Flags().String("name", "", "Accessible name filter")
 
+	var labelCmdTimeout time.Duration
 	labelCmd := &cobra.Command{
 		Use:   "label [label]",
 		Short: "Find input by associated label text",
@@ -120,7 +132,7 @@ func newFindCmd() *cobra.Command {
   # → @e1 [input type="email"] placeholder="Email"`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"label": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"label": args[0], "timeout": float64(labelCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -129,6 +141,7 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var placeholderCmdTimeout time.Duration
 	placeholderCmd := &cobra.Command{
 		Use:   "placeholder [placeholder]",
 		Short: "Find element by placeholder attribute",
@@ -136,7 +149,7 @@ func newFindCmd() *cobra.Command {
   # → @e1 [input] placeholder="Search..."`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"placeholder": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"placeholder": args[0], "timeout": float64(placeholderCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -145,6 +158,7 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var testidCmdTimeout time.Duration
 	testidCmd := &cobra.Command{
 		Use:   "testid [testid]",
 		Short: "Find element by data-testid attribute",
@@ -152,7 +166,7 @@ func newFindCmd() *cobra.Command {
   # → @e1 [button] data-testid="submit-btn"`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"testid": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"testid": args[0], "timeout": float64(testidCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -161,6 +175,7 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var xpathCmdTimeout time.Duration
 	xpathCmd := &cobra.Command{
 		Use:   "xpath [expression]",
 		Short: "Find element by XPath expression",
@@ -168,7 +183,7 @@ func newFindCmd() *cobra.Command {
   # → @e1 [div.main] ...`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"xpath": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"xpath": args[0], "timeout": float64(xpathCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -177,13 +192,14 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var altCmdTimeout time.Duration
 	altCmd := &cobra.Command{
-		Use:   "alt [alt]",
-		Short: "Find element by alt attribute",
+		Use:     "alt [alt]",
+		Short:   "Find element by alt attribute",
 		Example: `  vibium find alt "Logo"`,
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"alt": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"alt": args[0], "timeout": float64(altCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -192,13 +208,14 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	var titleCmdTimeout time.Duration
 	titleCmd := &cobra.Command{
-		Use:   "title [title]",
-		Short: "Find element by title attribute",
+		Use:     "title [title]",
+		Short:   "Find element by title attribute",
 		Example: `  vibium find title "Close"`,
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_find", map[string]interface{}{"title": args[0]})
+			result, err := daemonCall("browser_find", map[string]interface{}{"title": args[0], "timeout": float64(titleCmdTimeout.Milliseconds())})
 			if err != nil {
 				printError(err)
 				return
@@ -207,13 +224,21 @@ func newFindCmd() *cobra.Command {
 		},
 	}
 
+	addTimeoutFlag(textCmd, &textCmdTimeout)
 	cmd.AddCommand(textCmd)
+	addTimeoutFlag(roleCmd, &roleCmdTimeout)
 	cmd.AddCommand(roleCmd)
+	addTimeoutFlag(labelCmd, &labelCmdTimeout)
 	cmd.AddCommand(labelCmd)
+	addTimeoutFlag(placeholderCmd, &placeholderCmdTimeout)
 	cmd.AddCommand(placeholderCmd)
+	addTimeoutFlag(testidCmd, &testidCmdTimeout)
 	cmd.AddCommand(testidCmd)
+	addTimeoutFlag(xpathCmd, &xpathCmdTimeout)
 	cmd.AddCommand(xpathCmd)
+	addTimeoutFlag(altCmd, &altCmdTimeout)
 	cmd.AddCommand(altCmd)
+	addTimeoutFlag(titleCmd, &titleCmdTimeout)
 	cmd.AddCommand(titleCmd)
 
 	return cmd

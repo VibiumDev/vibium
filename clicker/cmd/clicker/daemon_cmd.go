@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -94,23 +95,9 @@ func newDaemonStopCmd() *cobra.Command {
 				return
 			}
 
-			// Read PID before sending shutdown so we can wait for the process to exit
-			pid, _ := daemon.ReadPID()
-
-			if err := daemon.Shutdown(); err != nil {
+			if err := shutdownDaemonAndWait(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error stopping daemon: %v\n", err)
 				os.Exit(1)
-			}
-
-			// Wait for the daemon process to fully exit (including Chrome cleanup)
-			if pid > 0 {
-				deadline := time.Now().Add(10 * time.Second)
-				for time.Now().Before(deadline) {
-					if !daemon.ProcessExists(pid) {
-						break
-					}
-					time.Sleep(100 * time.Millisecond)
-				}
 			}
 
 			fmt.Println("Daemon stopped.")
@@ -124,13 +111,16 @@ func newDaemonStatusCmd() *cobra.Command {
 		Short: "Show daemon status",
 		Run: func(cmd *cobra.Command, args []string) {
 			if !daemon.IsRunning() {
-				fmt.Println("Daemon is not running.")
+				// Exit non-zero so `vibium daemon status` is usable in a
+				// conditional, and keep the human line out of --json output.
 				if jsonOutput {
 					printJSON(map[string]interface{}{
 						"running": false,
 					})
+				} else {
+					fmt.Println("Daemon is not running.")
 				}
-				return
+				os.Exit(1)
 			}
 
 			status, err := daemon.Status()
@@ -161,6 +151,33 @@ func newDaemonStatusCmd() *cobra.Command {
 			}
 		},
 	}
+}
+
+// shutdownDaemonAndWait asks the daemon to shut down and waits for the process
+// to fully exit (including Chrome cleanup). No-op if it is not running.
+func shutdownDaemonAndWait() error {
+	if !daemon.IsRunning() {
+		return nil
+	}
+
+	// Read PID before sending shutdown so we can wait for the process to exit
+	pid, _ := daemon.ReadPID()
+
+	if err := daemon.Shutdown(); err != nil {
+		return err
+	}
+
+	if pid > 0 {
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if !daemon.ProcessExists(pid) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return nil
 }
 
 // resolveConnect merges CLI flags with env vars. Flags take precedence.
@@ -198,6 +215,10 @@ func resolveConnect(connectFlag string, headerFlags []string) (string, http.Head
 func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
 	// Clean stale files from a previous crash
 	daemon.CleanStale()
+
+	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions
+	// (parallel-safe: the minAge filter skips any live sibling's dir).
+	browser.CleanupOrphanedChromeTempDirs(time.Minute)
 
 	if daemon.IsRunning() {
 		fmt.Fprintln(os.Stderr, "Daemon is already running.")

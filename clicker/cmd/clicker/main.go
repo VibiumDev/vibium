@@ -67,6 +67,11 @@ func main() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")
 
+	// Cobra's built-in completion command emits a bare `compdef` call, which
+	// fails when the script is sourced before compinit has run (#201).
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.AddCommand(newCompletionCmd(rootCmd))
+
 	// Register all commands
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newPathsCmd())

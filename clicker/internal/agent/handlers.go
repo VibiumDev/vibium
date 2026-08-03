@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vibium/clicker/internal/api"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
-	"github.com/vibium/clicker/internal/api"
 )
 
 // Handlers manages browser session state and executes tool calls.
@@ -29,15 +29,24 @@ type Handlers struct {
 	conn           *bidi.Connection
 	screenshotDir  string
 	headless       bool
-	connectURL     string      // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header // headers for remote WebSocket connection
+	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header       // headers for remote WebSocket connection
+	ownsRemote     bool              // remote session was created here, so Close() ends it
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
-	activeContext  string         // last page context switched to or created
+	activeContext  string       // last page context switched to or created
+
+	// prompts records which contexts have an open user prompt, so a command
+	// Chrome will not answer fails immediately instead of timing out.
+	prompts *api.PromptTracker
+
+	// launchedHeadless is the mode the running browser was actually launched
+	// with, which is not necessarily the daemon's default.
+	launchedHeadless bool
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -57,6 +66,7 @@ func NewHandlers(screenshotDir string, headless bool, connectURL string, connect
 func (h *Handlers) newSession() *api.AgentSession {
 	s := api.NewAgentSession(h.client)
 	s.Context = h.activeContext
+	s.Prompts = h.prompts
 	s.OnBoxSet = func(box *api.BoxInfo) {
 		h.lastElementBox = box
 	}
@@ -592,11 +602,15 @@ func mcpToolToMethod(name string) string {
 func (h *Handlers) Close() {
 	h.sessionMu.Lock()
 	conn, client, launchResult := h.conn, h.client, h.launchResult
+	ownsRemote := h.ownsRemote
 	h.conn, h.client, h.launchResult = nil, nil, nil
+	h.ownsRemote = false
 	h.sessionMu.Unlock()
 
-	// Remote mode: end the BiDi session so chromedriver closes Chrome
-	if h.connectURL != "" && client != nil {
+	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
+	// when this process created it — an attached session belongs to whoever
+	// handed us the URL, and ending it would close their browser.
+	if ownsRemote && client != nil {
 		client.SendCommand("session.end", map[string]interface{}{})
 	}
 	if conn != nil {
@@ -609,8 +623,15 @@ func (h *Handlers) Close() {
 
 // browserLaunch launches a new browser session or connects to a remote one.
 func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult, error) {
-	// If browser is already running, return success (no-op)
+	// If browser is already running, return success (no-op) — unless the
+	// caller asked for a different mode than the one it is running in.
+	// Silently attaching them to the other mode is what #194 reported.
 	if h.client != nil {
+		if want, ok := args["headless"].(bool); ok && want != h.launchedHeadless {
+			return nil, fmt.Errorf(
+				"browser is already running %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
+				modeName(h.launchedHeadless), modeName(want))
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
@@ -621,19 +642,25 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 
 	// Remote browser connect mode
 	if h.connectURL != "" {
-		conn, client, sessionID, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
+		conn, client, session, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
 		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
+		h.ownsRemote = session.Created
 		h.sessionMu.Unlock()
+		h.startPromptTracking()
 
+		verb := "Attached to"
+		if session.Created {
+			verb = "Connected to"
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("Connected to remote browser at %s (session %s)", h.connectURL, sessionID),
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
 			}},
 		}, nil
 	}
@@ -666,7 +693,9 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.launchResult = launchResult
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
+	h.launchedHeadless = useHeadless
 	h.sessionMu.Unlock()
+	h.startPromptTracking()
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -674,6 +703,52 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 			Text: fmt.Sprintf("Browser launched (headless: %v)", useHeadless),
 		}},
 	}, nil
+}
+
+// modeName renders a launch mode the way the user typed it.
+func modeName(headless bool) string {
+	if headless {
+		return "headless"
+	}
+	return "headed"
+}
+
+// startPromptTracking subscribes to user-prompt events and keeps h.prompts in
+// sync. bidi.Client has a single event-handler slot, so one handler feeds both
+// the tracker and the recorder rather than recording replacing prompt tracking.
+func (h *Handlers) startPromptTracking() {
+	tracker := api.NewPromptTracker()
+
+	h.sessionMu.Lock()
+	h.prompts = tracker
+	client := h.client
+	h.sessionMu.Unlock()
+
+	if client == nil {
+		return
+	}
+
+	client.SendCommand("session.subscribe", map[string]interface{}{
+		"events": []string{
+			"browsingContext.userPromptOpened",
+			"browsingContext.userPromptClosed",
+		},
+	})
+	client.SetEventHandler(h.handleBidiEvent)
+}
+
+// handleBidiEvent is the single BiDi event handler for the agent session.
+func (h *Handlers) handleBidiEvent(msg string) {
+	h.sessionMu.Lock()
+	tracker := h.prompts
+	recorder := h.recorder
+	h.sessionMu.Unlock()
+
+	tracker.Observe([]byte(msg))
+
+	if recorder != nil && recorder.IsRecording() {
+		recorder.RecordBidiEvent(msg)
+	}
 }
 
 // browserNavigate navigates to a URL.
@@ -816,7 +891,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			}
 			return JSON.stringify({count: count});
 		}`
-		if _, err := h.client.CallFunction("", annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
+		if _, err := h.client.CallFunction(h.activeContext, annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
 			return nil, fmt.Errorf("failed to annotate: %w", err)
 		}
 	}
@@ -837,23 +912,27 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			document.querySelectorAll('.__vibium_annotation').forEach(el => el.remove());
 			return 'cleaned';
 		}`
-		h.client.CallFunction("", cleanupScript, nil)
+		h.client.CallFunction(h.activeContext, cleanupScript, nil)
 	}
 
 	// If filename provided, save to file (only if screenshotDir is configured)
 	if filename, ok := args["filename"].(string); ok && filename != "" {
-		if h.screenshotDir == "" {
-			return nil, fmt.Errorf("screenshot file saving is disabled (use --screenshot-dir to enable)")
+		// An absolute path is an explicit destination and is written as given;
+		// the CLI resolves -o against the user's shell so it always arrives in
+		// that form. A bare name has no directory to honor, so it lands in the
+		// configured screenshot dir — the MCP case, where the caller has no
+		// working directory to reason about (#119).
+		fullPath := filename
+		if !filepath.IsAbs(filename) {
+			if h.screenshotDir == "" {
+				return nil, fmt.Errorf("screenshot file saving is disabled (use --screenshot-dir to enable)")
+			}
+			fullPath = filepath.Join(h.screenshotDir, filepath.Base(filename))
 		}
 
-		// Create directory if it doesn't exist
-		if err := os.MkdirAll(h.screenshotDir, 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			return nil, fmt.Errorf("failed to create screenshot directory: %w", err)
 		}
-
-		// Use only the basename to prevent path traversal
-		safeName := filepath.Base(filename)
-		fullPath := filepath.Join(h.screenshotDir, safeName)
 
 		pngData, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
@@ -898,12 +977,14 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 
 	hasSemantic := role != "" || text != "" || label != "" || placeholder != "" || testid != "" || xpath != "" || alt != "" || title != ""
 
-	if hasSemantic {
-		timeout := api.DefaultTimeout
-		if t, ok := argFloat(args, "timeout"); ok {
-			timeout = time.Duration(t) * time.Millisecond
-		}
+	// Shared by both branches: the CSS path polls too, so --timeout is not
+	// silently inert on the most common form of find (#206).
+	timeout := api.DefaultTimeout
+	if t, ok := argFloat(args, "timeout"); ok {
+		timeout = time.Duration(t) * time.Millisecond
+	}
 
+	if hasSemantic {
 		script := findBySemanticScript()
 		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title}, timeout)
 		if err != nil {
@@ -953,7 +1034,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 	// Run getLabel in browser to get consistent label format (with scroll-into-view)
 	labelScript := `(selector) => {
 		` + GetLabelJS() + `
-		const el = document.querySelector(selector);
+		` + api.PierceQueryJS() + `
+		const el = pierceQuery(document, selector);
 		if (!el) return null;
 		if (el.scrollIntoViewIfNeeded) {
 			el.scrollIntoViewIfNeeded(true);
@@ -962,9 +1044,13 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		}
 		return getLabel(el);
 	}`
-	labelResult, err := h.client.CallFunction("", labelScript, []interface{}{selector})
+	// Poll like the semantic branch does, so --timeout means something here and
+	// a CSS find waits for an element that has not rendered yet (#206). The
+	// single non-polling call also returned nil for a miss and still minted a
+	// @e1 ref, so `find` reported "@e1 <nil>" with exit 0.
+	labelResult, err := pollCallFunction(h, labelScript, []interface{}{selector}, timeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
 	}
 
 	// Store ref in refMap
@@ -1052,6 +1138,12 @@ func findBySemanticScript() string {
 				const assocLabel = document.querySelector('label[for="' + el.id + '"]');
 				if (assocLabel) return (assocLabel.textContent || '').trim();
 			}
+			if (el.tagName === 'INPUT') {
+				const it = (el.getAttribute('type') || '').toLowerCase();
+				if ((it === 'submit' || it === 'reset' || it === 'button' || it === 'image') && el.value) {
+					return el.value;
+				}
+			}
 			const ph = el.getAttribute('placeholder');
 			if (ph) return ph;
 			const altAttr = el.getAttribute('alt');
@@ -1096,9 +1188,11 @@ func findBySemanticScript() string {
 				found.push(node);
 			}
 			if (found.length === 0) return null;
-			// Pick best: prefer shortest text match if text filter is used
+			// Pick best: prefer shortest text match when a name-ish filter is
+			// used. --name populates label, so gating on text alone would
+			// return tree-order first (usually an ancestor) instead.
 			el = found[0];
-			if (text && found.length > 1) {
+			if ((text || label) && found.length > 1) {
 				let bestLen = (el.textContent || '').length;
 				for (let i = 1; i < found.length; i++) {
 					const len = (found[i].textContent || '').length;
@@ -1199,7 +1293,7 @@ func (h *Handlers) browserEvaluate(args map[string]interface{}) (*ToolsCallResul
 		return nil, fmt.Errorf("expression is required")
 	}
 
-	result, err := h.client.Evaluate("", expression)
+	result, err := h.client.Evaluate(h.activeContext, expression)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate: %w", err)
 	}
@@ -1440,7 +1534,6 @@ func (h *Handlers) browserA11yTree(args map[string]interface{}) (*ToolsCallResul
 	}, nil
 }
 
-
 // browserHover moves the mouse over an element.
 func (h *Handlers) browserHover(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -1655,7 +1748,8 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 	findAllScript := `(selector, limit) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
-		const els = document.querySelectorAll(selector);
+		` + api.PierceQueryJS() + `
+		const els = pierceQueryAll(document, selector);
 		const results = [];
 		const n = Math.min(els.length, limit);
 		for (let i = 0; i < n; i++) {
@@ -1664,7 +1758,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		}
 		return JSON.stringify(results);
 	}`
-	result, err := h.client.CallFunction("", findAllScript, []interface{}{selector, limit})
+	result, err := h.client.CallFunction(h.activeContext, findAllScript, []interface{}{selector, limit})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find elements: %w", err)
 	}
@@ -1770,7 +1864,11 @@ func (h *Handlers) browserGetText(args map[string]interface{}) (*ToolsCallResult
 	var text string
 	if selector, ok := args["selector"].(string); ok && selector != "" {
 		selector = h.resolveSelector(selector)
-		text, err = api.GetInnerText(s, ctx, api.ElementParams{Selector: selector})
+		// GetText, not GetInnerText: this tool is documented as "text content",
+		// traces record it as vibium:element.text, and every client's .text()
+		// is textContent. Page-level text below stays innerText — "what the
+		// page reads as" is a different question from one element's content.
+		text, err = api.GetText(s, ctx, api.ElementParams{Selector: selector})
 	} else {
 		text, err = api.EvalSimpleScript(s, ctx, "() => document.body.innerText")
 	}
@@ -2051,14 +2149,13 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 	}, nil
 }
 
-
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
 
 	for {
-		result, err := h.client.CallFunction("", script, args)
+		result, err := h.client.CallFunction(h.activeContext, script, args)
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {
@@ -2277,11 +2374,19 @@ func (h *Handlers) browserGetAttribute(args map[string]interface{}) (*ToolsCallR
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attribute: %w", err)
 	}
+	// A present-but-valueless attribute (<button disabled>) reads as "", so
+	// absence needs a distinct value to be tellable apart (#198). It must stay
+	// a normal result rather than an error: erroring on an absent attribute is
+	// what #153 was about.
+	text := "null"
+	if value != nil {
+		text = *value
+	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: value,
+			Text: text,
 		}},
 	}, nil
 }
@@ -2516,9 +2621,10 @@ func (h *Handlers) browserSleep(args map[string]interface{}) (*ToolsCallResult, 
 		return nil, fmt.Errorf("ms is required and must be positive")
 	}
 
-	// Cap at 30 seconds
+	// Reject rather than clamp: silently sleeping 30s for a requested 999999
+	// and then reporting "Slept for 30000 ms" hides the mistake.
 	if ms > 30000 {
-		ms = 30000
+		return nil, fmt.Errorf("ms must be 30000 or less (got %v)", ms)
 	}
 
 	time.Sleep(time.Duration(ms) * time.Millisecond)
@@ -2534,13 +2640,45 @@ func (h *Handlers) browserSleep(args map[string]interface{}) (*ToolsCallResult, 
 // ensureBrowser checks that a browser session is active.
 // If no browser is running, it auto-launches one (lazy launch).
 func (h *Handlers) ensureBrowser() error {
-	if h.client == nil {
-		_, err := h.browserLaunch(map[string]interface{}{})
-		if err != nil {
-			return fmt.Errorf("auto-launch failed: %w", err)
+	h.sessionMu.Lock()
+	client := h.client
+	h.sessionMu.Unlock()
+
+	if client != nil {
+		// A browser closed or crashed externally leaves this handle in place,
+		// so without a liveness check every later command fails with a raw
+		// transport error ("write: broken pipe") and never recovers (#219).
+		if dead, cause := client.Dead(); dead {
+			h.discardSession()
+			return fmt.Errorf("the browser is no longer running (%v) — run the command again to start a new one", cause)
 		}
+		return nil
+	}
+
+	if _, err := h.browserLaunch(map[string]interface{}{}); err != nil {
+		return fmt.Errorf("auto-launch failed: %w", err)
 	}
 	return nil
+}
+
+// discardSession drops a dead browser handle along with the state that only
+// meant anything alongside it. Element refs (@e1, …) name nodes in a document
+// that no longer exists, so carrying them into a freshly launched browser would
+// turn a clear failure into confidently wrong results.
+func (h *Handlers) discardSession() {
+	h.sessionMu.Lock()
+	defer h.sessionMu.Unlock()
+
+	if h.launchResult != nil {
+		h.launchResult.Close()
+		h.launchResult = nil
+	}
+	h.client = nil
+	h.conn = nil
+	h.prompts = nil
+	h.refMap = nil
+	h.lastMap = ""
+	h.activeContext = ""
 }
 
 // resolveRefsInArgs returns a copy of args with any @ref selector resolved
@@ -2638,12 +2776,22 @@ func mapScript() string {
 	return `(scopeSelector) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
+		` + api.PierceQueryJS() + `
 
 		const interactive = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="switch"], [onclick], [tabindex]:not([tabindex="-1"]), summary, details';
 
-		const root = scopeSelector ? document.querySelector(scopeSelector) : document;
+		const root = scopeSelector ? pierceQuery(document, scopeSelector) : document;
 		if (!root) return JSON.stringify([]);
-		const els = root.querySelectorAll(interactive);
+		// Walk shadow roots too: querySelectorAll stops at the boundary, so
+		// web-component UIs listed as empty (#203).
+		const els = [];
+		{
+			const roots = __shadowRootsUnder(root);
+			for (let r = 0; r < roots.length; r++) {
+				const found = roots[r].querySelectorAll(interactive);
+				for (let f = 0; f < found.length; f++) els.push(found[f]);
+			}
+		}
 		const results = [];
 		const seen = new Set();
 
@@ -2672,7 +2820,7 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	if sel, ok := args["selector"].(string); ok && sel != "" {
 		scopeSelector = sel
 	}
-	result, err := h.client.CallFunction("", mapScript(), []interface{}{scopeSelector})
+	result, err := h.client.CallFunction(h.activeContext, mapScript(), []interface{}{scopeSelector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to map elements: %w", err)
 	}
@@ -2826,7 +2974,7 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 		return 'highlighted';
 	}`
 
-	result, err := h.client.CallFunction("", script, []interface{}{selector})
+	result, err := h.client.CallFunction(h.activeContext, script, []interface{}{selector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to highlight: %w", err)
 	}
@@ -3700,6 +3848,10 @@ func (h *Handlers) browserFrame(args map[string]interface{}) (*ToolsCallResult, 
 		return nil, fmt.Errorf("no frame matching %q", nameOrURL)
 	}
 
+	// The daemon is the only thing that survives between CLI invocations, so
+	// without this the frame is forgotten before the next command runs.
+	h.activeContext = frame.Context
+
 	result, _ := json.Marshal(frame)
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -3790,12 +3942,12 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			"browsingContext.downloadWillBegin",
 			"browsingContext.load",
 			"browsingContext.fragmentNavigated",
+			"browsingContext.historyUpdated",
 		},
 	})
 	h.recordDropBase = h.client.DroppedEvents()
-	h.client.SetEventHandler(func(msg string) {
-		h.recorder.RecordBidiEvent(msg)
-	})
+	// handleBidiEvent already forwards to the recorder; replacing the handler
+	// here would silently turn off prompt tracking for the recording's duration.
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -3811,9 +3963,9 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		return nil, fmt.Errorf("no recording in progress")
 	}
 
-	// Stop forwarding events to the recorder
+	// h.recorder is cleared below, which stops handleBidiEvent forwarding.
+	// The handler itself stays installed so prompt tracking survives.
 	if h.client != nil {
-		h.client.SetEventHandler(nil)
 		h.recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
 	}
 
@@ -3965,15 +4117,27 @@ func (h *Handlers) browserStorageState(args map[string]interface{}) (*ToolsCallR
 		})()
 	})`
 
-	storageResult, err := h.client.Evaluate("", script)
+	storageResult, err := h.client.Evaluate(h.activeContext, script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage: %w", err)
+	}
+
+	// The page script returns JSON.stringify(...), so Evaluate hands back a Go
+	// string. Storing that directly wrote the storage as a quoted blob, which
+	// restore then spliced into JS as a string literal — state.localStorage was
+	// undefined and every key was silently skipped (#217).
+	storage := storageResult
+	if raw, ok := storageResult.(string); ok {
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
+			storage = decoded
+		}
 	}
 
 	// Build combined state
 	state := map[string]interface{}{
 		"cookies": cookies,
-		"storage": storageResult,
+		"storage": storage,
 	}
 
 	stateJSON, _ := json.MarshalIndent(state, "", "  ")
@@ -4002,7 +4166,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 	}
 
 	var state struct {
-		Cookies []bidi.Cookie `json:"cookies"`
+		Cookies []bidi.Cookie   `json:"cookies"`
 		Storage json.RawMessage `json:"storage"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
@@ -4018,6 +4182,14 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 
 	// Restore localStorage/sessionStorage if present
 	if len(state.Storage) > 0 {
+		// Files written before #217 hold the storage as a JSON *string* rather
+		// than an object; unwrap one level so those still restore.
+		storageJSON := state.Storage
+		var legacy string
+		if err := json.Unmarshal(storageJSON, &legacy); err == nil {
+			storageJSON = json.RawMessage(legacy)
+		}
+
 		script := fmt.Sprintf(`(function() {
 			var state = %s;
 			if (state.localStorage) {
@@ -4031,8 +4203,10 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 				}
 			}
 			return 'ok';
-		})()`, string(state.Storage))
-		h.client.Evaluate("", script)
+		})()`, string(storageJSON))
+		if _, err := h.client.Evaluate(h.activeContext, script); err != nil {
+			return nil, fmt.Errorf("failed to restore storage: %w", err)
+		}
 	}
 
 	return &ToolsCallResult{

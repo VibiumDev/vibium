@@ -2,9 +2,10 @@ package api
 
 import (
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/vibium/clicker/internal/urlmatch"
 )
 
 // handlePageNavigate handles vibium:page.navigate — navigates to a URL.
@@ -321,7 +322,7 @@ func WaitForURL(s Session, context, pattern string, timeout time.Duration) (stri
 
 	for {
 		url, err := EvalSimpleScript(s, context, "() => window.location.href")
-		if err == nil && matchesPattern(url, pattern) {
+		if err == nil && urlmatch.Loose(pattern, url) {
 			return url, nil
 		}
 
@@ -370,53 +371,4 @@ func readyStateReached(current, target string) bool {
 		return current == target
 	}
 	return c >= t
-}
-
-// matchesPattern checks if a URL matches a pattern.
-// Supports simple string containment and glob-like patterns with *.
-func matchesPattern(url, pattern string) bool {
-	// Exact match
-	if url == pattern {
-		return true
-	}
-
-	// Simple glob: if pattern has *, do basic wildcard matching
-	if strings.Contains(pattern, "*") {
-		return globMatch(url, pattern)
-	}
-
-	// Substring match
-	return strings.Contains(url, pattern)
-}
-
-// globMatch performs simple glob matching where * matches any characters.
-func globMatch(s, pattern string) bool {
-	parts := strings.Split(pattern, "*")
-	if len(parts) == 0 {
-		return true
-	}
-
-	pos := 0
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		idx := strings.Index(s[pos:], part)
-		if idx < 0 {
-			return false
-		}
-		if i == 0 && idx != 0 {
-			// First part must match at start if pattern doesn't start with *
-			return false
-		}
-		pos += idx + len(part)
-	}
-
-	// If pattern doesn't end with *, the last part must match at the end
-	lastPart := parts[len(parts)-1]
-	if lastPart != "" && !strings.HasSuffix(s, lastPart) {
-		return false
-	}
-
-	return true
 }

@@ -255,6 +255,8 @@ bro.stop();
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Source builds require Go, Node.js/npm, and Java 21 because the default `make`
+target builds the Go binary, JS client, and Java client.
 
 ---
 

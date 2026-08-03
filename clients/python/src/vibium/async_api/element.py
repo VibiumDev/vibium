@@ -91,6 +91,10 @@ class Element:
     async def focus(self, timeout: Optional[int] = None) -> None:
         await self._client.send("vibium:element.focus", self._command_params({"timeout": timeout}))
 
+    async def highlight(self, timeout: Optional[int] = None) -> None:
+        """Briefly outline the element so a human watching can see it."""
+        await self._client.send("vibium:element.highlight", self._command_params({"timeout": timeout}))
+
     async def drag_to(self, target: Element, timeout: Optional[int] = None) -> None:
         await self._client.send("vibium:element.dragTo", self._command_params({
             "target": target._to_params(),

@@ -3,9 +3,25 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/api"
+	"github.com/vibium/clicker/internal/process"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+// exitOnFalse makes `--fail` turn a "false" answer into a non-zero exit, so the
+// is-commands can be used in a conditional. Without it the only signal is
+// stdout, since a well-formed "false" is a successful query (#206).
+func exitOnFalse(cmd *cobra.Command, result *agent.ToolsCallResult) {
+	fail, _ := cmd.Flags().GetBool("fail")
+	if fail && strings.TrimSpace(extractText(result)) == "false" {
+		process.KillAll()
+		os.Exit(1)
+	}
+}
 
 func newIsCmd() *cobra.Command {
 	isCmd := &cobra.Command{
@@ -30,6 +46,7 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
@@ -46,6 +63,7 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
@@ -62,30 +80,35 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
 	actionableCmd := &cobra.Command{
 		Use:   "actionable [url] [selector]",
 		Short: "Check actionability of an element (Visible, Stable, ReceivesEvents, Enabled, Editable)",
-		Example: `  vibium is actionable https://example.com "a"
+		Example: `  vibium is actionable "a"
   # Output:
   # Checking actionability for selector: a
   # ✓ Visible: true
   # ✓ Stable: true
   # ✓ ReceivesEvents: true
   # ✓ Enabled: true
-  # ✗ Editable: false`,
-		Args: cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			url := args[0]
-			selector := args[1]
+  # ✗ Editable: false
 
-			// Navigate to URL
-			_, err := daemonCall("browser_navigate", map[string]interface{}{"url": url})
-			if err != nil {
-				printError(err)
-				return
+  vibium is actionable https://example.com "a"
+  # Navigate first, then check`,
+		Args: cobra.RangeArgs(1, 2),
+		Run: func(cmd *cobra.Command, args []string) {
+			// The optional leading [url] matches the other is-commands and
+			// `find`; requiring it here made this the odd one out (#199).
+			selector := args[0]
+			if len(args) == 2 {
+				if _, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]}); err != nil {
+					printError(err)
+					return
+				}
+				selector = args[1]
 			}
 
 			fmt.Printf("\nChecking actionability for selector: %s\n", selector)
@@ -118,7 +141,7 @@ func newIsCmd() *cobra.Command {
 					const tag = el.tagName.toLowerCase();
 					if (tag === 'input') {
 						const t = (el.type || 'text').toLowerCase();
-						editable = ['text','password','email','number','search','tel','url'].includes(t);
+						editable = ` + api.FillableInputTypesJS + `.includes(t);
 					} else if (tag !== 'textarea' && !el.isContentEditable) {
 						editable = false;
 					}
@@ -169,6 +192,9 @@ func newIsCmd() *cobra.Command {
 		},
 	}
 
+	for _, c := range []*cobra.Command{visibleCmd, enabledCmd, checkedCmd} {
+		c.Flags().Bool("fail", false, "Exit non-zero when the answer is false")
+	}
 	isCmd.AddCommand(visibleCmd)
 	isCmd.AddCommand(enabledCmd)
 	isCmd.AddCommand(checkedCmd)

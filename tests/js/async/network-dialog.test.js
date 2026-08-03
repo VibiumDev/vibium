@@ -42,6 +42,14 @@ before(async () => {
     } else if (req.url === '/download') {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html><head><title>Download</title></head><body><a href="/download-file" id="download-link" download="test.txt">Download</a></body></html>');
+    } else if (req.url === '/api/echo') {
+      // Echoes the received body so tests can assert what actually arrived.
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ method: req.method, body }));
+      });
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end('<html><head><title>Test Page</title></head><body>Test Content</body></html>');
@@ -142,6 +150,24 @@ describe('Network Interception: page.route', () => {
     await vibe.wait(200);
 
     assert.ok(intercepted, 'Route handler should have been called');
+    await vibe.close();
+  });
+
+  test('route.continue() sends an overridden postData to the server', async () => {
+    const vibe = await bro.newPage();
+    await vibe.go(baseURL);
+
+    await vibe.route('**/api/echo', (route) => {
+      route.continue({ postData: 'replaced-body' });
+    });
+
+    const result = await vibe.evaluate(`
+      fetch('${baseURL}/api/echo', { method: 'POST', body: 'original-body' })
+        .then(r => r.json())
+    `);
+
+    assert.strictEqual(result.method, 'POST');
+    assert.strictEqual(result.body, 'replaced-body');
     await vibe.close();
   });
 

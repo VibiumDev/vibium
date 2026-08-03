@@ -3,17 +3,34 @@
  * Tests auto-wait and actionability behavior
  */
 
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
-const { execSync } = require('node:child_process');
+const { execSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
+let serverProcess, baseURL;
+
+before(async () => {
+  serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  baseURL = await new Promise((resolve) => {
+    serverProcess.stdout.once('data', (data) => {
+      resolve(data.toString().trim());
+    });
+  });
+});
+
+after(() => {
+  if (serverProcess) serverProcess.kill();
+});
+
 describe('CLI: Actionability', () => {
   test('is actionable reports visibility status', () => {
-    const result = execSync(`${VIBIUM} is actionable https://example.com "a"`, {
+    const result = execSync(`${VIBIUM} is actionable ${baseURL}/example "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -26,7 +43,7 @@ describe('CLI: Actionability', () => {
   test('click with short timeout fails on non-existent element', () => {
     assert.throws(
       () => {
-        execSync(`${VIBIUM} click https://example.com "#does-not-exist" --timeout 1s`, {
+        execSync(`${VIBIUM} click ${baseURL}/example "#does-not-exist" --timeout 1s`, {
           encoding: 'utf-8',
           timeout: 10000,
           stdio: 'pipe', // capture the expected failure instead of leaking it to the console
@@ -151,6 +168,46 @@ describe('CLI: fillable input types', () => {
       },
       /not editable/i,
       'checkbox should not be fillable'
+    );
+  });
+});
+
+describe('CLI: operation preconditions', () => {
+  test('check refuses a non-checkbox instead of silently succeeding (#195)', () => {
+    execSync(`${VIBIUM} content '<p id="p">not a checkbox</p><input type="checkbox" id="cb">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+
+    assert.throws(
+      () => {
+        execSync(`${VIBIUM} check "#p"`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
+      },
+      /not a checkbox or radio/i,
+      'check on a <p> should be refused, not reported as checked'
+    );
+
+    // The real checkbox must still work.
+    const ok = execSync(`${VIBIUM} check "#cb"`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(ok, /Checked/);
+  });
+
+  test('upload refuses a non-file-input with a readable error (#197)', () => {
+    execSync(`${VIBIUM} content '<p id="p">not an input</p>'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+
+    assert.throws(
+      () => {
+        execSync(`${VIBIUM} upload "#p" /etc/hosts`, {
+          encoding: 'utf-8',
+          timeout: 30000,
+          stdio: 'pipe',
+        });
+      },
+      /input type="file"/i,
+      'should name the expected element type rather than surfacing a raw BiDi error'
     );
   });
 });

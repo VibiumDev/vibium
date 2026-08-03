@@ -1,14 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"time"
 
-	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
 
@@ -85,6 +86,13 @@ func isConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// The daemon answered, so it is up whatever the error says. Without this
+	// a remote browser refusing the connection reads as "connection refused"
+	// below and we auto-start a second daemon on top of the live one.
+	var toolErr *daemon.ToolError
+	if errors.As(err, &toolErr) {
+		return false
+	}
 	// Check for common connection-refused patterns
 	if _, ok := err.(*net.OpError); ok {
 		return true
@@ -95,8 +103,8 @@ func isConnectionError(err error) bool {
 		"connect to daemon",
 		"connection refused",
 		"no such file or directory",
-		"The system cannot find the path",  // Windows named pipe not found
-		"The system cannot find the file",  // Windows named pipe not found (alt)
+		"The system cannot find the path", // Windows named pipe not found
+		"The system cannot find the file", // Windows named pipe not found (alt)
 	} {
 		if containsString(errMsg, pattern) {
 			return true
