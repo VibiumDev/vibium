@@ -66,8 +66,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get daemon dir: %w", err)
 	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create daemon dir: %w", err)
+	if err := ensureDaemonDir(dir); err != nil {
+		return err
 	}
 
 	// Remove stale socket file
@@ -78,6 +78,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	d.listener = listener
+	if err := secureSocketPath(socketPath); err != nil {
+		listener.Close()
+		return err
+	}
 
 	// Write PID file
 	if err := WritePID(); err != nil {
