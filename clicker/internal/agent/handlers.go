@@ -3926,6 +3926,7 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			"browsingContext.downloadWillBegin",
 			"browsingContext.load",
 			"browsingContext.fragmentNavigated",
+			"browsingContext.historyUpdated",
 		},
 	})
 	h.recordDropBase = h.client.DroppedEvents()

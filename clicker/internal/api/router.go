@@ -195,6 +195,9 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 			"browsingContext.downloadEnd",
 			"browsingContext.load",
 			"browsingContext.fragmentNavigated",
+			// SPA routing via history.pushState/replaceState changes the URL
+			// without a load or fragment event (#126).
+			"browsingContext.historyUpdated",
 		},
 	})
 	if err != nil {
@@ -868,7 +871,7 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			} `json:"params"`
 		}
 		if json.Unmarshal([]byte(msg), &bidiEvent) == nil {
-			if bidiEvent.Params.URL != "" && (bidiEvent.Method == "browsingContext.load" || bidiEvent.Method == "browsingContext.fragmentNavigated") {
+			if bidiEvent.Params.URL != "" && (bidiEvent.Method == "browsingContext.load" || bidiEvent.Method == "browsingContext.fragmentNavigated" || bidiEvent.Method == "browsingContext.historyUpdated") {
 				session.mu.Lock()
 				session.lastURL = bidiEvent.Params.URL
 				session.mu.Unlock()
