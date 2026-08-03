@@ -46,7 +46,8 @@ type BrowserSession struct {
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
-	prompts *PromptTracker
+	prompts     *PromptTracker
+	navigations *NavigationTracker
 
 	// Recording support
 	recorder           *Recorder
@@ -172,6 +173,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		internalCmds:   make(map[int]chan json.RawMessage),
 		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
 		prompts:        NewPromptTracker(),
+		navigations:    NewNavigationTracker(),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -194,6 +196,11 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 			"browsingContext.downloadWillBegin",
 			"browsingContext.downloadEnd",
 			"browsingContext.load",
+			// navigationStarted/Failed/Aborted bracket an in-flight navigation, so
+			// a filmstrip capture can wait it out instead of timing out (#289).
+			"browsingContext.navigationStarted",
+			"browsingContext.navigationFailed",
+			"browsingContext.navigationAborted",
 			"browsingContext.fragmentNavigated",
 			// SPA routing via history.pushState/replaceState changes the URL
 			// without a load or fragment event (#126).
@@ -880,6 +887,7 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
+		session.navigations.Observe([]byte(msg))
 
 		// Record event for recording (non-blocking)
 		session.mu.Lock()

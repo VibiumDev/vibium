@@ -28,6 +28,10 @@ type Session interface {
 
 	// SetLastElementBox stores the bounding box of the last resolved element for recording.
 	SetLastElementBox(box *BoxInfo)
+
+	// NavTracker returns the session's navigation tracker, or nil if it has
+	// none. Used to avoid issuing a screenshot into an in-flight navigation.
+	NavTracker() *NavigationTracker
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +84,8 @@ type AgentSession struct {
 	Context  string             // optional explicit context override (active tab)
 	OnBoxSet func(box *BoxInfo) // optional callback when element box is set
 	Prompts  *PromptTracker     // optional; when set, prompt-blocked commands fail fast
+	// optional; when set, captures wait out an in-flight navigation (#289)
+	Navigations *NavigationTracker
 }
 
 // NewAgentSession creates an AgentSession.
@@ -118,6 +124,15 @@ func (m *AgentSession) SendBidiCommandWithTimeout(method string, params map[stri
 	}
 	return wrapped, nil
 }
+
+func (p *APISession) NavTracker() *NavigationTracker {
+	if p.Session == nil {
+		return nil
+	}
+	return p.Session.navigations
+}
+
+func (m *AgentSession) NavTracker() *NavigationTracker { return m.Navigations }
 
 func (m *AgentSession) SetLastElementBox(box *BoxInfo) {
 	if m.OnBoxSet != nil {

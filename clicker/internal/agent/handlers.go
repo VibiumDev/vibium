@@ -42,7 +42,8 @@ type Handlers struct {
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
-	prompts *api.PromptTracker
+	prompts     *api.PromptTracker
+	navigations *api.NavigationTracker
 
 	// launchedHeadless is the mode the running browser was actually launched
 	// with, which is not necessarily the daemon's default.
@@ -67,6 +68,7 @@ func (h *Handlers) newSession() *api.AgentSession {
 	s := api.NewAgentSession(h.client)
 	s.Context = h.activeContext
 	s.Prompts = h.prompts
+	s.Navigations = h.navigations
 	s.OnBoxSet = func(box *api.BoxInfo) {
 		h.lastElementBox = box
 	}
@@ -718,9 +720,11 @@ func modeName(headless bool) string {
 // the tracker and the recorder rather than recording replacing prompt tracking.
 func (h *Handlers) startPromptTracking() {
 	tracker := api.NewPromptTracker()
+	navs := api.NewNavigationTracker()
 
 	h.sessionMu.Lock()
 	h.prompts = tracker
+	h.navigations = navs
 	client := h.client
 	h.sessionMu.Unlock()
 
@@ -732,6 +736,10 @@ func (h *Handlers) startPromptTracking() {
 		"events": []string{
 			"browsingContext.userPromptOpened",
 			"browsingContext.userPromptClosed",
+			"browsingContext.navigationStarted",
+			"browsingContext.navigationFailed",
+			"browsingContext.navigationAborted",
+			"browsingContext.load",
 		},
 	})
 	client.SetEventHandler(h.handleBidiEvent)
@@ -741,10 +749,12 @@ func (h *Handlers) startPromptTracking() {
 func (h *Handlers) handleBidiEvent(msg string) {
 	h.sessionMu.Lock()
 	tracker := h.prompts
+	navs := h.navigations
 	recorder := h.recorder
 	h.sessionMu.Unlock()
 
 	tracker.Observe([]byte(msg))
+	navs.Observe([]byte(msg))
 
 	if recorder != nil && recorder.IsRecording() {
 		recorder.RecordBidiEvent(msg)
@@ -3941,6 +3951,9 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			"browsingContext.userPromptOpened",
 			"browsingContext.downloadWillBegin",
 			"browsingContext.load",
+			"browsingContext.navigationStarted",
+			"browsingContext.navigationFailed",
+			"browsingContext.navigationAborted",
 			"browsingContext.fragmentNavigated",
 			"browsingContext.historyUpdated",
 		},
