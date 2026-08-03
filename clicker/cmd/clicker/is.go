@@ -3,10 +3,25 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/api"
+	"github.com/vibium/clicker/internal/process"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+// exitOnFalse makes `--fail` turn a "false" answer into a non-zero exit, so the
+// is-commands can be used in a conditional. Without it the only signal is
+// stdout, since a well-formed "false" is a successful query (#206).
+func exitOnFalse(cmd *cobra.Command, result *agent.ToolsCallResult) {
+	fail, _ := cmd.Flags().GetBool("fail")
+	if fail && strings.TrimSpace(extractText(result)) == "false" {
+		process.KillAll()
+		os.Exit(1)
+	}
+}
 
 func newIsCmd() *cobra.Command {
 	isCmd := &cobra.Command{
@@ -31,6 +46,7 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
@@ -47,6 +63,7 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
@@ -63,6 +80,7 @@ func newIsCmd() *cobra.Command {
 				return
 			}
 			printResult(result)
+			exitOnFalse(cmd, result)
 		},
 	}
 
@@ -174,6 +192,9 @@ func newIsCmd() *cobra.Command {
 		},
 	}
 
+	for _, c := range []*cobra.Command{visibleCmd, enabledCmd, checkedCmd} {
+		c.Flags().Bool("fail", false, "Exit non-zero when the answer is false")
+	}
 	isCmd.AddCommand(visibleCmd)
 	isCmd.AddCommand(enabledCmd)
 	isCmd.AddCommand(checkedCmd)

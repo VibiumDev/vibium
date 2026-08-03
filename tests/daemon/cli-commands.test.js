@@ -102,6 +102,38 @@ describe('Daemon CLI: Element state commands', () => {
     assert.ok(result.result.includes('/more-information'), 'Should return href value');
   });
 
+  test('is --fail exits non-zero on a false answer (#206)', () => {
+    clicker(`content '<h1 id="h">hi</h1>'`);
+
+    // Default exit code is unchanged — a well-formed "false" is a successful query.
+    const plain = clickerJSON('is visible "#nope"');
+    assert.strictEqual(plain.ok, true);
+    assert.strictEqual(plain.result.trim(), 'false');
+
+    assert.throws(
+      () => clicker('is visible "#nope" --fail'),
+      /.*/,
+      '--fail should turn a false answer into a non-zero exit'
+    );
+    // A true answer still succeeds with the flag on.
+    assert.match(clicker('is visible "#h" --fail'), /true/);
+  });
+
+  test('find honours --timeout and errors on a miss (#206)', () => {
+    clicker(`content '<h1 id="h">hi</h1>'`);
+
+    const started = Date.now();
+    assert.throws(
+      () => clicker(`find "#nothing" --timeout 2s`),
+      /element not found/,
+      'a CSS miss should error, not return "@e1 <nil>" with exit 0'
+    );
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 15000, `--timeout 2s should bound the wait, took ${elapsed}ms`);
+
+    assert.match(clicker('find "#h"'), /@e1/, 'a real element still resolves');
+  });
+
   test('text returns textContent, not rendered text (#215)', () => {
     clicker(`content '<div id="d">vis<span style="display:none">HIDDEN</span></div>'`);
 
