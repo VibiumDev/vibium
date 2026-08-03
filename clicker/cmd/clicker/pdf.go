@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +18,12 @@ func newPDFCmd() *cobra.Command {
 		Args: cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
+			// The daemon is a separate long-lived process whose working directory
+			// is not the user's, so resolve against this shell before the path goes
+			// over the socket (#119).
+			if abs, err := filepath.Abs(output); err == nil {
+				output = abs
+			}
 
 			// Navigate first if URL provided
 			if len(args) == 1 {
