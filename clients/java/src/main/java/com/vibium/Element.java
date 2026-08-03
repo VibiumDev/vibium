@@ -20,13 +20,21 @@ public class Element {
     private final String selector;
     private final int index;
     private final ElementInfo info;
+    /** Semantic locator params (role/text/label/...) this element was found by. */
+    private final Map<String, Object> params;
 
     Element(BiDiClient client, String contextId, String selector, int index, ElementInfo info) {
+        this(client, contextId, selector, index, info, null);
+    }
+
+    Element(BiDiClient client, String contextId, String selector, int index, ElementInfo info,
+            Map<String, Object> params) {
         this.client = client;
         this.contextId = contextId;
         this.selector = selector;
         this.index = index;
         this.info = info;
+        this.params = params == null ? Collections.emptyMap() : params;
     }
 
     /** Get info about this element (tag, text, bounding box). */
@@ -283,7 +291,7 @@ public class Element {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:element.find", params);
-        return elementFromResult(result);
+        return elementFromResult(result, "", locatorParams(childOptions));
     }
 
     /** Find all child elements by CSS selector. */
@@ -309,7 +317,7 @@ public class Element {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result);
+        return elementsFromResult(result, "", locatorParams(childOptions));
     }
 
     // ── Internal ────────────────────────────────────────────────
@@ -317,6 +325,11 @@ public class Element {
     private JsonObject elementParams() {
         JsonObject params = new JsonObject();
         params.addProperty("context", contextId);
+        // A semantically-found element has selector "", so without these the
+        // engine falls back to querySelector("") and nothing resolves (#106).
+        for (Map.Entry<String, Object> e : this.params.entrySet()) {
+            params.add(e.getKey(), GSON.toJsonTree(e.getValue()));
+        }
         params.addProperty("selector", selector);
         if (index > 0) {
             params.addProperty("index", index);
@@ -342,17 +355,32 @@ public class Element {
 
     // The find response carries only tag/text/box, so the child's selector has to
     // come from the caller or the returned element cannot be re-resolved.
+    /** The locator an element was found by, minus per-call options. */
+    private static Map<String, Object> locatorParams(SelectorOptions options) {
+        Map<String, Object> p = new LinkedHashMap<>(options.toParams());
+        p.remove("timeout");
+        return p;
+    }
+
     private Element elementFromResult(JsonObject result, String selector) {
+        return elementFromResult(result, selector, null);
+    }
+
+    private Element elementFromResult(JsonObject result, String selector, Map<String, Object> locator) {
         int idx = result.has("index") ? result.get("index").getAsInt() : 0;
         ElementInfo eInfo = parseElementInfo(result);
-        return new Element(client, contextId, selector, idx, eInfo);
+        return new Element(client, contextId, selector, idx, eInfo, locator);
     }
 
     private List<Element> elementsFromResult(JsonObject result, String selector) {
+        return elementsFromResult(result, selector, null);
+    }
+
+    private List<Element> elementsFromResult(JsonObject result, String selector, Map<String, Object> locator) {
         List<Element> elements = new ArrayList<>();
         com.google.gson.JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new com.google.gson.JsonArray();
         for (int i = 0; i < arr.size(); i++) {
-            elements.add(new Element(client, contextId, selector, i, parseElementInfo(arr.get(i).getAsJsonObject())));
+            elements.add(new Element(client, contextId, selector, i, parseElementInfo(arr.get(i).getAsJsonObject()), locator));
         }
         return elements;
     }
