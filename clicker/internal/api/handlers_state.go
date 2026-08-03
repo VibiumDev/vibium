@@ -849,8 +849,10 @@ func GetValue(s Session, context string, ep ElementParams) (string, error) {
 	return EvalElementScript(s, context, script, args)
 }
 
-// GetAttribute returns the value of an HTML attribute on an element.
-func GetAttribute(s Session, context string, ep ElementParams, name string) (string, error) {
+// GetAttribute returns the value of an HTML attribute, or nil when the
+// attribute is absent. A present-but-empty attribute (<button disabled>) and a
+// missing one are different things, and a plain string cannot tell them apart.
+func GetAttribute(s Session, context string, ep ElementParams, name string) (*string, error) {
 	var args []map[string]interface{}
 	var script string
 
@@ -871,7 +873,7 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (str
 				}
 				if (!el) return null;
 				const v = el.getAttribute(name);
-				return v === null ? '' : v;
+				return JSON.stringify({value: v});
 			}
 		`
 	} else {
@@ -889,12 +891,23 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (str
 				}
 				if (!el) return null;
 				const v = el.getAttribute(name);
-				return v === null ? '' : v;
+				return JSON.stringify({value: v});
 			}
 		`
 	}
 
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var out struct {
+		Value *string `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(val), &out); err != nil {
+		return nil, fmt.Errorf("attr parse failed: %w", err)
+	}
+	return out.Value, nil
 }
 
 // IsVisible checks if an element is visible (not hidden, not zero-size).

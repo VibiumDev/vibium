@@ -2358,11 +2358,19 @@ func (h *Handlers) browserGetAttribute(args map[string]interface{}) (*ToolsCallR
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attribute: %w", err)
 	}
+	// A present-but-valueless attribute (<button disabled>) reads as "", so
+	// absence needs a distinct value to be tellable apart (#198). It must stay
+	// a normal result rather than an error: erroring on an absent attribute is
+	// what #153 was about.
+	text := "null"
+	if value != nil {
+		text = *value
+	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: value,
+			Text: text,
 		}},
 	}, nil
 }
