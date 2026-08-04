@@ -28,9 +28,15 @@ type BrowserSession struct {
 	stopChan     chan struct{}
 
 	// Internal command tracking for vibium: extension commands
-	internalCmds   map[int]chan json.RawMessage // id -> response channel
-	internalCmdsMu sync.Mutex
-	nextInternalID int
+	internalCmds map[int]chan json.RawMessage
+	// IDs of internal commands that timed out. A late response for one of
+	// these must be dropped, but it cannot be recognised by magnitude: the
+	// client owns its own id space and may legitimately use large numbers
+	// (vibium pipe --connect starts its internal ids at 1000000, so a nested
+	// router's commands were being swallowed here — #158).
+	abandonedInternal map[int]struct{} // id -> response channel
+	internalCmdsMu    sync.Mutex
+	nextInternalID    int
 
 	// WebSocket monitoring state
 	wsPreloadScriptID string // "" if not installed
@@ -165,15 +171,16 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	}
 
 	session := &BrowserSession{
-		LaunchResult:   launchResult,
-		BidiConn:       bidiConn,
-		Client:         client,
-		ownsRemote:     ownsRemoteSession,
-		stopChan:       make(chan struct{}),
-		internalCmds:   make(map[int]chan json.RawMessage),
-		nextInternalID: 1000000, // Start at high number to avoid collision with client IDs
-		prompts:        NewPromptTracker(),
-		navigations:    NewNavigationTracker(),
+		LaunchResult:      launchResult,
+		BidiConn:          bidiConn,
+		Client:            client,
+		ownsRemote:        ownsRemoteSession,
+		stopChan:          make(chan struct{}),
+		internalCmds:      make(map[int]chan json.RawMessage),
+		abandonedInternal: make(map[int]struct{}),
+		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
+		prompts:           NewPromptTracker(),
+		navigations:       NewNavigationTracker(),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -863,9 +870,15 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 				continue
 			}
 
-			// Drop late responses from timed-out internal commands —
-			// never forward these to the client (they'd be unrecognized).
-			if resp.ID >= 1000000 {
+			// Drop late responses from internal commands that timed out;
+			// forward anything else, whatever its id.
+			session.internalCmdsMu.Lock()
+			_, abandoned := session.abandonedInternal[resp.ID]
+			if abandoned {
+				delete(session.abandonedInternal, resp.ID)
+			}
+			session.internalCmdsMu.Unlock()
+			if abandoned {
 				continue
 			}
 		}
@@ -1015,6 +1028,9 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(timeout):
+		session.internalCmdsMu.Lock()
+		session.abandonedInternal[id] = struct{}{}
+		session.internalCmdsMu.Unlock()
 		return nil, fmt.Errorf("timeout waiting for response to %s", method)
 	case <-session.stopChan:
 		return nil, fmt.Errorf("session closed")
