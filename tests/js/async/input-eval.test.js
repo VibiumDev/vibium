@@ -247,6 +247,44 @@ describe('Evaluation: page-level', () => {
     const result = await vibe.evaluate('window.myAdd(2, 3)');
     assert.strictEqual(result, 5);
   });
+
+  test('expose() survives navigation (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+    await vibe.expose('myPersist', '(a, b) => a * b');
+
+    // The test above exposes after its only navigation, so it passed even when
+    // the function was injected into just the current document. The point of
+    // exposing one is that it is there whenever the page loads.
+    await vibe.go(`${baseURL}/login`);
+    assert.strictEqual(await vibe.evaluate('typeof window.myPersist'), 'function');
+    assert.strictEqual(await vibe.evaluate('window.myPersist(3, 4)'), 12);
+
+    await vibe.go(`${baseURL}/example`);
+    assert.strictEqual(await vibe.evaluate('window.myPersist(5, 6)'), 30);
+  });
+
+  test('expose() is usable before any navigation (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+    await vibe.expose('myNow', '() => "immediate"');
+
+    // Persisting must not come at the cost of the current document.
+    assert.strictEqual(await vibe.evaluate('window.myNow()'), 'immediate');
+  });
+
+  test('expose() replaces a previous function of the same name (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    await vibe.expose('myDup', '() => "first"');
+    await vibe.expose('myDup', '() => "second"');
+    assert.strictEqual(await vibe.evaluate('window.myDup()'), 'second');
+
+    await vibe.go(`${baseURL}/login`);
+    assert.strictEqual(await vibe.evaluate('window.myDup()'), 'second',
+      'the replaced definition must not come back after a navigation');
+  });
 });
 
 // --- Checkpoint ---

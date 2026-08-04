@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // handleVibiumElText handles vibium:element.text — returns element.textContent.
@@ -1220,11 +1221,26 @@ func (r *Router) handlePageAddStyle(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"added": true})
 }
 
-// handlePageExpose handles vibium:page.expose — injects a named function via preload script.
-// Simplified: injects a function that stores calls (no callback channel).
+// handlePageExpose handles vibium:page.expose — defines a named function on
+// window and keeps it there across navigations.
+//
+// It used to inject only into the current document with script.callFunction, so
+// the function vanished on the next navigation even though the point of
+// exposing one is that the page can call it whenever it loads (#135). A preload
+// script runs on every new document, which is what makes it stick; the same
+// source is also run against the current document so the function is usable
+// immediately, without waiting for a navigation.
 func (r *Router) handlePageExpose(session *BrowserSession, cmd bidiCommand) {
 	name, _ := cmd.Params["name"].(string)
 	fn, _ := cmd.Params["fn"].(string)
+	if name == "" {
+		r.sendError(session, cmd.ID, fmt.Errorf("name is required"))
+		return
+	}
+	if fn == "" {
+		r.sendError(session, cmd.ID, fmt.Errorf("fn is required"))
+		return
+	}
 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
@@ -1232,24 +1248,63 @@ func (r *Router) handlePageExpose(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	// Inject the function into the page via script.callFunction
-	script := `(name, fn) => {
-		window[name] = new Function('return ' + fn)();
-		return 'ok';
-	}`
+	// json.Marshal gives a correctly escaped JS string literal for the name.
+	// fn is source, so it is embedded directly, parenthesised so a function
+	// expression parses. Building the source here rather than passing it as an
+	// argument also avoids the Function constructor, which a page's CSP can
+	// block. addPreloadScript takes only channels as arguments, so a preload
+	// script has to carry its values in the declaration anyway.
+	nameLit, err := json.Marshal(name)
+	if err != nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("invalid name: %w", err))
+		return
+	}
+	declaration := fmt.Sprintf("() => { window[%s] = (%s); }", nameLit, fn)
 
-	params := map[string]interface{}{
-		"functionDeclaration": script,
-		"target":              map[string]interface{}{"context": context},
-		"arguments": []map[string]interface{}{
-			{"type": "string", "value": name},
-			{"type": "string", "value": fn},
-		},
-		"awaitPromise":    false,
-		"resultOwnership": "root",
+	// Replace any previous script for this name rather than stacking another.
+	session.mu.Lock()
+	previous := session.exposedPreloadIDs[name]
+	session.mu.Unlock()
+	if previous != "" {
+		if _, err := r.sendInternalCommand(session, "script.removePreloadScript", map[string]interface{}{
+			"script": previous,
+		}); err != nil {
+			log.Debug("failed to remove previous exposed function", "name", name, "error", err)
+		}
 	}
 
-	if _, err := r.sendInternalCommand(session, "script.callFunction", params); err != nil {
+	resp, err := r.sendInternalCommand(session, "script.addPreloadScript", map[string]interface{}{
+		"functionDeclaration": declaration,
+	})
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if bidiErr := checkBidiError(resp); bidiErr != nil {
+		r.sendError(session, cmd.ID, bidiErr)
+		return
+	}
+
+	var added struct {
+		Result struct {
+			Script string `json:"script"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &added); err != nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("failed to parse addPreloadScript response: %w", err))
+		return
+	}
+	session.mu.Lock()
+	session.exposedPreloadIDs[name] = added.Result.Script
+	session.mu.Unlock()
+
+	// The preload script only runs for documents loaded from now on, so define
+	// it in the document that is already open too.
+	if _, err := r.sendInternalCommand(session, "script.callFunction", map[string]interface{}{
+		"functionDeclaration": declaration,
+		"target":              map[string]interface{}{"context": context},
+		"awaitPromise":        false,
+	}); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}

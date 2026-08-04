@@ -40,7 +40,10 @@ type BrowserSession struct {
 
 	// WebSocket monitoring state
 	wsPreloadScriptID string // "" if not installed
-	wsSubscribed      bool   // whether script.message is subscribed
+	// name -> preload script id, so page.expose survives navigation and a
+	// repeated expose replaces its script instead of stacking a new one.
+	exposedPreloadIDs map[string]string
+	wsSubscribed      bool // whether script.message is subscribed
 
 	// Download support
 	downloadDir string // temp dir for downloads, cleaned up on close
@@ -180,6 +183,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		abandonedInternal: make(map[int]struct{}),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
+		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
 	}
 
