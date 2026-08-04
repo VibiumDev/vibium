@@ -28,6 +28,7 @@ const SUBPAGE_HTML = `<html><head><title>Subpage</title></head><body>
 
 const INPUTS_HTML = `<html><head><title>Inputs</title></head><body>
   <input type="text" />
+  <textarea id="multiline" rows="5" cols="30"></textarea>
 </body></html>`;
 
 before(async () => {
@@ -127,6 +128,18 @@ describe('JS Async API', () => {
 
     const value = await vibe.evaluate("document.querySelector('input').value");
     assert.strictEqual(value, '12345', 'Input should have typed value');
+  });
+
+  test('element.type() enters newlines as Enter (#61)', async () => {
+    // A literal newline is not a key. It used to be sent as a key value the
+    // browser ignored, so '123\n456' arrived as '123456'.
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/inputs`);
+    const area = await vibe.find('#multiline');
+    await area.type('123\n456');
+
+    const value = await vibe.evaluate("document.querySelector('#multiline').value");
+    assert.strictEqual(value, '123\n456');
   });
 
   test('element.text() returns element text', async () => {

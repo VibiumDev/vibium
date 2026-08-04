@@ -66,6 +66,36 @@ describe('CLI: Elements', () => {
     );
     assert.match(result, /typed/i, 'Should confirm text was typed');
   });
+
+  test('type enters text containing a carriage return (#61)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/inputs`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} type "#multiline" "$(printf '123\\r456')"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+      shell: '/bin/bash',
+    });
+
+    const value = execSync(`${VIBIUM} eval "document.querySelector('#multiline').value"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(value, '123\n456');
+  });
+
+  test('type enters text containing a newline (#61)', () => {
+    // A literal newline is not a key. It used to be sent as a key value the
+    // browser ignored, so "123\n456" arrived as "123456".
+    execSync(`${VIBIUM} go ${baseURL}/inputs`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} type "#multiline" "123
+456"`, { encoding: 'utf-8', timeout: 30000 });
+
+    const value = execSync(`${VIBIUM} eval "document.querySelector('#multiline').value"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(value, '123\n456');
+  });
+
 });
 
 describe('CLI: shadow DOM pierce', () => {
