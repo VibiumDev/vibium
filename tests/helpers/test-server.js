@@ -94,6 +94,7 @@ const DROPDOWN_HTML = `<html><head><title>The Internet - Dropdown</title></head>
 const INPUTS_HTML = `<html><head><title>The Internet - Inputs</title></head><body>
   <h3>Inputs</h3>
   <input type="number" />
+  <textarea id="multiline" rows="5" cols="30"></textarea>
 </body></html>`;
 
 const DYNAMIC_LOADING_HTML = `<html><head><title>The Internet - Dynamic Loading</title></head><body>
