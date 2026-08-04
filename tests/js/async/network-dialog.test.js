@@ -91,6 +91,33 @@ describe('Network Interception: page.route', () => {
     await vibe.close();
   });
 
+  test('a route that matches nothing does not block navigation (#128)', async () => {
+    const vibe = await bro.newPage();
+
+    // #128 reported that registering any route deadlocked the next go()
+    // permanently, and specifically that it happened even when the pattern
+    // could never match. The existing route tests all use patterns that do
+    // match, so this is the case they miss.
+    await vibe.route('**/*.jpg', (route) => route.continue());
+
+    await vibe.go(baseURL);
+    assert.strictEqual(await vibe.title(), 'Test Page', 'navigation should complete');
+
+    // Still responsive afterwards, not wedged behind the registration.
+    assert.strictEqual(await vibe.evaluate('1 + 1'), 2);
+    await vibe.close();
+  });
+
+  test('setHeaders() does not block navigation (#128)', async () => {
+    const vibe = await bro.newPage();
+
+    await vibe.setHeaders({ 'X-Vibium-Test': '128' });
+
+    await vibe.go(baseURL);
+    assert.strictEqual(await vibe.title(), 'Test Page', 'navigation should complete');
+    await vibe.close();
+  });
+
   test('route.fulfill() returns a mock response', async () => {
     const vibe = await bro.newPage();
     await vibe.go(baseURL);
