@@ -11,17 +11,18 @@ Use the **JS client** (`clients/javascript/`) and **Python client** (`clients/py
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Drive It By Hand First](#drive-it-by-hand-first)
-3. [Class Hierarchy](#class-hierarchy)
-4. [Command Reference](#command-reference) — see [API Reference](../reference/api.md) for full tables
-5. [Naming Conventions](#naming-conventions)
-6. [Error Types](#error-types)
-7. [Async / Sync Patterns](#async--sync-patterns)
-8. [Reserved Keyword Handling](#reserved-keyword-handling)
-9. [Aliases](#aliases)
-10. [Key Design Decisions](#key-design-decisions)
-11. [Binary Discovery](#binary-discovery)
-12. [Testing Checklist](#testing-checklist)
+2. [Which Transport](#which-transport)
+3. [Drive It By Hand First](#drive-it-by-hand-first)
+4. [Class Hierarchy](#class-hierarchy)
+5. [Command Reference](#command-reference) — see [API Reference](../reference/api.md) for full tables
+6. [Naming Conventions](#naming-conventions)
+7. [Error Types](#error-types)
+8. [Async / Sync Patterns](#async--sync-patterns)
+9. [Reserved Keyword Handling](#reserved-keyword-handling)
+10. [Aliases](#aliases)
+11. [Key Design Decisions](#key-design-decisions)
+12. [Binary Discovery](#binary-discovery)
+13. [Testing Checklist](#testing-checklist)
 
 ---
 
@@ -62,6 +63,32 @@ Use the **JS client** (`clients/javascript/`) and **Python client** (`clients/py
 ```
 
 ---
+
+## Which Transport
+
+vibium exposes the same capabilities over four surfaces. Two engines, two
+transports each. Knowing which one you are on matters, because a change to one
+engine does not reach the other.
+
+| Surface | Engine | Transport | Method names | Used by |
+|---|---|---|---|---|
+| `vibium pipe` | `api.Router` | stdin/stdout | `vibium:page.screenshot` | JS, Python, Java clients |
+| `vibium serve` | `api.Router` | WebSocket | `vibium:page.screenshot` | third-party BiDi clients |
+| `vibium daemon` | `agent.Handlers` | Unix socket | `browser_screenshot` | the `vibium` CLI |
+| `vibium mcp` | `agent.Handlers` | stdin/stdout | `browser_screenshot` | AI clients over MCP |
+
+**Write your client against `vibium pipe`.** It is what every shipped client
+uses, so it is the best tested path. There is no port to allocate, no
+authentication question, and the browser's lifetime is your process's lifetime,
+so a crashed client cannot leak a browser.
+
+`vibium serve` speaks the identical protocol over a WebSocket. It exists for
+clients that already speak WebDriver BiDi and should not have to learn to spawn
+our binary — see [use vibium as a BiDi endpoint](../how-to-guides/use-vibium-as-a-bidi-endpoint.md).
+If you are writing a vibium client, you do not want it.
+
+The daemon and MCP surfaces run a different engine with different method names.
+They are not alternative transports for a client library.
 
 ## Drive It By Hand First
 
