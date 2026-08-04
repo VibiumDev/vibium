@@ -11,16 +11,17 @@ Use the **JS client** (`clients/javascript/`) and **Python client** (`clients/py
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Class Hierarchy](#class-hierarchy)
-3. [Command Reference](#command-reference) — see [API Reference](../reference/api.md) for full tables
-4. [Naming Conventions](#naming-conventions)
-5. [Error Types](#error-types)
-6. [Async / Sync Patterns](#async--sync-patterns)
-7. [Reserved Keyword Handling](#reserved-keyword-handling)
-8. [Aliases](#aliases)
-9. [Key Design Decisions](#key-design-decisions)
-10. [Binary Discovery](#binary-discovery)
-11. [Testing Checklist](#testing-checklist)
+2. [Drive It By Hand First](#drive-it-by-hand-first)
+3. [Class Hierarchy](#class-hierarchy)
+4. [Command Reference](#command-reference) — see [API Reference](../reference/api.md) for full tables
+5. [Naming Conventions](#naming-conventions)
+6. [Error Types](#error-types)
+7. [Async / Sync Patterns](#async--sync-patterns)
+8. [Reserved Keyword Handling](#reserved-keyword-handling)
+9. [Aliases](#aliases)
+10. [Key Design Decisions](#key-design-decisions)
+11. [Binary Discovery](#binary-discovery)
+12. [Testing Checklist](#testing-checklist)
 
 ---
 
@@ -61,6 +62,51 @@ Use the **JS client** (`clients/javascript/`) and **Python client** (`clients/py
 ```
 
 ---
+
+## Drive It By Hand First
+
+Before writing any code, talk to the binary from a shell. Everything a client
+must handle is visible in the output.
+
+```bash
+{ echo '{"id":1,"method":"vibium:browser.page","params":{}}'; cat; } | vibium pipe --headless
+```
+
+`cat` holds stdin open so you can keep typing JSON lines; Ctrl-C when done.
+
+```json
+{"method":"browsingContext.contextCreated","params":{...},"type":"event"}
+{"method":"vibium:lifecycle.ready","params":{"version":"26.5.31"}}
+{"id":1,"type":"success","result":{"context":"B030B20D...","userContext":"default"}}
+```
+
+Three things that will otherwise cost you an afternoon:
+
+**Wait for `vibium:lifecycle.ready` before sending.** Launching Chrome takes
+seconds. Commands sent before the ready signal are answered after it, or not at
+all if stdin closes first.
+
+**Keep stdin open.** A bare `echo` closes it immediately, and the command comes
+back `{"type":"error","message":"connection closed"}` because the browser was
+still launching. That is what `cat` is for above. Do not swap in a fixed
+`sleep`: launch is around a second normally but can stretch to tens of seconds
+on a cold cache, a loaded CI box, or a VM with no GPU. Wait for the ready
+signal, never a timer. Your client has to do the same.
+
+**Events arrive before and between responses.** `contextCreated` shows up before
+anything was sent. Events have no `id`; responses always do. Route on that.
+
+### Drain stderr
+
+The binary writes diagnostics to stderr. If your client does not read that pipe,
+the OS buffer fills and **vibium blocks forever** on its next write. This is the
+most common way a new client hangs with no error.
+
+```js
+proc.stderr.on('data', () => {});   // discard is fine; not reading is not
+```
+
+Use stderr for diagnostics only. Protocol messages are on stdout.
 
 ## Class Hierarchy
 
@@ -185,7 +231,7 @@ Every client must define these error types:
 
 | Error | When Thrown |
 |---|---|
-| `ConnectionError` | WebSocket connection to vibium binary failed |
+| `ConnectionError` | Failed to start or connect to the vibium binary |
 | `TimeoutError` | Element wait or `waitForFunction` timed out |
 | `ElementNotFoundError` | Selector matched no elements |
 | `BrowserCrashedError` | Browser process died unexpectedly |
@@ -201,8 +247,8 @@ The wire protocol returns errors in this format:
 Map the `error` field to structured error types:
 - `"timeout"` → `TimeoutError`
 - Messages containing `"not found"` or `"no elements"` → `ElementNotFoundError`
-- WebSocket close with no response → `BrowserCrashedError`
-- WebSocket connection failure → `ConnectionError`
+- The binary exits with no response → `BrowserCrashedError`
+- The binary cannot be started or its pipes close → `ConnectionError`
 
 ### Language-Specific Names
 
@@ -225,7 +271,7 @@ Some languages have built-in `TimeoutError` or `ConnectionError`. Use prefixed n
 
 ### Every client must have an async API
 
-The wire protocol is inherently async (WebSocket messages). The primary API should be async.
+The wire protocol is inherently async: responses and events arrive interleaved on stdout, and events have no `id`. The primary API should be async.
 
 ### Sync wrappers are optional but recommended
 

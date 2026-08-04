@@ -23,7 +23,10 @@ over stdin (commands) and stdout (responses/events) as newline-delimited JSON.
 Diagnostic output goes to stderr. This mode is used by client libraries.
 
 Use --connect to proxy to a remote BiDi endpoint instead of launching a local browser.`,
-		Example: `  echo '{"id":1,"method":"vibium:browser.page","params":{}}' | vibium pipe --headless
+		Example: `  { echo '{"id":1,"method":"vibium:browser.page","params":{}}'; cat; } | vibium pipe --headless
+  # Drive the protocol by hand; Ctrl-C when done. cat holds stdin open past
+  # the browser launch. A bare echo closes it first and the command comes
+  # back {"type":"error","message":"connection closed"}.
 
   # Connect to a remote browser
   vibium pipe --connect ws://remote:9515
