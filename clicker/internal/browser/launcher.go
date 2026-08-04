@@ -105,6 +105,11 @@ type sessionValue struct {
 func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("launching browser", "headless", opts.Headless)
 
+	// Fail with a reason before spending ~2s on a launch that cannot succeed.
+	if err := checkSandboxable(); err != nil {
+		return nil, err
+	}
+
 	chromedriverPath, err := paths.GetChromedriverPath()
 	if err != nil {
 		return nil, fmt.Errorf("chromedriver not found")
