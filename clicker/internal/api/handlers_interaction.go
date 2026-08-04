@@ -648,6 +648,7 @@ func DblClickAtCenter(s Session, context string, info *ElementInfo) error {
 func TypeText(s Session, context, text string) error {
 	keyActions := make([]map[string]interface{}, 0, len(text)*2)
 	for _, char := range text {
+		char = bidi.ConvertToKeyChar(char)
 		keyActions = append(keyActions,
 			map[string]interface{}{"type": "keyDown", "value": string(char)},
 			map[string]interface{}{"type": "keyUp", "value": string(char)},

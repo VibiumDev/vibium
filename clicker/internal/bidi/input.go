@@ -97,13 +97,14 @@ func (c *Client) TypeText(context, text string) error {
 	// Build key actions for each character
 	keyActions := make([]map[string]interface{}, 0, len(text)*2)
 	for _, char := range text {
+		char = ConvertToKeyChar(char)
 		keyActions = append(keyActions,
 			map[string]interface{}{
-				"type": "keyDown",
+				"type":  "keyDown",
 				"value": string(char),
 			},
 			map[string]interface{}{
-				"type": "keyUp",
+				"type":  "keyUp",
 				"value": string(char),
 			},
 		)
@@ -200,4 +201,3 @@ func ResolveKey(name string) string {
 	}
 	return name
 }
-
