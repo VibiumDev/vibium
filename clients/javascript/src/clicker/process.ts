@@ -3,6 +3,7 @@ import { getVibiumBinPath } from './binary';
 import { TimeoutError, BrowserCrashedError } from '../utils/errors';
 
 export interface VibiumProcessOptions {
+  engine?: 'chrome' | 'firefox';
   headless?: boolean;
   executablePath?: string;
   connectURL?: string;
@@ -32,6 +33,9 @@ export class VibiumProcess {
     const binaryPath = options.executablePath || getVibiumBinPath();
 
     const args = ['pipe'];
+    if (options.engine) {
+      args.push('--engine', options.engine);
+    }
     if (options.headless === true) {
       args.push('--headless');
     }

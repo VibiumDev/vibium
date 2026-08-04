@@ -56,8 +56,14 @@ func newPathsCmd() *cobra.Command {
 func newIsInstalledCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "is-installed",
-		Short: "Check if Chrome and chromedriver are installed (exit 0 = yes, exit 1 = no)",
+		Short: "Check if the selected browser is installed (exit 0 = yes, exit 1 = no)",
 		Run: func(cmd *cobra.Command, args []string) {
+			if engineName == "firefox" {
+				if !browser.IsFirefoxInstalled() {
+					os.Exit(1)
+				}
+				return
+			}
 			if !browser.IsInstalled() {
 				os.Exit(1)
 			}
@@ -68,8 +74,24 @@ func newIsInstalledCmd() *cobra.Command {
 func newInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
-		Short: "Download Chrome for Testing and chromedriver",
+		Short: "Download the selected browser (Chrome for Testing by default)",
+		Example: `  vibium install
+  # Installing Chrome for Testing v139.0.7258.68...
+
+  vibium install --engine firefox
+  # Installing Firefox v153.0.3 (release channel)...`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if engineName == "firefox" {
+				exePath, err := browser.InstallFirefox()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("Installation complete!")
+				fmt.Printf("Firefox: %s\n", exePath)
+				return
+			}
+
 			result, err := browser.Install()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -87,9 +109,9 @@ func newInstallCmd() *cobra.Command {
 func newLaunchTestCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "launch-test",
-		Short: "Launch browser via chromedriver and print BiDi WebSocket URL",
+		Short: "Launch the selected browser and print BiDi session info",
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := browser.Launch(browser.LaunchOptions{Headless: headless})
+			result, err := browser.Launch(browser.LaunchOptions{Engine: engineName, Headless: headless})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)

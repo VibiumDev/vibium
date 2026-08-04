@@ -28,6 +28,7 @@ type Handlers struct {
 	client         *bidi.Client
 	conn           *bidi.Connection
 	screenshotDir  string
+	engine         string // "chrome" (default) or "firefox"
 	headless       bool
 	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header       // headers for remote WebSocket connection
@@ -48,14 +49,20 @@ type Handlers struct {
 	// launchedHeadless is the mode the running browser was actually launched
 	// with, which is not necessarily the daemon's default.
 	launchedHeadless bool
+
+	// launchedEngine is the browser the running session was actually
+	// launched with, same caveat as launchedHeadless.
+	launchedEngine string
 }
 
 // NewHandlers creates a new Handlers instance.
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
+// engine selects the browser ("chrome" or "firefox").
 // headless controls whether the browser is launched in headless mode.
-func NewHandlers(screenshotDir string, headless bool, connectURL string, connectHeaders http.Header) *Handlers {
+func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header) *Handlers {
 	return &Handlers{
 		screenshotDir:  screenshotDir,
+		engine:         engine,
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
@@ -634,6 +641,11 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				"browser is already running %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
 				modeName(h.launchedHeadless), modeName(want))
 		}
+		if want, ok := args["engine"].(string); ok && want != "" && want != h.launchedEngine {
+			return nil, fmt.Errorf(
+				"%s is already running; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
+				h.launchedEngine, want)
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
@@ -667,14 +679,21 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		}, nil
 	}
 
-	// Parse options — per-call headless overrides the default
+	// Parse options — per-call headless/browser override the defaults
 	useHeadless := h.headless
 	if val, ok := args["headless"].(bool); ok {
 		useHeadless = val
 	}
+	useEngine := h.engine
+	if val, ok := args["engine"].(string); ok && val != "" {
+		useEngine = val
+	}
+	if useEngine == "" {
+		useEngine = "chrome"
+	}
 
 	// Launch browser
-	launchResult, err := browser.Launch(browser.LaunchOptions{Headless: useHeadless})
+	launchResult, err := browser.Launch(browser.LaunchOptions{Engine: useEngine, Headless: useHeadless})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
 	}
@@ -696,13 +715,14 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.conn = conn
 	h.client = bidi.NewClient(conn)
 	h.launchedHeadless = useHeadless
+	h.launchedEngine = useEngine
 	h.sessionMu.Unlock()
 	h.startPromptTracking()
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Browser launched (headless: %v)", useHeadless),
+			Text: fmt.Sprintf("Browser launched (%s, headless: %v)", useEngine, useHeadless),
 		}},
 	}, nil
 }

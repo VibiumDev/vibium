@@ -107,6 +107,7 @@ The server provides browser automation tools:
 
 				server := agent.NewServer(version, agent.ServerOptions{
 					ScreenshotDir:  screenshotDir,
+					Engine:         engineName,
 					Headless:       headless,
 					ConnectURL:     connectURL,
 					ConnectHeaders: connectHeaders,

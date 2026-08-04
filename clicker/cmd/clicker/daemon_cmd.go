@@ -218,7 +218,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 
 	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions
 	// (parallel-safe: the minAge filter skips any live sibling's dir).
-	browser.CleanupOrphanedChromeTempDirs(time.Minute)
+	browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 
 	if daemon.IsRunning() {
 		fmt.Fprintln(os.Stderr, "Daemon is already running.")
@@ -236,6 +236,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 	d := daemon.New(daemon.Options{
 		Version:        version,
 		ScreenshotDir:  screenshotDir,
+		Engine:         engineName,
 		Headless:       headless,
 		IdleTimeout:    idleTimeout,
 		ConnectURL:     connectURL,
@@ -289,6 +290,9 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		fmt.Sprintf("--idle-timeout=%s", idleTimeout)}
 	if headless {
 		args = append(args, "--headless")
+	}
+	if engineName != "chrome" {
+		args = append(args, "--engine="+engineName)
 	}
 
 	// Forward connect flags to child process

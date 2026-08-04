@@ -15,7 +15,7 @@ Usage (async):
     await bro.stop()
 """
 
-from .sync_api.browser import browser, Browser
+from .sync_api.browser import browser, firefox, chrome, Browser
 from .sync_api.page import Page, Keyboard, Mouse, Touch, SyncDownload as Download
 from .sync_api.element import Element
 from .sync_api.context import BrowserContext
@@ -36,6 +36,8 @@ from .errors import (
 __version__ = "26.5.31"
 __all__ = [
     "browser",
+    "firefox",
+    "chrome",
     "Browser",
     "Page",
     "Keyboard",

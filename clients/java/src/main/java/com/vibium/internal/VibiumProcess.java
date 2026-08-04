@@ -43,10 +43,15 @@ public class VibiumProcess {
     /**
      * Start a vibium pipe subprocess.
      */
-    public static VibiumProcess start(String binaryPath, boolean headless, String connectURL, Map<String, String> connectHeaders) {
+    public static VibiumProcess start(String binaryPath, String engine, boolean headless, String connectURL, Map<String, String> connectHeaders) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
+
+        if (engine != null && !engine.isEmpty()) {
+            cmd.add("--engine");
+            cmd.add(engine);
+        }
 
         if (headless) {
             cmd.add("--headless");

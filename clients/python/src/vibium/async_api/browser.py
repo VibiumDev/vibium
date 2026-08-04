@@ -96,6 +96,7 @@ class _BrowserLauncher:
         self,
         url: Optional[str] = None,
         *,
+        engine: Optional[str] = None,
         headless: bool = False,
         headers: Optional[Dict[str, str]] = None,
         executable_path: Optional[str] = None,
@@ -105,6 +106,8 @@ class _BrowserLauncher:
         Args:
             url: Remote BiDi WebSocket URL. If not provided, checks
                 VIBIUM_CONNECT_URL env var, then falls back to local launch.
+            engine: Browser engine to launch: "chrome" (default) or "firefox"
+                (local launch only).
             headless: Run browser in headless mode (local launch only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
             executable_path: Path to vibium binary (default: auto-detect).
@@ -127,6 +130,7 @@ class _BrowserLauncher:
         else:
             process = await VibiumProcess.start(
                 headless=headless,
+                engine=engine,
                 executable_path=executable_path,
             )
         client = await BiDiClient.connect(process)
@@ -134,3 +138,31 @@ class _BrowserLauncher:
 
 
 browser = _BrowserLauncher()
+
+
+class _EngineLauncher:
+    """Named engine launcher, Playwright-style: firefox.start() is
+    browser.start(engine="firefox")."""
+
+    def __init__(self, engine: str) -> None:
+        self._engine = engine
+
+    async def start(
+        self,
+        url: Optional[str] = None,
+        *,
+        headless: bool = False,
+        headers: Optional[Dict[str, str]] = None,
+        executable_path: Optional[str] = None,
+    ) -> Browser:
+        return await browser.start(
+            url,
+            engine=self._engine,
+            headless=headless,
+            headers=headers,
+            executable_path=executable_path,
+        )
+
+
+firefox = _EngineLauncher("firefox")
+chrome = _EngineLauncher("chrome")

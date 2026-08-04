@@ -7,6 +7,8 @@ import { debug, info } from './utils/debug';
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
 export interface StartOptions {
+  /** Browser engine to launch: 'chrome' (default) or 'firefox'. */
+  engine?: 'chrome' | 'firefox';
   headless?: boolean;
   headers?: Record<string, string>;
   executablePath?: string;
@@ -147,10 +149,11 @@ export const browser = {
       return new Browser(client, proc);
     }
 
-    const { headless = false, executablePath } = options;
-    debug('launching browser', { headless, executablePath });
+    const { engine, headless = false, executablePath } = options;
+    debug('launching browser', { engine, headless, executablePath });
 
     const proc = await VibiumProcess.start({
+      engine,
       headless,
       executablePath,
     });
@@ -164,5 +167,21 @@ export const browser = {
     info('browser launched (pipe)');
 
     return new Browser(client, proc);
+  },
+};
+
+/**
+ * Named engine launchers, Playwright-style. `firefox.start()` is
+ * `browser.start({ engine: 'firefox' })`; options are otherwise identical.
+ */
+export const firefox = {
+  start(options: Omit<StartOptions, 'engine'> = {}): Promise<Browser> {
+    return browser.start({ ...options, engine: 'firefox' });
+  },
+};
+
+export const chrome = {
+  start(options: Omit<StartOptions, 'engine'> = {}): Promise<Browser> {
+    return browser.start({ ...options, engine: 'chrome' });
   },
 };

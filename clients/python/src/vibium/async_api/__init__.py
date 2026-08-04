@@ -8,7 +8,7 @@ Usage:
     await bro.stop()
 """
 
-from .browser import browser, Browser
+from .browser import browser, firefox, chrome, Browser
 from .page import Page, Keyboard, Mouse, Touch
 from .element import Element
 from .context import BrowserContext
@@ -32,6 +32,8 @@ from ..errors import (
 
 __all__ = [
     "browser",
+    "firefox",
+    "chrome",
     "Browser",
     "Page",
     "Keyboard",

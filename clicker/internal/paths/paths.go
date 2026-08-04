@@ -179,6 +179,87 @@ func getChromedriverPathInVersion(versionDir string) string {
 	}
 }
 
+// FirefoxChannel returns the Firefox release channel to install and run.
+// Defaults to "release"; override with VIBIUM_FIREFOX_CHANNEL (e.g. "beta")
+// to run features that have not reached stable yet.
+func FirefoxChannel() string {
+	if c := os.Getenv("VIBIUM_FIREFOX_CHANNEL"); c != "" {
+		return c
+	}
+	return "release"
+}
+
+// GetFirefoxDir returns the directory where Firefox is cached. Channels get
+// separate directories so an installed beta never shadows stable (version
+// dirs like 154.0b6 would otherwise sort above the 153.x release).
+func GetFirefoxDir() (string, error) {
+	cacheDir, err := GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "firefox", FirefoxChannel()), nil
+}
+
+// GetFirefoxExecutable returns the path to the cached Firefox executable.
+// VIBIUM_FIREFOX_PATH overrides the cache lookup (e.g. a system Firefox).
+func GetFirefoxExecutable() (string, error) {
+	if p := os.Getenv("VIBIUM_FIREFOX_PATH"); p != "" {
+		return p, nil
+	}
+	dir, err := resolveFirefoxVersionDir()
+	if err != nil {
+		return "", err
+	}
+	return FirefoxPathInVersion(dir), nil
+}
+
+// resolveFirefoxVersionDir returns the newest cached Firefox version
+// directory containing the executable, mirroring resolveVersionDir.
+func resolveFirefoxVersionDir() (string, error) {
+	ffDir, err := GetFirefoxDir()
+	if err != nil {
+		return "", err
+	}
+
+	entries, err := os.ReadDir(ffDir)
+	if err != nil {
+		return "", err
+	}
+
+	var complete []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(FirefoxPathInVersion(filepath.Join(ffDir, entry.Name()))); err != nil {
+			continue
+		}
+		complete = append(complete, entry.Name())
+	}
+	if len(complete) == 0 {
+		return "", os.ErrNotExist
+	}
+
+	sort.Slice(complete, func(i, j int) bool {
+		return compareVersions(complete[i], complete[j]) > 0
+	})
+	return filepath.Join(ffDir, complete[0]), nil
+}
+
+// FirefoxPathInVersion returns the Firefox executable path within a version
+// directory. Layout follows what Mozilla's archives unpack to: Firefox.app
+// from the macOS DMG, a firefox/ directory from the Linux tar.xz.
+func FirefoxPathInVersion(versionDir string) string {
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(versionDir, "Firefox.app", "Contents", "MacOS", "firefox")
+	case "windows":
+		return filepath.Join(versionDir, "firefox", "firefox.exe")
+	default: // linux
+		return filepath.Join(versionDir, "firefox", "firefox")
+	}
+}
+
 // getPlatformString returns the platform string used by Chrome for Testing.
 func getPlatformString() string {
 	switch runtime.GOOS {

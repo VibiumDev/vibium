@@ -94,14 +94,16 @@ type bidiResponse struct {
 // Router manages browser sessions for connected clients.
 type Router struct {
 	sessions       sync.Map // map[uint64]*BrowserSession (client ID -> session)
+	engine         string
 	headless       bool
 	connectURL     string
 	connectHeaders http.Header
 }
 
 // NewRouter creates a new router.
-func NewRouter(headless bool, connectURL string, connectHeaders http.Header) *Router {
+func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header) *Router {
 	return &Router{
+		engine:         engine,
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
@@ -144,6 +146,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Launching browser for client %d...\n", client.ID())
 
 		launchResult, err = browser.Launch(browser.LaunchOptions{
+			Engine:   r.engine,
 			Headless: r.headless,
 		})
 		if err != nil {

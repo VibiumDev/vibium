@@ -34,7 +34,16 @@ var (
 	verbose    bool
 	jsonOutput bool
 	session    string
+	engineName string
 )
+
+// defaultEngine returns the browser engine to launch when --engine is not given.
+func defaultEngine() string {
+	if b := os.Getenv("VIBIUM_ENGINE"); b != "" {
+		return b
+	}
+	return "chrome"
+}
 
 func main() {
 	progName := filepath.Base(os.Args[0])
@@ -54,6 +63,9 @@ func main() {
 					return err
 				}
 			}
+			if engineName != "chrome" && engineName != "firefox" {
+				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
+			}
 			return paths.ValidateSessionName(paths.SessionName())
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -63,6 +75,7 @@ func main() {
 
 	// Add global flags for browser commands
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
+	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")

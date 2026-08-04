@@ -50,6 +50,9 @@ func autoStartDaemon() error {
 	if headless {
 		args = append(args, "--headless")
 	}
+	if engineName != "chrome" {
+		args = append(args, "--engine="+engineName)
+	}
 
 	// Forward connect env vars to the spawned daemon
 	connectURL, connectHeaders := connectFromEnv()

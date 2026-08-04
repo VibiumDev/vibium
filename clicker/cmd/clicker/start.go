@@ -25,6 +25,9 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 		Example: `  vibium start
   # Start with a local browser
 
+  vibium start --engine firefox
+  # Start with Firefox instead of Chrome
+
   vibium start ws://remote:9515/session
   # Connect to a remote browser
 
@@ -51,6 +54,11 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				startArgs := map[string]interface{}{}
 				if cmd.Flags().Changed("headless") {
 					startArgs["headless"] = headless
+				}
+				// Same reasoning for --engine; VIBIUM_ENGINE changes the
+				// default without marking the flag Changed, so check both.
+				if cmd.Flags().Changed("engine") || engineName != "chrome" {
+					startArgs["engine"] = engineName
 				}
 				result, err := daemonCall("browser_start", startArgs)
 				if err != nil {
@@ -79,6 +87,9 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				fmt.Sprintf("--connect=%s", connectURL)}
 			if headless {
 				daemonArgs = append(daemonArgs, "--headless")
+			}
+			if engineName != "chrome" {
+				daemonArgs = append(daemonArgs, "--engine="+engineName)
 			}
 
 			_, envHeaders := connectFromEnv()

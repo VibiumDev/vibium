@@ -30,7 +30,7 @@ func TestConcurrentClose(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	h := NewHandlers("", true, "", nil)
+	h := NewHandlers("", "chrome", true, "", nil)
 	conn, err := bidi.Connect("ws" + strings.TrimPrefix(srv.URL, "http"))
 	if err != nil {
 		t.Fatalf("connect to fake server: %v", err)

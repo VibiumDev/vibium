@@ -56,6 +56,7 @@ func (pw *prefixWriter) Write(p []byte) (n int, err error) {
 
 // LaunchOptions contains options for launching the browser.
 type LaunchOptions struct {
+	Engine   string // "chrome" (default) or "firefox"
 	Headless bool
 	Port     int  // Chromedriver port, 0 = auto-select
 	Verbose  bool // Show chromedriver output
@@ -63,12 +64,12 @@ type LaunchOptions struct {
 
 // LaunchResult contains the result of launching the browser via chromedriver.
 type LaunchResult struct {
-	BidiConn        *bidi.Connection // non-nil when session created via BiDi (no HTTP)
-	WebSocketURL    string           // set when session created via HTTP fallback
-	SessionID       string
-	ChromedriverCmd *exec.Cmd
-	Port            int
-	UserDataDir     string // Chrome temp profile dir — cleaned up on Close()
+	BidiConn     *bidi.Connection // non-nil when session created via BiDi (no HTTP)
+	WebSocketURL string           // set when session created via HTTP fallback
+	SessionID    string
+	BrowserCmd   *exec.Cmd
+	Port         int
+	UserDataDir  string // Chrome temp profile dir — cleaned up on Close()
 }
 
 // sessionRequest is the payload for creating a new session.
@@ -101,8 +102,19 @@ type sessionValue struct {
 	Capabilities map[string]interface{} `json:"capabilities"`
 }
 
-// Launch starts chromedriver and creates a BiDi session.
+// Launch starts the requested browser and creates a BiDi session. Chrome
+// goes through chromedriver; Firefox speaks BiDi natively and is launched
+// directly.
 func Launch(opts LaunchOptions) (*LaunchResult, error) {
+	switch opts.Engine {
+	case "", "chrome":
+		// fall through to the chromedriver path below
+	case "firefox":
+		return launchFirefox(opts)
+	default:
+		return nil, fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", opts.Engine)
+	}
+
 	log.Debug("launching browser", "headless", opts.Headless)
 
 	// Fail with a reason before spending ~2s on a launch that cannot succeed.
@@ -180,11 +192,11 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 			userDataDir, _ := result.Capabilities["userDataDir"].(string)
 			log.Info("browser launched via BiDi session.new", "sessionId", result.SessionID)
 			return &LaunchResult{
-				BidiConn:        conn,
-				SessionID:       result.SessionID,
-				ChromedriverCmd: cmd,
-				Port:            port,
-				UserDataDir:     userDataDir,
+				BidiConn:    conn,
+				SessionID:   result.SessionID,
+				BrowserCmd:  cmd,
+				Port:        port,
+				UserDataDir: userDataDir,
 			}, nil
 		}
 		log.Debug("BiDi session.new failed, falling back to HTTP", "error", sessionErr)
@@ -202,11 +214,11 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	log.Info("browser launched via HTTP", "sessionId", sessionID, "wsUrl", httpWsURL)
 
 	return &LaunchResult{
-		WebSocketURL:    httpWsURL,
-		SessionID:       sessionID,
-		ChromedriverCmd: cmd,
-		Port:            port,
-		UserDataDir:     userDataDir,
+		WebSocketURL: httpWsURL,
+		SessionID:    sessionID,
+		BrowserCmd:   cmd,
+		Port:         port,
+		UserDataDir:  userDataDir,
 	}, nil
 }
 
@@ -384,16 +396,16 @@ func (r *LaunchResult) Close() error {
 	log.Debug("closing browser", "sessionId", r.SessionID)
 
 	// Kill chromedriver and all its descendants
-	if r.ChromedriverCmd != nil && r.ChromedriverCmd.Process != nil {
-		pid := r.ChromedriverCmd.Process.Pid
+	if r.BrowserCmd != nil && r.BrowserCmd.Process != nil {
+		pid := r.BrowserCmd.Process.Pid
 
 		// Kill the entire process tree (chromedriver + Chrome + all helpers)
 		killProcessTree(pid)
 
 		// Wait for chromedriver to exit
-		r.ChromedriverCmd.Wait()
+		r.BrowserCmd.Wait()
 
-		process.Untrack(r.ChromedriverCmd)
+		process.Untrack(r.BrowserCmd)
 	}
 
 	// Clean up the Chrome temp profile directory for THIS session only.
@@ -437,9 +449,25 @@ func KillOrphanedChromeProcesses() {
 	if err != nil {
 		return
 	}
+	killOrphanedProcessesFromDir(cftDir)
+}
 
+// KillOrphanedFirefoxProcesses is the Firefox counterpart. A system Firefox
+// pointed at via VIBIUM_FIREFOX_PATH lives outside the cache dir and is
+// never matched.
+func KillOrphanedFirefoxProcesses() {
+	ffDir, err := paths.GetFirefoxDir()
+	if err != nil {
+		return
+	}
+	killOrphanedProcessesFromDir(ffDir)
+}
+
+// killOrphanedProcessesFromDir kills processes whose command line starts with
+// dir and that no live vibium process owns.
+func killOrphanedProcessesFromDir(dir string) {
 	// ^ anchor: only match processes running from the dir
-	output, err := exec.Command("pgrep", "-f", "^"+cftDir).Output()
+	output, err := exec.Command("pgrep", "-f", "^"+dir).Output()
 	if err != nil {
 		// pgrep exits 1 when nothing matched, which is the normal case
 		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
@@ -485,7 +513,7 @@ func KillOrphanedChromeProcesses() {
 	}
 }
 
-// CleanupOrphanedChromeTempDirs removes Chrome temp directories left behind
+// CleanupOrphanedBrowserTempDirs removes Chrome temp directories left behind
 // by previous crashed runs. Safe to call at process start or from explicit
 // cleanup tooling (e.g. `make double-tap`). NEVER call this on a normal
 // browser shutdown — sibling vibium processes' Chrome user-data-dirs match
@@ -495,11 +523,12 @@ func KillOrphanedChromeProcesses() {
 // The minAge filter only deletes directories whose mtime is older than the
 // given duration — anything fresher could belong to a currently-running
 // sibling process. Pass time.Minute or longer for parallel-safe cleanup.
-func CleanupOrphanedChromeTempDirs(minAge time.Duration) {
+func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 	tmpDir := os.TempDir()
 	patterns := []string{
 		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
 		filepath.Join(tmpDir, "org.chromium.Chromium.scoped_dir.*"),
+		filepath.Join(tmpDir, "vibium-firefox-profile-*"),
 	}
 	cutoff := time.Now().Add(-minAge)
 	var count int
