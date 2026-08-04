@@ -75,22 +75,7 @@ Vibium's architecture follows the classic robotics control loop:
 
 ## Video Recording
 
-**What:** Built-in screen recording of browser sessions.
-
-**Why deferred:** Adds FFmpeg dependency complexity. Screenshots may be sufficient for debugging.
-
-**Implementation:**
-- Capture screenshots at interval (e.g., 10fps)
-- Encode to MP4/WebM via FFmpeg
-- Start/stop via `vibium.recording.start` / `vibium.recording.stop` BiDi commands
-- JS API: `vibe.startRecording()`, `vibe.stopRecording()`
-
-**When to build:** When users need video artifacts for:
-- Test failure debugging
-- Demo generation
-- Compliance/audit trails
-
-**Estimated effort:** 1 week
+**Status: Shipped** via `page.screencast` (JS and Python). Uses the WebDriver BiDi `browsingContext.startScreencast` command, so the browser encodes the video itself and no FFmpeg is needed. Works on Firefox 154+; Chrome has not implemented the BiDi command yet and will work when it does. See `docs/how-to-guides/record-video.md`.
 
 ---
 
@@ -146,11 +131,13 @@ const el = await vibe.find("the blue submit button");
 
 ## Firefox, Edge, Safari, and Brave Support
 
-**What:** Support browsers beyond Chrome.
+**Status: Firefox shipped.** `vibium install --engine firefox`, then `--engine firefox` or `VIBIUM_ENGINE=firefox`. See `docs/how-to-guides/using-firefox.md`.
+
+**What:** Support browsers beyond Chrome and Firefox.
 
 **Why deferred:** Chrome covers 90%+ of use cases. BiDi implementations vary across browsers.
 
-**When to build:** When users explicitly need Firefox, Edge, Safari, or Brave.
+**When to build:** When users explicitly need Edge, Safari, or Brave.
 
 **Estimated effort:** 1 week per browser
 

@@ -338,4 +338,9 @@ You just automated a browser with Java. The same techniques work for:
 - Automating repetitive tasks
 - Building AI agents that can browse the web
 
+## Where Next?
+
+- [Using Firefox](../how-to-guides/using-firefox.md): run the same code on Firefox instead of Chrome.
+- [Record Video](../how-to-guides/record-video.md): capture a video of the session (Firefox 154+).
+
 Questions? [Open an issue](https://github.com/VibiumDev/vibium/issues).

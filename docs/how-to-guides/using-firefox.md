@@ -70,6 +70,6 @@ This mirrors how Playwright projects re-run the same tests per browser via `brow
 
 ## Feature notes
 
-- Screenshots, navigation, clicking, and the rest of the automation API work the same on both engines — it is all standard WebDriver BiDi.
-- Screen recording (`page.screencast`) requires Firefox 154+ (stable from 2026-08-18; before that, `VIBIUM_FIREFOX_CHANNEL=beta`). Chrome has not implemented the BiDi screencast commands yet.
+- Screenshots, navigation, clicking, and the rest of the automation API work the same on both engines. It is all standard WebDriver BiDi.
+- Video recording (`page.screencast`) currently works on Firefox only: see [Record Video](record-video.md).
 - PDF printing (`page.pdf`) support may differ between engines.

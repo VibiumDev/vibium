@@ -58,6 +58,10 @@ type BrowserSession struct {
 	prompts     *PromptTracker
 	navigations *NavigationTracker
 
+	// Screencast support (native browser video recording)
+	screencastID   string // active screencast id; "" = none
+	screencastPath string // file the browser writes the video to
+
 	// Recording support
 	recorder           *Recorder
 	lastContext        string     // last browsing context resolved by a command
@@ -727,6 +731,14 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		go r.handleRecordingStopGroup(session, cmd)
 		return
 
+	// Screencast commands (native browser video recording)
+	case "vibium:screencast.start":
+		go r.handleScreencastStart(session, cmd)
+		return
+	case "vibium:screencast.stop":
+		go r.handleScreencastStop(session, cmd)
+		return
+
 	// Clock commands
 	case "vibium:clock.install":
 		r.dispatch(session, cmd, r.handleClockInstall)
@@ -1081,6 +1093,11 @@ func (r *Router) closeSession(session *BrowserSession) {
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
+	}
+
+	// The spec leaves deleting the browser-written recording to the local end
+	if session.screencastPath != "" {
+		os.Remove(session.screencastPath)
 	}
 
 	// Close browser

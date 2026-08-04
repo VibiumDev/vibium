@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -234,7 +234,7 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java test-firefox && \
 	"$(MAKE)" test-cleanup && \
 	"$(MAKE)" test-browser-modes test-cleanup && \
 	"$(MAKE)" test-daemon test-cleanup && \
@@ -383,6 +383,14 @@ test-python: build-go install-browser python-venv
 			--ignore=../../tests/py/test_browser_modes.py
 
 # Headed browser-mode tests, one visible Chrome window at a time.
+# Runs inside the -j parallel group: the tests are headless and open one
+# browser at a time, so they hide behind the slower Chrome suites instead
+# of adding serial wall-clock time. Skips in seconds without Firefox.
+test-firefox: build-go
+	@echo "--- Firefox Tests ---"
+	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/firefox.test.js
+
 test-browser-modes: build-go install-browser python-venv
 	@echo "--- Browser Mode Tests (headed, serial) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/browser-modes.test.js

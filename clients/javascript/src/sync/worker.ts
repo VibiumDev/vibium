@@ -972,6 +972,22 @@ const handlers: Record<string, Handler> = {
   },
 
   // ========================
+  // Screencast commands (page-scoped)
+  // ========================
+
+  'screencast.start': async (args) => {
+    const [pageId, options] = args as [number, any];
+    await getPage(pageId).screencast.start(options);
+    return { success: true };
+  },
+
+  'screencast.stop': async (args) => {
+    const [pageId, options] = args as [number, any];
+    const buffer = await getPage(pageId).screencast.stop(options);
+    return { data: buffer.toString('base64') };
+  },
+
+  // ========================
   // Recording commands (context-scoped)
   // ========================
 
