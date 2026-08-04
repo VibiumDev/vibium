@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
@@ -50,7 +52,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 
 	firefoxPath, err := paths.GetFirefoxExecutable()
 	if err != nil {
-		return nil, fmt.Errorf("Firefox not found: run `vibium install --browser firefox` or set VIBIUM_FIREFOX_PATH")
+		return nil, fmt.Errorf("Firefox not found: run `vibium install --engine firefox` or set VIBIUM_FIREFOX_PATH")
 	}
 	log.Debug("found firefox", "path", firefoxPath)
 
@@ -71,6 +73,14 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		os.RemoveAll(profileDir)
 		return nil, fmt.Errorf("failed to write profile prefs: %w", err)
 	}
+	var xdgConfigHome string
+	if runtime.GOOS == "linux" {
+		xdgConfigHome, err = prepareFirefoxXDG(profileDir)
+		if err != nil {
+			os.RemoveAll(profileDir)
+			return nil, fmt.Errorf("failed to prepare Firefox directories: %w", err)
+		}
+	}
 
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
@@ -82,6 +92,9 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	cmd := exec.Command(firefoxPath, args...)
+	if xdgConfigHome != "" {
+		cmd.Env = replaceEnv(os.Environ(), "XDG_CONFIG_HOME", xdgConfigHome)
+	}
 	setProcGroup(cmd)
 	if opts.Verbose {
 		fmt.Println("       ------- firefox -------")
@@ -127,6 +140,38 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		Port:        port,
 		UserDataDir: profileDir,
 	}, nil
+}
+
+// prepareFirefoxXDG gives Linux Firefox a private default Downloads directory.
+// Firefox 154's startScreencast asks the platform directory service directly
+// and, unlike the normal download code, has no fallback when XDG user dirs are
+// unavailable (as on minimal CI machines). Keep the directory in the temporary
+// browser profile instead of creating ~/Downloads on the user's machine.
+func prepareFirefoxXDG(profileDir string) (string, error) {
+	downloadsDir := filepath.Join(profileDir, "Downloads")
+	configDir := filepath.Join(profileDir, "xdg-config")
+	if err := os.MkdirAll(downloadsDir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return "", err
+	}
+	contents := fmt.Sprintf("XDG_DOWNLOAD_DIR=%q\n", downloadsDir)
+	if err := os.WriteFile(filepath.Join(configDir, "user-dirs.dirs"), []byte(contents), 0o600); err != nil {
+		return "", err
+	}
+	return configDir, nil
+}
+
+func replaceEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
 }
 
 // firefoxCapabilities returns the capabilities map for session.new. Launch

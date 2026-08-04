@@ -30,11 +30,15 @@ var version = "dev"
 
 // Global flags
 var (
-	headless   bool
-	verbose    bool
-	jsonOutput bool
-	session    string
-	engineName string
+	headless       bool
+	verbose        bool
+	jsonOutput     bool
+	session        string
+	engineName     string
+	firefoxChannel string
+	headlessSet    bool
+	engineSet      bool
+	channelSet     bool
 )
 
 // defaultEngine returns the browser engine to launch when --engine is not given.
@@ -52,6 +56,9 @@ func main() {
 		Use:   progName,
 		Short: "Browser automation for AI agents and humans",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			headlessSet = cmd.Flags().Changed("headless")
+			engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
+			channelSet = cmd.Flags().Changed("firefox-channel") || os.Getenv("VIBIUM_FIREFOX_CHANNEL") != ""
 			// Enable logging only if --verbose is used
 			if verbose {
 				log.Setup(log.LevelVerbose)
@@ -66,6 +73,15 @@ func main() {
 			if engineName != "chrome" && engineName != "firefox" {
 				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
 			}
+			// Bridge the flag to the env var, like --session: the paths
+			// package resolves the channel from the environment at both
+			// install and launch time, and a daemon child process spawned
+			// later inherits it.
+			if firefoxChannel != "" {
+				if err := os.Setenv("VIBIUM_FIREFOX_CHANNEL", firefoxChannel); err != nil {
+					return err
+				}
+			}
 			return paths.ValidateSessionName(paths.SessionName())
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -76,6 +92,7 @@ func main() {
 	// Add global flags for browser commands
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
+	rootCmd.PersistentFlags().StringVar(&firefoxChannel, "firefox-channel", os.Getenv("VIBIUM_FIREFOX_CHANNEL"), "Firefox channel to install and run: release (default) or beta (env: VIBIUM_FIREFOX_CHANNEL)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")

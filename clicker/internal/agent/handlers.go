@@ -16,6 +16,7 @@ import (
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/paths"
 )
 
 // Handlers manages browser session state and executes tool calls.
@@ -53,6 +54,10 @@ type Handlers struct {
 	// launchedEngine is the browser the running session was actually
 	// launched with, same caveat as launchedHeadless.
 	launchedEngine string
+
+	// launchedChannel distinguishes separately installed Firefox channels.
+	// It is empty for Chrome and remote sessions.
+	launchedChannel string
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -646,6 +651,11 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				"%s is already running; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
 				h.launchedEngine, want)
 		}
+		if want, ok := args["channel"].(string); ok && want != "" && h.launchedEngine == "firefox" && want != h.launchedChannel {
+			return nil, fmt.Errorf(
+				"Firefox %s is already running; requested %s. Run `vibium stop` first, or use another --session",
+				h.launchedChannel, want)
+		}
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
@@ -691,6 +701,22 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	if useEngine == "" {
 		useEngine = "chrome"
 	}
+	useChannel := ""
+	if useEngine == "firefox" {
+		useChannel = paths.FirefoxChannel()
+		if val, ok := args["channel"].(string); ok && val != "" {
+			if val != "release" && val != "beta" {
+				return nil, fmt.Errorf("unknown Firefox channel %q (supported: release, beta)", val)
+			}
+			useChannel = val
+			// Firefox path resolution currently reads the channel from the
+			// environment. Daemon calls are serialized, so applying the selected
+			// channel immediately before launch cannot race another request.
+			if err := os.Setenv("VIBIUM_FIREFOX_CHANNEL", val); err != nil {
+				return nil, fmt.Errorf("select Firefox channel: %w", err)
+			}
+		}
+	}
 
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{Engine: useEngine, Headless: useHeadless})
@@ -716,6 +742,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.client = bidi.NewClient(conn)
 	h.launchedHeadless = useHeadless
 	h.launchedEngine = useEngine
+	h.launchedChannel = useChannel
 	h.sessionMu.Unlock()
 	h.startPromptTracking()
 

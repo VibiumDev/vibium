@@ -188,7 +188,7 @@ Native browser video recording. Firefox 154+; Chrome has not implemented the BiD
 
 | # | Description | Wire Command | CLI | MCP | JS | Python |
 |---|---|---|---|---|---|---|
-| 151 | Start video recording | `vibium:screencast.start` | — | — | `page.screencast.start(opts?)` | `page.screencast.start(**opts)` |
+| 151 | Start video recording | `vibium:screencast.start` | — | — | `page.screencast.start(opts?)` | `page.screencast.start(mime_type=?, width=?, height=?, frame_rate=?, audio=?)` |
 | 152 | Stop video recording, return video | `vibium:screencast.stop` | — | — | `page.screencast.stop(opts?)` | `page.screencast.stop(path?)` |
 
 ## Route

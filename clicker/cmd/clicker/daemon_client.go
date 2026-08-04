@@ -16,6 +16,21 @@ import (
 // daemonCall sends a tool call to the daemon, auto-starting if needed.
 // Returns the result or an error.
 func daemonCall(toolName string, args map[string]interface{}) (*agent.ToolsCallResult, error) {
+	if toolName == "browser_start" {
+		args = mergeLaunchOptions(args)
+	} else if toolName != "browser_stop" {
+		// Most CLI commands lazily launch through ensureBrowser. Sending the
+		// explicitly requested options first lets a running daemon reject a
+		// Chrome/Firefox, headed/headless, or Firefox-channel mismatch instead
+		// of silently using its existing browser.
+		if _, err := callDaemonWithAutoStart("browser_start", requestedLaunchOptions()); err != nil {
+			return nil, err
+		}
+	}
+	return callDaemonWithAutoStart(toolName, args)
+}
+
+func callDaemonWithAutoStart(toolName string, args map[string]interface{}) (*agent.ToolsCallResult, error) {
 	// First attempt
 	result, err := daemon.Call(toolName, args)
 	if err == nil {
@@ -37,6 +52,32 @@ func daemonCall(toolName string, args map[string]interface{}) (*agent.ToolsCallR
 
 	// Retry
 	return daemon.Call(toolName, args)
+}
+
+func requestedLaunchOptions() map[string]interface{} {
+	args := map[string]interface{}{}
+	if headlessSet {
+		args["headless"] = headless
+	}
+	if engineSet {
+		args["engine"] = engineName
+	}
+	if channelSet || (engineSet && engineName == "firefox") {
+		channel := firefoxChannel
+		if channel == "" {
+			channel = paths.FirefoxChannel()
+		}
+		args["channel"] = channel
+	}
+	return args
+}
+
+func mergeLaunchOptions(args map[string]interface{}) map[string]interface{} {
+	merged := requestedLaunchOptions()
+	for key, value := range args {
+		merged[key] = value
+	}
+	return merged
 }
 
 // autoStartDaemon spawns a daemon process in the background and waits for it.

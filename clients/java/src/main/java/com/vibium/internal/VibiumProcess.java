@@ -43,7 +43,7 @@ public class VibiumProcess {
     /**
      * Start a vibium pipe subprocess.
      */
-    public static VibiumProcess start(String binaryPath, String engine, boolean headless, String connectURL, Map<String, String> connectHeaders) {
+    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
@@ -51,6 +51,11 @@ public class VibiumProcess {
         if (engine != null && !engine.isEmpty()) {
             cmd.add("--engine");
             cmd.add(engine);
+        }
+
+        if (channel != null && !channel.isEmpty()) {
+            cmd.add("--firefox-channel");
+            cmd.add(channel);
         }
 
         if (headless) {
@@ -69,9 +74,9 @@ public class VibiumProcess {
             }
         }
 
-        // Auto-install Chrome if needed (skip for remote connections)
+        // Auto-install the selected browser if needed (skip for remote connections)
         if (connectURL == null || connectURL.isEmpty()) {
-            BrowserInstaller.ensureInstalled(binaryPath);
+            BrowserInstaller.ensureInstalled(binaryPath, engine, channel);
         }
 
         // Startup is slow (~16s cold) and slower when many browsers launch at

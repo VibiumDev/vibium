@@ -12,7 +12,24 @@ Installation complete!
 Firefox: /Users/you/Library/Caches/vibium/firefox/release/153.0.3/Firefox.app/Contents/MacOS/firefox
 ```
 
-Firefox installs into the vibium cache next to Chrome for Testing. On Windows, Mozilla ships no archive build, so install Firefox yourself and point `VIBIUM_FIREFOX_PATH` at `firefox.exe`. The clients auto-install the selected engine on first launch, same as Chrome.
+Firefox installs into the vibium cache next to Chrome for Testing. The JavaScript,
+Python, and Java clients auto-install the selected engine on first launch on macOS
+and Linux, same as Chrome. On Windows, Firefox auto-install is not available:
+install Firefox yourself and point `VIBIUM_FIREFOX_PATH` at `firefox.exe`.
+
+### Release channels
+
+`--firefox-channel beta` (or `VIBIUM_FIREFOX_CHANNEL=beta`) selects the Firefox beta instead of the release build. The channel applies to install and launch alike: each channel is cached separately, and only the selected one is run, so an installed beta never shadows stable. In the clients, pass `channel` when starting the browser:
+
+```js
+const bro = await firefox.start({ channel: 'beta' });
+```
+
+```python
+bro = firefox.start(channel="beta")
+```
+
+The main use today is [video recording](record-video.md), which needs Firefox 154 while it is still in beta.
 
 ## Launch
 
@@ -50,15 +67,18 @@ Browser bro = Vibium.start(new StartOptions().engine("firefox"));
 
 MCP — `browser_start` takes an `engine` argument (`chrome` or `firefox`).
 
-## Running a whole suite against Firefox
+## Selecting Firefox with an environment variable
 
-The `VIBIUM_ENGINE` env var changes the default engine of the vibium binary itself, so code that never mentions an engine — including an existing Chrome test suite — runs on Firefox unmodified:
+The `VIBIUM_ENGINE` env var changes the default engine of the vibium binary
+itself, so code that uses browser-neutral APIs can select Firefox without a
+code change:
 
 ```
-$ VIBIUM_ENGINE=firefox make test
+$ VIBIUM_ENGINE=firefox node my-script.js
 ```
 
-This mirrors how Playwright projects re-run the same tests per browser via `browserName` config.
+Browser-specific features still differ. In particular, native video recording
+currently requires Firefox, while PDF output may differ between engines.
 
 ## Environment variables
 
@@ -66,7 +86,7 @@ This mirrors how Playwright projects re-run the same tests per browser via `brow
 |----------|--------|
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
 | `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache |
-| `VIBIUM_FIREFOX_CHANNEL` | Install channel: `release` (default) or `beta` |
+| `VIBIUM_FIREFOX_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--firefox-channel` or the clients' `channel` option |
 
 ## Feature notes
 

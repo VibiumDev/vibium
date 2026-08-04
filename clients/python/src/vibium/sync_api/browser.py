@@ -75,6 +75,7 @@ class _BrowserLauncher:
         url: Optional[str] = None,
         *,
         engine: Optional[str] = None,
+        channel: Optional[str] = None,
         headless: bool = False,
         headers: Optional[dict] = None,
         executable_path: Optional[str] = None,
@@ -86,6 +87,8 @@ class _BrowserLauncher:
                 VIBIUM_CONNECT_URL env var, then falls back to local launch.
             engine: Browser engine to launch: "chrome" (default) or "firefox"
                 (local launch only).
+            channel: Release channel of the engine to install and run, e.g.
+                "beta". Currently honored by Firefox only (local launch only).
             headless: Run browser in headless mode (local launch only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
             executable_path: Path to vibium binary (default: auto-detect).
@@ -100,6 +103,7 @@ class _BrowserLauncher:
             async_browser_launcher.start(
                 url,
                 engine=engine,
+                channel=channel,
                 headless=headless,
                 headers=headers,
                 executable_path=executable_path,
@@ -122,6 +126,7 @@ class _EngineLauncher:
         self,
         url: Optional[str] = None,
         *,
+        channel: Optional[str] = None,
         headless: bool = False,
         headers: Optional[dict] = None,
         executable_path: Optional[str] = None,
@@ -129,6 +134,7 @@ class _EngineLauncher:
         return browser.start(
             url,
             engine=self._engine,
+            channel=channel,
             headless=headless,
             headers=headers,
             executable_path=executable_path,

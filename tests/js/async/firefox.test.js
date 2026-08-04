@@ -5,11 +5,17 @@
  * Skips (rather than fails) when Firefox is not installed, so the suite
  * stays green on machines that only have Chrome. Install with:
  *   vibium install --engine firefox
+ *
+ * CI sets VIBIUM_REQUIRE_FIREFOX, which turns every skip into a failure:
+ * the green check must prove Firefox and screencast actually ran.
  */
 
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { browser, firefox } = require('../../../clients/javascript/dist');
 const { createTestServer } = require('../../helpers/test-server');
@@ -29,6 +35,28 @@ function firefoxInstalled() {
 
 const haveFirefox = firefoxInstalled();
 
+function skipOrFail(t, reason) {
+  if (process.env.VIBIUM_REQUIRE_FIREFOX) {
+    assert.fail(`${reason}, and VIBIUM_REQUIRE_FIREFOX is set`);
+  }
+  t.skip(reason);
+}
+
+// Firefox gains BiDi screencast in 154; self-skip on older builds so the
+// recording tests activate on their own once the release channel catches up.
+async function startScreencastOrSkip(t, vibe) {
+  try {
+    await vibe.screencast.start();
+    return true;
+  } catch (err) {
+    if (/not supported/.test(err.message)) {
+      skipOrFail(t, 'this Firefox does not support screencast yet');
+      return false;
+    }
+    throw err;
+  }
+}
+
 before(async () => {
   ({ server, baseURL } = await createTestServer());
 });
@@ -38,11 +66,8 @@ after(() => {
 });
 
 describe('JS Firefox', () => {
-  test('navigate, click, and screenshot work on Firefox', async () => {
-    if (!haveFirefox) {
-      console.log('  (skipped: Firefox not installed)');
-      return;
-    }
+  test('navigate, click, and screenshot work on Firefox', async (t) => {
+    if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
 
     // Named launcher: firefox.start() === browser.start({ engine: 'firefox' })
     const bro = await firefox.start({ headless: true });
@@ -67,28 +92,15 @@ describe('JS Firefox', () => {
     }
   });
 
-  test('screencast records video natively', async () => {
-    if (!haveFirefox) {
-      console.log('  (skipped: Firefox not installed)');
-      return;
-    }
+  test('screencast records video natively', async (t) => {
+    if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
 
     const bro = await browser.start({ engine: 'firefox', headless: true });
     try {
       const vibe = await bro.page();
       await vibe.go(baseURL);
 
-      try {
-        await vibe.screencast.start();
-      } catch (err) {
-        // Firefox gains BiDi screencast in 154; self-skip on older builds so
-        // this activates on its own once the release channel catches up.
-        if (/not supported/.test(err.message)) {
-          console.log('  (skipped: this Firefox does not support screencast yet)');
-          return;
-        }
-        throw err;
-      }
+      if (!(await startScreencastOrSkip(t, vibe))) return;
 
       const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
       await link.click();
@@ -101,6 +113,41 @@ describe('JS Firefox', () => {
         'Video should be a WebM file');
     } finally {
       await bro.stop();
+    }
+  });
+
+  test('screencast stop can be retried after a failed delivery', async (t) => {
+    if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
+
+    // A destination under a regular file is unwritable on every platform,
+    // without needing permission tricks.
+    const blocker = path.join(os.tmpdir(), `vibium-test-blocker-${process.pid}`);
+    fs.writeFileSync(blocker, 'not a directory');
+    const badDest = path.join(blocker, 'sub', 'video.webm');
+
+    const bro = await browser.start({ engine: 'firefox', headless: true });
+    try {
+      const vibe = await bro.page();
+      await vibe.go(baseURL);
+
+      if (!(await startScreencastOrSkip(t, vibe))) return;
+
+      await vibe.find('a[href="/login"]', { timeout: 5000 });
+
+      await assert.rejects(
+        () => vibe.screencast.stop({ path: badDest }),
+        (err) => /failed to save screencast/.test(err.message),
+        'Delivering to an unwritable path should fail'
+      );
+
+      // The recording must survive the failed delivery: a retried stop()
+      // without a path returns the video inline.
+      const video = await vibe.screencast.stop();
+      assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
+        'Retried stop should still deliver the WebM');
+    } finally {
+      await bro.stop();
+      fs.rmSync(blocker, { force: true });
     }
   });
 
@@ -119,17 +166,30 @@ describe('JS Firefox', () => {
     }
   });
 
-  test('unknown browser is rejected with a clear error', () => {
+  test('unknown browser is rejected with a clear error', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
-    if (!bin) {
-      console.log('  (skipped: VIBIUM_BIN_PATH not set)');
-      return;
-    }
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
 
     assert.throws(
       () => execFileSync(bin, ['--engine', 'netscape', 'version'], { stdio: 'pipe' }),
       (err) => /unsupported engine/.test(err.stderr.toString()),
       'Should reject an unsupported engine name'
+    );
+  });
+
+  test('--firefox-channel selects a separate install', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    // Channels live in separate cache directories, so a channel that was
+    // never installed must report not-installed (exit 1) — even on machines
+    // where another channel is present. Purely a local directory check.
+    assert.throws(
+      () => execFileSync(bin,
+        ['is-installed', '--engine', 'firefox', '--firefox-channel', 'no-such-channel'],
+        { stdio: 'ignore' }),
+      (err) => err.status === 1,
+      'A never-installed channel should report not-installed'
     );
   });
 });

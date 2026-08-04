@@ -79,7 +79,10 @@ func newInstallCmd() *cobra.Command {
   # Installing Chrome for Testing v139.0.7258.68...
 
   vibium install --engine firefox
-  # Installing Firefox v153.0.3 (release channel)...`,
+  # Installing Firefox v153.0.3 (release channel)...
+
+  vibium install --engine firefox --firefox-channel beta
+  # Installing Firefox v154.0b6 (beta channel)...`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if engineName == "firefox" {
 				exePath, err := browser.InstallFirefox()

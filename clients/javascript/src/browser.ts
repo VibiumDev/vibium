@@ -9,6 +9,11 @@ const customInspect = Symbol.for('nodejs.util.inspect.custom');
 export interface StartOptions {
   /** Browser engine to launch: 'chrome' (default) or 'firefox'. */
   engine?: 'chrome' | 'firefox';
+  /**
+   * Release channel of the engine to install and run, e.g. 'beta'.
+   * Currently honored by Firefox only.
+   */
+  channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
   executablePath?: string;
@@ -149,11 +154,12 @@ export const browser = {
       return new Browser(client, proc);
     }
 
-    const { engine, headless = false, executablePath } = options;
-    debug('launching browser', { engine, headless, executablePath });
+    const { engine, channel, headless = false, executablePath } = options;
+    debug('launching browser', { engine, channel, headless, executablePath });
 
     const proc = await VibiumProcess.start({
       engine,
+      channel,
       headless,
       executablePath,
     });

@@ -62,6 +62,12 @@ jobs:
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
 
+    env:
+      # Screencast needs Firefox 154, in beta until 2026-08-18. Set job-wide
+      # so install and test resolve the same channel; delete this once 154
+      # reaches the release channel.
+      VIBIUM_FIREFOX_CHANNEL: beta
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,6 +118,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-chrome-
 
+      - name: Cache Firefox
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/vibium/firefox
+          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/browser/installer_firefox.go') }}
+          restore-keys: |
+            ${{ runner.os }}-firefox-
+
       # npm ci installs exactly what the lockfile pins. The lockfile is
       # generated on macOS, so rollup's Linux native module is missing from
       # it and has to be added separately, locked to the rollup version the
@@ -124,12 +138,21 @@ jobs:
       - name: Build
         run: make
 
+      - name: Install Firefox
+        run: make install-firefox
+
       # xvfb: the Python suite's headed tests need a display.
       # The NODE_TEST_TIMEOUT override is gone with Node 20: --test-timeout is
       # per test now, not per file, so the Makefile's 30s default applies and a
-      # hung test surfaces in 30s rather than 300s.
+      # hung ordinary test surfaces in 30s. The Firefox target has its own
+      # startup-scale timeout because a cold launch permits two 60s attempts.
+      # VIBIUM_REQUIRE_FIREFOX: the Firefox tests skip when Firefox is
+      # missing or too old; in CI that must be a failure, or the check goes
+      # green without exercising Firefox or screencast at all.
       - name: Test
         run: xvfb-run --auto-servernum make test
+        env:
+          VIBIUM_REQUIRE_FIREFOX: 1
 
       # In case the job is interrupted before make test's own cleanup runs.
       - name: Clean up zombie processes

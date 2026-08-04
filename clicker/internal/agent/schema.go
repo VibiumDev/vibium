@@ -20,6 +20,11 @@ func GetToolSchemas() []Tool {
 						"enum":        []string{"chrome", "firefox"},
 						"default":     "chrome",
 					},
+					"channel": map[string]interface{}{
+						"type":        "string",
+						"description": "Firefox release channel",
+						"enum":        []string{"release", "beta"},
+					},
 				},
 				"additionalProperties": false,
 			},

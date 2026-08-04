@@ -142,12 +142,18 @@ def find_vibium_bin() -> str:
     )
 
 
-def ensure_browser_installed(vibium_path: str, engine: Optional[str] = None) -> None:
+def ensure_browser_installed(
+    vibium_path: str,
+    engine: Optional[str] = None,
+    channel: Optional[str] = None,
+) -> None:
     """Ensure the selected browser is installed.
 
     Runs 'vibium install' if the browser is not found.
     """
     engine_args = ["--engine", engine] if engine else []
+    if channel:
+        engine_args.extend(["--firefox-channel", channel])
     name = engine or "Chrome for Testing"
 
     try:
@@ -189,6 +195,7 @@ class VibiumProcess:
         cls,
         headless: bool = False,
         engine: Optional[str] = None,
+        channel: Optional[str] = None,
         executable_path: Optional[str] = None,
         connect_url: Optional[str] = None,
         connect_headers: Optional[dict] = None,
@@ -198,6 +205,8 @@ class VibiumProcess:
         Args:
             headless: Run browser in headless mode.
             engine: Browser engine to launch: "chrome" (default) or "firefox".
+            channel: Release channel of the engine to install and run, e.g.
+                "beta". Currently honored by Firefox only.
             executable_path: Path to vibium binary (default: auto-detect).
             connect_url: Remote BiDi WebSocket URL to connect to instead of launching a local browser.
             connect_headers: HTTP headers for the WebSocket connection (e.g. auth tokens).
@@ -209,11 +218,13 @@ class VibiumProcess:
 
         # Ensure the browser is installed (auto-download if needed) — skip for remote connections
         if not connect_url:
-            ensure_browser_installed(binary, engine)
+            ensure_browser_installed(binary, engine, channel)
 
         args = [binary, "pipe"]
         if engine:
             args.extend(["--engine", engine])
+        if channel:
+            args.extend(["--firefox-channel", channel])
         if headless:
             args.append("--headless")
         if connect_url:

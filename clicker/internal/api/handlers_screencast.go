@@ -16,6 +16,12 @@ import (
 // the client asked.
 // Options: context, mimeType, width, height, frameRate, audio.
 func (r *Router) handleScreencastStart(session *BrowserSession, cmd bidiCommand) {
+	if !session.beginScreencastOperation() {
+		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
+		return
+	}
+	defer session.endScreencastOperation()
+
 	session.mu.Lock()
 	active := session.screencastID != ""
 	session.mu.Unlock()
@@ -78,6 +84,12 @@ func (r *Router) handleScreencastStart(session *BrowserSession, cmd bidiCommand)
 	}
 
 	session.mu.Lock()
+	// A leftover path with no active id is a finalized recording whose
+	// delivery failed. Starting a new recording abandons it; delete the file
+	// so it does not leak once the path is overwritten.
+	if stale := session.screencastPath; stale != "" {
+		os.Remove(stale)
+	}
 	session.screencastID = result.Result.Screencast
 	session.screencastPath = result.Result.Path
 	session.mu.Unlock()
@@ -88,49 +100,78 @@ func (r *Router) handleScreencastStart(session *BrowserSession, cmd bidiCommand)
 // handleScreencastStop handles vibium:screencast.stop — finalizes the
 // recording and delivers the file.
 // Options: path (move the video there; otherwise return it base64-inline).
+//
+// State is cleared step by step, never up front: a failed stopScreencast
+// keeps both id and path so stop() can be retried; a failed move/read keeps
+// the path so delivery can be retried and session cleanup still knows which
+// file to delete.
 func (r *Router) handleScreencastStop(session *BrowserSession, cmd bidiCommand) {
+	if !session.beginScreencastOperation() {
+		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
+		return
+	}
+	defer session.endScreencastOperation()
+
 	session.mu.Lock()
 	id := session.screencastID
-	startPath := session.screencastPath
-	session.screencastID = ""
-	session.screencastPath = ""
+	videoPath := session.screencastPath
 	session.mu.Unlock()
 
-	if id == "" {
+	if id == "" && videoPath == "" {
 		r.sendError(session, cmd.ID, fmt.Errorf("screencast is not started"))
 		return
 	}
 
-	resp, err := r.sendInternalCommand(session, "browsingContext.stopScreencast", map[string]interface{}{
-		"screencast": id,
-	})
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
-		return
+	// id == "" with a path left over means a previous stop() already
+	// finalized the recording but failed to deliver it; skip straight to
+	// delivery.
+	if id != "" {
+		resp, err := r.sendInternalCommand(session, "browsingContext.stopScreencast", map[string]interface{}{
+			"screencast": id,
+		})
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		if bidiErr := checkBidiError(resp); bidiErr != nil {
+			r.sendError(session, cmd.ID, bidiErr)
+			return
+		}
+
+		var result struct {
+			Result struct {
+				Path  string `json:"path"`
+				Error string `json:"error"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(resp, &result); err != nil {
+			r.sendError(session, cmd.ID, fmt.Errorf("unexpected stopScreencast response"))
+			return
+		}
+		if result.Result.Error != "" {
+			// The browser failed to write the file; there is nothing to
+			// deliver or retry.
+			session.mu.Lock()
+			session.screencastID = ""
+			session.screencastPath = ""
+			session.mu.Unlock()
+			r.sendError(session, cmd.ID, fmt.Errorf("screencast write failed: %s", result.Result.Error))
+			return
+		}
+
+		if result.Result.Path != "" {
+			videoPath = result.Result.Path
+		}
+		session.mu.Lock()
+		session.screencastID = ""
+		session.screencastPath = videoPath
+		session.mu.Unlock()
 	}
 
-	var result struct {
-		Result struct {
-			Path  string `json:"path"`
-			Error string `json:"error"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("unexpected stopScreencast response"))
-		return
-	}
-	if result.Result.Error != "" {
-		r.sendError(session, cmd.ID, fmt.Errorf("screencast write failed: %s", result.Result.Error))
-		return
-	}
-
-	videoPath := result.Result.Path
-	if videoPath == "" {
-		videoPath = startPath
+	clearPath := func() {
+		session.mu.Lock()
+		session.screencastPath = ""
+		session.mu.Unlock()
 	}
 
 	// The spec leaves cleanup of the browser-written file to us.
@@ -139,6 +180,7 @@ func (r *Router) handleScreencastStop(session *BrowserSession, cmd bidiCommand) 
 			r.sendError(session, cmd.ID, fmt.Errorf("failed to save screencast: %w", err))
 			return
 		}
+		clearPath()
 		r.sendSuccess(session, cmd.ID, map[string]interface{}{"path": outPath})
 		return
 	}
@@ -148,6 +190,7 @@ func (r *Router) handleScreencastStop(session *BrowserSession, cmd bidiCommand) 
 		r.sendError(session, cmd.ID, fmt.Errorf("failed to read screencast: %w", err))
 		return
 	}
+	clearPath()
 	os.Remove(videoPath)
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{
 		"data": base64.StdEncoding.EncodeToString(data),
@@ -165,6 +208,10 @@ func screencastSupportError(err error) error {
 			"(Chrome: not implemented; Firefox: requires 154+). " +
 			"Launch with browser \"firefox\" to record video, " +
 			"or use recording.start() for a trace with screenshots")
+	}
+	if strings.Contains(err.Error(), "NS_ERROR_FAILURE") &&
+		strings.Contains(err.Error(), "nsIProperties.get") {
+		return fmt.Errorf("Firefox could not resolve its screencast output directory")
 	}
 	return err
 }

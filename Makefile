@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -63,6 +63,9 @@ endif
 # which CI used to work around with a file-scale override; both are gone.
 NODE_TEST_TIMEOUT ?= 30000
 TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
+# Firefox cold startup allows two 60s attempts. Keep this focused override
+# above that retry budget without weakening the ordinary per-test watchdog.
+FIREFOX_TEST_TIMEOUT ?= 180000
 
 # Default target
 all: build
@@ -154,6 +157,12 @@ package-python: build-go-all
 # Install Chrome for Testing (required for tests)
 install-browser: build-go
 	./clicker/bin/vibium$(EXE) install
+
+# Install Firefox (optional locally — the Firefox tests self-skip without it).
+# CI runs this so those tests actually execute. Channel comes from
+# VIBIUM_FIREFOX_CHANNEL (beta until Firefox 154 reaches stable).
+install-firefox: build-go
+	./clicker/bin/vibium$(EXE) install --engine firefox
 
 # Install npm dependencies (skip if node_modules exists)
 deps:
@@ -322,7 +331,8 @@ test-js-async: build-go
 		tests/js/async/dispatch-concurrency.test.js \
 		tests/js/async/prompt-blocked.test.js \
 		tests/js/async/navigation.test.js \
-		tests/js/async/lifecycle.test.js
+		tests/js/async/lifecycle.test.js \
+		tests/js/async/browser-installer.test.js
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
@@ -382,15 +392,17 @@ test-python: build-go install-browser python-venv
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
 			--ignore=../../tests/py/test_browser_modes.py
 
-# Headed browser-mode tests, one visible Chrome window at a time.
-# Runs inside the -j parallel group: the tests are headless and open one
-# browser at a time, so they hide behind the slower Chrome suites instead
-# of adding serial wall-clock time. Skips in seconds without Firefox.
+# Firefox tests. Runs inside the -j parallel group: the tests are headless
+# and open one browser at a time, so they hide behind the slower Chrome
+# suites instead of adding serial wall-clock time. Skips in seconds without
+# Firefox (run `make install-firefox` to enable); CI sets
+# VIBIUM_REQUIRE_FIREFOX so skips fail there instead.
 test-firefox: build-go
 	@echo "--- Firefox Tests ---"
 	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/firefox.test.js
+		$(TIMEOUT_CMD) node --test --test-timeout=$(FIREFOX_TEST_TIMEOUT) --test-force-exit --test-concurrency=1 tests/js/async/firefox.test.js
 
+# Headed browser-mode tests, one visible Chrome window at a time.
 test-browser-modes: build-go install-browser python-venv
 	@echo "--- Browser Mode Tests (headed, serial) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/js/async/browser-modes.test.js
@@ -563,6 +575,7 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"
+	@echo "  make install-firefox       - Install Firefox (channel via VIBIUM_FIREFOX_CHANNEL)"
 	@echo "  make deps                  - Install npm dependencies"
 	@echo "  make serve                 - Start proxy server on :9515"
 	@echo "  make double-tap            - Kill zombie Chrome/chromedriver processes"

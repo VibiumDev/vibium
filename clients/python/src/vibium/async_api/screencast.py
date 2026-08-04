@@ -13,7 +13,8 @@ class Screencast:
     """Native browser video recording (WebDriver BiDi screencast).
 
     Supported on Firefox 154+. Chrome has not implemented the BiDi screencast
-    commands yet; start() fails there with an explanatory error.
+    commands yet; start() fails there with an explanatory error. A browser
+    session can have one active recording, even when it has multiple pages.
     """
 
     def __init__(self, client: BiDiClient, context_id: str) -> None:

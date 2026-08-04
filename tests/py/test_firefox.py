@@ -2,6 +2,9 @@
 
 Skip when Firefox is not installed, so the suite stays green on machines
 that only have Chrome. Install with: vibium install --engine firefox
+
+CI sets VIBIUM_REQUIRE_FIREFOX, which turns every skip into a failure: the
+green check must prove Firefox and screencast actually ran.
 """
 
 import os
@@ -27,9 +30,16 @@ def _firefox_installed() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _firefox_installed(), reason="Firefox not installed"
-)
+def _skip_or_fail(reason: str) -> None:
+    if os.environ.get("VIBIUM_REQUIRE_FIREFOX"):
+        pytest.fail(f"{reason}, and VIBIUM_REQUIRE_FIREFOX is set")
+    pytest.skip(reason)
+
+
+@pytest.fixture(autouse=True)
+def _require_firefox():
+    if not _firefox_installed():
+        _skip_or_fail("Firefox not installed")
 
 
 def test_firefox_smoke(test_server):
@@ -55,11 +65,27 @@ def test_firefox_screencast(test_server):
             # Firefox gains BiDi screencast in 154; self-skip on older builds
             # so this activates on its own once release catches up.
             if "not supported" in str(err):
-                pytest.skip("this Firefox does not support screencast yet")
+                _skip_or_fail("this Firefox does not support screencast yet")
             raise
-        # Navigate while recording: a screencast stopped with no paints in
-        # between is a valid but frameless (few hundred byte) WebM.
-        vibe.go(test_server)
+        # Force a series of paints. A navigation can finish without Firefox's
+        # encoder observing a frame, yielding a valid but empty ~200-byte WebM.
+        vibe.evaluate("""
+            (() => {
+                const box = document.createElement('div');
+                Object.assign(box.style, {
+                    position: 'fixed', width: '100px', height: '100px',
+                    background: 'red', left: '0px', top: '0px'
+                });
+                document.body.appendChild(box);
+                let frame = 0;
+                const animate = () => {
+                    box.style.left = `${frame++ % 200}px`;
+                    if (frame < 60) requestAnimationFrame(animate);
+                };
+                requestAnimationFrame(animate);
+            })()
+        """)
+        vibe.wait(1200)
         video = vibe.screencast.stop()
         assert len(video) > 1000
         assert video[:4] == b"\x1a\x45\xdf\xa3"  # WebM EBML magic
