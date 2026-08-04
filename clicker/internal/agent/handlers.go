@@ -2942,6 +2942,11 @@ func (h *Handlers) browserPDF(args map[string]interface{}) (*ToolsCallResult, er
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode PDF: %w", err)
 		}
+		// Match screenshot and record: a path the user typed is honored as
+		// given, including directories that do not exist yet (#119).
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+			return nil, fmt.Errorf("failed to create PDF directory: %w", err)
+		}
 		if err := os.WriteFile(filename, pdfData, 0644); err != nil {
 			return nil, fmt.Errorf("failed to save PDF: %w", err)
 		}

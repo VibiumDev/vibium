@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +98,14 @@ func newRecordCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
+			// The daemon is a separate long-lived process whose working directory
+			// is not the user's, so resolve against this shell before the path goes
+			// over the socket (#119).
+			if output != "" {
+				if abs, err := filepath.Abs(output); err == nil {
+					output = abs
+				}
+			}
 
 			callArgs := map[string]interface{}{}
 			if output != "" {
@@ -207,6 +217,14 @@ func newRecordCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
+			// The daemon is a separate long-lived process whose working directory
+			// is not the user's, so resolve against this shell before the path goes
+			// over the socket (#119).
+			if output != "" {
+				if abs, err := filepath.Abs(output); err == nil {
+					output = abs
+				}
+			}
 
 			callArgs := map[string]interface{}{}
 			if output != "" {

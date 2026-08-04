@@ -88,6 +88,38 @@ describe('CLI: Navigation', () => {
     }
   });
 
+  test('pdf and record honor -o paths like screenshot does (#119)', () => {
+    // pdf and record stop hand the path to the daemon, whose working directory
+    // is not the caller's, so a relative path used to land wherever the daemon
+    // was started. screenshot was fixed first; these are its siblings.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-out-'));
+    try {
+      const pdfPath = path.join(dir, 'nested', 'page.pdf');
+      const pdfOut = execSync(`${VIBIUM} pdf ${baseURL}/example -o ${pdfPath}`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      assert.match(pdfOut, /saved/i, `pdf should report success, got: ${pdfOut}`);
+      assert.ok(fs.existsSync(pdfPath), 'pdf should be at the requested path');
+      assert.strictEqual(
+        fs.readFileSync(pdfPath).subarray(0, 4).toString(),
+        '%PDF',
+        'should be a real PDF'
+      );
+
+      const zipPath = path.join(dir, 'nested', 'trace.zip');
+      execSync(`${VIBIUM} record start --name outpath`, { encoding: 'utf-8', timeout: 30000 });
+      const recOut = execSync(`${VIBIUM} record stop -o ${zipPath}`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      assert.match(recOut, /saved/i, `record stop should report success, got: ${recOut}`);
+      assert.ok(fs.existsSync(zipPath), 'recording should be at the requested path');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('eval command executes JavaScript', () => {
     const result = execSync(`${VIBIUM} eval ${baseURL}/example "document.title"`, {
       encoding: 'utf-8',
