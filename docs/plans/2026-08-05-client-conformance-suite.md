@@ -70,28 +70,59 @@ Hand-writing the manifest. Rejected: a hand-written contract is a third thing to
 
 ## What happens to api.md
 
-`api.md` stays. It answers a question the manifest cannot: *how do I do this in each surface?* Its 150 rows map a capability across CLI, MCP, JS, and Python, which is the table a human reaches for and which no generated wire contract replaces.
+`api.md` stays, and grows into what it is already trying to be: a Rosetta Stone showing every capability across every surface, eventually with a runnable snippet per call per language.
 
-What changes is that it stops being a second, unverified source of truth.
+That goal is the reason not to hand-write the missing columns.
 
-**The Wire Command column gets a rule.** Today it mixes 109 `vibium:` methods, 15 raw BiDi commands, and some prose. That is why dialog accept is ambiguous: row 137 names `browsingContext.handleUserPrompt` while the router also accepts `vibium:dialog.accept`, and a client author cannot tell which to send.
+**Today it has no Java column at all**, despite a shipped Java client with 15 test files. Adding one by hand means 150 cells nobody can verify, in a table that already contains errors:
 
-The rule: **name what a client should send.** Where a `vibium:` extension exists, name it. Raw BiDi only where there is no extension and the command is forwarded to Chrome untouched. Prose only where no single command applies, as with browser launch.
+| Row | api.md says | Client actually has |
+|---|---|---|
+| 26 | `page.waitFor(sel)` | no such method |
+| 27 | `page.waitForFunction(fn)` | `page.waitUntil(fn)` |
+| 28 | `page.waitForURL(url)` | `page.waitUntil.url(pattern)` |
+| 29 | `page.waitForLoad()` | `page.waitUntil.loaded(state)` |
+| 141 | `download.filename()` | `download.suggestedFilename()` |
 
-**And it gets checked.** Once the manifest exists, `report.js` can verify the table rather than trusting it:
+Five wrong cells out of 104 checkable ones, found by matching the JS column against the client's exported methods. A human reading rows 26-29 would write code that does not compile. Adding two more languages by hand triples the surface that can rot this way.
 
-- every manifest method appears in exactly one row
-- every `vibium:` Wire Command resolves to a manifest method or alias
-- every raw BiDi Wire Command is genuinely absent from the manifest
-- the JS and Python columns match the naming conventions in `client-implementation-guide.md:222`
+**So the columns get generated, and the snippets are the conformance cases.**
 
-That last check is worth having on its own. The naming table is the thing a Ruby or Nim author will read most closely, and it is currently advisory prose that nothing tests.
+A Layer 3 case already carries everything a snippet needs: the canonical call, its arguments, and the expected result. Give each case a per-language rendering and the same artifact serves both purposes:
 
-**Acceptance:**
-- [ ] Wire Command rule documented at the top of `api.md`
-- [ ] the 15 raw-BiDi rows audited: extension where one exists, left alone where not
-- [ ] `make conformance` checks api.md against the manifest
-- [ ] new columns for future clients are checked by the same rule, not added by hand and hoped for
+```json
+{
+  "name": "page.expose sends name and fn",
+  "requires": ["page.expose"],
+  "snippets": {
+    "js":     "await page.expose('add', '(a,b) => a+b');",
+    "python": "page.expose('add', '(a,b) => a+b')",
+    "java":   "page.expose(\"add\", args -> (int) args[0] + (int) args[1]);",
+    "cli":    "vibium expose add '(a,b) => a+b'",
+    "mcp":    "browser_expose {\"name\": \"add\", \"fn\": \"(a,b) => a+b\"}"
+  },
+  "steps": [ ... ]
+}
+```
+
+The snippet is what a reader copies. The steps are what CI runs. Because they live in one file, a snippet cannot drift from a working call — if the API changes, the case fails and the snippet is corrected in the same edit.
+
+`api.md` is then rendered from the cases plus a description per capability. A new language appears in the table by writing its snippets and its driver; nobody edits 150 rows.
+
+**Sequencing.** This depends on Layer 3, so it is not first. Until then:
+
+- [ ] fix the five known-wrong cells now, by hand — they are wrong today and the fix is small
+- [ ] leave the Java column out rather than hand-writing 150 unverifiable cells
+- [ ] once Layer 1 lands, check the existing columns against the manifest and the naming table in `client-implementation-guide.md:222`
+- [ ] once Layer 3 lands, render `api.md` from the cases and add Java, Ruby, C#, Nim as their drivers arrive
+
+**Rows already marked as unbuilt stay that way.** Rows 148-150 use `*TBD*` and `⬜` for the AI methods (`page.check`, `page.do`). That convention is working and the generator should preserve it rather than dropping planned capabilities from the table.
+
+### What the Java client already tells us
+
+Matching the JS column against the Java client maps 104 rows: **97 present, 7 absent.** Of those seven, three are correct renames the guide already prescribes — `Vibium.start()`, `page.sleep()`, and `Route.doContinue()` for the `continue` keyword collision — and three are the unbuilt AI methods. Only `download.filename` is a genuine discrepancy, and it is api.md that is wrong, not Java.
+
+So the Java client is in far better shape than its 15 test files suggest, and the naming conventions are being followed. That is worth knowing before anyone treats Java as the problem child.
 
 ---
 

@@ -42,10 +42,10 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 23 | Add a style tag | `vibium:page.addStyle` | ⬜ | ⬜ | `page.addStyle(src)` | `page.add_style(src)` |
 | 24 | Expose a function to the page | `vibium:page.expose` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` |
 | 25 | Wait for a duration | `vibium:page.wait` | `vibium sleep <ms>` | `browser_sleep` | `page.wait(ms)` | `page.wait(ms)` |
-| 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | `page.waitFor(sel, opts?)` | `page.wait_for(sel, **opts)` |
-| 27 | Wait for JS function to return truthy | `vibium:page.waitForFunction` | `vibium wait fn <expr>` | `browser_wait_for_fn` | `page.waitForFunction(fn, opts?)` | `page.wait_for_function(fn, **opts)` |
-| 28 | Wait for URL to match | `vibium:page.waitForURL` | `vibium wait url <pat>` | `browser_wait_for_url` | `page.waitForURL(url, opts?)` | `page.wait_for_url(url, **opts)` |
-| 29 | Wait for page load | `vibium:page.waitForLoad` | `vibium wait load` | `browser_wait_for_load` | `page.waitForLoad(opts?)` | `page.wait_for_load(**opts)` |
+| 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | — | — |
+| 27 | Wait for JS function to return truthy | `vibium:page.waitForFunction` | `vibium wait fn <expr>` | `browser_wait_for_fn` | `page.waitUntil(fn, opts?)` | `page.wait_until(fn, **opts)` |
+| 28 | Wait for URL to match | `vibium:page.waitForURL` | `vibium wait url <pat>` | `browser_wait_for_url` | `page.waitUntil.url(pat, opts?)` | `page.wait_until.url(pat, **opts)` |
+| 29 | Wait for page load | `vibium:page.waitForLoad` | `vibium wait load` | `browser_wait_for_load` | `page.waitUntil.loaded(state?, opts?)` | `page.wait_until.loaded(state=None, **opts)` |
 | 30 | Scroll the page | `vibium:page.scroll` | `vibium scroll <dir> <amt>` | `browser_scroll` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(dir?, amt?, sel?)` |
 | 31 | Set viewport size | `vibium:page.setViewport` | `vibium viewport <w> <h>` | `browser_set_viewport` | `page.setViewport(size)` | `page.set_viewport(size)` |
 | 32 | Get viewport size | `vibium:page.viewport` | `vibium viewport get` | `browser_get_viewport` | `page.viewport()` | `page.viewport()` |
@@ -207,7 +207,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 |---|---|---|---|---|---|---|
 | 139 | Save a download to path | `vibium:download.saveAs` | ⬜ | ⬜ | `download.saveAs(path)` | `download.save_as(path)` |
 | 140 | Get download URL | *from event data* | — | — | `download.url()` | `download.url()` |
-| 141 | Get download filename | *from event data* | — | — | `download.filename()` | `download.filename()` |
+| 141 | Get download filename | *from event data* | — | — | `download.suggestedFilename()` | `download.suggested_filename()` |
 | 142 | Get download path | *from event data* | — | — | `download.path()` | `download.path()` |
 
 ## Agent & CLI Extras
