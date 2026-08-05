@@ -12,7 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { VIBIUM } = require('../helpers');
 
-let serverProcess, baseURL, statePath, legacyPath;
+let serverProcess, baseURL, tmpDir, statePath, legacyPath;
 
 before(async () => {
   serverProcess = spawn('node', [path.join(__dirname, '../helpers/test-server.js')], {
@@ -25,15 +25,13 @@ before(async () => {
   });
   execSync(`${VIBIUM} go ${baseURL}/`, { encoding: 'utf-8', timeout: 30000 });
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-storage-'));
-  statePath = path.join(dir, 'state.json');
-  legacyPath = path.join(dir, 'legacy.json');
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-storage-'));
+  statePath = path.join(tmpDir, 'state.json');
+  legacyPath = path.join(tmpDir, 'legacy.json');
 });
 
 after(() => {
-  for (const p of [statePath, legacyPath]) {
-    if (p && fs.existsSync(p)) fs.unlinkSync(p);
-  }
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   if (serverProcess) serverProcess.kill();
 });
 
