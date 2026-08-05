@@ -105,6 +105,9 @@ func autoStartDaemon() error {
 			args = append(args, fmt.Sprintf("--connect-header=%s: %s", key, v))
 		}
 	}
+	if capsJSON := os.Getenv("VIBIUM_CONNECT_CAPS"); capsJSON != "" {
+		args = append(args, fmt.Sprintf("--connect-caps=%s", capsJSON))
+	}
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = nil

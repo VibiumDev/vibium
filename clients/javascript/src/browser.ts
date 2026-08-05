@@ -16,6 +16,9 @@ export interface StartOptions {
   channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
+  /** Extra alwaysMatch capabilities for classic WebDriver endpoints
+   *  (cloud grids take their config this way: bstack:options, sauce:options, ...). */
+  caps?: Record<string, unknown>;
   executablePath?: string;
 }
 
@@ -135,11 +138,15 @@ export const browser = {
     const connectURL = url || process.env.VIBIUM_CONNECT_URL;
     if (connectURL) {
       const headers = { ...envHeaders(), ...options.headers };
+      // Raw JSON string either way — the binary validates it and owns the
+      // error message, so no parsing here.
+      const caps = options.caps ? JSON.stringify(options.caps) : process.env.VIBIUM_CONNECT_CAPS;
       debug('connecting to remote browser', { url: connectURL });
 
       const proc = await VibiumProcess.start({
         connectURL,
         connectHeaders: Object.keys(headers).length ? headers : undefined,
+        connectCaps: caps || undefined,
         executablePath: options.executablePath,
       });
       debug('vibium started (connect mode)');

@@ -23,6 +23,10 @@ type BrowserSession struct {
 	BidiConn     *bidi.Connection
 	Client       ClientTransport
 	ownsRemote   bool // remote session was created here, so closeSession ends it
+	// classicSession is set when the connect URL was a classic WebDriver HTTP
+	// endpoint and this router created the session there. Grids release the
+	// slot on DELETE, so closeSession must delete it.
+	classicSession *bidi.ClassicSession
 	mu           sync.Mutex
 	closed       bool
 	stopChan     chan struct{}
@@ -119,15 +123,17 @@ type Router struct {
 	headless       bool
 	connectURL     string
 	connectHeaders http.Header
+	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
 }
 
 // NewRouter creates a new router.
-func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header) *Router {
+func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Router {
 	return &Router{
 		engine:         engine,
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
+		connectCaps:    connectCaps,
 	}
 }
 
@@ -137,24 +143,33 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	var launchResult *browser.LaunchResult
 	var bidiConn *bidi.Connection
 	var ownsRemoteSession bool
+	var classicSession *bidi.ClassicSession
 	var err error
 
 	if r.connectURL != "" {
 		// Remote mode: connect to an existing BiDi endpoint and create a session
 		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), r.connectURL)
 
-		// Handshake without a bidi.Client: this router reads the connection
-		// itself in routeBrowserToClient, so no client reader may own it.
-		bidiConn, err = bidi.ConnectWithHeaders(r.connectURL, r.connectHeaders)
+		// http(s) URLs are classic WebDriver endpoints: create a session
+		// there first and connect to the BiDi URL it hands back.
+		var wsURL string
+		wsURL, classicSession, err = bidi.ResolveEndpoint(r.connectURL, r.connectHeaders, r.connectCaps)
+
+		if err == nil {
+			// Handshake without a bidi.Client: this router reads the connection
+			// itself in routeBrowserToClient, so no client reader may own it.
+			bidiConn, err = bidi.ConnectWithHeaders(wsURL, r.connectHeaders)
+		}
 		if err == nil {
 			var session *bidi.RemoteSession
-			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, r.connectURL, map[string]interface{}{}); err != nil {
+			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, wsURL, map[string]interface{}{}); err != nil {
 				bidiConn.Close()
 			} else {
 				ownsRemoteSession = session.Created
 			}
 		}
 		if err != nil {
+			classicSession.Delete()
 			fmt.Fprintf(os.Stderr, "[router] Failed to connect to remote browser for client %d: %v\n", client.ID(), err)
 			client.Send(fmt.Sprintf(`{"error":{"code":-32000,"message":"Failed to connect to remote browser: %s"}}`, err.Error()))
 			client.Close()
@@ -202,6 +217,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		BidiConn:          bidiConn,
 		Client:            client,
 		ownsRemote:        ownsRemoteSession,
+		classicSession:    classicSession,
 		stopChan:          make(chan struct{}),
 		internalCmds:      make(map[int]chan json.RawMessage),
 		abandonedInternal: make(map[int]struct{}),
@@ -1112,6 +1128,12 @@ func (r *Router) closeSession(session *BrowserSession) {
 	// Close BiDi connection
 	if session.BidiConn != nil {
 		session.BidiConn.Close()
+	}
+
+	// A session we created on a classic endpoint is also ours to end;
+	// DELETE is what releases the slot on grids and cloud providers.
+	if session.classicSession != nil {
+		session.classicSession.Delete()
 	}
 
 	// Clean up download temp dir

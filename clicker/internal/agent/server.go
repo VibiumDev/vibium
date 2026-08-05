@@ -156,8 +156,9 @@ type ServerOptions struct {
 	ScreenshotDir  string      // Directory for saving screenshots (empty = disabled)
 	Engine         string      // Browser to launch: "chrome" (default) or "firefox"
 	Headless       bool        // Launch browsers without a visible window
-	ConnectURL     string      // Remote BiDi WebSocket URL (empty = local browser)
-	ConnectHeaders http.Header // Headers for remote WebSocket connection
+	ConnectURL     string                 // Remote BiDi WebSocket URL (empty = local browser)
+	ConnectHeaders http.Header            // Headers for remote WebSocket connection
+	ConnectCaps    map[string]interface{} // Extra alwaysMatch capabilities for classic endpoints
 }
 
 // NewServer creates a new MCP server.
@@ -165,7 +166,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 	return &Server{
 		reader:   bufio.NewReader(os.Stdin),
 		writer:   os.Stdout,
-		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
+		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders, opts.ConnectCaps),
 		version:  version,
 		busy:     make(chan struct{}, 1),
 	}

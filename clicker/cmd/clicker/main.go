@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,6 +25,29 @@ func connectFromEnv() (string, http.Header) {
 	}
 
 	return url, headers
+}
+
+// connectCapsFromEnv reads VIBIUM_CONNECT_CAPS, a JSON object of extra
+// alwaysMatch capabilities for classic WebDriver endpoints (cloud grids all
+// take their config this way — bstack:options, sauce:options, LT:Options).
+// Invalid JSON is fatal: sending a session request without the user's
+// capabilities would silently run against the wrong browser or account.
+func connectCapsFromEnv() map[string]interface{} {
+	return parseConnectCaps(os.Getenv("VIBIUM_CONNECT_CAPS"))
+}
+
+// parseConnectCaps parses a JSON capabilities object, exiting with a clear
+// message when the JSON is invalid. Empty input means no extra capabilities.
+func parseConnectCaps(capsJSON string) map[string]interface{} {
+	if capsJSON == "" {
+		return nil
+	}
+	var caps map[string]interface{}
+	if err := json.Unmarshal([]byte(capsJSON), &caps); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: connect capabilities are not a valid JSON object: %v\n", err)
+		os.Exit(1)
+	}
+	return caps
 }
 
 var version = "dev"

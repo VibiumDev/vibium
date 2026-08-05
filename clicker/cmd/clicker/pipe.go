@@ -32,10 +32,16 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
   vibium pipe --connect ws://remote:9515
 
   # Connect with auth header
-  vibium pipe --connect wss://cloud.example.com/bidi --connect-header "Authorization: Bearer token"`,
+  vibium pipe --connect wss://cloud.example.com/bidi --connect-header "Authorization: Bearer token"
+
+  # Classic WebDriver endpoint (Selenium Grid, cloud grid): vibium creates
+  # a session with webSocketUrl:true and connects to the BiDi URL it returns
+  vibium pipe --connect https://USER:KEY@hub-cloud.browserstack.com/wd/hub \
+    --connect-caps '{"bstack:options":{"os":"OS X"}}'`,
 		Run: func(cmd *cobra.Command, args []string) {
 			connectURL, _ := cmd.Flags().GetString("connect")
 			headerStrs, _ := cmd.Flags().GetStringArray("connect-header")
+			capsJSON, _ := cmd.Flags().GetString("connect-caps")
 
 			var connectHeaders http.Header
 			if len(headerStrs) > 0 {
@@ -48,15 +54,16 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
 				}
 			}
 
-			runPipe(connectURL, connectHeaders)
+			runPipe(connectURL, connectHeaders, parseConnectCaps(capsJSON))
 		},
 	}
 	cmd.Flags().String("connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArray("connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
+	cmd.Flags().String("connect-caps", "", "Extra alwaysMatch capabilities for classic WebDriver endpoints (JSON object)")
 	return cmd
 }
 
-func runPipe(connectURL string, connectHeaders http.Header) {
+func runPipe(connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) {
 	// Save a reference to the real fd 1 for protocol output BEFORE redirecting.
 	fd, err := dupFd(os.Stdout.Fd())
 	if err != nil {
@@ -75,7 +82,7 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// Parallel-safe: the minAge filter never touches a live sibling's dir.
 	browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 
-	router := api.NewRouter(engineName, headless, connectURL, connectHeaders)
+	router := api.NewRouter(engineName, headless, connectURL, connectHeaders, connectCaps)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,

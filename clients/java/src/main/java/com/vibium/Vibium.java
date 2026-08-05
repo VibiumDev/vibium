@@ -44,7 +44,8 @@ public final class Vibium {
             options.channel(),
             options.headless(),
             options.connectURL(),
-            options.connectHeaders()
+            options.connectHeaders(),
+            options.connectCaps()
         );
 
         BiDiClient client = BiDiClient.fromProcess(process);

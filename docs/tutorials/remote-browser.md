@@ -57,6 +57,32 @@ vibium stop
 
 Both endpoint shapes work: a browser-level URL like `ws://host:9515/session` (vibium creates the session) and a URL for a session that already exists, such as a chromedriver `webSocketUrl` or a Selenium Grid `ws://host:4444/session/<id>/se/bidi` (vibium attaches to it).
 
+### Classic WebDriver endpoints (Selenium Grid, cloud grids)
+
+An `http://` or `https://` URL is treated as a classic WebDriver endpoint.
+vibium creates a session there with `webSocketUrl: true` and connects to the
+BiDi URL the endpoint returns — one URL drives a local Selenium Grid or a
+cloud grid like BrowserStack, Sauce Labs, or LambdaTest:
+
+```bash
+# Self-hosted Selenium Grid (or docker selenium standalone-chrome)
+vibium start http://localhost:4444
+
+# Cloud grid: credentials go in the URL (sent as Basic auth),
+# vendor options in VIBIUM_CONNECT_CAPS
+export VIBIUM_CONNECT_CAPS='{"bstack:options":{"seleniumVersion":"4.20.0","seleniumBidi":"true"}}'
+vibium start https://USER:KEY@hub-cloud.browserstack.com/wd/hub
+vibium go https://example.com
+vibium stop   # sends DELETE /session/<id> — releases the cloud slot
+```
+
+Extra `alwaysMatch` capabilities come from `VIBIUM_CONNECT_CAPS` (a JSON
+object), the `--connect-caps` flag on `vibium daemon start` / `vibium pipe`,
+or the `caps` option in the JS/Python/Java clients. `webSocketUrl: true` is
+always added for you. If the endpoint does not return a `webSocketUrl`, the
+remote end does not support WebDriver BiDi, and vibium says so instead of
+leaving the session running.
+
 ### MCP Server
 
 The MCP server reads the same env vars, so AI agents can use a remote browser:

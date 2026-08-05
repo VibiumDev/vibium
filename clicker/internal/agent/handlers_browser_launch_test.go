@@ -46,7 +46,7 @@ func TestBrowserLaunchAttachesToRemoteSessionDespiteModeArgs(t *testing.T) {
 
 func TestHandlersCaptureFirefoxChannelDefault(t *testing.T) {
 	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "release")
-	h := NewHandlers("", "firefox", true, "", nil)
+	h := NewHandlers("", "firefox", true, "", nil, nil)
 
 	// A per-launch override must not change the default remembered by this
 	// daemon/session manager for a later browser session.

@@ -32,9 +32,14 @@ type Handlers struct {
 	engine         string // "chrome" (default) or "firefox"
 	firefoxChannel string // daemon/session default; captured at construction
 	headless       bool
-	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header       // headers for remote WebSocket connection
-	ownsRemote     bool              // remote session was created here, so Close() ends it
+	connectURL     string                 // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header            // headers for remote WebSocket connection
+	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	ownsRemote     bool                   // remote session was created here, so Close() ends it
+	// classicSession is set when connectURL was a classic WebDriver HTTP
+	// endpoint and this process created the session there. Grids release
+	// the slot on DELETE, so Close() must delete it.
+	classicSession *bidi.ClassicSession
 	refMap         map[string]string // @e1 -> CSS selector
 	lastMap        string            // last map output (for diff)
 	recorder       *api.Recorder
@@ -65,7 +70,7 @@ type Handlers struct {
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
 // engine selects the browser ("chrome" or "firefox").
 // headless controls whether the browser is launched in headless mode.
-func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header) *Handlers {
+func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Handlers {
 	return &Handlers{
 		screenshotDir:  screenshotDir,
 		engine:         engine,
@@ -73,6 +78,7 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
+		connectCaps:    connectCaps,
 	}
 }
 
@@ -618,9 +624,10 @@ func mcpToolToMethod(name string) string {
 func (h *Handlers) Close() {
 	h.sessionMu.Lock()
 	conn, client, launchResult := h.conn, h.client, h.launchResult
-	ownsRemote := h.ownsRemote
+	ownsRemote, classic := h.ownsRemote, h.classicSession
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
+	h.classicSession = nil
 	h.sessionMu.Unlock()
 
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
@@ -631,6 +638,11 @@ func (h *Handlers) Close() {
 	}
 	if conn != nil {
 		conn.Close()
+	}
+	// A session this process created on a classic endpoint is also ours to
+	// end; DELETE is what releases the slot on grids and cloud providers.
+	if classic != nil {
+		classic.Delete()
 	}
 	if launchResult != nil {
 		launchResult.Close()
@@ -680,14 +692,22 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 
 	// Remote browser connect mode
 	if h.connectURL != "" {
-		conn, client, session, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
+		// http(s) URLs are classic WebDriver endpoints: create a session
+		// there first and connect to the BiDi URL it hands back.
+		wsURL, classic, err := bidi.ResolveEndpoint(h.connectURL, h.connectHeaders, h.connectCaps)
 		if err != nil {
+			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
+		}
+		conn, client, session, err := bidi.ConnectRemote(wsURL, h.connectHeaders)
+		if err != nil {
+			classic.Delete()
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
 		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
 		h.ownsRemote = session.Created
+		h.classicSession = classic
 		h.sessionMu.Unlock()
 		h.startPromptTracking()
 

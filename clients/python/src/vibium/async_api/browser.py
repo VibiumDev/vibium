@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -100,12 +101,14 @@ class _BrowserLauncher:
         channel: Optional[str] = None,
         headless: bool = False,
         headers: Optional[Dict[str, str]] = None,
+        caps: Optional[Dict[str, Any]] = None,
         executable_path: Optional[str] = None,
     ) -> Browser:
         """Start a browser session.
 
         Args:
-            url: Remote BiDi WebSocket URL. If not provided, checks
+            url: Remote BiDi WebSocket URL, or an http(s) classic WebDriver
+                endpoint (Selenium Grid, cloud grid). If not provided, checks
                 VIBIUM_CONNECT_URL env var, then falls back to local launch.
             engine: Browser engine to launch: "chrome" (default) or "firefox"
                 (local launch only).
@@ -113,6 +116,8 @@ class _BrowserLauncher:
                 "beta". Currently honored by Firefox only (local launch only).
             headless: Run browser in headless mode (local launch only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
+            caps: Extra alwaysMatch capabilities for classic WebDriver
+                endpoints (bstack:options, sauce:options, ...).
             executable_path: Path to vibium binary (default: auto-detect).
         """
         from ..binary import VibiumProcess
@@ -125,9 +130,13 @@ class _BrowserLauncher:
             if api_key:
                 env_headers["Authorization"] = f"Bearer {api_key}"
             merged = {**env_headers, **(headers or {})}
+            # Raw JSON string either way — the binary validates it and owns
+            # the error message, so no parsing here.
+            caps_json = json.dumps(caps) if caps else os.environ.get("VIBIUM_CONNECT_CAPS")
             process = await VibiumProcess.start(
                 connect_url=connect_url,
                 connect_headers=merged or None,
+                connect_caps=caps_json or None,
                 executable_path=executable_path,
             )
         else:

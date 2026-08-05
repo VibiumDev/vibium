@@ -40,7 +40,7 @@ func TestRemoteScreencastOperationsFailClearly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &screencastTestClient{}
-			router := NewRouter("firefox", true, "ws://remote.example/session", nil)
+			router := NewRouter("firefox", true, "ws://remote.example/session", nil, nil)
 			tt.handle(router, &BrowserSession{Client: client}, bidiCommand{ID: 7})
 
 			if len(client.messages) != 1 || !strings.Contains(client.messages[0], remoteScreencastMessage) {

@@ -16,12 +16,19 @@ func newStartCmd() *cobra.Command {
 		Use:   "start [url]",
 		Short: "Start a browser session",
 		Long: `Start a browser session. Without arguments, launches a local browser.
-With a URL argument, connects to a remote BiDi WebSocket endpoint.
+With a URL argument, connects to a remote browser.
+
+ws:// and wss:// URLs are BiDi WebSocket endpoints. http:// and https://
+URLs are classic WebDriver endpoints (Selenium Grid, cloud grids): vibium
+creates a session there with webSocketUrl:true and connects to the BiDi
+URL the endpoint returns.
 
 If no URL is given, checks VIBIUM_CONNECT_URL env var before falling
 back to a local browser launch.
 
-Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
+Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.
+Set VIBIUM_CONNECT_CAPS to a JSON object of extra alwaysMatch
+capabilities for classic endpoints (bstack:options, sauce:options, ...).`,
 		Example: `  vibium start
   # Start with a local browser
 
@@ -37,7 +44,12 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
   export VIBIUM_CONNECT_URL=wss://cloud.example.com/session
   export VIBIUM_CONNECT_API_KEY=my-api-key
   vibium start
-  # Connect using env vars`,
+  # Connect using env vars
+
+  export VIBIUM_CONNECT_CAPS='{"sauce:options":{"name":"vibium"}}'
+  vibium start https://USER:KEY@ondemand.us-west-1.saucelabs.com/wd/hub
+  # Classic WebDriver endpoint: creates the session, then speaks BiDi
+  # Connected to https://ondemand.us-west-1.saucelabs.com/wd/hub (daemon pid 12345)`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Determine connect URL: arg > env > local
@@ -100,6 +112,9 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				for _, v := range vals {
 					daemonArgs = append(daemonArgs, fmt.Sprintf("--connect-header=%s: %s", key, v))
 				}
+			}
+			if capsJSON := os.Getenv("VIBIUM_CONNECT_CAPS"); capsJSON != "" {
+				daemonArgs = append(daemonArgs, fmt.Sprintf("--connect-caps=%s", capsJSON))
 			}
 
 			child := exec.Command(exe, daemonArgs...)

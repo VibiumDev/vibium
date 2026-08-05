@@ -78,12 +78,14 @@ class _BrowserLauncher:
         channel: Optional[str] = None,
         headless: bool = False,
         headers: Optional[dict] = None,
+        caps: Optional[dict] = None,
         executable_path: Optional[str] = None,
     ) -> Browser:
         """Start a browser session.
 
         Args:
-            url: Remote BiDi WebSocket URL. If not provided, checks
+            url: Remote BiDi WebSocket URL, or an http(s) classic WebDriver
+                endpoint (Selenium Grid, cloud grid). If not provided, checks
                 VIBIUM_CONNECT_URL env var, then falls back to local launch.
             engine: Browser engine to launch: "chrome" (default) or "firefox"
                 (local launch only).
@@ -91,6 +93,8 @@ class _BrowserLauncher:
                 "beta". Currently honored by Firefox only (local launch only).
             headless: Run browser in headless mode (local launch only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
+            caps: Extra alwaysMatch capabilities for classic WebDriver
+                endpoints (bstack:options, sauce:options, ...).
             executable_path: Path to vibium binary (default: auto-detect).
         """
         from .._sync_base import _EventLoopThread
@@ -106,6 +110,7 @@ class _BrowserLauncher:
                 channel=channel,
                 headless=headless,
                 headers=headers,
+                caps=caps,
                 executable_path=executable_path,
             )
         )

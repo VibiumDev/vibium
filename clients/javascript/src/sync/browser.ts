@@ -11,6 +11,9 @@ export interface StartOptions {
   channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
+  /** Extra alwaysMatch capabilities for classic WebDriver endpoints
+   *  (cloud grids take their config this way: bstack:options, sauce:options, ...). */
+  caps?: Record<string, unknown>;
 }
 
 export class BrowserSync {

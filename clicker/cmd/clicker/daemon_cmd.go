@@ -41,6 +41,7 @@ func newDaemonStartCmd() *cobra.Command {
 		internal    bool // hidden flag for auto-start
 		connectFlag string
 		headerFlags []string
+		capsFlag    string
 	)
 
 	cmd := &cobra.Command{
@@ -58,18 +59,23 @@ func newDaemonStartCmd() *cobra.Command {
   vibium daemon start --connect ws://remote:9515/session
   # Connect to a remote browser instead of launching a local one
 
+  vibium daemon start --connect https://USER:KEY@hub-cloud.browserstack.com/wd/hub \
+    --connect-caps '{"bstack:options":{"os":"OS X"}}'
+  # Classic WebDriver endpoint (Selenium Grid, cloud grid): vibium creates
+  # a session with webSocketUrl:true and connects to the BiDi URL it returns
+
   vibium --session projA daemon start
   # Isolated session "projA": own daemon, own browser, socket
   # vibium-projA.sock; VIBIUM_SESSION=projA does the same`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !foreground && !internal {
 				// Daemonize: re-exec as detached child
-				daemonize(idleTimeout, connectFlag, headerFlags)
+				daemonize(idleTimeout, connectFlag, headerFlags, capsFlag)
 				return
 			}
 
 			// Foreground mode (or internal detached child)
-			runDaemonForeground(idleTimeout, connectFlag, headerFlags)
+			runDaemonForeground(idleTimeout, connectFlag, headerFlags, capsFlag)
 		},
 	}
 
@@ -81,6 +87,7 @@ func newDaemonStartCmd() *cobra.Command {
 	cmd.Flags().MarkHidden("_internal")
 	cmd.Flags().StringVar(&connectFlag, "connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArrayVar(&headerFlags, "connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
+	cmd.Flags().StringVar(&capsFlag, "connect-caps", "", "Extra alwaysMatch capabilities for classic WebDriver endpoints (JSON object)")
 
 	return cmd
 }
@@ -181,10 +188,15 @@ func shutdownDaemonAndWait() error {
 }
 
 // resolveConnect merges CLI flags with env vars. Flags take precedence.
-func resolveConnect(connectFlag string, headerFlags []string) (string, http.Header) {
+func resolveConnect(connectFlag string, headerFlags []string, capsFlag string) (string, http.Header, map[string]interface{}) {
 	connectURL := connectFlag
 	if connectURL == "" {
 		connectURL, _ = connectFromEnv()
+	}
+
+	caps := parseConnectCaps(capsFlag)
+	if caps == nil {
+		caps = connectCapsFromEnv()
 	}
 
 	var headers http.Header
@@ -208,11 +220,11 @@ func resolveConnect(connectFlag string, headerFlags []string) (string, http.Head
 		}
 	}
 
-	return connectURL, headers
+	return connectURL, headers, caps
 }
 
 // runDaemonForeground starts the daemon in the current process.
-func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string, capsFlag string) {
 	// Clean stale files from a previous crash
 	daemon.CleanStale()
 
@@ -231,7 +243,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 		screenshotDir = defaultDir
 	}
 
-	connectURL, connectHeaders := resolveConnect(connectFlag, headerFlags)
+	connectURL, connectHeaders, connectCaps := resolveConnect(connectFlag, headerFlags, capsFlag)
 
 	d := daemon.New(daemon.Options{
 		Version:        version,
@@ -241,6 +253,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 		IdleTimeout:    idleTimeout,
 		ConnectURL:     connectURL,
 		ConnectHeaders: connectHeaders,
+		ConnectCaps:    connectCaps,
 	})
 
 	// Install signal handler for clean shutdown
@@ -263,7 +276,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 }
 
 // daemonize spawns the daemon as a detached background process.
-func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string, capsFlag string) {
 	// Resolve the socket path first: an unusable path (bad session name,
 	// over-long socket path) should fail here, not in the detached child.
 	socketPath, err := paths.GetSocketPath()
@@ -301,6 +314,9 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 	}
 	for _, h := range headerFlags {
 		args = append(args, fmt.Sprintf("--connect-header=%s", h))
+	}
+	if capsFlag != "" {
+		args = append(args, fmt.Sprintf("--connect-caps=%s", capsFlag))
 	}
 
 	cmd := exec.Command(exe, args...)

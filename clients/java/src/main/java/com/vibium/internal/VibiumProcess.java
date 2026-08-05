@@ -43,7 +43,7 @@ public class VibiumProcess {
     /**
      * Start a vibium pipe subprocess.
      */
-    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders) {
+    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, String connectCaps) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
@@ -70,8 +70,14 @@ public class VibiumProcess {
         if (connectHeaders != null) {
             for (Map.Entry<String, String> entry : connectHeaders.entrySet()) {
                 cmd.add("--connect-header");
-                cmd.add(entry.getKey() + "=" + entry.getValue());
+                // The binary parses "Key: Value" — an "=" separator is silently dropped.
+                cmd.add(entry.getKey() + ": " + entry.getValue());
             }
+        }
+
+        if (connectCaps != null && !connectCaps.isEmpty()) {
+            cmd.add("--connect-caps");
+            cmd.add(connectCaps);
         }
 
         // Explicit API options win; environment variables provide the same

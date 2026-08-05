@@ -111,6 +111,7 @@ The server provides browser automation tools:
 					Headless:       headless,
 					ConnectURL:     connectURL,
 					ConnectHeaders: connectHeaders,
+					ConnectCaps:    connectCapsFromEnv(),
 				})
 				defer server.Close()
 

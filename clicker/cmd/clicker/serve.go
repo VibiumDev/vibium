@@ -35,7 +35,7 @@ func newServeCmd() *cobra.Command {
 			browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 
 			// Create router to manage browser sessions
-			router := api.NewRouter(engineName, headless, "", nil)
+			router := api.NewRouter(engineName, headless, "", nil, nil)
 
 			server := api.NewServer(
 				api.WithPort(port),
