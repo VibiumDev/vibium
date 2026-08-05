@@ -59,8 +59,8 @@ endif
 # page navigation"). 30s gives headroom while making a hung test surface
 # in 30s instead of 2 minutes — so a flake takes ~30s × N_stuck_tests to
 # trip the phase wrapper instead of ~120s × N.
-# On Node 20, --test-timeout limits each test FILE, not each test; CI
-# overrides this to file scale (see .github/workflows/test.yml).
+# --test-timeout is per test, not per file. That was reversed on Node 20,
+# which CI used to work around with a file-scale override; both are gone.
 NODE_TEST_TIMEOUT ?= 30000
 TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 
