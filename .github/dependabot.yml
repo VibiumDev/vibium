@@ -1,5 +1,6 @@
 # Opens PRs that bump the SHA-pinned actions in workflows, so the pins
-# stay current (the pinned majors target the deprecated Node 20 runtime).
+# stay current. The Node 20 runtime deprecation that prompted this was
+# cleared in #287.
 version: 2
 updates:
   - package-ecosystem: github-actions
