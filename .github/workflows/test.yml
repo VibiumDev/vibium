@@ -3,7 +3,53 @@ name: Test
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # Documentation that nothing builds or tests reads. Deliberately NOT
+      # docs/tutorials/**: tests/py and tests/js extract code from those and
+      # run it, so editing one can break the suite. Also not skills/**, whose
+      # SKILL.md is copied into the binary by build-go.
+      - 'docs/explanation/**'
+      - 'docs/how-to-guides/**'
+      - 'docs/images/**'
+      - 'docs/plans/**'
+      - 'docs/reference/**'
+      - 'docs/specs/**'
+      - 'docs/trackers/**'
+      - 'docs/updates/**'
+      - 'docs/README.md'
+      # Root docs named individually. A bare glob's treatment of / is
+      # not worth guessing at here: if it matched recursively it would
+      # silently skip CI for skills/vibe-check/SKILL.md, which build-go
+      # compiles in, and for the tutorials, which tests execute.
+      - 'CLAUDE.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
+      - 'ROADMAP.md'
   pull_request:
+    paths-ignore:
+      # Documentation that nothing builds or tests reads. Deliberately NOT
+      # docs/tutorials/**: tests/py and tests/js extract code from those and
+      # run it, so editing one can break the suite. Also not skills/**, whose
+      # SKILL.md is copied into the binary by build-go.
+      - 'docs/explanation/**'
+      - 'docs/how-to-guides/**'
+      - 'docs/images/**'
+      - 'docs/plans/**'
+      - 'docs/reference/**'
+      - 'docs/specs/**'
+      - 'docs/trackers/**'
+      - 'docs/updates/**'
+      - 'docs/README.md'
+      # Root docs named individually. A bare glob's treatment of / is
+      # not worth guessing at here: if it matched recursively it would
+      # silently skip CI for skills/vibe-check/SKILL.md, which build-go
+      # compiles in, and for the tutorials, which tests execute.
+      - 'CLAUDE.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
+      - 'ROADMAP.md'
 
 # CI only reads the repo. Keeps the job's GITHUB_TOKEN read-only even if
 # the repo default is ever write.
