@@ -8,7 +8,7 @@
 #     --user-data file://deploy/self-hosted/aws/user-data.sh
 #
 # Same note as the DigitalOcean recipe: until these land on the main
-# branch, scp setup-chrome.sh up and run it by hand instead.
+# branch, scp install-chrome.sh up and run it by hand instead.
 set -euo pipefail
-curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/setup-chrome.sh -o /root/setup-chrome.sh
-bash /root/setup-chrome.sh --service
+curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/install-chrome.sh -o /root/install-chrome.sh
+bash /root/install-chrome.sh --service

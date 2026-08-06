@@ -5,12 +5,12 @@
 # README for its create command; it also runs unchanged on most other
 # clouds that accept user-data.
 #
-# Note: cloud-init downloads setup-chrome.sh from the vibium repo's main
+# Note: cloud-init downloads install-chrome.sh from the vibium repo's main
 # branch. Until these recipes land there, paste the script into
 # write_files instead, or scp it up and run it by hand.
 
 package_update: true
 
 runcmd:
-  - curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/setup-chrome.sh -o /root/setup-chrome.sh
-  - bash /root/setup-chrome.sh --service
+  - curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/install-chrome.sh -o /root/install-chrome.sh
+  - bash /root/install-chrome.sh --service

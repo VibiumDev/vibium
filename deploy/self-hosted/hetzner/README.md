@@ -46,7 +46,7 @@ Hourly billing, capped at the monthly price.
 ## Bare metal
 
 Hetzner's dedicated servers (Robot console, including the server
-auction) are real hardware; `setup-chrome.sh --service` works there
+auction) are real hardware; `install-chrome.sh --service` works there
 over SSH the same way. Provisioning is a manual order rather than an
 API call, so treat dedicated boxes as a standing fleet, not burst
 capacity.

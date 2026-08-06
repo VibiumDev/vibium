@@ -23,7 +23,7 @@ about a minute.
 
 ## What's provided here
 
-- [`setup-chrome.sh`](setup-chrome.sh) — one installer that turns any
+- [`install-chrome.sh`](install-chrome.sh) — one installer that turns any
   Debian/Ubuntu x86-64 machine into a browser server (detailed below).
 - [`cloud-init.yml`](cloud-init.yml) — a first-boot wrapper for that
   installer. Most VM clouds accept a first-boot configuration file
@@ -81,7 +81,7 @@ pages of their own — they add nothing the six above don't have.
 Oracle's always-free ARM tier becomes interesting the day Chrome for
 Testing ships linux-arm64.
 
-## What setup-chrome.sh does
+## What install-chrome.sh does
 
 The shared installer turns a bare Debian/Ubuntu x86-64 box into a
 browser server, idempotently:

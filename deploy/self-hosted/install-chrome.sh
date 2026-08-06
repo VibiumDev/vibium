@@ -6,8 +6,8 @@
 # Used by the DigitalOcean cloud-init, the AWS user-data script, the Fly.io
 # Dockerfile, and the exe.dev recipe — one script, every DIY target.
 #
-#   sudo ./setup-chrome.sh            # install only
-#   sudo ./setup-chrome.sh --service  # install + systemd unit on :9515
+#   sudo ./install-chrome.sh            # install only
+#   sudo ./install-chrome.sh --service  # install + systemd unit on :9515
 #
 # Connect from a laptop through a tunnel (never expose 9515 publicly):
 #   ssh -N -L 9515:127.0.0.1:9515 <user>@<box>

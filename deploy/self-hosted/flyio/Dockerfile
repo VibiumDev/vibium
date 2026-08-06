@@ -1,6 +1,6 @@
 # Chrome + chromedriver for Fly.io Machines (self-hosted).
 #
-# Build context is deploy/self-hosted (so setup-chrome.sh is visible):
+# Build context is deploy/self-hosted (so install-chrome.sh is visible):
 #
 #   cd deploy/self-hosted
 #   fly launch --no-deploy --name vibium-browsers -c flyio/fly.toml
@@ -12,8 +12,8 @@
 
 FROM debian:bookworm-slim
 
-COPY setup-chrome.sh /tmp/setup-chrome.sh
-RUN bash /tmp/setup-chrome.sh && rm /tmp/setup-chrome.sh
+COPY install-chrome.sh /tmp/install-chrome.sh
+RUN bash /tmp/install-chrome.sh && rm /tmp/install-chrome.sh
 
 USER vibium
 EXPOSE 9515

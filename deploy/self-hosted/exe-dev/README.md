@@ -24,7 +24,7 @@ loopback. This is the "no speed of light penalty" topology.
 ## B. Split (browser on the VM, vibium on your laptop)
 
 ```bash
-ssh vibium-box.exe.xyz -- bash -s -- --service < deploy/self-hosted/setup-chrome.sh
+ssh vibium-box.exe.xyz -- bash -s -- --service < deploy/self-hosted/install-chrome.sh
 ssh -N -L 9515:127.0.0.1:9515 vibium-box.exe.xyz &
 vibium start http://127.0.0.1:9515
 ```
