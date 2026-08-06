@@ -3,9 +3,9 @@
 The industry axis is **managed vs. self-hosted**. Managed browser
 clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
 a service: you get a session URL and never a shell. Self-hosting is
-the alternative: root on a machine you control — a rented cloud VM or
-on-premises hardware like the Mac mini on your desk — with the
-browser layer yours to run.
+the alternative: root on a machine you control — a rented cloud VM
+(the recipes below) or on-premises hardware on your own desk (see
+[On-premises](#on-premises)) — with the browser layer yours to run.
 
 Standing one up turns out to be the same three steps everywhere:
 install a version-matched Chrome + chromedriver, keep the port off
@@ -55,6 +55,23 @@ self-hosted browser, idempotently:
 
 x86-64 Linux only for now — Chrome for Testing doesn't ship linux-arm64
 builds yet; the script gains ARM support the week Google's feed does.
+
+## On-premises
+
+The same model runs on hardware you own; only the install step
+changes, because the recipes above exist to create a machine and you
+already have one:
+
+- **Linux box** (mini PC, old server): run `setup-chrome.sh --service`
+  on it directly — the installer was written for exactly this.
+- **Mac** (mini or otherwise): no apt, no systemd, so skip the
+  installer. `npm install -g vibium` puts a version-matched Chrome +
+  chromedriver on the machine, and the
+  [remote-browser tutorial](../../docs/tutorials/remote-browser.md)'s
+  server section shows how to run that chromedriver for remote use and
+  tunnel in.
+
+Either way, connecting is the section below, unchanged.
 
 ## Connecting
 
