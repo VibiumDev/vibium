@@ -86,6 +86,15 @@ agent sandbox rather than a deployed image:
 Rule of thumb: Machines for steady split-mode use and fleets; Sprites
 when agent, vibium, and Chrome all live inside the sandbox.
 
+To be concrete about fleets: BiDi through `sprite proxy` works exactly
+like BiDi through `fly proxy` — the protocol doesn't care. But a
+20–50 browser burst wants Machines, because one WireGuard tunnel
+addresses the whole fleet by per-machine DNS, while sprites need one
+proxy process per sprite and can drop a quiet connection on pause. A
+sprite *fleet* makes sense in the other shape: N everything-inside
+workers, each running its own agent + vibium + Chrome loop with no
+tunnels at all, idling to ~$0 between runs.
+
 ### Sprites recipe
 
 ```bash
