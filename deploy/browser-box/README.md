@@ -9,7 +9,16 @@ recipe per platform:
 | [exe.dev](exe-dev/) | ~2s VM boot | Everything-cloud: agent + vibium + Chrome on one VM |
 | [Fly.io](flyio/) | seconds (sub-second restart) | Parallel fleets: `fleet.sh up 25`, per-machine DNS, ~$0 stopped |
 | [DigitalOcean](digitalocean/) | ~1 min (post-snapshot) | Simple, predictable droplets |
-| [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS |
+| [Hetzner](hetzner/) | ~1 min (post-snapshot) | Budget instances; bare-metal path for Android emulators |
+| [GCP](gcp/) | ~1 min (post-image) | Nested virtualization on ordinary VMs (Android emulators, managed) |
+| [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see the kit |
+
+The DigitalOcean, Hetzner, and GCP kits share one
+[`cloud-init.yml`](cloud-init.yml); it runs unchanged on most other
+clouds with cloud-init support (Azure, Vultr, Linode, …) — those don't
+get kits because they add nothing the six above don't have. Oracle's
+always-free ARM tier becomes interesting the day Chrome for Testing
+ships linux-arm64.
 
 ## What setup-chrome.sh does
 

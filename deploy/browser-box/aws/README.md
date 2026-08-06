@@ -1,8 +1,25 @@
-# AWS browser box (EC2)
+# AWS browser box
 
 The most setup friction of the kits. Use this when you already live in
 AWS (spot instances make it very cheap); use Fly or DigitalOcean when
 you don't.
+
+## Which AWS shape?
+
+"AWS" is several different answers:
+
+| Shape | When | Notes |
+|---|---|---|
+| **EC2 on-demand** (this kit) | Default; steady use | t3.medium runs 2–3 headless Chromes |
+| **EC2 Spot** | Disposable/burst boxes | Same kit, `--instance-market-options`; interruptible by design |
+| **Graviton (arm64)** | When Chrome for Testing ships linux-arm64 | Cheaper per vCPU; today needs a Chromium build instead — watch the CfT feed |
+| **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly kit's Dockerfile; no KVM, slower cold start |
+| **EC2 `.metal`** | Android emulators | The only EC2 with KVM; sized for a fleet, not a single browser |
+| Lambda | — | Don't: execution caps and cold starts fight the browser-session model |
+
+AWS's managed AgentCore Browser is the non-DIY sibling — a hosted
+browser API rather than a box you own, and it speaks CDP, not WebDriver
+BiDi, so vibium can't drive it today.
 
 ## Prereqs (human)
 
