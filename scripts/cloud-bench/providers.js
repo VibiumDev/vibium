@@ -34,6 +34,12 @@ const PROVIDERS = [
     name: 'diy-tunnel',
     available: () => !!env('DIY_TUNNEL_URL'),
     missing: () => 'DIY_TUNNEL_URL (e.g. http://127.0.0.1:9515 with a tunnel up)',
+    // DIY_TUNNEL_NAME tags results with which box was behind the tunnel
+    // (hetzner, flyio, macmini, ...) — selection stays --provider diy-tunnel.
+    get resultName() {
+      const label = env('DIY_TUNNEL_NAME');
+      return label ? `diy-${label}` : 'diy-tunnel';
+    },
     get url() { return env('DIY_TUNNEL_URL'); },
     caps: { 'goog:chromeOptions': { args: ['--headless=new'] } },
   },

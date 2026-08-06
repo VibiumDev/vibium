@@ -16,7 +16,15 @@
 //   --runs <n>          iterations per provider (default 3)
 //   --mint-only         only time vendor session mint/delete (works for
 //                       CDP-only providers that vibium can't drive yet)
-//   --url <url>         page to navigate to (default https://example.com)
+//   --url <url>         page to navigate to (default https://example.com).
+//                       Must be reachable FROM THE BROWSER'S location —
+//                       cloud vendors' browsers can't see your localhost,
+//                       so keep it public (a neutral constant also keeps
+//                       the nav column comparable across vendors). Vendor
+//                       tunnel products (BrowserStack Local, Sauce Connect)
+//                       solve private-app reachability for real testing,
+//                       but don't bench through them: you'd be measuring
+//                       the tunnel, not the vendor.
 //
 // Results print as a table and append to scripts/cloud-bench/results/*.jsonl
 
@@ -101,9 +109,10 @@ async function benchOnce(provider) {
 }
 
 async function benchProvider(provider) {
+  const label = provider.resultName || provider.name;
   const runs = [];
   for (let i = 0; i < RUNS; i++) {
-    process.stderr.write(`  ${provider.name} run ${i + 1}/${RUNS}...`);
+    process.stderr.write(`  ${label} run ${i + 1}/${RUNS}...`);
     try {
       const t = await benchOnce(provider);
       runs.push(t);
@@ -141,8 +150,9 @@ async function main() {
 
   const results = {};
   for (const p of active) {
-    console.error(`\n=== ${p.name} ===`);
-    results[p.name] = await benchProvider(p);
+    const label = p.resultName || p.name;
+    console.error(`\n=== ${label} ===`);
+    results[label] = await benchProvider(p);
   }
 
   // Persist raw runs
