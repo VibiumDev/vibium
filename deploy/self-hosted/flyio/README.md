@@ -128,8 +128,3 @@ sprite destroy vibium-sprite             # teardown
 If a long idle pause drops the tunneled session, run `vibium start`
 again — the service comes back with the wake.
 
-## Everything-cloud variant
-
-Instead of tunneling, install vibium *on* a Fly machine next to Chrome and
-run your agent there too (`fly ssh console`). No tunnel, no network hop
-between client and browser.
