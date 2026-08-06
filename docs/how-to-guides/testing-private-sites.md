@@ -56,10 +56,15 @@ nothing about how vibium connects — protocol and page traffic stay
 separate — and each grid's [guide](cloud-browsers/) covers its tunnel
 flag once the guides are verified.
 
-For BiDi-native vendors without a tunnel product, the fallback is
-making the app reachable: a deploy preview, a staging URL behind
-auth, or Tailscale Funnel (which publishes a tailnet service to the
-internet — mind that "publish" means public).
+Vendors without a tunnel product may still support customer-supplied
+proxies — Kernel does: an authenticated HTTP/HTTPS proxy you run at
+your network's edge, bound to the browser at create time (`proxy_id`),
+routes its page traffic into your infrastructure. Unlike the grids'
+tunnels, your proxy must be reachable *from the vendor's side* — an
+internet-facing, authenticated surface (Tailscale Funnel in front of a
+proxy on your tailnet is one way to build it). Failing that, the
+fallback is making the app itself reachable: a deploy preview or a
+staging URL behind auth.
 
 ## Occasional use: SSH reverse tunnel
 
