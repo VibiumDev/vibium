@@ -1,4 +1,4 @@
-# Fly.io self-hosted browser
+# Self-hosted cloud browser on Fly.io
 
 A Chrome + chromedriver machine that vibium drives over Fly's WireGuard
 tunnel. Per-second billing; a stopped machine costs only rootfs storage.

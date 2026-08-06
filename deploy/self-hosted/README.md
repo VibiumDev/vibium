@@ -1,4 +1,4 @@
-# Self-hosted browsers
+# Self-hosted cloud browsers
 
 The industry axis is **managed vs. self-hosted**. Managed browser
 clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as

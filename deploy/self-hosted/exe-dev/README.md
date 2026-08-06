@@ -1,4 +1,4 @@
-# exe.dev self-hosted browser
+# Self-hosted cloud browser on exe.dev
 
 exe.dev VMs boot in ~2 seconds from an image that already includes Chrome
 headless-shell and every Chrome library dependency — the least setup of
