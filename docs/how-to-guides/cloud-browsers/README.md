@@ -23,3 +23,6 @@ pages add each vendor's specifics.
 
 Vendors that expose only the Chrome DevTools Protocol don't currently
 have a connect path — vibium speaks the W3C standards.
+
+To test an app that isn't publicly reachable from a vendor's browser,
+see [testing private sites](../testing-private-sites.md).

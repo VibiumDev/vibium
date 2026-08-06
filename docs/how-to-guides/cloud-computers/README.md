@@ -108,6 +108,13 @@ browser server, idempotently:
 x86-64 Linux only for now — Chrome for Testing doesn't ship linux-arm64
 builds yet; the script gains ARM support the week Google's feed does.
 
+## Reaching a private app
+
+The browser on the box can only test what it can reach — for apps on
+localhost or an internal network, see
+[testing private sites](../testing-private-sites.md) (short version:
+join the box to your tailnet).
+
 ## Security model
 
 chromedriver has no authentication, so nothing here exposes it

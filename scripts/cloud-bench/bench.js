@@ -48,7 +48,7 @@ function optAll(name) {
 }
 
 const RUNS = parseInt(opt('runs', '3'), 10);
-const NAV_URL = opt('url', 'https://example.com');
+const NAV_URL = opt('url', process.env.BENCH_URL || 'https://example.com');
 const MINT_ONLY = flag('mint-only');
 const ONLY = optAll('provider');
 
