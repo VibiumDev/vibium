@@ -56,10 +56,11 @@ func (pw *prefixWriter) Write(p []byte) (n int, err error) {
 
 // LaunchOptions contains options for launching the browser.
 type LaunchOptions struct {
-	Engine   string // "chrome" (default) or "firefox"
-	Headless bool
-	Port     int  // Chromedriver port, 0 = auto-select
-	Verbose  bool // Show chromedriver output
+	Engine         string // "chrome" (default) or "firefox"
+	FirefoxChannel string // "release" (default) or "beta"
+	Headless       bool
+	Port           int  // Chromedriver port, 0 = auto-select
+	Verbose        bool // Show browser/driver output
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.

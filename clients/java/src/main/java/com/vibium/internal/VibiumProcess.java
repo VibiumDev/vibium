@@ -74,9 +74,20 @@ public class VibiumProcess {
             }
         }
 
+        // Explicit API options win; environment variables provide the same
+        // defaults that the vibium subprocess itself will use.
+        String selectedEngine = engine;
+        if (selectedEngine == null || selectedEngine.isEmpty()) {
+            selectedEngine = System.getenv("VIBIUM_ENGINE");
+        }
+        String selectedChannel = channel;
+        if (selectedChannel == null || selectedChannel.isEmpty()) {
+            selectedChannel = System.getenv("VIBIUM_FIREFOX_CHANNEL");
+        }
+
         // Auto-install the selected browser if needed (skip for remote connections)
         if (connectURL == null || connectURL.isEmpty()) {
-            BrowserInstaller.ensureInstalled(binaryPath, engine, channel);
+            BrowserInstaller.ensureInstalled(binaryPath, selectedEngine, selectedChannel);
         }
 
         // Startup is slow (~16s cold) and slower when many browsers launch at

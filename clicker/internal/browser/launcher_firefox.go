@@ -50,7 +50,11 @@ var firefoxPrefs = map[string]interface{}{
 func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("launching firefox", "headless", opts.Headless)
 
-	firefoxPath, err := paths.GetFirefoxExecutable()
+	channel := opts.FirefoxChannel
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
+	firefoxPath, err := paths.GetFirefoxExecutableForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("Firefox not found: run `vibium install --engine firefox` or set VIBIUM_FIREFOX_PATH")
 	}

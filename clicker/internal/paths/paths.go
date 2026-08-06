@@ -193,20 +193,32 @@ func FirefoxChannel() string {
 // separate directories so an installed beta never shadows stable (version
 // dirs like 154.0b6 would otherwise sort above the 153.x release).
 func GetFirefoxDir() (string, error) {
+	return GetFirefoxDirForChannel(FirefoxChannel())
+}
+
+// GetFirefoxDirForChannel returns the cache directory for a specific channel.
+// Passing the channel explicitly lets long-lived daemons launch different
+// named sessions without mutating process-wide environment state.
+func GetFirefoxDirForChannel(channel string) (string, error) {
 	cacheDir, err := GetCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cacheDir, "firefox", FirefoxChannel()), nil
+	return filepath.Join(cacheDir, "firefox", channel), nil
 }
 
 // GetFirefoxExecutable returns the path to the cached Firefox executable.
 // VIBIUM_FIREFOX_PATH overrides the cache lookup (e.g. a system Firefox).
 func GetFirefoxExecutable() (string, error) {
+	return GetFirefoxExecutableForChannel(FirefoxChannel())
+}
+
+// GetFirefoxExecutableForChannel returns the Firefox executable for channel.
+func GetFirefoxExecutableForChannel(channel string) (string, error) {
 	if p := os.Getenv("VIBIUM_FIREFOX_PATH"); p != "" {
 		return p, nil
 	}
-	dir, err := resolveFirefoxVersionDir()
+	dir, err := resolveFirefoxVersionDir(channel)
 	if err != nil {
 		return "", err
 	}
@@ -215,8 +227,8 @@ func GetFirefoxExecutable() (string, error) {
 
 // resolveFirefoxVersionDir returns the newest cached Firefox version
 // directory containing the executable, mirroring resolveVersionDir.
-func resolveFirefoxVersionDir() (string, error) {
-	ffDir, err := GetFirefoxDir()
+func resolveFirefoxVersionDir(channel string) (string, error) {
+	ffDir, err := GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", err
 	}

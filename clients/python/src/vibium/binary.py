@@ -215,10 +215,12 @@ class VibiumProcess:
             A VibiumProcess instance with stdin/stdout streams ready.
         """
         binary = executable_path or find_vibium_bin()
+        selected_engine = engine or os.environ.get("VIBIUM_ENGINE")
+        selected_channel = channel or os.environ.get("VIBIUM_FIREFOX_CHANNEL")
 
         # Ensure the browser is installed (auto-download if needed) — skip for remote connections
         if not connect_url:
-            ensure_browser_installed(binary, engine, channel)
+            ensure_browser_installed(binary, selected_engine, selected_channel)
 
         args = [binary, "pipe"]
         if engine:

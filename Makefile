@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-browser-shared test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -66,6 +66,10 @@ TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 # Firefox cold startup allows two 60s attempts. Keep this focused override
 # above that retry budget without weakening the ordinary per-test watchdog.
 FIREFOX_TEST_TIMEOUT ?= 180000
+
+# Browser used by the shared behavioral suites. The ordinary local test run
+# remains Chrome-first; CI also invokes test-browser-shared ENGINE=firefox.
+ENGINE ?= chrome
 
 # Default target
 all: build
@@ -163,6 +167,13 @@ install-browser: build-go
 # VIBIUM_FIREFOX_CHANNEL (beta until Firefox 154 reaches stable).
 install-firefox: build-go
 	./clicker/bin/vibium$(EXE) install --engine firefox
+
+install-engine:
+	@if [ "$(ENGINE)" = "firefox" ]; then \
+		"$(MAKE)" install-firefox; \
+	else \
+		"$(MAKE)" install-browser; \
+	fi
 
 # Install npm dependencies (skip if node_modules exists)
 deps:
@@ -262,7 +273,28 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 		exit $$EXIT; \
 	fi
 
-# Kill any Chrome/chromedriver processes left over from tests.
+# Run browser-agnostic behavior through one engine. Engine-specific installer,
+# process-lifecycle, headed-mode, and screencast checks stay in their focused
+# targets. CI runs this target once for Firefox alongside the normal Chrome job.
+test-browser-shared: build install-engine python-venv
+	@START_TIME=$$(date +%s); \
+	"$(MAKE)" test-cli-shared test-cleanup ENGINE=$(ENGINE) && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java ENGINE=$(ENGINE) && \
+	"$(MAKE)" test-cleanup ENGINE=$(ENGINE) && \
+	"$(MAKE)" test-daemon test-cleanup ENGINE=$(ENGINE) && \
+	"$(MAKE)" test-js-sync ENGINE=$(ENGINE); \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup ENGINE=$(ENGINE); \
+	END_TIME=$$(date +%s); \
+	ELAPSED=$$((END_TIME - START_TIME)); \
+	if [ $$EXIT -eq 0 ]; then \
+		echo "--- Shared $(ENGINE) tests passed in $$((ELAPSED / 60))m$$((ELAPSED % 60))s ---"; \
+	else \
+		echo "--- Shared $(ENGINE) tests failed after $$((ELAPSED / 60))m$$((ELAPSED % 60))s ---"; \
+		exit $$EXIT; \
+	fi
+
+# Kill any browser/driver processes left over from tests.
 # The bracketed characters stop Linux pkill from SIGKILLing the recipe's
 # own shell, whose command line contains the pattern.
 test-cleanup:
@@ -270,6 +302,7 @@ test-cleanup:
 	@pkill -9 -f 'Chrome for [T]esting' 2>/dev/null || true
 	@pkill -9 -f 'chrome-for-testin[g]' 2>/dev/null || true
 	@pkill -9 -f 'chromedrive[r]' 2>/dev/null || true
+	@pkill -9 -f '[v]ibium/firefox' 2>/dev/null || true
 	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run Go unit tests (no browser, no daemon — seconds, so run them first)
@@ -282,13 +315,16 @@ test-go:
 test-cli: build-go
 	@echo "--- CLI Tests (no daemon) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js tests/cli/packaging.test.js tests/cli/wrapper.test.js
-	@echo "--- CLI Tests ---"
-	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
-	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js tests/cli/prompt-blocked.test.js tests/cli/storage.test.js tests/cli/recording-latency.test.js
-	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
+	"$(MAKE)" test-cli-shared ENGINE=$(ENGINE)
 	@echo "--- CLI Process Tests (sequential) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js
+
+test-cli-shared: build-go
+	@echo "--- CLI Shared Tests ($(ENGINE)) ---"
+	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
+	@VIBIUM_ENGINE=$(ENGINE) $(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js tests/cli/prompt-blocked.test.js tests/cli/storage.test.js tests/cli/recording-latency.test.js
+	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 
 # Run JS library tests
 # Each test file owns its own browser (top-level before/after), so files are
@@ -307,7 +343,7 @@ JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/async/async-api.test.js \
 		tests/js/async/auto-wait.test.js \
 		tests/js/async/elements.test.js \
@@ -336,7 +372,7 @@ test-js-async: build-go
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		tests/js/sync/sync-api.test.js \
 		tests/js/sync/network-events.test.js \
 		tests/js/sync/websocket-sync.test.js \
@@ -357,12 +393,12 @@ test-js: test-js-async test-js-sync test-js-process
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
 	@echo "--- MCP Server Tests ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js
 
 # Run daemon tests (sequential - daemon lifecycle)
 test-daemon: build-go
 	@echo "--- Daemon Tests ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js
 
 # Run Python client tests
 # PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
@@ -384,11 +420,11 @@ python-venv:
 
 # test_browser_modes.py is excluded here and run headed + serial by
 # test-browser-modes (see the `test` target comment).
-test-python: build-go install-browser python-venv
-	@echo "--- Python Client Tests (parallel x$(PY_PARALLEL)) ---"
+test-python: build-go install-engine python-venv
+	@echo "--- Python Client Tests ($(ENGINE), parallel x$(PY_PARALLEL)) ---"
 	@cd clients/python && \
 		. $(VENV_ACTIVATE) && \
-		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
 			--ignore=../../tests/py/test_browser_modes.py
 
@@ -420,9 +456,9 @@ build-java: build-go
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
 JAVA_PARALLEL ?= 3
-test-java: build-go install-browser
-	@echo "--- Java Client Tests (parallel x$(JAVA_PARALLEL)) ---"
-	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
+test-java: build-go install-engine
+	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
+	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
 # Package Java JAR with native binaries
 package-java: build-go-all

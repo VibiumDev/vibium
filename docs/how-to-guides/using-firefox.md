@@ -49,6 +49,16 @@ const bro = await firefox.start();
 const bro = await browser.start({ engine: 'firefox' });
 ```
 
+The synchronous JavaScript API supports the same two forms:
+
+```js
+const { firefox } = require('vibium/sync');
+const bro = firefox.start();
+
+// equivalent:
+const bro = browser.start({ engine: 'firefox' });
+```
+
 Python:
 
 ```python

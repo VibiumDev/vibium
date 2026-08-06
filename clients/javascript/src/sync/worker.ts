@@ -142,7 +142,12 @@ const handlers: Record<string, Handler> = {
   // ========================
 
   'browser.start': async (args) => {
-    const [url, options] = args as [string | undefined, { headless?: boolean; headers?: Record<string, string> } | undefined];
+    const [url, options] = args as [string | undefined, {
+      engine?: 'chrome' | 'firefox';
+      channel?: string;
+      headless?: boolean;
+      headers?: Record<string, string>;
+    } | undefined];
     browserInstance = await browser.start(url, options);
     const page = await browserInstance.page();
     defaultPageId = storePage(page);

@@ -30,6 +30,7 @@ type Handlers struct {
 	conn           *bidi.Connection
 	screenshotDir  string
 	engine         string // "chrome" (default) or "firefox"
+	firefoxChannel string // daemon/session default; captured at construction
 	headless       bool
 	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header       // headers for remote WebSocket connection
@@ -68,6 +69,7 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 	return &Handlers{
 		screenshotDir:  screenshotDir,
 		engine:         engine,
+		firefoxChannel: paths.FirefoxChannel(),
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
@@ -703,23 +705,19 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	}
 	useChannel := ""
 	if useEngine == "firefox" {
-		useChannel = paths.FirefoxChannel()
+		useChannel = h.firefoxChannel
 		if val, ok := args["channel"].(string); ok && val != "" {
 			if val != "release" && val != "beta" {
 				return nil, fmt.Errorf("unknown Firefox channel %q (supported: release, beta)", val)
 			}
 			useChannel = val
-			// Firefox path resolution currently reads the channel from the
-			// environment. Daemon calls are serialized, so applying the selected
-			// channel immediately before launch cannot race another request.
-			if err := os.Setenv("VIBIUM_FIREFOX_CHANNEL", val); err != nil {
-				return nil, fmt.Errorf("select Firefox channel: %w", err)
-			}
 		}
 	}
 
 	// Launch browser
-	launchResult, err := browser.Launch(browser.LaunchOptions{Engine: useEngine, Headless: useHeadless})
+	launchResult, err := browser.Launch(browser.LaunchOptions{
+		Engine: useEngine, FirefoxChannel: useChannel, Headless: useHeadless,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
 	}

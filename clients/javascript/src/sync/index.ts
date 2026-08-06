@@ -1,4 +1,4 @@
-export { browser, BrowserSync, StartOptions } from './browser';
+export { browser, firefox, chrome, BrowserSync, StartOptions } from './browser';
 export { PageSync, RequestData, ResponseData, DownloadData, WebSocketInfoSync } from './page';
 export { ElementSync } from './element';
 export { KeyboardSync, MouseSync, TouchSync } from './keyboard';

@@ -32,9 +32,11 @@ export class VibiumProcess {
 
   static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
     const binaryPath = options.executablePath || getVibiumBinPath();
+    const selectedEngine = options.engine || process.env.VIBIUM_ENGINE as 'chrome' | 'firefox' | undefined;
+    const selectedChannel = options.channel || process.env.VIBIUM_FIREFOX_CHANNEL;
 
     if (!options.connectURL) {
-      ensureBrowserInstalled(binaryPath, options.engine, options.channel);
+      ensureBrowserInstalled(binaryPath, selectedEngine, selectedChannel);
     }
 
     const args = ['pipe'];
