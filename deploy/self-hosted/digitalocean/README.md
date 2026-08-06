@@ -1,4 +1,4 @@
-# DigitalOcean browser box
+# DigitalOcean self-hosted browser
 
 A droplet running Chrome + chromedriver behind an SSH tunnel.
 Per-second billing since 2026 — but **destroy, don't stop**: powered-off
@@ -17,7 +17,7 @@ droplets still bill.
 doctl compute droplet create vibium-browser \
   --size s-2vcpu-4gb --image ubuntu-24-04-x64 --region nyc3 \
   --ssh-keys <fingerprint> \
-  --user-data-file deploy/browser-box/cloud-init.yml --wait
+  --user-data-file deploy/self-hosted/cloud-init.yml --wait
 doctl compute droplet get vibium-browser --format PublicIPv4
 ```
 

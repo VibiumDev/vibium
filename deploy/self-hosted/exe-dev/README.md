@@ -1,4 +1,4 @@
-# exe.dev browser box
+# exe.dev self-hosted browser
 
 exe.dev VMs boot in ~2 seconds from an image that already includes Chrome
 headless-shell and every Chrome library dependency — the least setup of
@@ -24,7 +24,7 @@ loopback. This is the "no speed of light penalty" topology.
 ## B. Split (browser on the VM, vibium on your laptop)
 
 ```bash
-ssh vibium-box.exe.xyz -- bash -s -- --service < deploy/browser-box/setup-chrome.sh
+ssh vibium-box.exe.xyz -- bash -s -- --service < deploy/self-hosted/setup-chrome.sh
 ssh -N -L 9515:127.0.0.1:9515 vibium-box.exe.xyz &
 vibium start http://127.0.0.1:9515
 ```

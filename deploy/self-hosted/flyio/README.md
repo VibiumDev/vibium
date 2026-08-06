@@ -1,4 +1,4 @@
-# Fly.io browser box
+# Fly.io self-hosted browser
 
 A Chrome + chromedriver machine that vibium drives over Fly's WireGuard
 tunnel. Per-second billing; a stopped machine costs only rootfs storage.
@@ -11,7 +11,7 @@ tunnel. Per-second billing; a stopped machine costs only rootfs storage.
 ## Deploy
 
 ```bash
-cd deploy/browser-box
+cd deploy/self-hosted
 fly launch --no-deploy --name vibium-browsers -c flyio/fly.toml   # first time
 fly deploy -c flyio/fly.toml
 ```

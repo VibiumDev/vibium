@@ -1,8 +1,7 @@
-# Hetzner browser box
+# Hetzner self-hosted browser
 
-Budget cloud instances, and the one kit with a **bare-metal path** —
-Hetzner's dedicated servers give you real KVM, which is what Android
-emulators need (see the note at the bottom).
+Budget cloud instances via the `hcloud` CLI; Hetzner also offers
+dedicated bare-metal servers where the same installer works over SSH.
 
 ## Prereqs (human)
 
@@ -17,7 +16,7 @@ emulators need (see the note at the bottom).
 hcloud server create --name vibium-browser \
   --type cx32 --image ubuntu-24.04 --location fsn1 \
   --ssh-key <name> \
-  --user-data-from-file deploy/browser-box/cloud-init.yml
+  --user-data-from-file deploy/self-hosted/cloud-init.yml
 hcloud server ip vibium-browser
 ```
 
@@ -44,12 +43,10 @@ hcloud server delete vibium-browser
 
 Hourly billing, capped at the monthly price.
 
-## Bare metal (the Android-emulator path)
+## Bare metal
 
 Hetzner's dedicated servers (Robot console, including the server
-auction) are real hardware with native KVM — the requirement Android
-emulators have that microVM platforms can't meet. The same
-`setup-chrome.sh --service` works there over SSH, and Google's
-android-emulator-container-scripts run alongside on the same box.
-Provisioning is a manual order rather than an API call, so treat it as
-a standing fleet, not burst capacity.
+auction) are real hardware; `setup-chrome.sh --service` works there
+over SSH the same way. Provisioning is a manual order rather than an
+API call, so treat dedicated boxes as a standing fleet, not burst
+capacity.

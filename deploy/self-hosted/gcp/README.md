@@ -1,8 +1,7 @@
-# Google Cloud browser box
+# Google Cloud self-hosted browser
 
-A Compute Engine VM behind an SSH tunnel — and the one big cloud with
-**documented nested virtualization** on ordinary VMs, which makes it
-the managed-VM path to Android emulators (no bare metal required).
+A Compute Engine VM behind an SSH tunnel — with the nicest tunnel
+story of the kits, since `gcloud compute ssh` manages keys itself.
 
 ## Prereqs (human)
 
@@ -15,7 +14,7 @@ the managed-VM path to Android emulators (no bare metal required).
 gcloud compute instances create vibium-browser \
   --machine-type=e2-medium --zone=us-central1-a \
   --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud \
-  --metadata-from-file user-data=deploy/browser-box/cloud-init.yml
+  --metadata-from-file user-data=deploy/self-hosted/cloud-init.yml
 ```
 
 First boot takes ~3–5 min while cloud-init installs Chrome. Bake an
@@ -42,10 +41,3 @@ gcloud compute instances delete vibium-browser --zone=us-central1-a
 
 Per-second billing.
 
-## Android emulators
-
-Create the VM with `--enable-nested-virtualization` (Intel machine
-types) and `/dev/kvm` appears inside it — Google's own
-android-emulator-container-scripts are built for exactly this setup.
-Chrome inside the emulator is then chromedriver-over-adb, the same
-WebDriver path vibium already speaks.

@@ -1,16 +1,22 @@
-# Browser boxes: DIY remote browsers for vibium
+# Self-hosted browsers
 
-Kits that stand up a Chrome + chromedriver box on your own compute and
-connect vibium to it. One shared installer (`setup-chrome.sh`), one thin
-recipe per platform:
+The industry axis is **managed vs. self-hosted**. Managed browser
+clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
+a service: you get a session URL and never a shell. These kits are the
+self-hosted alternative: you get root on the machine — a cloud VM or
+the Mac mini on your desk — and run the browser layer yourself.
+
+Each kit stands up Chrome + chromedriver on your own compute and
+connects vibium to it. One shared installer (`setup-chrome.sh`), one
+thin recipe per platform:
 
 | Kit | Cold start | Best for |
 |---|---|---|
 | [exe.dev](exe-dev/) | ~2s VM boot | Everything-cloud: agent + vibium + Chrome on one VM |
 | [Fly.io](flyio/) | seconds (sub-second restart) | Parallel fleets: `fleet.sh up 25`, per-machine DNS, ~$0 stopped |
 | [DigitalOcean](digitalocean/) | ~1 min (post-snapshot) | Simple, predictable droplets |
-| [Hetzner](hetzner/) | ~1 min (post-snapshot) | Budget instances; bare-metal path for Android emulators |
-| [GCP](gcp/) | ~1 min (post-image) | Nested virtualization on ordinary VMs (Android emulators, managed) |
+| [Hetzner](hetzner/) | ~1 min (post-snapshot) | Budget instances; dedicated bare metal available |
+| [GCP](gcp/) | ~1 min (post-image) | You already live on Google Cloud; gcloud-managed tunnel |
 | [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see the kit |
 
 The DigitalOcean, Hetzner, and GCP kits share one
@@ -23,7 +29,7 @@ ships linux-arm64.
 ## What setup-chrome.sh does
 
 The shared installer turns a bare Debian/Ubuntu x86-64 box into a
-browser box, idempotently:
+self-hosted browser, idempotently:
 
 1. **Installs Chrome's library dependencies** via apt (the NSS/GTK/X11
    libraries and fonts a headless Chrome still links against — the usual

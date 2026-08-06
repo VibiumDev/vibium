@@ -5,10 +5,10 @@
 #   aws ec2 run-instances --image-id <ubuntu-24.04-ami> \
 #     --instance-type t3.medium --key-name <keypair> \
 #     --security-group-ids <ssh-only-sg> \
-#     --user-data file://deploy/browser-box/aws/user-data.sh
+#     --user-data file://deploy/self-hosted/aws/user-data.sh
 #
 # Same note as the DigitalOcean kit: until the deploy kits are on the main
 # branch, scp setup-chrome.sh up and run it by hand instead.
 set -euo pipefail
-curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/browser-box/setup-chrome.sh -o /root/setup-chrome.sh
+curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/setup-chrome.sh -o /root/setup-chrome.sh
 bash /root/setup-chrome.sh --service

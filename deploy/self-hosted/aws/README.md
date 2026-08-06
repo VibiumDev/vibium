@@ -1,4 +1,4 @@
-# AWS browser box
+# AWS self-hosted browser
 
 The most setup friction of the kits. Use this when you already live in
 AWS (spot instances make it very cheap); use Fly or DigitalOcean when
@@ -14,7 +14,6 @@ you don't.
 | **EC2 Spot** | Disposable/burst boxes | Same kit, `--instance-market-options`; interruptible by design |
 | **Graviton (arm64)** | When Chrome for Testing ships linux-arm64 | Cheaper per vCPU; today needs a Chromium build instead — watch the CfT feed |
 | **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly kit's Dockerfile; no KVM, slower cold start |
-| **EC2 `.metal`** | Android emulators | The only EC2 with KVM; sized for a fleet, not a single browser |
 | Lambda | — | Don't: execution caps and cold starts fight the browser-session model |
 
 AWS's managed AgentCore Browser is the non-DIY sibling — a hosted
@@ -35,7 +34,7 @@ BiDi, so vibium can't drive it today.
 aws ec2 run-instances \
   --image-id <ami-id> --instance-type t3.medium \
   --key-name <keypair> --security-group-ids <ssh-only-sg> \
-  --user-data file://deploy/browser-box/aws/user-data.sh \
+  --user-data file://deploy/self-hosted/aws/user-data.sh \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=vibium-browser}]'
 ```
 
@@ -58,4 +57,4 @@ aws ec2 terminate-instances --instance-ids <id>
 ```
 
 Per-second billing. Spot instances cut the price ~55% and are fine for
-disposable browser boxes.
+disposable machines.
