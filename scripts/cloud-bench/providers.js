@@ -105,6 +105,20 @@ const PROVIDERS = [
     },
   },
   {
+    name: 'testingbot',
+    available: () => !!(env('TESTINGBOT_KEY') && env('TESTINGBOT_SECRET')),
+    missing: () => 'TESTINGBOT_KEY + TESTINGBOT_SECRET',
+    get url() {
+      return `https://${env('TESTINGBOT_KEY')}:${env('TESTINGBOT_SECRET')}@hub.testingbot.com/wd/hub`;
+    },
+    // Their BiDi doc says to pin a selenium-version in tb:options; the
+    // accepted values are unverified until the first live run.
+    caps: {
+      browserName: 'chrome',
+      'tb:options': { name: 'vibium-bench' },
+    },
+  },
+  {
     name: 'browserbase',
     available: () => !!env('BROWSERBASE_API_KEY'),
     missing: () => 'BROWSERBASE_API_KEY',

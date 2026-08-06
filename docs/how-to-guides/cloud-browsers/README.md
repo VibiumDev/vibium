@@ -19,6 +19,7 @@ pages add each vendor's specifics.
 | BrowserStack | classic WebDriver endpoint | coming after live verification |
 | Sauce Labs | classic WebDriver endpoint | coming after live verification |
 | TestMu (LambdaTest) | classic WebDriver endpoint | coming after live verification |
+| TestingBot | classic WebDriver endpoint | coming after live verification |
 
 Vendors that expose only the Chrome DevTools Protocol don't currently
 have a connect path — vibium speaks the W3C standards.
