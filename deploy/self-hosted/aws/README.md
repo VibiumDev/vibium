@@ -16,7 +16,7 @@ you don't.
 | **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly recipe's Dockerfile; no KVM, slower cold start |
 | Lambda | — | Don't: execution caps and cold starts fight the browser-session model |
 
-AWS's managed AgentCore Browser is the non-DIY sibling — a hosted
+AWS's managed AgentCore Browser is the managed sibling — a hosted
 browser API rather than a box you own, and it speaks CDP, not WebDriver
 BiDi, so vibium can't drive it today.
 

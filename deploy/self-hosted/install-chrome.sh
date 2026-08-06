@@ -4,7 +4,7 @@
 # start as root).
 #
 # Used by the DigitalOcean cloud-init, the AWS user-data script, the Fly.io
-# Dockerfile, and the exe.dev recipe — one script, every DIY target.
+# Dockerfile, and the exe.dev recipe — one script, every platform.
 #
 #   sudo ./install-chrome.sh            # install only
 #   sudo ./install-chrome.sh --service  # install + systemd unit on :9515

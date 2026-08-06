@@ -38,6 +38,15 @@ fly machine start -a vibium-browsers    # sub-second restart
 
 Machines bill per-second, only while running.
 
+## Teardown
+
+```bash
+fly apps destroy vibium-browsers
+```
+
+Stopped machines only cost rootfs storage, so teardown is optional
+between runs — destroy when you're done with the app entirely.
+
 ## Fleet mode: N parallel browsers
 
 `fly proxy` reaches one machine; for a fleet, use the WireGuard tunnel and
