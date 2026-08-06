@@ -84,8 +84,37 @@ agent sandbox rather than a deployed image:
   fleet story like Machines have.
 
 Rule of thumb: Machines for steady split-mode use and fleets; Sprites
-when agent, vibium, and Chrome all live inside the sandbox. No recipe
-here yet — we don't publish commands we haven't run.
+when agent, vibium, and Chrome all live inside the sandbox.
+
+### Sprites recipe
+
+```bash
+curl -fsSL https://sprites.dev/install.sh | sh   # sprite CLI
+sprite org auth
+sprite create vibium-sprite --skip-console
+
+# Install Chrome + chromedriver. No --service: sprites replace systemd
+# with their own service runtime (next step).
+sprite exec -s vibium-sprite \
+  --file deploy/self-hosted/install-chrome.sh:/tmp/install-chrome.sh \
+  -- sudo bash /tmp/install-chrome.sh
+
+# Register chromedriver with that runtime: starts on boot, survives
+# warm wakes mid-process, auto-restarts on crash.
+sprite exec -s vibium-sprite -- \
+  sprite-env services create chromedriver \
+  --cmd /usr/local/bin/chromedriver --args "--port=9515"
+
+sprite proxy -s vibium-sprite 9515 &     # the tunnel
+vibium start http://127.0.0.1:9515
+vibium go https://example.com
+vibium stop
+
+sprite destroy vibium-sprite             # teardown
+```
+
+If a long idle pause drops the tunneled session, run `vibium start`
+again — the service comes back with the wake.
 
 ## Everything-cloud variant
 
