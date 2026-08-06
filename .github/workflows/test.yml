@@ -154,6 +154,12 @@ jobs:
         env:
           VIBIUM_REQUIRE_FIREFOX: 1
 
+      # The main suite above includes focused Firefox launch and screencast
+      # tests. This adds the browser-neutral CLI behavior without assuming
+      # Chrome-only dialog or network-interception semantics.
+      - name: Test Firefox core behavior
+        run: make test-firefox-core
+
       # In case the job is interrupted before make test's own cleanup runs.
       - name: Clean up zombie processes
         if: always()

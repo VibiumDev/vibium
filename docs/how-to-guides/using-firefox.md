@@ -107,6 +107,15 @@ currently requires Firefox, while PDF output may differ between engines.
 
 ## Feature notes
 
-- Screenshots, navigation, clicking, and the rest of the automation API work the same on both engines. It is all standard WebDriver BiDi.
-- Video recording (`page.screencast`) currently works on Firefox only: see [Record Video](record-video.md).
-- PDF printing (`page.pdf`) support may differ between engines.
+| Capability | Chrome | Firefox |
+|------------|--------|---------|
+| Navigation, elements, input, pages, screenshots, storage, and trace recording | Supported | Supported and covered by the Firefox core suite |
+| Native video (`page.screencast`) | Not implemented by Chrome yet | Firefox 154+; see [Record Video](record-video.md) |
+| Dialog callbacks and `capture.dialog()` | Supported | Not supported reliably by Vibium's native Firefox path yet |
+| Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
+| PDF printing (`page.pdf`) | Supported | Output and support may differ |
+
+CI runs the full suite on Chrome, plus the browser-neutral CLI core and focused
+installation, launch, navigation, screenshot, channel, and screencast tests on
+Firefox. New browser-neutral CLI tests belong in `CLI_CORE_TESTS` in the
+Makefile; engine-specific behavior stays in its focused suite.

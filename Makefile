@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-firefox-core test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -70,6 +70,25 @@ FIREFOX_TEST_TIMEOUT ?= 180000
 # Browser used by test targets that support engine selection. The ordinary
 # full test run remains Chrome-first; Firefox has a focused test target.
 ENGINE ?= chrome
+
+# CLI behavior shared by both engines. Chrome additionally runs the prompt
+# regression: Firefox permits commands while a prompt is open, so Chrome's
+# blocked-context assertion does not apply there.
+CLI_CORE_TESTS := \
+	tests/cli/navigation.test.js \
+	tests/cli/elements.test.js \
+	tests/cli/actionability.test.js \
+	tests/cli/page-reading.test.js \
+	tests/cli/input-tools.test.js \
+	tests/cli/pages.test.js \
+	tests/cli/page-context.test.js \
+	tests/cli/find-refs.test.js \
+	tests/cli/storage.test.js \
+	tests/cli/recording-latency.test.js
+CLI_SHARED_TESTS := $(CLI_CORE_TESTS)
+ifeq ($(ENGINE),chrome)
+  CLI_SHARED_TESTS += tests/cli/prompt-blocked.test.js
+endif
 
 # Default target
 all: build
@@ -302,8 +321,16 @@ test-cli-shared: build-go
 	@echo "--- CLI Shared Tests ($(ENGINE)) ---"
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@VIBIUM_ENGINE=$(ENGINE) $(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/navigation.test.js tests/cli/elements.test.js tests/cli/actionability.test.js tests/cli/page-reading.test.js tests/cli/input-tools.test.js tests/cli/pages.test.js tests/cli/page-context.test.js tests/cli/find-refs.test.js tests/cli/prompt-blocked.test.js tests/cli/storage.test.js tests/cli/recording-latency.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 $(CLI_SHARED_TESTS)
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
+
+# Broad Firefox core coverage through the CLI, kept separate from the focused
+# installer/channel/screencast tests in test-firefox.
+test-firefox-core: build-go install-firefox
+	@"$(MAKE)" test-cli-shared ENGINE=firefox; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
 
 # Run JS library tests
 # Each test file owns its own browser (top-level before/after), so files are
