@@ -4,15 +4,67 @@ The industry axis is **managed vs. self-hosted**. Managed browser
 clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
 a service: you get a session URL and never a shell. Self-hosting is
 the alternative: root on a machine you control, with the browser
-layer yours to run.
+layer yours to run. These recipes do the running for you.
 
-Standing one up turns out to be the same three steps everywhere:
-install a version-matched Chrome + chromedriver, keep the port off
-the public internet, and point vibium at it. This directory factors
-the work along those lines — one shared installer that prepares any
-Debian/Ubuntu machine ([`setup-chrome.sh`](setup-chrome.sh), detailed
-below), and a short recipe per platform for creating the machine and
-reaching it:
+## What you'll need
+
+- **vibium on your dev machine** (`npm install -g vibium`). That's the
+  client side — nothing else installs locally.
+- **An account on one platform** from the table below, with its CLI
+  installed and logged in (`doctl`, `hcloud`, `gcloud`, `fly`, or the
+  AWS CLI — each recipe's "Prereqs" section lists the exact steps and
+  whether a payment method is required up front).
+- **An SSH keypair** on most platforms, for the tunnel; Fly and GCP
+  manage access through their own CLIs instead.
+
+Budget ~10–30 minutes for the first machine, most of it waiting on
+Chrome to install; after snapshotting, subsequent machines start in
+about a minute.
+
+## What's provided here
+
+- [`setup-chrome.sh`](setup-chrome.sh) — one installer that turns any
+  Debian/Ubuntu x86-64 machine into a browser server (detailed below).
+- [`cloud-init.yml`](cloud-init.yml) — a first-boot wrapper for that
+  installer. Most VM clouds accept a first-boot configuration file
+  (the cloud-init "user-data" standard); this one just fetches and
+  runs the installer, so machine creation and setup collapse into one
+  command.
+- **A recipe per platform** — the create, connect, and teardown
+  commands, with each platform's own footguns called out (billing that
+  survives power-off, image choices, quota walls).
+- [`flyio/fleet.sh`](flyio/fleet.sh) — start/stop/address N parallel
+  browsers on Fly.
+
+## How it fits together
+
+1. **Create the machine** with your recipe's create command. On
+   DigitalOcean, Hetzner, and GCP the cloud-init file runs the
+   installer automatically; on exe.dev you run it over SSH; on Fly it's
+   baked into the Docker image.
+2. The installer leaves **chromedriver running as a service on the
+   machine's loopback**, port 9515. Nothing is exposed to the internet.
+3. **Open a tunnel** from your dev machine — `ssh -N -L
+   9515:127.0.0.1:9515 <user>@<machine>` on the SSH platforms,
+   `fly proxy 9515:9515` on Fly. Port 9515 on localhost is now the
+   remote browser.
+4. **Point vibium at it**:
+
+   ```bash
+   vibium start http://127.0.0.1:9515
+   vibium go https://example.com
+   vibium title
+   vibium stop
+   ```
+
+   An http(s) URL is a classic WebDriver endpoint, which vibium speaks
+   natively — it creates the session and talks WebDriver BiDi through
+   it. From here everything behaves like a local browser: the CLI, the
+   JS/Python/Java clients, and the MCP server all work unchanged.
+5. **Tear down** with the recipe's delete command when you're done —
+   on most clouds that's what stops the billing.
+
+## Choose a platform
 
 | Platform | Cold start | Best for |
 |---|---|---|
@@ -23,20 +75,16 @@ reaching it:
 | [GCP](gcp/) | ~1 min (post-image) | You already live on Google Cloud; gcloud-managed tunnel |
 | [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see its page |
 
-Three of the six barely need a recipe at all. Most VM clouds accept a
-first-boot configuration file (the cloud-init "user-data" standard),
-so the DigitalOcean, Hetzner, and GCP create commands all pass the
-same [`cloud-init.yml`](cloud-init.yml) — a few lines that fetch and
-run the installer. That file works unchanged on most other clouds
-that accept user-data (Azure, Vultr, Linode, …), which is why those
-don't get pages of their own: they add nothing the six above don't
-have. Oracle's always-free ARM tier becomes interesting the day
-Chrome for Testing ships linux-arm64.
+The cloud-init file works unchanged on most other clouds that accept
+user-data (Azure, Vultr, Linode, …), which is why those don't get
+pages of their own — they add nothing the six above don't have.
+Oracle's always-free ARM tier becomes interesting the day Chrome for
+Testing ships linux-arm64.
 
 ## What setup-chrome.sh does
 
 The shared installer turns a bare Debian/Ubuntu x86-64 box into a
-self-hosted browser, idempotently:
+browser server, idempotently:
 
 1. **Installs Chrome's library dependencies** via apt (the NSS/GTK/X11
    libraries and fonts a headless Chrome still links against — the usual
@@ -58,17 +106,9 @@ self-hosted browser, idempotently:
 x86-64 Linux only for now — Chrome for Testing doesn't ship linux-arm64
 builds yet; the script gains ARM support the week Google's feed does.
 
-## Connecting
+## Security model
 
-Every platform converges on the same connect step, because an http(s)
-URL to chromedriver is a classic WebDriver endpoint vibium speaks
-natively:
-
-```bash
-vibium start http://127.0.0.1:9515   # through the tunnel
-```
-
-Security model: chromedriver has no authentication, so nothing here
-exposes it publicly. Reachability is an SSH tunnel (`ssh -L`) or the
-platform's private network (`fly proxy`). Browser automation is remote
-code execution — treat the port accordingly.
+chromedriver has no authentication, so nothing here exposes it
+publicly. Reachability is an SSH tunnel (`ssh -L`) or the platform's
+private network (`fly proxy`). Browser automation is remote code
+execution — treat the port accordingly.
