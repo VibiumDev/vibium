@@ -65,6 +65,28 @@ A stopped fleet costs ~nothing; you pay per-second only for machines
 that are running. (Brand-new Fly organizations may have soft
 machine-count quotas; ask support to raise them once.)
 
+## Sprites: Fly's other shape
+
+Fly also sells [Sprites](https://sprites.dev) — persistent agent
+sandboxes, a different product from Machines:
+
+- **No image to build.** A sprite is a ready Linux sandbox you install
+  into over its CLI — closer to exe.dev's model than to `fly deploy`.
+- **Pause, not stop.** After ~30s idle a sprite suspends with
+  processes intact — Chrome included — and wakes warm in well under a
+  second, billing ~nothing while paused. The catch for split mode: a
+  pause can drop open network connections, so a tunneled browser
+  session with long quiet gaps (an agent thinking) can die
+  mid-session. Running the whole loop inside the sprite avoids this —
+  loopback connections pause and wake together.
+- **Single public HTTPS port** (WebSocket behavior undocumented); other
+  ports go through the sprite CLI's proxy. No per-sprite private-DNS
+  fleet story like Machines have.
+
+Rule of thumb: Machines for steady split-mode use and fleets; Sprites
+when agent, vibium, and Chrome all live inside the sandbox. No recipe
+here yet — we don't publish commands we haven't run.
+
 ## Everything-cloud variant
 
 Instead of tunneling, install vibium *on* a Fly machine next to Chrome and
