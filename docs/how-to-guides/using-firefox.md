@@ -29,6 +29,12 @@ const bro = await firefox.start({ channel: 'beta' });
 bro = firefox.start(channel="beta")
 ```
 
+```java
+Browser bro = Vibium.start(
+    new StartOptions().engine("firefox").channel("beta")
+);
+```
+
 The main use today is [video recording](record-video.md), which needs Firefox 154 while it is still in beta.
 
 ## Launch
@@ -75,7 +81,8 @@ Java:
 Browser bro = Vibium.start(new StartOptions().engine("firefox"));
 ```
 
-MCP — `browser_start` takes an `engine` argument (`chrome` or `firefox`).
+MCP — `browser_start` takes an `engine` argument (`chrome` or `firefox`) and
+an optional Firefox `channel` argument (`release` or `beta`).
 
 ## Selecting Firefox with an environment variable
 

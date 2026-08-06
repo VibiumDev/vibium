@@ -18,14 +18,19 @@ These commands are for debugging and testing internals. They're not part of the 
 
 ### launch-test
 
-Launch browser via chromedriver and print the BiDi WebSocket URL:
+Launch the selected browser and print its BiDi session information. Chrome
+launches through chromedriver; Firefox uses its native BiDi endpoint:
 
 ```bash
 ./clicker/bin/vibium launch-test
-# Output: ws://localhost:xxxxx/session/...
+# Prints the session ID and BiDi WebSocket URL.
+
+./clicker/bin/vibium launch-test --engine firefox
+# Prints the session ID; Firefox uses the native connection directly.
 ```
 
-Useful for verifying chromedriver works and getting a WebSocket URL for manual testing.
+Useful for verifying that the selected browser can launch and accept a BiDi
+session. Chrome also prints a WebSocket URL for manual testing.
 
 ### bidi-test
 
