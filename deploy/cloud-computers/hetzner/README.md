@@ -16,7 +16,7 @@ dedicated bare-metal servers where the same installer works over SSH.
 hcloud server create --name vibium-browser \
   --type cx32 --image ubuntu-24.04 --location fsn1 \
   --ssh-key <name> \
-  --user-data-from-file deploy/cloud-hosted/cloud-init.yml
+  --user-data-from-file deploy/cloud-computers/cloud-init.yml
 hcloud server ip vibium-browser
 ```
 

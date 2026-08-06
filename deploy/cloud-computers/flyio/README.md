@@ -11,7 +11,7 @@ tunnel. Per-second billing; a stopped machine costs only rootfs storage.
 ## Deploy
 
 ```bash
-cd deploy/cloud-hosted
+cd deploy/cloud-computers
 fly launch --no-deploy --name vibium-browsers -c flyio/fly.toml   # first time
 fly deploy -c flyio/fly.toml
 ```
@@ -108,7 +108,7 @@ sprite create vibium-sprite --skip-console
 # Install Chrome + chromedriver. No --service: sprites replace systemd
 # with their own service runtime (next step).
 sprite exec -s vibium-sprite \
-  --file deploy/cloud-hosted/install-chrome.sh:/tmp/install-chrome.sh \
+  --file deploy/cloud-computers/install-chrome.sh:/tmp/install-chrome.sh \
   -- sudo bash /tmp/install-chrome.sh
 
 # Register chromedriver with that runtime: starts on boot, survives

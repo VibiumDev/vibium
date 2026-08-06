@@ -1,8 +1,8 @@
 # Chrome + chromedriver browser server for Fly.io Machines.
 #
-# Build context is deploy/cloud-hosted (so install-chrome.sh is visible):
+# Build context is deploy/cloud-computers (so install-chrome.sh is visible):
 #
-#   cd deploy/cloud-hosted
+#   cd deploy/cloud-computers
 #   fly launch --no-deploy --name vibium-browsers -c flyio/fly.toml
 #   fly deploy -c flyio/fly.toml
 #   fly proxy 9515:9515 -a vibium-browsers
