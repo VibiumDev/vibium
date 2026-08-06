@@ -15,7 +15,7 @@ FROM debian:bookworm-slim
 COPY setup-chrome.sh /tmp/setup-chrome.sh
 RUN bash /tmp/setup-chrome.sh && rm /tmp/setup-chrome.sh
 
-USER chrome
+USER vibium
 EXPOSE 9515
 
 # --allowed-ips="" accepts connections from any peer — safe only because

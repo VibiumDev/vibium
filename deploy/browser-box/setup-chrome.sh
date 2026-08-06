@@ -17,7 +17,7 @@ set -euo pipefail
 
 CFT_JSON="https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
 INSTALL_DIR="/opt/chrome-for-testing"
-RUN_USER="chrome"
+RUN_USER="vibium"
 
 if [ "$(uname -m)" != "x86_64" ]; then
     echo "error: this script installs the linux64 build; $(uname -m) is not supported" >&2
