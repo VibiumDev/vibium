@@ -28,7 +28,7 @@ back to a local browser launch.
 
 Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.
 Set VIBIUM_CONNECT_CAPS to a JSON object of extra alwaysMatch
-capabilities for classic endpoints (bstack:options, sauce:options, ...).`,
+capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 		Example: `  vibium start
   # Start with a local browser
 

@@ -62,7 +62,7 @@ Both endpoint shapes work: a browser-level URL like `ws://host:9515/session` (vi
 An `http://` or `https://` URL is treated as a classic WebDriver endpoint.
 vibium creates a session there with `webSocketUrl: true` and connects to the
 BiDi URL the endpoint returns — one URL drives a local Selenium Grid or a
-cloud grid like BrowserStack, Sauce Labs, or LambdaTest:
+hosted grid cloud:
 
 ```bash
 # Self-hosted Selenium Grid (or docker selenium standalone-chrome).

@@ -12,7 +12,7 @@ export interface StartOptions {
   headless?: boolean;
   headers?: Record<string, string>;
   /** Extra alwaysMatch capabilities for classic WebDriver endpoints
-   *  (cloud grids take their config this way: bstack:options, sauce:options, ...). */
+   *  (cloud grids take their config this way, via vendor-prefixed capability keys). */
   caps?: Record<string, unknown>;
 }
 

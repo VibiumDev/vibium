@@ -29,7 +29,7 @@ func connectFromEnv() (string, http.Header) {
 
 // connectCapsFromEnv reads VIBIUM_CONNECT_CAPS, a JSON object of extra
 // alwaysMatch capabilities for classic WebDriver endpoints (cloud grids all
-// take their config this way — bstack:options, sauce:options, LT:Options).
+// take their config this way — vendor-prefixed capability keys).
 // Invalid JSON is fatal: sending a session request without the user's
 // capabilities would silently run against the wrong browser or account.
 func connectCapsFromEnv() map[string]interface{} {

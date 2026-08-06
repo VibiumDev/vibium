@@ -23,7 +23,7 @@ public class StartOptions {
     public StartOptions connectURL(String url) { this.connectURL = url; return this; }
     public StartOptions connectHeaders(Map<String, String> headers) { this.connectHeaders = headers; return this; }
     /** JSON object of extra alwaysMatch capabilities for classic WebDriver endpoints
-     *  (cloud grids take their config this way: bstack:options, sauce:options, ...). */
+     *  (cloud grids take their config this way, via vendor-prefixed capability keys). */
     public StartOptions connectCaps(String capsJson) { this.connectCaps = capsJson; return this; }
 
     public String engine() { return engine; }

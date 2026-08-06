@@ -117,7 +117,7 @@ class _BrowserLauncher:
             headless: Run browser in headless mode (local launch only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
             caps: Extra alwaysMatch capabilities for classic WebDriver
-                endpoints (bstack:options, sauce:options, ...).
+                endpoints (vendor-prefixed keys like vendor:options).
             executable_path: Path to vibium binary (default: auto-detect).
         """
         from ..binary import VibiumProcess

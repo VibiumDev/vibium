@@ -159,7 +159,7 @@ func (s *ClassicSession) Delete() error {
 // normalizeClassicEndpoint strips a trailing slash or /session suffix (both
 // https://hub/wd/hub and https://hub/wd/hub/session mean the same endpoint)
 // and folds URL userinfo into a Basic Authorization header, the form cloud
-// grids like https://USER:KEY@hub-cloud.browserstack.com/wd/hub expect.
+// grids like https://USER:KEY@grid.example.com/wd/hub expect.
 func normalizeClassicEndpoint(endpoint string, headers http.Header) (string, http.Header, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {

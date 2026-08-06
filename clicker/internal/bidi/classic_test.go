@@ -17,7 +17,7 @@ func TestIsClassicEndpoint(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"https://hub-cloud.browserstack.com/wd/hub", true},
+		{"https://grid.example.com/wd/hub", true},
 		{"http://localhost:4444", true},
 		{"ws://localhost:9515/session", false},
 		{"wss://cloud.example.com/bidi", false},
@@ -138,7 +138,7 @@ func TestResolveEndpointCreatesClassicSession(t *testing.T) {
 
 	endpoint := g.URL + "/wd/hub"
 	wsURL, classic, err := ResolveEndpoint(endpoint, nil, map[string]interface{}{
-		"bstack:options": map[string]interface{}{"os": "OS X"},
+		"vendor:options": map[string]interface{}{"os": "OS X"},
 	})
 	if err != nil {
 		t.Fatalf("ResolveEndpoint: %v", err)
@@ -154,7 +154,7 @@ func TestResolveEndpointCreatesClassicSession(t *testing.T) {
 	if g.sawCaps["webSocketUrl"] != true {
 		t.Errorf("alwaysMatch webSocketUrl = %v, want true", g.sawCaps["webSocketUrl"])
 	}
-	if _, ok := g.sawCaps["bstack:options"]; !ok {
+	if _, ok := g.sawCaps["vendor:options"]; !ok {
 		t.Errorf("vendor capability was dropped: %v", g.sawCaps)
 	}
 
