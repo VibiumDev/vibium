@@ -196,8 +196,31 @@ System.out.println(page.title());    // "Example Domain"
 bro.stop();
 ```
 
-The Java client takes the connect URL through `StartOptions` — it does not
-read the `VIBIUM_CONNECT_URL` environment variable.
+`VIBIUM_CONNECT_URL` and `VIBIUM_CONNECT_API_KEY` work here too —
+`Vibium.start()` with no options picks them up.
+
+#### jshell
+
+The env-var fallback makes jshell a first-class way to drive a remote
+browser interactively — no build file, no `StartOptions`:
+
+```bash
+curl -sO https://repo1.maven.org/maven2/com/vibium/vibium/26.5.31/vibium-26.5.31.jar
+curl -sO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
+
+VIBIUM_CONNECT_URL=ws://your-server:9515/session \
+  jshell --class-path vibium-26.5.31.jar:gson-2.11.0.jar
+```
+
+```text
+jshell> import com.vibium.*
+jshell> var bro = Vibium.start()      // picks up VIBIUM_CONNECT_URL
+jshell> var page = bro.page()
+jshell> page.go("https://example.com")
+jshell> page.title()
+$4 ==> "Example Domain"
+jshell> bro.stop()
+```
 
 ---
 
@@ -272,7 +295,8 @@ Browser bro = Vibium.start(new StartOptions()
 | `VIBIUM_CONNECT_URL` | Remote BiDi WebSocket endpoint (e.g. `ws://host:9515/session`) |
 | `VIBIUM_CONNECT_API_KEY` | Sent as `Authorization: Bearer <key>` |
 
-These work everywhere — CLI commands, daemon auto-start, and the MCP server.
+These work everywhere — CLI commands, daemon auto-start, the MCP server,
+and the JS, Python, and Java client libraries.
 
 ---
 
