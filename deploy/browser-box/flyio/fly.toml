@@ -1,0 +1,14 @@
+# Fly.io app config for a vibium browser box.
+# Deploy from deploy/browser-box:  fly deploy -c flyio/fly.toml
+app = "vibium-browsers"
+primary_region = "iad" # pick the region closest to your test targets
+
+[build]
+  dockerfile = "flyio/Dockerfile"
+
+# No [[services]] section on purpose: nothing is exposed publicly.
+# Reach chromedriver with:  fly proxy 9515:9515 -a vibium-browsers
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"

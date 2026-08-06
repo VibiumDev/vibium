@@ -1,0 +1,18 @@
+#cloud-config
+# DigitalOcean droplet bootstrap: Chrome + chromedriver as a systemd
+# service on 127.0.0.1:9515. Reach it over an SSH tunnel.
+#
+#   doctl compute droplet create vibium-browser \
+#     --size s-2vcpu-4gb --image ubuntu-24-04-x64 --region nyc3 \
+#     --ssh-keys <fingerprint> \
+#     --user-data-file deploy/browser-box/digitalocean/cloud-init.yml --wait
+#
+# Note: cloud-init downloads setup-chrome.sh from the vibium repo's main
+# branch. Until the deploy kits land there, paste the script into
+# write_files instead, or scp it up and run it by hand.
+
+package_update: true
+
+runcmd:
+  - curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/browser-box/setup-chrome.sh -o /root/setup-chrome.sh
+  - bash /root/setup-chrome.sh --service

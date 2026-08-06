@@ -65,7 +65,10 @@ BiDi URL the endpoint returns — one URL drives a local Selenium Grid or a
 cloud grid like BrowserStack, Sauce Labs, or LambdaTest:
 
 ```bash
-# Self-hosted Selenium Grid (or docker selenium standalone-chrome)
+# Self-hosted Selenium Grid (or docker selenium standalone-chrome).
+# Verified against selenium-server 4.46.0 standalone: vibium creates the
+# session, attaches to the returned /se/bidi socket, and the slot is
+# released on stop.
 vibium start http://localhost:4444
 
 # Cloud grid: credentials go in the URL (sent as Basic auth),

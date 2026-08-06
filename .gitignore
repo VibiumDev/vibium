@@ -101,3 +101,4 @@ packages/python/*/src/*/bin/vibium.exe
 **/NOTICE
 !/LICENSE
 !/NOTICE
+*.swp
