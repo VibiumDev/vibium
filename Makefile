@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-browser-shared test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -67,8 +67,8 @@ TEST_FLAGS := --test-timeout=$(NODE_TEST_TIMEOUT) --test-force-exit
 # above that retry budget without weakening the ordinary per-test watchdog.
 FIREFOX_TEST_TIMEOUT ?= 180000
 
-# Browser used by the shared behavioral suites. The ordinary local test run
-# remains Chrome-first; CI also invokes test-browser-shared ENGINE=firefox.
+# Browser used by test targets that support engine selection. The ordinary
+# full test run remains Chrome-first; Firefox has a focused test target.
 ENGINE ?= chrome
 
 # Default target
@@ -270,27 +270,6 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 		echo "--- All tests passed in $${MINS}m$${SECS}s ---"; \
 	else \
 		echo "--- Tests failed after $${MINS}m$${SECS}s ---"; \
-		exit $$EXIT; \
-	fi
-
-# Run browser-agnostic behavior through one engine. Engine-specific installer,
-# process-lifecycle, headed-mode, and screencast checks stay in their focused
-# targets. CI runs this target once for Firefox alongside the normal Chrome job.
-test-browser-shared: build install-engine python-venv
-	@START_TIME=$$(date +%s); \
-	"$(MAKE)" test-cli-shared test-cleanup ENGINE=$(ENGINE) && \
-	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java ENGINE=$(ENGINE) && \
-	"$(MAKE)" test-cleanup ENGINE=$(ENGINE) && \
-	"$(MAKE)" test-daemon test-cleanup ENGINE=$(ENGINE) && \
-	"$(MAKE)" test-js-sync ENGINE=$(ENGINE); \
-	EXIT=$$?; \
-	"$(MAKE)" test-cleanup ENGINE=$(ENGINE); \
-	END_TIME=$$(date +%s); \
-	ELAPSED=$$((END_TIME - START_TIME)); \
-	if [ $$EXIT -eq 0 ]; then \
-		echo "--- Shared $(ENGINE) tests passed in $$((ELAPSED / 60))m$$((ELAPSED % 60))s ---"; \
-	else \
-		echo "--- Shared $(ENGINE) tests failed after $$((ELAPSED / 60))m$$((ELAPSED % 60))s ---"; \
 		exit $$EXIT; \
 	fi
 
