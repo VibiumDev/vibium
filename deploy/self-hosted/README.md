@@ -3,8 +3,10 @@
 The industry axis is **managed vs. self-hosted**. Managed browser
 clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
 a service: you get a session URL and never a shell. These kits are the
-self-hosted alternative: you get root on the machine — a cloud VM or
-the Mac mini on your desk — and run the browser layer yourself.
+self-hosted alternative: you get root on the machine and run the
+browser layer yourself — whether that machine is a rented cloud VM
+(the kits below) or on-premises hardware like the Mac mini on your
+desk (`setup-chrome.sh --service` on any Debian/Ubuntu box).
 
 Each kit stands up Chrome + chromedriver on your own compute and
 connects vibium to it. One shared installer (`setup-chrome.sh`), one
