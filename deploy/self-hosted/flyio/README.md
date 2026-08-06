@@ -65,10 +65,10 @@ A stopped fleet costs ~nothing; you pay per-second only for machines
 that are running. (Brand-new Fly organizations may have soft
 machine-count quotas; ask support to raise them once.)
 
-## Sprites: Fly's other shape
+## Machines vs. Sprites
 
-Fly also sells [Sprites](https://sprites.dev) — persistent agent
-sandboxes, a different product from Machines:
+Fly's other product, [Sprites](https://sprites.dev), is a persistent
+agent sandbox rather than a deployed image:
 
 - **No image to build.** A sprite is a ready Linux sandbox you install
   into over its CLI — closer to exe.dev's model than to `fly deploy`.
