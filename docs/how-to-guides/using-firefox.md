@@ -42,7 +42,7 @@ $ vibium start --engine firefox
 JavaScript — a named launcher, or the engine option:
 
 ```js
-const { firefox } = require('vibium');
+const { browser, firefox } = require('vibium');
 const bro = await firefox.start();
 
 // equivalent:
@@ -52,7 +52,7 @@ const bro = await browser.start({ engine: 'firefox' });
 The synchronous JavaScript API supports the same two forms:
 
 ```js
-const { firefox } = require('vibium/sync');
+const { browser, firefox } = require('vibium/sync');
 const bro = firefox.start();
 
 // equivalent:
@@ -62,7 +62,7 @@ const bro = browser.start({ engine: 'firefox' });
 Python:
 
 ```python
-from vibium import firefox
+from vibium import browser, firefox
 bro = firefox.start()
 
 # equivalent:
@@ -95,7 +95,7 @@ currently requires Firefox, while PDF output may differ between engines.
 | Variable | Effect |
 |----------|--------|
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
-| `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache |
+| `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
 | `VIBIUM_FIREFOX_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--firefox-channel` or the clients' `channel` option |
 
 ## Feature notes

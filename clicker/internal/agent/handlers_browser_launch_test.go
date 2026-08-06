@@ -27,6 +27,23 @@ func TestBrowserLaunchRejectsFirefoxChannelMismatch(t *testing.T) {
 	}
 }
 
+func TestBrowserLaunchAttachesToRemoteSessionDespiteModeArgs(t *testing.T) {
+	// A session attached to a remote browser has no local engine or headless
+	// mode to compare against. Client defaults such as VIBIUM_ENGINE=chrome
+	// must reattach as a no-op rather than fail the mismatch checks.
+	h := &Handlers{
+		client:     &bidi.Client{},
+		connectURL: "ws://127.0.0.1:9222/session",
+	}
+	result, err := h.browserLaunch(map[string]interface{}{"engine": "chrome", "headless": true})
+	if err != nil {
+		t.Fatalf("browserLaunch() error = %v, want reattach", err)
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "already running") {
+		t.Fatalf("browserLaunch() = %+v, want already-running reattach", result)
+	}
+}
+
 func TestHandlersCaptureFirefoxChannelDefault(t *testing.T) {
 	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "release")
 	h := NewHandlers("", "firefox", true, "", nil)

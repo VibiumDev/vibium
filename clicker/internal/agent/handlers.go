@@ -643,6 +643,18 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	// caller asked for a different mode than the one it is running in.
 	// Silently attaching them to the other mode is what #194 reported.
 	if h.client != nil {
+		// The mode checks compare against a local launch. A remote session's
+		// browser belongs to whoever handed us the URL: its engine and
+		// headless state are unknown here, so flags and env defaults like
+		// VIBIUM_ENGINE cannot conflict with it — reattach unconditionally.
+		if h.connectURL != "" {
+			return &ToolsCallResult{
+				Content: []Content{{
+					Type: "text",
+					Text: "Browser already running",
+				}},
+			}, nil
+		}
 		if want, ok := args["headless"].(bool); ok && want != h.launchedHeadless {
 			return nil, fmt.Errorf(
 				"browser is already running %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
