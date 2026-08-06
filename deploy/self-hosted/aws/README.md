@@ -1,4 +1,4 @@
-# Self-hosted cloud browser on AWS
+# Browser server on AWS
 
 The most setup friction of the platforms here. Use this when you already live in
 AWS (spot instances make it very cheap); use Fly or DigitalOcean when

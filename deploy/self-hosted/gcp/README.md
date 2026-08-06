@@ -1,4 +1,4 @@
-# Self-hosted cloud browser on Google Cloud
+# Browser server on Google Cloud
 
 A Compute Engine VM behind an SSH tunnel — with the nicest tunnel
 story of the platforms here, since `gcloud compute ssh` manages keys itself.

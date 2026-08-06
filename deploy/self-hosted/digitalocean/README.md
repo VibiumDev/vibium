@@ -1,4 +1,4 @@
-# Self-hosted cloud browser on DigitalOcean
+# Browser server on DigitalOcean
 
 A droplet running Chrome + chromedriver behind an SSH tunnel.
 Per-second billing since 2026 — but **destroy, don't stop**: powered-off

@@ -1,10 +1,12 @@
-# Self-hosted cloud browsers
+# Browsers on cloud computers
 
-The industry axis is **managed vs. self-hosted**. Managed browser
-clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
-a service: you get a session URL and never a shell. Self-hosting is
-the alternative: root on a machine you control, with the browser
-layer yours to run. These recipes do the running for you.
+There are two ways to get a browser in the cloud. You can rent the
+**browser**: managed vendors (Sauce Labs, BrowserStack, TestMu,
+Kernel, …) sell browsers as a service — a session URL, never a shell.
+Or you can rent the **computer** — a machine you get root on — and
+run the browser layer yourself; the industry calls this self-hosting.
+These recipes are the second path: each turns a rented computer into
+a browser server that vibium drives.
 
 ## What you'll need
 

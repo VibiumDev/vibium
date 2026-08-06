@@ -1,4 +1,4 @@
-# Self-hosted cloud browser on Hetzner
+# Browser server on Hetzner
 
 Budget cloud instances via the `hcloud` CLI; Hetzner also offers
 dedicated bare-metal servers where the same installer works over SSH.
