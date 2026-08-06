@@ -23,11 +23,14 @@ reaching it:
 | [GCP](gcp/) | ~1 min (post-image) | You already live on Google Cloud; gcloud-managed tunnel |
 | [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see its page |
 
-DigitalOcean, Hetzner, and GCP share one
-[`cloud-init.yml`](cloud-init.yml); it runs unchanged on most other
-clouds that accept user-data (Azure, Vultr, Linode, …), which is why
-those don't get pages of their own — they add nothing the six above
-don't have. Oracle's always-free ARM tier becomes interesting the day
+Three of the six barely need a recipe at all. Most VM clouds accept a
+first-boot configuration file (the cloud-init "user-data" standard),
+so the DigitalOcean, Hetzner, and GCP create commands all pass the
+same [`cloud-init.yml`](cloud-init.yml) — a few lines that fetch and
+run the installer. That file works unchanged on most other clouds
+that accept user-data (Azure, Vultr, Linode, …), which is why those
+don't get pages of their own: they add nothing the six above don't
+have. Oracle's always-free ARM tier becomes interesting the day
 Chrome for Testing ships linux-arm64.
 
 ## What setup-chrome.sh does
