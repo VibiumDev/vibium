@@ -72,13 +72,16 @@ agent sandbox rather than a deployed image:
 
 - **No image to build.** A sprite is a ready Linux sandbox you install
   into over its CLI — closer to exe.dev's model than to `fly deploy`.
-- **Pause, not stop.** After ~30s idle a sprite suspends with
-  processes intact — Chrome included — and wakes warm in well under a
-  second, billing ~nothing while paused. The catch for split mode: a
-  pause can drop open network connections, so a tunneled browser
-  session with long quiet gaps (an agent thinking) can die
-  mid-session. Running the whole loop inside the sprite avoids this —
-  loopback connections pause and wake together.
+- **Pause, not stop.** After an idle window ("about 30 seconds today",
+  per their docs) a sprite suspends with processes intact — Chrome
+  included — and wakes warm in well under a second, billing ~nothing
+  while paused. The catch for split mode is categorical, not
+  occasional: their docs state open TCP connections **do not survive a
+  pause, warm or cold** — so any tunneled browser session dies the
+  moment a quiet gap outlasts the window. Their Tasks API can hold a
+  sprite awake until a run finishes; or run the whole loop inside the
+  sprite, where the processes talking over loopback pause and wake
+  together.
 - **Single public HTTPS port** (WebSocket behavior undocumented); other
   ports go through the sprite CLI's proxy. No per-sprite private-DNS
   fleet story like Machines have.
@@ -90,7 +93,7 @@ To be concrete about fleets: BiDi through `sprite proxy` works exactly
 like BiDi through `fly proxy` — the protocol doesn't care. But a
 20–50 browser burst wants Machines, because one WireGuard tunnel
 addresses the whole fleet by per-machine DNS, while sprites need one
-proxy process per sprite and can drop a quiet connection on pause. A
+proxy process per sprite and sever every open connection on pause. A
 sprite *fleet* makes sense in the other shape: N everything-inside
 workers, each running its own agent + vibium + Chrome loop with no
 tunnels at all, idling to ~$0 between runs.
