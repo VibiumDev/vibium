@@ -174,6 +174,31 @@ print(page.find("h1").text())    # "Example Domain"
 bro.stop()
 ```
 
+### Java
+
+```groovy
+implementation 'com.vibium:vibium:26.5.31'
+```
+
+```java
+import com.vibium.Vibium;
+import com.vibium.Browser;
+import com.vibium.Page;
+import com.vibium.types.StartOptions;
+
+Browser bro = Vibium.start(new StartOptions()
+    .connectURL("ws://your-server:9515/session"));
+Page page = bro.page();
+
+page.go("https://example.com");
+System.out.println(page.title());    // "Example Domain"
+
+bro.stop();
+```
+
+The Java client takes the connect URL through `StartOptions` — it does not
+read the `VIBIUM_CONNECT_URL` environment variable.
+
 ---
 
 ## With Authentication
@@ -225,6 +250,17 @@ Sync:
 bro = browser.start("wss://cloud.example.com/bidi", headers={
     "Authorization": "Bearer my-token",
 })
+```
+
+**Java:**
+
+```java
+Map<String, String> headers = new HashMap<>();
+headers.put("Authorization", "Bearer my-token");
+
+Browser bro = Vibium.start(new StartOptions()
+    .connectURL("wss://cloud.example.com/bidi")
+    .connectHeaders(headers));
 ```
 
 ---
