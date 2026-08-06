@@ -1,5 +1,5 @@
-# Fly.io app config for a self-hosted vibium browser.
-# Deploy from deploy/self-hosted:  fly deploy -c flyio/fly.toml
+# Fly.io app config for a vibium browser server.
+# Deploy from deploy/cloud-hosted:  fly deploy -c flyio/fly.toml
 app = "vibium-browsers"
 primary_region = "iad" # pick the region closest to your test targets
 

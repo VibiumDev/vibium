@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fleet control for self-hosted Fly.io browsers: N in parallel on demand.
+# Fleet control for Fly.io browser servers: N in parallel on demand.
 #
 #   ./fleet.sh up 10       # start/clone machines until 10 are running
 #   ./fleet.sh urls        # one connect URL per running machine

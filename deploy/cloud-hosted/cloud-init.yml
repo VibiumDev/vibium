@@ -12,5 +12,5 @@
 package_update: true
 
 runcmd:
-  - curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/install-chrome.sh -o /root/install-chrome.sh
+  - curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/cloud-hosted/install-chrome.sh -o /root/install-chrome.sh
   - bash /root/install-chrome.sh --service

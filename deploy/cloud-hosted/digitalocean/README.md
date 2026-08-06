@@ -17,7 +17,7 @@ droplets still bill.
 doctl compute droplet create vibium-browser \
   --size s-2vcpu-4gb --image ubuntu-24-04-x64 --region nyc3 \
   --ssh-keys <fingerprint> \
-  --user-data-file deploy/self-hosted/cloud-init.yml --wait
+  --user-data-file deploy/cloud-hosted/cloud-init.yml --wait
 doctl compute droplet get vibium-browser --format PublicIPv4
 ```
 

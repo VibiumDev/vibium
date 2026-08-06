@@ -34,7 +34,7 @@ BiDi, so vibium can't drive it today.
 aws ec2 run-instances \
   --image-id <ami-id> --instance-type t3.medium \
   --key-name <keypair> --security-group-ids <ssh-only-sg> \
-  --user-data file://deploy/self-hosted/aws/user-data.sh \
+  --user-data file://deploy/cloud-hosted/aws/user-data.sh \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=vibium-browser}]'
 ```
 

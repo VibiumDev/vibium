@@ -14,7 +14,7 @@ story of the platforms here, since `gcloud compute ssh` manages keys itself.
 gcloud compute instances create vibium-browser \
   --machine-type=e2-medium --zone=us-central1-a \
   --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud \
-  --metadata-from-file user-data=deploy/self-hosted/cloud-init.yml
+  --metadata-from-file user-data=deploy/cloud-hosted/cloud-init.yml
 ```
 
 First boot takes ~3–5 min while cloud-init installs Chrome. Bake an

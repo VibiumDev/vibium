@@ -1,8 +1,8 @@
-# Chrome + chromedriver for Fly.io Machines (self-hosted).
+# Chrome + chromedriver browser server for Fly.io Machines.
 #
-# Build context is deploy/self-hosted (so install-chrome.sh is visible):
+# Build context is deploy/cloud-hosted (so install-chrome.sh is visible):
 #
-#   cd deploy/self-hosted
+#   cd deploy/cloud-hosted
 #   fly launch --no-deploy --name vibium-browsers -c flyio/fly.toml
 #   fly deploy -c flyio/fly.toml
 #   fly proxy 9515:9515 -a vibium-browsers
