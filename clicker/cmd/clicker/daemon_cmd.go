@@ -59,8 +59,8 @@ func newDaemonStartCmd() *cobra.Command {
   vibium daemon start --connect ws://remote:9515/session
   # Connect to a remote browser instead of launching a local one
 
-  vibium daemon start --connect https://USER:KEY@hub-cloud.browserstack.com/wd/hub \
-    --connect-caps '{"bstack:options":{"os":"OS X"}}'
+  vibium daemon start --connect https://USER:KEY@grid.example.com/wd/hub \
+    --connect-caps '{"vendor:options":{"someOption":"value"}}'
   # Classic WebDriver endpoint (Selenium Grid, cloud grid): vibium creates
   # a session with webSocketUrl:true and connects to the BiDi URL it returns
 

@@ -46,10 +46,10 @@ capabilities for classic endpoints (bstack:options, sauce:options, ...).`,
   vibium start
   # Connect using env vars
 
-  export VIBIUM_CONNECT_CAPS='{"sauce:options":{"name":"vibium"}}'
-  vibium start https://USER:KEY@ondemand.us-west-1.saucelabs.com/wd/hub
+  export VIBIUM_CONNECT_CAPS='{"vendor:options":{"someOption":"value"}}'
+  vibium start https://USER:KEY@grid.example.com/wd/hub
   # Classic WebDriver endpoint: creates the session, then speaks BiDi
-  # Connected to https://ondemand.us-west-1.saucelabs.com/wd/hub (daemon pid 12345)`,
+  # Connected to https://grid.example.com/wd/hub (daemon pid 12345)`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Determine connect URL: arg > env > local

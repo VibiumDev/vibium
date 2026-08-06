@@ -36,8 +36,8 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
 
   # Classic WebDriver endpoint (Selenium Grid, cloud grid): vibium creates
   # a session with webSocketUrl:true and connects to the BiDi URL it returns
-  vibium pipe --connect https://USER:KEY@hub-cloud.browserstack.com/wd/hub \
-    --connect-caps '{"bstack:options":{"os":"OS X"}}'`,
+  vibium pipe --connect https://USER:KEY@grid.example.com/wd/hub \
+    --connect-caps '{"vendor:options":{"someOption":"value"}}'`,
 		Run: func(cmd *cobra.Command, args []string) {
 			connectURL, _ := cmd.Flags().GetString("connect")
 			headerStrs, _ := cmd.Flags().GetStringArray("connect-header")

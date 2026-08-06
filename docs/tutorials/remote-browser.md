@@ -73,8 +73,8 @@ vibium start http://localhost:4444
 
 # Cloud grid: credentials go in the URL (sent as Basic auth),
 # vendor options in VIBIUM_CONNECT_CAPS
-export VIBIUM_CONNECT_CAPS='{"bstack:options":{"seleniumVersion":"4.20.0","seleniumBidi":"true"}}'
-vibium start https://USER:KEY@hub-cloud.browserstack.com/wd/hub
+export VIBIUM_CONNECT_CAPS='{"vendor:options":{"someOption":"value"}}'
+vibium start https://USER:KEY@grid.example.com/wd/hub
 vibium go https://example.com
 vibium stop   # sends DELETE /session/<id> — releases the cloud slot
 ```
