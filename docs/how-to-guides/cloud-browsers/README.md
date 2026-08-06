@@ -2,7 +2,7 @@
 
 There are two ways to get a browser in the cloud. You can rent the
 **computer** and run the browser yourself — that's
-[`deploy/cloud-computers/`](../../../deploy/cloud-computers/). Or you
+[cloud computers](../cloud-computers/). Or you
 can rent the **browser**: managed vendors run it and hand you a
 session. These guides cover connecting vibium to the second kind.
 

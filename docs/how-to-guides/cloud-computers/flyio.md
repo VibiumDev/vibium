@@ -55,10 +55,10 @@ tunnel addresses every machine concurrently:
 
 ```bash
 fly wireguard create        # once; import the .conf into a WireGuard client
-./fleet.sh up 10            # wake/clone until 10 machines run
-./fleet.sh urls             # → http://<id>.vm.vibium-browsers.internal:9515 ×10
+deploy/cloud-computers/flyio/fleet.sh up 10            # wake/clone until 10 machines run
+deploy/cloud-computers/flyio/fleet.sh urls             # → http://<id>.vm.vibium-browsers.internal:9515 ×10
 # hand one URL per parallel vibium session/client
-./fleet.sh stop             # ≈$0 until next time; 'up' wakes them in <1s
+deploy/cloud-computers/flyio/fleet.sh stop             # ≈$0 until next time; 'up' wakes them in <1s
 ```
 
 A stopped fleet costs ~nothing; you pay per-second only for machines
