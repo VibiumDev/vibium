@@ -7,7 +7,7 @@
 #     --security-group-ids <ssh-only-sg> \
 #     --user-data file://deploy/self-hosted/aws/user-data.sh
 #
-# Same note as the DigitalOcean kit: until the deploy kits are on the main
+# Same note as the DigitalOcean recipe: until these land on the main
 # branch, scp setup-chrome.sh up and run it by hand instead.
 set -euo pipefail
 curl -fsSL https://raw.githubusercontent.com/VibiumDev/vibium/main/deploy/self-hosted/setup-chrome.sh -o /root/setup-chrome.sh

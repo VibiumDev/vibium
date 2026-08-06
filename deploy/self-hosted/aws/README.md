@@ -1,6 +1,6 @@
 # AWS self-hosted browser
 
-The most setup friction of the kits. Use this when you already live in
+The most setup friction of the platforms here. Use this when you already live in
 AWS (spot instances make it very cheap); use Fly or DigitalOcean when
 you don't.
 
@@ -10,10 +10,10 @@ you don't.
 
 | Shape | When | Notes |
 |---|---|---|
-| **EC2 on-demand** (this kit) | Default; steady use | t3.medium runs 2–3 headless Chromes |
-| **EC2 Spot** | Disposable/burst boxes | Same kit, `--instance-market-options`; interruptible by design |
+| **EC2 on-demand** (this recipe) | Default; steady use | t3.medium runs 2–3 headless Chromes |
+| **EC2 Spot** | Disposable/burst boxes | Same recipe, `--instance-market-options`; interruptible by design |
 | **Graviton (arm64)** | When Chrome for Testing ships linux-arm64 | Cheaper per vCPU; today needs a Chromium build instead — watch the CfT feed |
-| **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly kit's Dockerfile; no KVM, slower cold start |
+| **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly recipe's Dockerfile; no KVM, slower cold start |
 | Lambda | — | Don't: execution caps and cold starts fight the browser-session model |
 
 AWS's managed AgentCore Browser is the non-DIY sibling — a hosted

@@ -2,31 +2,34 @@
 
 The industry axis is **managed vs. self-hosted**. Managed browser
 clouds (Sauce Labs, BrowserStack, TestMu, Kernel, …) sell browsers as
-a service: you get a session URL and never a shell. These kits are the
-self-hosted alternative: you get root on the machine and run the
-browser layer yourself — whether that machine is a rented cloud VM
-(the kits below) or on-premises hardware like the Mac mini on your
-desk (`setup-chrome.sh --service` on any Debian/Ubuntu box).
+a service: you get a session URL and never a shell. Self-hosting is
+the alternative: root on a machine you control — a rented cloud VM or
+on-premises hardware like the Mac mini on your desk — with the
+browser layer yours to run.
 
-Each kit stands up Chrome + chromedriver on your own compute and
-connects vibium to it. One shared installer (`setup-chrome.sh`), one
-thin recipe per platform:
+Standing one up turns out to be the same three steps everywhere:
+install a version-matched Chrome + chromedriver, keep the port off
+the public internet, and point vibium at it. This directory factors
+the work along those lines — one shared installer that prepares any
+Debian/Ubuntu machine ([`setup-chrome.sh`](setup-chrome.sh), detailed
+below), and a short recipe per platform for creating the machine and
+reaching it:
 
-| Kit | Cold start | Best for |
+| Platform | Cold start | Best for |
 |---|---|---|
 | [exe.dev](exe-dev/) | ~2s VM boot | Everything-cloud: agent + vibium + Chrome on one VM |
 | [Fly.io](flyio/) | seconds (sub-second restart) | Parallel fleets: `fleet.sh up 25`, per-machine DNS, ~$0 stopped |
 | [DigitalOcean](digitalocean/) | ~1 min (post-snapshot) | Simple, predictable droplets |
 | [Hetzner](hetzner/) | ~1 min (post-snapshot) | Budget instances; dedicated bare metal available |
 | [GCP](gcp/) | ~1 min (post-image) | You already live on Google Cloud; gcloud-managed tunnel |
-| [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see the kit |
+| [AWS](aws/) | ~1 min (post-AMI) | You already live in AWS — several shapes, see its page |
 
-The DigitalOcean, Hetzner, and GCP kits share one
+DigitalOcean, Hetzner, and GCP share one
 [`cloud-init.yml`](cloud-init.yml); it runs unchanged on most other
-clouds with cloud-init support (Azure, Vultr, Linode, …) — those don't
-get kits because they add nothing the six above don't have. Oracle's
-always-free ARM tier becomes interesting the day Chrome for Testing
-ships linux-arm64.
+clouds that accept user-data (Azure, Vultr, Linode, …), which is why
+those don't get pages of their own — they add nothing the six above
+don't have. Oracle's always-free ARM tier becomes interesting the day
+Chrome for Testing ships linux-arm64.
 
 ## What setup-chrome.sh does
 
@@ -48,21 +51,22 @@ self-hosted browser, idempotently:
    (`chromedriver.service`) listening on `127.0.0.1:9515`, restart-on-
    crash. Loopback-only on purpose: reach it through an SSH tunnel, or
    edit the unit to add `--allowed-ips=""` when your platform provides
-   the network isolation (the Fly kit's Dockerfile does exactly that).
+   the network isolation (the Fly recipe's Dockerfile does exactly that).
 
 x86-64 Linux only for now — Chrome for Testing doesn't ship linux-arm64
 builds yet; the script gains ARM support the week Google's feed does.
 
 ## Connecting
 
-Every kit converges on the same connect step, because an http(s) URL to
-chromedriver is a classic WebDriver endpoint vibium speaks natively:
+Every platform converges on the same connect step, because an http(s)
+URL to chromedriver is a classic WebDriver endpoint vibium speaks
+natively:
 
 ```bash
-vibium start http://127.0.0.1:9515   # through the kit's tunnel
+vibium start http://127.0.0.1:9515   # through the tunnel
 ```
 
-Security model: chromedriver has no authentication, so no kit exposes it
-publicly. Reachability is an SSH tunnel (`ssh -L`) or the platform's
-private network (`fly proxy`). Browser automation is remote code
-execution — treat the port accordingly.
+Security model: chromedriver has no authentication, so nothing here
+exposes it publicly. Reachability is an SSH tunnel (`ssh -L`) or the
+platform's private network (`fly proxy`). Browser automation is remote
+code execution — treat the port accordingly.

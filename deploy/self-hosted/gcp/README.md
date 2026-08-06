@@ -1,7 +1,7 @@
 # Google Cloud self-hosted browser
 
 A Compute Engine VM behind an SSH tunnel — with the nicest tunnel
-story of the kits, since `gcloud compute ssh` manages keys itself.
+story of the platforms here, since `gcloud compute ssh` manages keys itself.
 
 ## Prereqs (human)
 

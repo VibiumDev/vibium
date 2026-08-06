@@ -1,12 +1,12 @@
 #cloud-config
 # Shared bootstrap for any cloud-init-capable VM: Chrome + chromedriver
 # as a systemd service on 127.0.0.1:9515, reached over an SSH tunnel.
-# Used by the DigitalOcean, Hetzner, and GCP kits — see each kit's
+# Used by the DigitalOcean, Hetzner, and GCP recipes — see each one's
 # README for its create command; it also runs unchanged on most other
 # clouds that accept user-data.
 #
 # Note: cloud-init downloads setup-chrome.sh from the vibium repo's main
-# branch. Until the deploy kits land there, paste the script into
+# branch. Until these recipes land there, paste the script into
 # write_files instead, or scp it up and run it by hand.
 
 package_update: true
