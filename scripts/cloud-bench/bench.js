@@ -16,7 +16,8 @@
 //   --runs <n>          iterations per provider (default 3)
 //   --mint-only         only time vendor session mint/delete (works for
 //                       CDP-only providers that vibium can't drive yet)
-//   --url <url>         page to navigate to (default https://example.com).
+//   --url <url>         page to navigate to (default https://var.parts,
+//                       override with BENCH_URL or this flag).
 //                       Must be reachable FROM THE BROWSER'S location —
 //                       cloud vendors' browsers can't see your localhost,
 //                       so keep it public (a neutral constant also keeps
@@ -48,7 +49,7 @@ function optAll(name) {
 }
 
 const RUNS = parseInt(opt('runs', '3'), 10);
-const NAV_URL = opt('url', process.env.BENCH_URL || 'https://example.com');
+const NAV_URL = opt('url', process.env.BENCH_URL || 'https://var.parts');
 const MINT_ONLY = flag('mint-only');
 const ONLY = optAll('provider');
 
