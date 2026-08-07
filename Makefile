@@ -187,12 +187,11 @@ install-browser: build-go
 install-firefox: build-go
 	./clicker/bin/vibium$(EXE) install --engine firefox
 
-install-engine:
-	@if [ "$(ENGINE)" = "firefox" ]; then \
-		"$(MAKE)" install-firefox; \
-	else \
-		"$(MAKE)" install-browser; \
-	fi
+ifeq ($(ENGINE),firefox)
+install-engine: install-firefox
+else
+install-engine: install-browser
+endif
 
 # Install npm dependencies (skip if node_modules exists)
 deps:
