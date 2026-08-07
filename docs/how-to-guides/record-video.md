@@ -21,6 +21,10 @@ The `VIBIUM_FIREFOX_CHANNEL` env var does the same as the flag and option, for c
 
 Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `start()` fails there with an error saying so.
 
+Screen recording is not supported on remote browser connections because the
+browser writes the video on the remote host and Vibium cannot retrieve that
+file. Use a local browser, or `recording.start()` for a trace with screenshots.
+
 On Linux, Vibium gives Firefox a private Downloads directory inside the
 temporary browser profile because Firefox's native command requires one. It is
 removed with the profile when the browser closes; Vibium does not create a

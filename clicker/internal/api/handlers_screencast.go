@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,12 +11,18 @@ import (
 	"strings"
 )
 
+const remoteScreencastMessage = "screen recording is not supported on remote browser connections: the browser writes the video on the remote host. Use a local browser, or recording.start() for a trace with screenshots"
+
 // handleScreencastStart handles vibium:screencast.start — native browser
 // video recording via browsingContext.startScreencast. The browser encodes
 // the video itself and writes it to a file it chooses; stop moves it where
 // the client asked.
 // Options: context, mimeType, width, height, frameRate, audio.
 func (r *Router) handleScreencastStart(session *BrowserSession, cmd bidiCommand) {
+	if r.connectURL != "" {
+		r.sendError(session, cmd.ID, errors.New(remoteScreencastMessage))
+		return
+	}
 	if !session.beginScreencastOperation() {
 		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
 		return
@@ -106,6 +113,10 @@ func (r *Router) handleScreencastStart(session *BrowserSession, cmd bidiCommand)
 // the path so delivery can be retried and session cleanup still knows which
 // file to delete.
 func (r *Router) handleScreencastStop(session *BrowserSession, cmd bidiCommand) {
+	if r.connectURL != "" {
+		r.sendError(session, cmd.ID, errors.New(remoteScreencastMessage))
+		return
+	}
 	if !session.beginScreencastOperation() {
 		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
 		return

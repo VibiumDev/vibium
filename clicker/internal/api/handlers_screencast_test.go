@@ -8,12 +8,45 @@ import (
 	"time"
 )
 
+type screencastTestClient struct {
+	messages []string
+}
+
+func (c *screencastTestClient) ID() uint64   { return 1 }
+func (c *screencastTestClient) Close() error { return nil }
+func (c *screencastTestClient) Send(msg string) error {
+	c.messages = append(c.messages, msg)
+	return nil
+}
+
 func TestScreencastSupportErrorExplainsFirefoxOutputFailure(t *testing.T) {
 	err := screencastSupportError(errors.New(
 		`unknown error: NS_ERROR_FAILURE [nsIProperties.get]`,
 	))
 	if !strings.Contains(err.Error(), "could not resolve its screencast output directory") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRemoteScreencastOperationsFailClearly(t *testing.T) {
+	tests := []struct {
+		name   string
+		handle func(*Router, *BrowserSession, bidiCommand)
+	}{
+		{name: "start", handle: (*Router).handleScreencastStart},
+		{name: "stop", handle: (*Router).handleScreencastStop},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &screencastTestClient{}
+			router := NewRouter("firefox", true, "ws://remote.example/session", nil)
+			tt.handle(router, &BrowserSession{Client: client}, bidiCommand{ID: 7})
+
+			if len(client.messages) != 1 || !strings.Contains(client.messages[0], remoteScreencastMessage) {
+				t.Fatalf("response = %#v, want remote screencast error", client.messages)
+			}
+		})
 	}
 }
 

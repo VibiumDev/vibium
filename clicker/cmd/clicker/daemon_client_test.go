@@ -13,27 +13,43 @@ func TestRequestedLaunchOptionsOnlyIncludesExplicitValues(t *testing.T) {
 		headlessSet, engineSet, channelSet = oldHeadlessSet, oldEngineSet, oldChannelSet
 	})
 
-	headless, engineName, firefoxChannel = true, "firefox", "beta"
-	headlessSet, engineSet, channelSet = false, true, true
-	want := map[string]interface{}{"engine": "firefox", "channel": "beta"}
-	if got := requestedLaunchOptions(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("requestedLaunchOptions() = %#v, want %#v", got, want)
+	tests := []struct {
+		name                               string
+		headless                           bool
+		engine, channel                    string
+		headlessSet, engineSet, channelSet bool
+		want                               map[string]interface{}
+	}{
+		{
+			name:      "explicit engine and channel",
+			engine:    "firefox",
+			channel:   "beta",
+			engineSet: true, channelSet: true,
+			want: map[string]interface{}{"engine": "firefox", "channel": "beta"},
+		},
+		{
+			name:      "explicit engine without channel",
+			engine:    "firefox",
+			engineSet: true,
+			want:      map[string]interface{}{"engine": "firefox"},
+		},
+		{
+			name:        "explicit mode only",
+			headless:    true,
+			headlessSet: true,
+			want:        map[string]interface{}{"headless": true},
+		},
 	}
-}
 
-func TestRequestedFirefoxDefaultsToReleaseChannel(t *testing.T) {
-	oldEngine, oldChannel := engineName, firefoxChannel
-	oldEngineSet, oldChannelSet := engineSet, channelSet
-	t.Cleanup(func() {
-		engineName, firefoxChannel = oldEngine, oldChannel
-		engineSet, channelSet = oldEngineSet, oldChannelSet
-	})
-	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "")
-
-	engineName, firefoxChannel = "firefox", ""
-	engineSet, channelSet = true, false
-	want := map[string]interface{}{"engine": "firefox", "channel": "release"}
-	if got := requestedLaunchOptions(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("requestedLaunchOptions() = %#v, want %#v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headless = tt.headless
+			engineName = tt.engine
+			firefoxChannel = tt.channel
+			headlessSet, engineSet, channelSet = tt.headlessSet, tt.engineSet, tt.channelSet
+			if got := requestedLaunchOptions(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("requestedLaunchOptions() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
