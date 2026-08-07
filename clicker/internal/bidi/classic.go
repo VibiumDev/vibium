@@ -187,16 +187,25 @@ func foldUserinfo(u *url.URL, headers http.Header) http.Header {
 	return headers
 }
 
-// RedactURL strips user:pass credentials from a URL for safe printing.
-// Some grids put the access key in the username slot, so the whole
-// userinfo goes, not just the password. Unparseable input is returned
-// unchanged — it can't have been connected to either.
+// RedactURL removes credentials from a URL for safe printing. Userinfo
+// goes entirely — some grids put the access key in the username slot —
+// and every query value is masked, since connect URLs carry auth there
+// too (Kernel's ?jwt=..., token= schemes). Param names stay so the URL
+// remains recognisable. Unparseable input is returned unchanged — it
+// can't have been connected to either.
 func RedactURL(endpoint string) string {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.User == nil {
+	if err != nil || (u.User == nil && u.RawQuery == "") {
 		return endpoint
 	}
 	u.User = nil
+	if u.RawQuery != "" {
+		q := u.Query()
+		for k := range q {
+			q.Set(k, "REDACTED")
+		}
+		u.RawQuery = q.Encode()
+	}
 	return u.String()
 }
 

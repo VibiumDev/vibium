@@ -269,6 +269,8 @@ func TestRedactURL(t *testing.T) {
 		{"https://keyonly@grid.example.com/wd/hub", "https://grid.example.com/wd/hub"},
 		{"https://grid.example.com/wd/hub", "https://grid.example.com/wd/hub"},
 		{"ws://user:key@remote:9515/session", "ws://remote:9515/session"},
+		{"wss://proxy.example.com:8443/session?jwt=eyJhbGciOi.secret.sig", "wss://proxy.example.com:8443/session?jwt=REDACTED"},
+		{"https://user:key@grid.example.com/hub?token=abc&region=us", "https://grid.example.com/hub?region=REDACTED&token=REDACTED"},
 		{"", ""},
 		{"://not a url", "://not a url"},
 	}
