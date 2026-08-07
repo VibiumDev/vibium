@@ -187,6 +187,19 @@ func foldUserinfo(u *url.URL, headers http.Header) http.Header {
 	return headers
 }
 
+// RedactURL strips user:pass credentials from a URL for safe printing.
+// Some grids put the access key in the username slot, so the whole
+// userinfo goes, not just the password. Unparseable input is returned
+// unchanged — it can't have been connected to either.
+func RedactURL(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.User == nil {
+		return endpoint
+	}
+	u.User = nil
+	return u.String()
+}
+
 func basicAuth(username, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 }

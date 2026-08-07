@@ -148,7 +148,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 
 	if r.connectURL != "" {
 		// Remote mode: connect to an existing BiDi endpoint and create a session
-		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), r.connectURL)
+		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), bidi.RedactURL(r.connectURL))
 
 		// http(s) URLs are classic WebDriver endpoints: create a session
 		// there first and connect to the BiDi URL it hands back.

@@ -718,7 +718,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, bidi.RedactURL(h.connectURL), session.ID),
 			}},
 		}, nil
 	}

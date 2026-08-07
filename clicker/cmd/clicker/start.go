@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -140,12 +141,12 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 			// endpoint is no use to the next command either — take it down
 			// rather than leave it to auto-start the same failure.
 			if _, err := daemonCall("browser_start", map[string]interface{}{}); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", connectURL, err)
+				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", bidi.RedactURL(connectURL), err)
 				shutdownDaemonAndWait()
 				os.Exit(1)
 			}
 
-			fmt.Printf("Connected to %s (daemon pid %d)\n", connectURL, child.Process.Pid)
+			fmt.Printf("Connected to %s (daemon pid %d)\n", bidi.RedactURL(connectURL), child.Process.Pid)
 		},
 	}
 }

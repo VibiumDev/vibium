@@ -262,3 +262,19 @@ func TestConnectWithHeadersFoldsUserinfo(t *testing.T) {
 		t.Errorf("Authorization = %q, want %q", got, want)
 	}
 }
+
+func TestRedactURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://user:key@grid.example.com/wd/hub", "https://grid.example.com/wd/hub"},
+		{"https://keyonly@grid.example.com/wd/hub", "https://grid.example.com/wd/hub"},
+		{"https://grid.example.com/wd/hub", "https://grid.example.com/wd/hub"},
+		{"ws://user:key@remote:9515/session", "ws://remote:9515/session"},
+		{"", ""},
+		{"://not a url", "://not a url"},
+	}
+	for _, c := range cases {
+		if got := RedactURL(c.in); got != c.want {
+			t.Errorf("RedactURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
