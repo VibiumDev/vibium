@@ -17,7 +17,7 @@ pages add each vendor's specifics.
 |---|---|---|
 | Kernel | WebDriver BiDi URL from their API | [kernel.md](kernel.md) |
 | BrowserStack | classic WebDriver endpoint | coming after live verification |
-| Sauce Labs | classic WebDriver endpoint | coming after live verification |
+| Sauce Labs | classic WebDriver endpoint | [saucelabs.md](saucelabs.md) |
 | TestMu (LambdaTest) | classic WebDriver endpoint | [testmu.md](testmu.md) |
 | TestingBot | classic WebDriver endpoint | coming after live verification |
 
