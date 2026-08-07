@@ -73,6 +73,10 @@ const PROVIDERS = [
     get url() {
       return `https://${env('BROWSERSTACK_USERNAME')}:${env('BROWSERSTACK_ACCESS_KEY')}@hub-cloud.browserstack.com/wd/hub`;
     },
+    // seleniumVersion 4.20.0+ is required for BiDi (hub rejects the
+    // session without it). Their BiDi proxy returns empty screenshot
+    // data (verified on 4.20.0 and 4.31.0, 2026-08) — rows carry
+    // screenshotEmpty: true.
     caps: {
       browserName: 'chrome',
       'bstack:options': {

@@ -108,6 +108,10 @@ async function benchOnce(provider, tag) {
     const t4 = now();
     const png = await page.screenshot();
     t.screenshot = now() - t4;
+    // Some grids (BrowserStack, as of 2026-08) answer captureScreenshot
+    // with empty data; record that so the timing isn't mistaken for a
+    // working screenshot in the matrix.
+    if (!png.length) t.screenshotEmpty = true;
     if (KEEP_SHOTS) {
       const shot = `bench-${STAMP}-${tag.label}-run${tag.run}.png`;
       fs.writeFileSync(path.join(SHOTS_DIR, shot), png);
