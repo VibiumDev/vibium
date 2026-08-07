@@ -182,6 +182,15 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record start-group <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` |
 | 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record stop-group` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` |
 
+## Screencast
+
+Native browser video recording. Firefox 154+; Chrome has not implemented the BiDi screencast commands yet.
+
+| # | Description | Wire Command | CLI | MCP | JS | Python |
+|---|---|---|---|---|---|---|
+| 151 | Start video recording | `vibium:screencast.start` | — | — | `page.screencast.start(opts?)` | `page.screencast.start(mime_type=?, width=?, height=?, frame_rate=?, audio=?)` |
+| 152 | Stop video recording, return video | `vibium:screencast.stop` | — | — | `page.screencast.stop(opts?)` | `page.screencast.stop(path?)` |
+
 ## Route
 
 | # | Description | Wire Command | CLI | MCP | JS | Python |
@@ -232,4 +241,4 @@ MCP/CLI-only tools with no direct client API equivalent.
 
 ---
 
-**Total: 150 commands**
+**Total: 152 commands**

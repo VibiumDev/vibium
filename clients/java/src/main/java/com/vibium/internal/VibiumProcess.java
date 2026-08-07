@@ -43,10 +43,20 @@ public class VibiumProcess {
     /**
      * Start a vibium pipe subprocess.
      */
-    public static VibiumProcess start(String binaryPath, boolean headless, String connectURL, Map<String, String> connectHeaders) {
+    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
+
+        if (engine != null && !engine.isEmpty()) {
+            cmd.add("--engine");
+            cmd.add(engine);
+        }
+
+        if (channel != null && !channel.isEmpty()) {
+            cmd.add("--firefox-channel");
+            cmd.add(channel);
+        }
 
         if (headless) {
             cmd.add("--headless");
@@ -64,9 +74,20 @@ public class VibiumProcess {
             }
         }
 
-        // Auto-install Chrome if needed (skip for remote connections)
+        // Explicit API options win; environment variables provide the same
+        // defaults that the vibium subprocess itself will use.
+        String selectedEngine = engine;
+        if (selectedEngine == null || selectedEngine.isEmpty()) {
+            selectedEngine = System.getenv("VIBIUM_ENGINE");
+        }
+        String selectedChannel = channel;
+        if (selectedChannel == null || selectedChannel.isEmpty()) {
+            selectedChannel = System.getenv("VIBIUM_FIREFOX_CHANNEL");
+        }
+
+        // Auto-install the selected browser if needed (skip for remote connections)
         if (connectURL == null || connectURL.isEmpty()) {
-            BrowserInstaller.ensureInstalled(binaryPath);
+            BrowserInstaller.ensureInstalled(binaryPath, selectedEngine, selectedChannel);
         }
 
         // Startup is slow (~16s cold) and slower when many browsers launch at

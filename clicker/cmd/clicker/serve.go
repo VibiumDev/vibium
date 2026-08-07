@@ -32,10 +32,10 @@ func newServeCmd() *cobra.Command {
 
 			// Reclaim Chrome profile dirs orphaned by earlier crashed/killed
 			// sessions (parallel-safe: the minAge filter skips live siblings).
-			browser.CleanupOrphanedChromeTempDirs(time.Minute)
+			browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 
 			// Create router to manage browser sessions
-			router := api.NewRouter(headless, "", nil)
+			router := api.NewRouter(engineName, headless, "", nil)
 
 			server := api.NewServer(
 				api.WithPort(port),
@@ -64,6 +64,7 @@ func newServeCmd() *cobra.Command {
 
 			// Safety net: kill any Chrome/chromedriver processes orphaned by races
 			browser.KillOrphanedChromeProcesses()
+			browser.KillOrphanedFirefoxProcesses()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

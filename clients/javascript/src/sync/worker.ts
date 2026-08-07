@@ -142,7 +142,12 @@ const handlers: Record<string, Handler> = {
   // ========================
 
   'browser.start': async (args) => {
-    const [url, options] = args as [string | undefined, { headless?: boolean; headers?: Record<string, string> } | undefined];
+    const [url, options] = args as [string | undefined, {
+      engine?: 'chrome' | 'firefox';
+      channel?: string;
+      headless?: boolean;
+      headers?: Record<string, string>;
+    } | undefined];
     browserInstance = await browser.start(url, options);
     const page = await browserInstance.page();
     defaultPageId = storePage(page);
@@ -969,6 +974,22 @@ const handlers: Record<string, Handler> = {
     const [contextId, script] = args as [number, string];
     const result = await getContext(contextId).addInitScript(script);
     return { script: result };
+  },
+
+  // ========================
+  // Screencast commands (page-scoped)
+  // ========================
+
+  'screencast.start': async (args) => {
+    const [pageId, options] = args as [number, any];
+    await getPage(pageId).screencast.start(options);
+    return { success: true };
+  },
+
+  'screencast.stop': async (args) => {
+    const [pageId, options] = args as [number, any];
+    const buffer = await getPage(pageId).screencast.stop(options);
+    return { data: buffer.toString('base64') };
   },
 
   // ========================

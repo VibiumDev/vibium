@@ -14,6 +14,17 @@ func GetToolSchemas() []Tool {
 						"description": "Run browser in headless mode (no visible window)",
 						"default":     false,
 					},
+					"engine": map[string]interface{}{
+						"type":        "string",
+						"description": "Browser engine to launch",
+						"enum":        []string{"chrome", "firefox"},
+						"default":     "chrome",
+					},
+					"channel": map[string]interface{}{
+						"type":        "string",
+						"description": "Firefox release channel",
+						"enum":        []string{"release", "beta"},
+					},
 				},
 				"additionalProperties": false,
 			},

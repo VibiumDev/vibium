@@ -73,9 +73,9 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// A clean shutdown removes a session's own dir, but any hard kill (crash,
 	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
 	// Parallel-safe: the minAge filter never touches a live sibling's dir.
-	browser.CleanupOrphanedChromeTempDirs(time.Minute)
+	browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 
-	router := api.NewRouter(headless, connectURL, connectHeaders)
+	router := api.NewRouter(engineName, headless, connectURL, connectHeaders)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,
@@ -132,6 +132,7 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	router.CloseAll()
 	if connectURL == "" {
 		browser.KillOrphanedChromeProcesses()
+		browser.KillOrphanedFirefoxProcesses()
 	}
 
 	protocolOut.Close()

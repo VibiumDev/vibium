@@ -8,12 +8,13 @@ Usage:
     await bro.stop()
 """
 
-from .browser import browser, Browser
+from .browser import browser, firefox, chrome, Browser
 from .page import Page, Keyboard, Mouse, Touch
 from .element import Element
 from .context import BrowserContext
 from .clock import Clock
 from .recording import Recording
+from .screencast import Screencast
 from .dialog import Dialog
 from .route import Route
 from .network import Request, Response
@@ -32,6 +33,8 @@ from ..errors import (
 
 __all__ = [
     "browser",
+    "firefox",
+    "chrome",
     "Browser",
     "Page",
     "Keyboard",
@@ -41,6 +44,7 @@ __all__ = [
     "BrowserContext",
     "Clock",
     "Recording",
+    "Screencast",
     "Dialog",
     "Route",
     "Request",

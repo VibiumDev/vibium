@@ -58,6 +58,11 @@ type BrowserSession struct {
 	prompts     *PromptTracker
 	navigations *NavigationTracker
 
+	// Screencast support (native browser video recording)
+	screencastMu   sync.Mutex // serializes start/stop across their async handlers
+	screencastID   string     // active screencast id; "" = none
+	screencastPath string     // file the browser writes the video to
+
 	// Recording support
 	recorder           *Recorder
 	lastContext        string     // last browsing context resolved by a command
@@ -66,6 +71,22 @@ type BrowserSession struct {
 	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
 	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
 	dispatchMu         sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
+}
+
+func (s *BrowserSession) beginScreencastOperation() bool {
+	s.screencastMu.Lock()
+	s.mu.Lock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
+		s.screencastMu.Unlock()
+		return false
+	}
+	return true
+}
+
+func (s *BrowserSession) endScreencastOperation() {
+	s.screencastMu.Unlock()
 }
 
 // SetLastElementBox stores the bounding box of the last resolved element for recording.
@@ -94,14 +115,16 @@ type bidiResponse struct {
 // Router manages browser sessions for connected clients.
 type Router struct {
 	sessions       sync.Map // map[uint64]*BrowserSession (client ID -> session)
+	engine         string
 	headless       bool
 	connectURL     string
 	connectHeaders http.Header
 }
 
 // NewRouter creates a new router.
-func NewRouter(headless bool, connectURL string, connectHeaders http.Header) *Router {
+func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header) *Router {
 	return &Router{
+		engine:         engine,
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
@@ -144,6 +167,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Launching browser for client %d...\n", client.ID())
 
 		launchResult, err = browser.Launch(browser.LaunchOptions{
+			Engine:   r.engine,
 			Headless: r.headless,
 		})
 		if err != nil {
@@ -724,6 +748,14 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		go r.handleRecordingStopGroup(session, cmd)
 		return
 
+	// Screencast commands (native browser video recording)
+	case "vibium:screencast.start":
+		go r.handleScreencastStart(session, cmd)
+		return
+	case "vibium:screencast.stop":
+		go r.handleScreencastStop(session, cmd)
+		return
+
 	// Clock commands
 	case "vibium:clock.install":
 		r.dispatch(session, cmd, r.handleClockInstall)
@@ -1051,6 +1083,13 @@ func (r *Router) closeSession(session *BrowserSession) {
 	session.closed = true
 	session.mu.Unlock()
 
+	// A screencast command owns this lock until its browser command and state
+	// update are complete. Taking it after marking the session closed drains an
+	// active operation and prevents a queued start from creating a recording
+	// after cleanup has already run.
+	session.screencastMu.Lock()
+	defer session.screencastMu.Unlock()
+
 	fmt.Fprintf(os.Stderr, "[router] Closing browser session for client %d\n", session.Client.ID())
 
 	// Signal the routing goroutine to stop
@@ -1078,6 +1117,11 @@ func (r *Router) closeSession(session *BrowserSession) {
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
+	}
+
+	// The spec leaves deleting the browser-written recording to the local end
+	if session.screencastPath != "" {
+		os.Remove(session.screencastPath)
 	}
 
 	// Close browser

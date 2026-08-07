@@ -5,6 +5,8 @@ import com.vibium.internal.PlatformDetector;
 import com.vibium.types.StartOptions;
 import org.junit.jupiter.api.*;
 
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -50,5 +52,25 @@ class ProcessTest {
         page.go("about:blank");
         assertNotNull(page.url());
         browser.stop();
+    }
+
+    @Test
+    void testFirefoxLaunch() throws Exception {
+        String binary = BinaryResolver.resolve();
+        Process installed = new ProcessBuilder(binary, "is-installed", "--engine", "firefox").start();
+        boolean available = installed.waitFor(10, TimeUnit.SECONDS) && installed.exitValue() == 0;
+        if (!available && System.getenv("VIBIUM_REQUIRE_FIREFOX") != null) {
+            fail("Firefox is required but not installed");
+        }
+        Assumptions.assumeTrue(available, "Firefox is not installed");
+
+        Browser browser = Vibium.start(new StartOptions().engine("firefox").headless(true));
+        try {
+            Page page = browser.page();
+            page.go("about:blank");
+            assertEquals("about:blank", page.url());
+        } finally {
+            browser.stop();
+        }
     }
 }

@@ -230,10 +230,10 @@ This is how browser automation works at the protocol level — JSON commands ove
 | Browser | Vibium | Playwright | Selenium |
 |---------|--------|------------|----------|
 | Chrome | WebDriver BiDi | CDP | WebDriver BiDi |
-| Firefox | Planned | Custom protocol (patched browser) | WebDriver BiDi |
+| Firefox | WebDriver BiDi | Custom protocol (patched browser) | WebDriver BiDi |
 | Safari | — | Custom protocol (patched WebKit) | WebDriver (classic) |
 
-Vibium currently supports Chrome via BiDi. Firefox has native BiDi support (as you just saw in this tutorial) — Vibium support is planned. Safari BiDi is still in development by Apple.
+Vibium supports Chrome and Firefox via BiDi. Vibium drives Firefox the same way this tutorial does: launch with `--remote-debugging-port`, then speak BiDi over the WebSocket. Safari BiDi is still in development by Apple.
 
 Playwright requires patched browser builds maintained by Microsoft. Vibium uses stock browsers from each vendor via the W3C standard protocol.
 

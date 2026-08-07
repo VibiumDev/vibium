@@ -34,6 +34,7 @@ type Daemon struct {
 type Options struct {
 	Version        string
 	ScreenshotDir  string
+	Engine         string // Browser to launch: "chrome" (default) or "firefox"
 	Headless       bool
 	IdleTimeout    time.Duration
 	ConnectURL     string      // Remote BiDi WebSocket URL (empty = local browser)
@@ -43,7 +44,7 @@ type Options struct {
 // New creates a new Daemon instance.
 func New(opts Options) *Daemon {
 	return &Daemon{
-		handlers:     agent.NewHandlers(opts.ScreenshotDir, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
+		handlers:     agent.NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
 		version:      opts.Version,
 		idleTimeout:  opts.IdleTimeout,
 		startTime:    time.Now(),

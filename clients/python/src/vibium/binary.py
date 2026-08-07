@@ -142,15 +142,23 @@ def find_vibium_bin() -> str:
     )
 
 
-def ensure_browser_installed(vibium_path: str) -> None:
-    """Ensure Chrome for Testing is installed.
+def ensure_browser_installed(
+    vibium_path: str,
+    engine: Optional[str] = None,
+    channel: Optional[str] = None,
+) -> None:
+    """Ensure the selected browser is installed.
 
-    Runs 'vibium install' if Chrome is not found.
+    Runs 'vibium install' if the browser is not found.
     """
-    # Check if Chrome and chromedriver are installed
+    engine_args = ["--engine", engine] if engine else []
+    if channel:
+        engine_args.extend(["--firefox-channel", channel])
+    name = engine or "Chrome for Testing"
+
     try:
         result = subprocess.run(
-            [vibium_path, "is-installed"],
+            [vibium_path, "is-installed", *engine_args],
             capture_output=True,
             timeout=10,
         )
@@ -160,19 +168,19 @@ def ensure_browser_installed(vibium_path: str) -> None:
     except (subprocess.TimeoutExpired, subprocess.SubprocessError):
         pass
 
-    # Chrome not found, run install
-    print("Downloading Chrome for Testing...", flush=True)
+    # Browser not found, run install
+    print(f"Downloading {name}...", flush=True)
     try:
         subprocess.run(
-            [vibium_path, "install"],
+            [vibium_path, "install", *engine_args],
             check=True,
             timeout=300,  # 5 minute timeout for download
         )
-        print("Chrome installed successfully.", flush=True)
+        print(f"{name} installed successfully.", flush=True)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to install Chrome: {e}")
+        raise RuntimeError(f"Failed to install {name}: {e}")
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Chrome installation timed out")
+        raise RuntimeError(f"{name} installation timed out")
 
 
 class VibiumProcess:
@@ -186,6 +194,8 @@ class VibiumProcess:
     async def start(
         cls,
         headless: bool = False,
+        engine: Optional[str] = None,
+        channel: Optional[str] = None,
         executable_path: Optional[str] = None,
         connect_url: Optional[str] = None,
         connect_headers: Optional[dict] = None,
@@ -194,6 +204,9 @@ class VibiumProcess:
 
         Args:
             headless: Run browser in headless mode.
+            engine: Browser engine to launch: "chrome" (default) or "firefox".
+            channel: Release channel of the engine to install and run, e.g.
+                "beta". Currently honored by Firefox only.
             executable_path: Path to vibium binary (default: auto-detect).
             connect_url: Remote BiDi WebSocket URL to connect to instead of launching a local browser.
             connect_headers: HTTP headers for the WebSocket connection (e.g. auth tokens).
@@ -202,12 +215,18 @@ class VibiumProcess:
             A VibiumProcess instance with stdin/stdout streams ready.
         """
         binary = executable_path or find_vibium_bin()
+        selected_engine = engine or os.environ.get("VIBIUM_ENGINE")
+        selected_channel = channel or os.environ.get("VIBIUM_FIREFOX_CHANNEL")
 
-        # Ensure Chrome is installed (auto-download if needed) — skip for remote connections
+        # Ensure the browser is installed (auto-download if needed) — skip for remote connections
         if not connect_url:
-            ensure_browser_installed(binary)
+            ensure_browser_installed(binary, selected_engine, selected_channel)
 
         args = [binary, "pipe"]
+        if engine:
+            args.extend(["--engine", engine])
+        if channel:
+            args.extend(["--firefox-channel", channel])
         if headless:
             args.append("--headless")
         if connect_url:

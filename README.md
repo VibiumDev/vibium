@@ -250,6 +250,8 @@ bro.stop();
 | macOS | arm64 (Apple Silicon) | ✅ Supported |
 | Windows | x64 | ✅ Supported |
 
+Chrome is the default browser; Firefox is also supported ([how to switch](docs/how-to-guides/using-firefox.md)). Firefox 154+ can [record video of a session](docs/how-to-guides/record-video.md).
+
 ---
 
 ## Contributing

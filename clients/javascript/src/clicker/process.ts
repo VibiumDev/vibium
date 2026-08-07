@@ -3,6 +3,8 @@ import { getVibiumBinPath } from './binary';
 import { TimeoutError, BrowserCrashedError } from '../utils/errors';
 
 export interface VibiumProcessOptions {
+  engine?: 'chrome' | 'firefox';
+  channel?: string;
   headless?: boolean;
   executablePath?: string;
   connectURL?: string;
@@ -30,8 +32,20 @@ export class VibiumProcess {
 
   static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
     const binaryPath = options.executablePath || getVibiumBinPath();
+    const selectedEngine = options.engine || process.env.VIBIUM_ENGINE as 'chrome' | 'firefox' | undefined;
+    const selectedChannel = options.channel || process.env.VIBIUM_FIREFOX_CHANNEL;
+
+    if (!options.connectURL) {
+      ensureBrowserInstalled(binaryPath, selectedEngine, selectedChannel);
+    }
 
     const args = ['pipe'];
+    if (options.engine) {
+      args.push('--engine', options.engine);
+    }
+    if (options.channel) {
+      args.push('--firefox-channel', options.channel);
+    }
     if (options.headless === true) {
       args.push('--headless');
     }
@@ -215,4 +229,36 @@ export class VibiumProcess {
       }
     });
   }
+}
+
+export function ensureBrowserInstalled(
+  binaryPath: string,
+  engine?: 'chrome' | 'firefox',
+  channel?: string,
+): void {
+  const skip = process.env.VIBIUM_SKIP_BROWSER_DOWNLOAD;
+  if (skip === '1' || skip?.toLowerCase() === 'true') return;
+
+  const engineArgs: string[] = [];
+  if (engine) engineArgs.push('--engine', engine);
+  if (channel) engineArgs.push('--firefox-channel', channel);
+
+  try {
+    execFileSync(binaryPath, ['is-installed', ...engineArgs], { stdio: 'ignore' });
+    return;
+  } catch {
+    // A non-zero status means the selected browser is absent. The install
+    // command below produces the actionable error if the check failed for a
+    // different reason.
+  }
+
+  const browserName = engine || 'Chrome for Testing';
+  process.stdout.write(`Downloading ${browserName}...\n`);
+  try {
+    execFileSync(binaryPath, ['install', ...engineArgs], { stdio: 'inherit' });
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : '';
+    throw new Error(`Failed to install ${browserName}${detail}`);
+  }
+  process.stdout.write(`${browserName} installed successfully.\n`);
 }

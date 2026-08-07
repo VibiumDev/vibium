@@ -40,6 +40,8 @@ public final class Vibium {
 
         VibiumProcess process = VibiumProcess.start(
             binaryPath,
+            options.engine(),
+            options.channel(),
             options.headless(),
             options.connectURL(),
             options.connectHeaders()

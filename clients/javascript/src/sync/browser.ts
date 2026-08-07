@@ -5,6 +5,10 @@ import { BrowserContextSync } from './context';
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
 export interface StartOptions {
+  /** Browser engine to launch: 'chrome' (default) or 'firefox'. */
+  engine?: 'chrome' | 'firefox';
+  /** Firefox release channel, for example 'beta'. */
+  channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
 }
@@ -116,5 +120,17 @@ export const browser = {
       throw e;
     }
     return new BrowserSync(bridge);
+  },
+};
+
+export const firefox = {
+  start(options: Omit<StartOptions, 'engine'> = {}): BrowserSync {
+    return browser.start({ ...options, engine: 'firefox' });
+  },
+};
+
+export const chrome = {
+  start(options: Omit<StartOptions, 'engine'> = {}): BrowserSync {
+    return browser.start({ ...options, engine: 'chrome' });
   },
 };
