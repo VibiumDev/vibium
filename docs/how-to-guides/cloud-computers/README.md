@@ -1,8 +1,9 @@
 # Browsers on cloud computers
 
 There are two ways to get a browser in the cloud. You can rent the
-**browser**: managed vendors (Sauce Labs, BrowserStack, TestMu,
-Kernel, …) sell browsers as a service — a session URL, never a shell.
+**browser**: managed vendors (Sauce Labs, BrowserStack, TestMu
+(LambdaTest), Kernel, …) sell browsers as a service — a session URL,
+never a shell.
 Or you can rent the **computer** — a machine you get root on — and
 run the browser layer yourself; the industry calls this self-hosting.
 These recipes are the second path: each turns a rented computer into
