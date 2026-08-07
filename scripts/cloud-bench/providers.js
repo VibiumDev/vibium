@@ -98,7 +98,7 @@ const PROVIDERS = [
     },
   },
   {
-    name: 'lambdatest',
+    name: 'testmu',
     available: () => !!(env('LT_USERNAME') && env('LT_ACCESS_KEY')),
     missing: () => 'LT_USERNAME + LT_ACCESS_KEY',
     get url() {
