@@ -16,6 +16,9 @@
 //   --runs <n>          iterations per provider (default 3)
 //   --mint-only         only time vendor session mint/delete (works for
 //                       CDP-only providers that vibium can't drive yet)
+//   --keep-screenshots  save each run's screenshot beside the results
+//                       JSONL, named by the same stamp + provider + run;
+//                       the row's "shot" field carries the filename
 //   --url <url>         page to navigate to (default https://var.parts,
 //                       override with BENCH_URL or this flag).
 //                       Must be reachable FROM THE BROWSER'S location —
@@ -51,7 +54,11 @@ function optAll(name) {
 const RUNS = parseInt(opt('runs', '3'), 10);
 const NAV_URL = opt('url', process.env.BENCH_URL || 'https://var.parts');
 const MINT_ONLY = flag('mint-only');
+const KEEP_SHOTS = flag('keep-screenshots');
 const ONLY = optAll('provider');
+
+const RESULTS_DIR = path.join(__dirname, 'results');
+const STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 
 const now = () => performance.now();
 const ms = (v) => (v == null ? '—' : `${Math.round(v)}ms`);
@@ -61,7 +68,7 @@ function percentile(sorted, p) {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-async function benchOnce(provider) {
+async function benchOnce(provider, tag) {
   const t = {};
   let minted = null;
 
@@ -97,8 +104,13 @@ async function benchOnce(provider) {
     t.title = now() - t3;
 
     const t4 = now();
-    await page.screenshot();
+    const png = await page.screenshot();
     t.screenshot = now() - t4;
+    if (KEEP_SHOTS) {
+      const shot = `bench-${STAMP}-${tag.label}-run${tag.run}.png`;
+      fs.writeFileSync(path.join(RESULTS_DIR, shot), png);
+      t.shot = shot;
+    }
   } finally {
     const t5 = now();
     if (bro) await bro.stop().catch(() => {});
@@ -115,7 +127,7 @@ async function benchProvider(provider) {
   for (let i = 0; i < RUNS; i++) {
     process.stderr.write(`  ${label} run ${i + 1}/${RUNS}...`);
     try {
-      const t = await benchOnce(provider);
+      const t = await benchOnce(provider, { label, run: i + 1 });
       runs.push(t);
       process.stderr.write(` ok (${ms(t.total ?? t.mint)})\n`);
     } catch (err) {
@@ -149,6 +161,8 @@ async function main() {
     console.error(`skip ${p.name}: ${p.missing()}`);
   }
 
+  fs.mkdirSync(RESULTS_DIR, { recursive: true });
+
   const results = {};
   for (const p of active) {
     const label = p.resultName || p.name;
@@ -157,13 +171,10 @@ async function main() {
   }
 
   // Persist raw runs
-  const resultsDir = path.join(__dirname, 'results');
-  fs.mkdirSync(resultsDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const outFile = path.join(resultsDir, `bench-${stamp}.jsonl`);
+  const outFile = path.join(RESULTS_DIR, `bench-${STAMP}.jsonl`);
   for (const [name, runs] of Object.entries(results)) {
     for (const r of runs) {
-      fs.appendFileSync(outFile, JSON.stringify({ provider: name, url: NAV_URL, ts: stamp, ...r }) + '\n');
+      fs.appendFileSync(outFile, JSON.stringify({ provider: name, url: NAV_URL, ts: STAMP, ...r }) + '\n');
     }
   }
 
