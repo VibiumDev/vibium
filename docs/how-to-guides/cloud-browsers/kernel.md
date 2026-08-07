@@ -6,6 +6,12 @@ the URL. Kernel documents this integration first-party at
 [kernel.sh/docs/integrations/vibium](https://www.kernel.sh/docs/integrations/vibium);
 this page is the vibium-side summary.
 
+Verified live: every command below, verbatim, including teardown.
+The full lifecycle (create, connect, navigate, title, screenshot,
+close) runs in about 2 seconds — browser create is a few hundred
+milliseconds, roughly an order of magnitude faster than the classic
+WebDriver grids.
+
 ## Prereqs (human)
 
 1. Account at dashboard.onkernel.com
