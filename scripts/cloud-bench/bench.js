@@ -20,6 +20,11 @@
 //                       results/screenshots/, named by the same stamp +
 //                       provider + run as the results JSONL; the row's
 //                       "shot" field carries the path
+//   --no-screenshot     skip the screenshot step entirely — for
+//                       apples-to-apples timing when a vendor's
+//                       screenshot path isn't equivalent work (see the
+//                       browserstack note in providers.js). Wins over
+//                       --keep-screenshots.
 //   --url <url>         page to navigate to (default https://var.parts,
 //                       override with BENCH_URL or this flag).
 //                       Must be reachable FROM THE BROWSER'S location —
@@ -56,6 +61,7 @@ const RUNS = parseInt(opt('runs', '3'), 10);
 const NAV_URL = opt('url', process.env.BENCH_URL || 'https://var.parts');
 const MINT_ONLY = flag('mint-only');
 const KEEP_SHOTS = flag('keep-screenshots');
+const NO_SHOT = flag('no-screenshot');
 const ONLY = optAll('provider');
 
 const RESULTS_DIR = path.join(__dirname, 'results');
@@ -105,17 +111,19 @@ async function benchOnce(provider, tag) {
     await page.title();
     t.title = now() - t3;
 
-    const t4 = now();
-    const png = await page.screenshot();
-    t.screenshot = now() - t4;
-    // Some grids (BrowserStack, as of 2026-08) answer captureScreenshot
-    // with empty data; record that so the timing isn't mistaken for a
-    // working screenshot in the matrix.
-    if (!png.length) t.screenshotEmpty = true;
-    if (KEEP_SHOTS) {
-      const shot = `bench-${STAMP}-${tag.label}-run${tag.run}.png`;
-      fs.writeFileSync(path.join(SHOTS_DIR, shot), png);
-      t.shot = `screenshots/${shot}`;
+    if (!NO_SHOT) {
+      const t4 = now();
+      const png = await page.screenshot();
+      t.screenshot = now() - t4;
+      // Some grids (BrowserStack, as of 2026-08) answer captureScreenshot
+      // with empty data; record that so the timing isn't mistaken for a
+      // working screenshot in the matrix.
+      if (!png.length) t.screenshotEmpty = true;
+      if (KEEP_SHOTS) {
+        const shot = `bench-${STAMP}-${tag.label}-run${tag.run}.png`;
+        fs.writeFileSync(path.join(SHOTS_DIR, shot), png);
+        t.shot = `screenshots/${shot}`;
+      }
     }
   } finally {
     const t5 = now();
