@@ -16,9 +16,10 @@
 //   --runs <n>          iterations per provider (default 3)
 //   --mint-only         only time vendor session mint/delete (works for
 //                       CDP-only providers that vibium can't drive yet)
-//   --keep-screenshots  save each run's screenshot beside the results
-//                       JSONL, named by the same stamp + provider + run;
-//                       the row's "shot" field carries the filename
+//   --keep-screenshots  save each run's screenshot under
+//                       results/screenshots/, named by the same stamp +
+//                       provider + run as the results JSONL; the row's
+//                       "shot" field carries the path
 //   --url <url>         page to navigate to (default https://var.parts,
 //                       override with BENCH_URL or this flag).
 //                       Must be reachable FROM THE BROWSER'S location —
@@ -58,6 +59,7 @@ const KEEP_SHOTS = flag('keep-screenshots');
 const ONLY = optAll('provider');
 
 const RESULTS_DIR = path.join(__dirname, 'results');
+const SHOTS_DIR = path.join(RESULTS_DIR, 'screenshots');
 const STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 
 const now = () => performance.now();
@@ -108,8 +110,8 @@ async function benchOnce(provider, tag) {
     t.screenshot = now() - t4;
     if (KEEP_SHOTS) {
       const shot = `bench-${STAMP}-${tag.label}-run${tag.run}.png`;
-      fs.writeFileSync(path.join(RESULTS_DIR, shot), png);
-      t.shot = shot;
+      fs.writeFileSync(path.join(SHOTS_DIR, shot), png);
+      t.shot = `screenshots/${shot}`;
     }
   } finally {
     const t5 = now();
@@ -161,7 +163,7 @@ async function main() {
     console.error(`skip ${p.name}: ${p.missing()}`);
   }
 
-  fs.mkdirSync(RESULTS_DIR, { recursive: true });
+  fs.mkdirSync(KEEP_SHOTS ? SHOTS_DIR : RESULTS_DIR, { recursive: true });
 
   const results = {};
   for (const p of active) {
