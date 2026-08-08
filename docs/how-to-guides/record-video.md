@@ -44,10 +44,15 @@ The `VIBIUM_FIREFOX_CHANNEL` env var does the same as the flag and option, for c
 
 Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `video: true` fails there with an error saying so, and an omitted `video` records the trace without a video track.
 
-Video is not recorded on remote browser connections (`--connect`) because the
-browser writes the video on the remote host and Vibium cannot retrieve that
-file. Use a local browser, or record without video for a trace with
-screenshots.
+No video is recorded on remote browser connections (`--connect`). The
+engine would write the file on the remote host's disk, where Vibium cannot
+reach it — the WebDriver BiDi protocol has no way to retrieve files — so
+the screencast is never started at all: with `video` omitted the recording
+proceeds and the stop result reports `videoUnavailable`; `video: true`
+fails at start. No file is left behind on the remote host, and there is
+nothing to fetch separately. Every other track — actions, screenshots,
+snapshots, network — records fully over remote connections; only the video
+needs a local browser.
 
 On Linux, Vibium gives Firefox a private Downloads directory inside the
 temporary browser profile because Firefox's native command requires one. It is
