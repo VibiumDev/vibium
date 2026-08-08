@@ -31,7 +31,24 @@ The BiDi WebSocket is shared. A fat base64 screenshot response sitting in the pi
 
 ## Design: Second BiDi WebSocket
 
-Open a **second BiDi WebSocket connection** to the same browser endpoint. BiDi is just a WebSocket — Chrome handles concurrent connections fine (same as having multiple DevTools tabs open).
+Open a **second BiDi WebSocket connection** to the same session.
+
+> **Connection model (verified 2026-08-08).** WebDriver BiDi allows at
+> most one session per browser, and whether one session may serve
+> multiple connections is an open issue in the spec ("Do we support > 1
+> connection for a single session?"). Measured behavior: chromedriver
+> accepts a second WebSocket on an existing session's `webSocketUrl` and
+> serves commands on both concurrently; Firefox 154 accepts the
+> connection but offers no way to attach it to the existing session
+> (`session.new` → "Maximum number of active sessions", commands →
+> "invalid session id"). The media channel is therefore **Chrome-only**
+> until Firefox supports multi-connection sessions; on Firefox the
+> graceful fallback below (synchronous capture on the main channel)
+> always applies. The Phase 1 benchmark was measured on Chrome, so the
+> fallback does not forfeit the headline win — and Firefox's native
+> screencast covers the video use case there. To verify during
+> implementation: whether the command-id space is shared across
+> connections, and which connection receives subscription events.
 
 The media channel serves three purposes:
 
