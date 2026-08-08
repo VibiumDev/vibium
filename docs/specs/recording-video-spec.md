@@ -46,7 +46,9 @@ file into the zip.
 ## Zip layout
 
 record.zip strives to be Playwright trace-compatible. Video entries
-are additive; existing trace tooling ignores them.
+are additive; existing trace tooling ignores them. Success
+criterion: a video-carrying record.zip opens in the Playwright trace
+viewer.
 
 ```
 record.zip
