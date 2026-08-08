@@ -45,8 +45,8 @@ file into the zip.
 
 ## Zip layout
 
-record.zip is a Playwright trace-format zip. Video entries are
-additive; existing trace tooling ignores them.
+record.zip strives to be Playwright trace-compatible. Video entries
+are additive; existing trace tooling ignores them.
 
 ```
 record.zip
