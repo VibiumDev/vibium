@@ -125,13 +125,12 @@ export).
   the remote host). Unchanged from today; revisit if grids grow a
   BiDi screencast story.
 
-## What the camera sees: context binding (verified live)
+## What the camera sees: context binding
 
 The video records the browsing context that was active at
-`recording.start()` and **does not follow focus**: tested on Firefox
-154 — a `window.open` that took focus for the final seconds of a
-recording never appears in the video; the last frame still shows the
-original page. Consequences the spec commits to:
+`recording.start()` and **does not follow focus** — a `window.open`
+that takes focus never appears in the video. Consequences the spec
+commits to:
 
 - The manifest's video block gains `"context"`, naming the recorded
   context.
@@ -153,8 +152,7 @@ When `start.path` is declared, capture spills incrementally to a
 spool directory beside it (`<path>.parts/`): trace events append to
 NDJSON (valid up to the last complete line, by format), screenshots
 land as files, and the engine live-muxes the video (a crash-orphaned
-WebM is still playable — verified by the unknown-duration headers it
-writes). `stop()` packages the spool into the zip, renames it into
+WebM is still playable). `stop()` packages the spool into the zip, renames it into
 place atomically, and removes the spool. Nothing ever half-exists at
 the declared path.
 
@@ -206,9 +204,8 @@ close, which is the tradeoff those callers chose.
   partial, and the manifest records `"video": { "error": "…" }`.
   Fail-fast applies only at the explicit `start`; after capture has
   begun, degradation is annotated, never fatal and never silent.
-- **Concurrency: the engine allows one camera per context** —
-  verified live on Firefox 154 with two simultaneous screencasts on
-  two contexts, both delivering real files. (The "one active
+- **Concurrency: one camera per context.** Two contexts can record
+  simultaneously. (The "one active
   recording per browser session" line in the current client docs
   describes vibium's single-slot implementation, not the engine —
   correct it when this lands.) Concurrent recordings in different
@@ -313,7 +310,7 @@ may have gaps, but never silent ones.
 1. Does `stopChunk` need to optionally wait for a keyframe so
    `videoRange` cuts land clean in the viewer?
 2. Multi-context video: the engine supports one screencast per
-   context simultaneously (verified), so "film every tab in the
+   context simultaneously, so "film every tab in the
    recorded user-context" is feasible today. Shape when it comes:
    the manifest's `video` block becomes an array (one entry per
    context, each with its own `context` and `offsetMs`), the zip
