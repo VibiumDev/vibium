@@ -74,9 +74,12 @@ await vibe.context.recording.stop();
 await bro.stop();
 ```
 
-`path` defaults to `record.zip` in the working directory; `stop({ path })`
-overrides the path declared at start. `path: null` selects bytes-only
-capture — `stop()` returns the zip as a `Buffer` and nothing is written.
+`path` defaults to a timestamped `record-YYYYMMDD-HHMMSS.zip` in the
+working directory, so a rerun never overwrites the previous artifact;
+`stop({ path })` overrides the path declared at start. `stop()` returns a
+result — `path`, `steps`, `durationMs`, `videos`/`videoUnavailable`.
+`path: null` selects bytes-only capture: nothing is written and the result
+carries the zip itself.
 
 ## Python
 

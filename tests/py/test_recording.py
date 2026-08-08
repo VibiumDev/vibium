@@ -15,7 +15,7 @@ async def test_start_stop_zip(fresh_async_browser, test_server):
         vibe = await ctx.new_page()
         await ctx.recording.start(path=None)
         await vibe.go(test_server)
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         assert isinstance(data, bytes)
         assert len(data) > 0
         # Should be a valid zip
@@ -38,8 +38,9 @@ async def test_stop_with_path(fresh_async_browser, test_server):
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
             path = f.name
         try:
-            data = await ctx.recording.stop(path=path)
-            assert isinstance(data, bytes)
+            result = await ctx.recording.stop(path=path)
+            assert result.path == path
+            assert result.data is None
             assert os.path.exists(path)
         finally:
             if os.path.exists(path):
@@ -58,7 +59,7 @@ async def test_screenshots_png(fresh_async_browser, test_server):
         await ctx.recording.start(screenshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         buf = io.BytesIO(data)
         with zipfile.ZipFile(buf) as zf:
             names = zf.namelist()
@@ -76,7 +77,7 @@ async def test_snapshots_html(fresh_async_browser, test_server):
         await ctx.recording.start(snapshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         assert isinstance(data, bytes)
         assert len(data) > 0
     finally:
@@ -95,7 +96,7 @@ async def test_chunks(fresh_async_browser, test_server):
 
         await ctx.recording.start_chunk(name="chunk1")
         await vibe.go(test_server + "/subpage")
-        chunk_data = await ctx.recording.stop_chunk()
+        chunk_data = (await ctx.recording.stop_chunk()).data
         assert isinstance(chunk_data, bytes)
         assert len(chunk_data) > 0
 
@@ -115,7 +116,7 @@ async def test_groups(fresh_async_browser, test_server):
         await ctx.recording.start_group("test-group")
         await vibe.go(test_server)
         await ctx.recording.stop_group()
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         assert len(data) > 0
     finally:
         await ctx.close()
@@ -132,7 +133,7 @@ async def test_network_recording(fresh_async_browser, test_server):
         await vibe.go(test_server)
         await vibe.evaluate("fetch('/json')")
         await vibe.wait(500)
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         assert len(data) > 0
     finally:
         await ctx.close()
@@ -148,7 +149,7 @@ async def test_zip_structure(fresh_async_browser, test_server):
         await ctx.recording.start(screenshots=True, snapshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
-        data = await ctx.recording.stop()
+        data = (await ctx.recording.stop()).data
         buf = io.BytesIO(data)
         with zipfile.ZipFile(buf) as zf:
             names = zf.namelist()

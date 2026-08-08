@@ -88,9 +88,11 @@ def test_firefox_recording_video(test_server, tmp_path):
             })()
         """)
         vibe.wait(1200)
-        data = vibe.context.recording.stop()
+        result = vibe.context.recording.stop()
+        assert result.path == str(tmp_path / "run.zip")
         assert (tmp_path / "run.zip").exists()
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert len(result.videos) == 1 and not result.videos[0].get("error")
+        with zipfile.ZipFile(io.BytesIO((tmp_path / "run.zip").read_bytes())) as zf:
             videos = [n for n in zf.namelist() if n.startswith("video/") and n.endswith(".webm")]
             assert len(videos) == 1
             video = zf.read(videos[0])

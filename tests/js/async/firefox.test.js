@@ -120,11 +120,14 @@ describe('JS Firefox', () => {
       await link.click();
       await vibe.find('#login', { timeout: 10000 });
 
-      const zipBuffer = await vibe.context.recording.stop();
+      const result = await vibe.context.recording.stop();
+      assert.strictEqual(result.path, zipPath, 'Result should carry the delivery path');
       assert.ok(fs.existsSync(zipPath), 'Recording should land at the declared path');
-      assert.ok(zipBuffer.length > 1000, 'Recording should have real content');
+      assert.strictEqual(result.videos.length, 1, 'Result should report the video track');
+      assert.ok(result.videos[0].durationMs > 0, 'Video should have a duration');
+      assert.ok(!result.videos[0].error, 'Video should have no error');
 
-      const { extractedDir, cleanup } = unzipRecording(zipBuffer);
+      const { extractedDir, cleanup } = unzipRecording(fs.readFileSync(zipPath));
       try {
         const videoDir = path.join(extractedDir, 'video');
         const videos = fs.readdirSync(videoDir).filter((f) => f.endsWith('.webm'));
@@ -172,10 +175,11 @@ describe('JS Firefox', () => {
 
       await vibe.context.recording.start({ path: null });
       await vibe.find('a[href="/login"]', { timeout: 5000 });
-      const zipBuffer = await vibe.context.recording.stop();
-      assert.ok(zipBuffer.length > 0, 'Recording should still deliver');
+      const result = await vibe.context.recording.stop();
+      assert.ok(result.bytes.length > 0, 'Recording should still deliver');
+      assert.ok(result.videoUnavailable, 'Result should say why there is no video');
 
-      const { extractedDir, cleanup } = unzipRecording(zipBuffer);
+      const { extractedDir, cleanup } = unzipRecording(result.bytes);
       try {
         const files = fs.readdirSync(extractedDir);
         assert.ok(files.some((f) => f.endsWith('.trace')), 'Trace should be present');

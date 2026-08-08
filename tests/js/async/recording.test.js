@@ -125,7 +125,7 @@ describe('Recording: basic start/stop', () => {
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       assert.ok(Buffer.isBuffer(zipBuffer), 'stop() should return a Buffer');
       assert.ok(zipBuffer.length > 0, 'zip should not be empty');
@@ -175,7 +175,7 @@ describe('Recording: basic start/stop', () => {
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await vibe.context.recording.stop();
+      const { bytes: zipBuffer } = await vibe.context.recording.stop();
 
       assert.ok(Buffer.isBuffer(zipBuffer), 'stop() should return a Buffer');
       assert.ok(zipBuffer.length > 0, 'zip should not be empty');
@@ -205,7 +205,8 @@ describe('Recording: basic start/stop', () => {
 
       await ctx.recording.start({ path: null });
       await vibe.go(baseURL);
-      const zipBuffer = await ctx.recording.stop({ path: recordPath });
+      const result = await ctx.recording.stop({ path: recordPath });
+      assert.strictEqual(result.path, recordPath, 'result should carry the delivery path');
 
       assert.ok(fs.existsSync(recordPath), 'recording file should exist at the given path');
       const fileSize = fs.statSync(recordPath).size;
@@ -257,7 +258,7 @@ describe('Recording: screenshots', () => {
       await vibe.wait(500);
       await vibe.find('#btn').click();
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -297,7 +298,7 @@ describe('Recording: snapshots', () => {
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -374,8 +375,8 @@ describe('Recording: chunks', () => {
       await vibe.wait(200);
 
       // Stop first chunk
-      const zip1 = await ctx.recording.stopChunk();
-      assert.ok(Buffer.isBuffer(zip1), 'first chunk should return a Buffer');
+      const zip1 = (await ctx.recording.stopChunk()).bytes;
+      assert.ok(Buffer.isBuffer(zip1), 'first chunk should return bytes');
 
       // Start second chunk
       await ctx.recording.startChunk({ name: 'chunk-2' });
@@ -383,8 +384,8 @@ describe('Recording: chunks', () => {
       await vibe.wait(200);
 
       // Stop second chunk
-      const zip2 = await ctx.recording.stopChunk();
-      assert.ok(Buffer.isBuffer(zip2), 'second chunk should return a Buffer');
+      const zip2 = (await ctx.recording.stopChunk()).bytes;
+      assert.ok(Buffer.isBuffer(zip2), 'second chunk should return bytes');
 
       // Verify both zips are valid
       const { tmpDir: td1, extractedDir: ed1 } = unzipRecording(zip1);
@@ -424,7 +425,7 @@ describe('Recording: groups', () => {
       await vibe.wait(200);
       await ctx.recording.stopGroup();
 
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -457,7 +458,7 @@ describe('Recording: network events', () => {
       await ctx.recording.start({ path: null, name: 'network-test' });
       await vibe.go(baseURL);
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -526,7 +527,7 @@ describe('Recording: zip structure', () => {
       await ctx.recording.start({ path: null, screenshots: true, snapshots: true });
       await vibe.go(baseURL);
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;

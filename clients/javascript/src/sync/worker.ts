@@ -988,8 +988,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stop': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stop(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stop(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startChunk': async (args) => {
@@ -1000,8 +1000,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stopChunk': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stopChunk(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stopChunk(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startGroup': async (args) => {

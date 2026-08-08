@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/vibium/clicker/internal/api"
 )
 
 func newRecordCmd() *cobra.Command {
@@ -106,9 +108,10 @@ func newRecordCmd() *cobra.Command {
 			// The daemon is a separate long-lived process whose working
 			// directory is not the user's, so resolve against this shell
 			// before the path goes over the socket (#119) — including the
-			// record.zip default, or it lands wherever the daemon started.
+			// default, or it lands wherever the daemon started. The default
+			// is timestamped so a rerun never clobbers the previous run.
 			if output == "" {
-				output = "record.zip"
+				output = api.DefaultRecordPath(name)
 			}
 			if abs, err := filepath.Abs(output); err == nil {
 				output = abs
@@ -126,20 +129,20 @@ func newRecordCmd() *cobra.Command {
 	startCmd.Flags().Bool("snapshots", false, "Capture HTML snapshots")
 	startCmd.Flags().Bool("sources", false, "Include source information")
 	startCmd.Flags().Bool("bidi", false, "Record raw BiDi commands in the recording")
-	startCmd.Flags().String("name", "", "Name for the recording")
+	startCmd.Flags().String("name", "", "Name for the recording (also seeds the default filename stem)")
 	startCmd.Flags().String("title", "", "Title shown in trace viewer (defaults to name)")
 	startCmd.Flags().String("format", "jpeg", "Screenshot format: jpeg or png")
 	startCmd.Flags().Float64("quality", 0.5, "JPEG quality 0.0-1.0 (ignored for png)")
 	startCmd.Flags().Bool("video", false, "Require video (omit: video when the engine supports it; =false: off)")
 	startCmd.Flags().String("video-size", "", "Video dimensions as WxH, e.g. 1280x720 (default: viewport)")
 	startCmd.Flags().Int("video-fps", 0, "Video frame rate (engine default if omitted)")
-	startCmd.Flags().StringP("output", "o", "", "Where the recording ZIP lands at stop (default: record.zip)")
+	startCmd.Flags().StringP("output", "o", "", "Where the recording ZIP lands at stop (default: record-<timestamp>.zip)")
 
 	stopCmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop recording and save",
 		Example: `  vibium record stop
-  # Saved record.zip (23 steps, 14s video)
+  # Saved record-20260808-094123.zip (23 steps, 14s video)
 
   vibium record stop -o my-recording.zip
   # Save to a custom path (overrides the path declared at start)`,
@@ -167,7 +170,7 @@ func newRecordCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	stopCmd.Flags().StringP("output", "o", "", "Output file path (default: record.zip)")
+	stopCmd.Flags().StringP("output", "o", "", "Output file path (default: record-<timestamp>.zip)")
 
 	// Group subcommand (replaces start-group/stop-group)
 	groupCmd := &cobra.Command{

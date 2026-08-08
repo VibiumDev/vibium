@@ -1548,6 +1548,45 @@ func ImageDimensions(data []byte) (int, int) {
 	return jpegDimensions(data)
 }
 
+// DefaultRecordPath returns the default recording destination:
+// <stem>-YYYYMMDD-HHMMSS.zip (relative; the caller resolves it), where the
+// stem is the recording's name, sanitized, or "record". Timestamped so a
+// rerun never clobbers the previous artifact; same-second collisions get a
+// -2 suffix.
+func DefaultRecordPath(name string) string {
+	stem := sanitizeRecordStem(name)
+	stamp := time.Now().Format("20060102-150405")
+	path := fmt.Sprintf("%s-%s.zip", stem, stamp)
+	for n := 2; ; n++ {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path
+		}
+		path = fmt.Sprintf("%s-%s-%d.zip", stem, stamp, n)
+	}
+}
+
+// sanitizeRecordStem makes a recording name safe as a filename stem:
+// characters outside [A-Za-z0-9._-] become "-", leading/trailing dashes and
+// dots are trimmed (a leading dot would hide the file), and an empty result
+// falls back to "record".
+func sanitizeRecordStem(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	stem := strings.Trim(b.String(), "-.")
+	if stem == "" {
+		return "record"
+	}
+	return stem
+}
+
 // WriteRecordToFile writes recording zip data to a file, creating directories as needed.
 func WriteRecordToFile(data []byte, path string) error {
 	dir := filepath.Dir(path)

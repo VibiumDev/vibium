@@ -4027,8 +4027,9 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	name := opts.Name
 	// The MCP surface always delivers to a file; the declared path is where
 	// an auto-finalized recording lands if the session closes mid-recording.
+	// The default is timestamped so a rerun never clobbers the previous run.
 	if opts.Path == "" {
-		opts.Path = "record.zip"
+		opts.Path = api.DefaultRecordPath(opts.Name)
 	}
 	if abs, err := filepath.Abs(opts.Path); err == nil {
 		opts.Path = abs
@@ -4114,7 +4115,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		path = h.recorder.Options().Path
 	}
 	if path == "" {
-		path = "record.zip"
+		path = api.DefaultRecordPath(h.recorder.Options().Name)
 	}
 
 	zipData, err := h.recorder.Stop()

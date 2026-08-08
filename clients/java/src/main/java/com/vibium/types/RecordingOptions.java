@@ -44,7 +44,7 @@ public class RecordingOptions {
     }
     /** Video frame rate (engine default if unset). Implies video on. */
     public RecordingOptions videoFrameRate(int frameRate) { this.videoFrameRate = frameRate; return this; }
-    /** Where the recording zip lands at stop (default: record.zip). */
+    /** Where the recording zip lands at stop (default: timestamped record-YYYYMMDD-HHMMSS.zip). */
     public RecordingOptions path(String path) { this.path = path; return this; }
 
     public Map<String, Object> toParams() {

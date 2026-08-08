@@ -141,8 +141,8 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium upload "<selector>" <files...>` — set files on input[type=file]
 
 ### Recording
-- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path`)
-- `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path)
+- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path` — defaults to a timestamped `record-<date>.zip`, so reruns never overwrite)
+- `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path; the output names the saved file)
 
 Recordings can include a video track of the session (Firefox 154+, local
 browsers). By default video is recorded when the engine supports it and

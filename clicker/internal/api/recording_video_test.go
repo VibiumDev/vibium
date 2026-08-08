@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -197,6 +198,26 @@ func TestSummaryReportsVideoUnavailable(t *testing.T) {
 	}
 	if _, ok := fields["videos"]; ok {
 		t.Fatal("videos must be absent when videoUnavailable is set")
+	}
+}
+
+func TestDefaultRecordPathSeedsSanitizedStem(t *testing.T) {
+	stems := []struct{ name, want string }{
+		{"", "record"},
+		{"login", "login"},
+		{"Login Flow #2!", "Login-Flow--2"},
+		{"../secret", "secret"},
+		{"...", "record"},
+	}
+	for _, tt := range stems {
+		if got := sanitizeRecordStem(tt.name); got != tt.want {
+			t.Errorf("sanitizeRecordStem(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+
+	path := DefaultRecordPath("login")
+	if !regexp.MustCompile(`^login-\d{8}-\d{6}\.zip$`).MatchString(path) {
+		t.Fatalf("DefaultRecordPath(\"login\") = %q, want login-<timestamp>.zip", path)
 	}
 }
 

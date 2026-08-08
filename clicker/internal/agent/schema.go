@@ -1341,7 +1341,7 @@ func GetToolSchemas() []Tool {
 				"properties": map[string]interface{}{
 					"name": map[string]interface{}{
 						"type":        "string",
-						"description": "Name for the recording (default: \"record\")",
+						"description": "Name for the recording (default: \"record\"; also seeds the default filename stem)",
 					},
 					"title": map[string]interface{}{
 						"type":        "string",
@@ -1396,7 +1396,7 @@ func GetToolSchemas() []Tool {
 					},
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "Where the recording ZIP lands at stop (default: record.zip)",
+						"description": "Where the recording ZIP lands at stop (default: record-<timestamp>.zip)",
 					},
 				},
 				"additionalProperties": false,
