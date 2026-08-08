@@ -1,75 +1,59 @@
-# Spec: video as a recording track
+# Spec: Video as a Recording Track
 
-Folds screen recording into `recording.start()` / `recording.stop()`
-and retires the separate `page.screencast` API. Resolves #310; #311's
-CLI/MCP surfaces then target this shape instead of the screencast one.
+> **Status: Draft.** This document describes proposed behavior. It does
+> not reflect what is currently implemented in vibium. Do not rely on it
+> as documentation of existing functionality.
 
-## Why one API
+## Context
 
-- **One artifact.** The record (`record.zip`) is the unit of
-  evidence; a loose video beside a zip is evidence separated from
-  its case file. (Playwright ships this seam: trace.zip carries
-  filmstrip frames while the video lands loose in a `videosDir`.)
-- **One entry point for agents.** An agent that knows
-  `recording.start()` discovers video by reading one options object.
-  A sibling namespace is a second thing to know exists.
-- **Congruent grammar.** `RecordingStartOptions` is already a set of
-  capture-track toggles (`screenshots`, `snapshots`, `sources`,
-  `bidi`). Video is one more track, not a new concept.
+`recording.start()` gains a `video` option; the video lands inside
+record.zip next to the other capture tracks. The separate
+`page.screencast` API and the `vibium:screencast.start/stop` wire
+commands are removed — they have not shipped in a tagged release
+(latest: v26.5.31, 2026-06-01; screencast merged 2026-08-05).
+Resolves #310. #311's CLI/MCP recording surfaces target this shape.
 
 ## API
 
 ```ts
-// JS — Python/Java mirror naming conventions
-await recording.start();   // video when the engine can, record.zip, crash-durable — zero config
-await recording.start({ video: true });          // require video: fails fast if the engine can't
+await recording.start();                // video if the engine supports it; path record.zip
+await recording.start({ video: true }); // require video: start fails if unsupported
 await recording.start({ video: { width: 1280, height: 720, frameRate: 30 }, path: 'runs/login.zip' });
-await recording.stop();                          // delivers to the declared path
+await recording.stop();                                          // delivers to the declared path
 await recording.stop({ path: 'checkout-failure-run1234.zip' });  // override wins
 ```
 
-**Declare at start, refine at stop.** `start.path` declares the
-destination and anchors crash durability (below); `stop.path`
-overrides it — outcome-aware naming stays possible because the final
-word comes last. Precedence: `stop.path` > `start.path` > bytes mode
-(neither declared). Clients resolve relative paths before the wire —
-the daemon's working directory is not the caller's.
-
-- `video?: boolean | { width?, height?, frameRate? }` — three
-  states. **Omitted (the default): record video if the engine can.**
-  Where the engine can't, the
-  recording proceeds and the result says so (below).
-  **Explicit `true`: strict** — fails fast if the
-  engine can't deliver. **Explicit `false`: off.** Dimensions
-  default to the viewport — faithful to what was on screen, and it
-  eliminates the letterbox padding a fixed pre-layout size causes.
-- Video-specific options nest in the object — the flat `format` /
-  `quality` options stay screenshot-only.
-- `audio` is reserved, not exposed: Firefox 154 rejects it
-  (`unsupported operation`). Add when an engine accepts it.
-- `recording.stop()` is unchanged in shape. The zip gains the track.
+- `video?: boolean | { width?, height?, frameRate? }` — omitted:
+  record video if the engine supports it; otherwise the recording
+  proceeds and the stop result reports `videoUnavailable`. `true`:
+  `start` fails if the engine can't deliver. `false`: off.
+- Dimensions default to the viewport. Explicit dimensions that
+  mismatch the window aspect are letterboxed by the engine.
+- `path` defaults to `record.zip` in the caller's working directory.
+  `path: null` selects bytes-only capture: no file, no spool, no
+  crash durability. Clients resolve relative paths before sending.
+- Path precedence: `stop.path` > `start.path`.
+- `audio` is reserved, not exposed; Firefox 154 rejects it.
+- The flat `format`/`quality` options remain screenshot-only.
 
 ## Wire protocol
 
-`vibium:recording.start` gains the `video` param (same bool-or-object
-shape). The router starts `browsingContext.startScreencast` when the
-recording starts, stops it when the recording stops, and moves the
-browser-written file into the zip. `vibium:screencast.start/stop` are
-removed — they shipped after the last tagged release, so nothing
-public breaks.
+`vibium:recording.start` gains the `video` param, same shape. The
+router calls `browsingContext.startScreencast` when the recording
+starts, `stopScreencast` when it stops, and moves the engine-written
+file into the zip.
 
-## Zip layout and sync contract
+## Zip layout
 
-record.zip is a **Playwright trace-format** zip (`trace.trace` +
-`trace.network` + resources). Video is **additive** — new entries
-alongside the trace files, which existing trace tooling ignores.
+record.zip is a Playwright trace-format zip. Video entries are
+additive; existing trace tooling ignores them.
 
 ```
 record.zip
-├── trace.trace            # unchanged
-├── trace.network          # unchanged
-├── video/<context>.webm   # the recording
-└── video/index.json       # vibium's video metadata
+├── trace.trace
+├── trace.network
+├── video/<context>.webm
+└── video/index.json
 ```
 
 ```json
@@ -83,133 +67,85 @@ record.zip
 } ] }
 ```
 
-An array from day one — v1 writes one entry; multi-cam appends.
-`offsetMs` is the video's start relative to the recording's t0 — the
-number the viewer needs to scrub steps and video in sync (trace
-events already carry timestamps).
+`videos` is an array; v1 writes one entry. `offsetMs` is the video's
+start relative to the recording's t0: wall-clock delta from t0 to the
+`startScreencast` acknowledgement, accurate to about one frame. Trace
+events carry their own timestamps; `offsetMs` aligns the two
+timelines. Bump the manifest schema version.
 
-## Format: WebM inside, forever
+## Video format
 
-The video is stored as the engine produced it. Every consumer of a
-record's video is a browser surface (the local viewer, the web UI,
-agents reading bytes) and browsers play WebM natively — so **capture
-never depends on an encoder**. MP4 is an export concern for handing a
-human a loose file (`vibium record export video record.zip -o
-clip.mp4` — separate spec; that is where ffmpeg lives, and where the
-demo-clip flow lands: record with only the video track on, then
-export).
+Stored as the engine produced it (WebM). Capture never invokes an
+encoder. MP4 conversion is an export operation —
+`vibium record export video record.zip -o clip.mp4` — specced
+separately; a video-only clip is a recording with the other tracks
+disabled, then an export.
 
-## Engine and connection semantics
+## Engine semantics
 
-- **Firefox 154+, local:** works.
-- **Chrome, or Firefox < 154:** with the default (video omitted),
-  the recording runs without video and the stop result carries
-  `videoUnavailable` with the engine's reason — degradation is
-  annotated, never silent. With explicit `video: true`, `start`
-  **fails fast** with today's explanatory message (Chrome: not
-  implemented; Firefox: requires 154+, and the message names the
-  exact install command). An explicit request the engine can't honor
-  is an error, not a silent downgrade.
-- **Remote connections (`--connect`):** video errors with the
-  existing remote-screencast message (the browser writes the file on
-  the remote host). Unchanged from today; revisit if grids grow a
-  BiDi screencast story.
+- Firefox 154+, local: supported.
+- Chrome, or Firefox < 154: with `video` omitted, no video is
+  recorded and the stop result carries `videoUnavailable` with the
+  engine's reason. With `video: true`, `start` fails; the message
+  names the engine gap and the install command that fixes it.
+- Remote connections (`--connect`): `video: true` errors with the
+  existing remote-screencast message; the engine writes the file on
+  the remote host.
 
-## What the camera sees: context binding
+## Context binding
 
-The video records the browsing context that was active at
-`recording.start()` and **does not follow focus** — a `window.open`
-that takes focus never appears in the video. Consequences the spec
-commits to:
+The video records the browsing context active at `recording.start()`
+and does not follow focus. `video/index.json` names the recorded
+context. Step events name theirs; the viewer marks ranges where the
+action left the recorded context. Warm-up frames (compositor start,
+about:blank, first paint) remain in the video; the viewer labels
+them using `offsetMs` and navigation timestamps.
 
-- The manifest's video block gains `"context"`, naming the recorded
-  context.
-- Steps already carry their context; the viewer marks "action moved
-  off-camera" ranges by comparing step contexts against the video's.
-- Dimensions default to the viewport, which avoids the padding
-  artifact we observed (a fixed pre-layout size letterboxes with a
-  black band until first layout). Callers pinning explicit
-  dimensions accept possible padding.
-- Leading warm-up frames (compositor start, about:blank flash, first
-  paint of the destination) are part of the video and stay: with
-  `offsetMs` and nav timestamps the viewer annotates them as the
-  page-load phase.
+## Durability
 
-## Durability: spill at start, package at stop
+With a path declared, capture spills incrementally to `<path>.parts/`:
+trace events append as NDJSON, screenshots land as files, the engine
+live-muxes the video. `stop()` packages the spool into the zip,
+renames it into place atomically, and removes the spool.
 
-When `start.path` is declared, capture spills incrementally to a
-spool directory beside it (`<path>.parts/`): trace events append to
-NDJSON (valid up to the last complete line, by format), screenshots
-land as files, and the engine live-muxes the video (a crash-orphaned
-WebM is still playable). `stop()` packages the spool into the zip, renames it into
-place atomically, and removes the spool. Nothing ever half-exists at
-the declared path.
+A crashed client leaves the spool. `vibium record recover
+<path>.parts/` packages what was captured; a partial video is
+annotated, a truncated NDJSON tail is dropped at the last complete
+line.
 
-If the client or vibium dies mid-recording, the spool survives.
-`vibium record recover <path>.parts/` packages what was captured —
-partial video annotated, truncated tail dropped — into a record that
-says how far it got.
+## Stop result
 
-`start.path` **defaults to `record.zip` in the caller's working
-directory**, so crash durability is the zero-config state. Bytes-only
-capture (no file, no spool, no durability) is the explicit opt-out:
-`path: null`.
+- Wire (path mode): `{ path, steps, durationMs, videos: [{ context,
+  durationMs, width, height }] }`, or `videoUnavailable: "<engine
+  reason>"` in place of `videos`.
+- CLI: `Saved record.zip (23 steps, 14s video) — view: vibium play record.zip`
+- MCP: the same sentence as the tool's text result.
+- `vibium play` is specced separately.
 
-## The stop moment
+## Close with an active recording
 
-- **Wire result** (path mode): `{ path, steps, durationMs,
-  videos: [{ context, durationMs, width, height }] }` — or
-  `videoUnavailable: "<engine reason>"` when the default couldn't
-  deliver. An agent learns what was captured without unzipping.
-- **CLI** prints the human version and the next move:
-  `Saved record.zip (23 steps, 14s video) — view: vibium play record.zip`
-- **MCP** returns that same sentence as its text result, so an agent
-  can relay it verbatim to the human it works for.
-- `vibium play` itself — the app-mode viewer — is specced
-  separately; this spec owns only the hint that points at it.
+`browser.stop()` or session end auto-finalizes: the spool packages
+and delivers to the declared path as if `recording.stop()` had been
+called. `path: null` recordings are lost on close.
 
-## Close is not a crash
+## Failure and lifecycle
 
-`browser.stop()` (or session end) with a recording active
-**auto-finalizes**: the spool packages and delivers to the declared
-path, exactly as if `recording.stop()` had been called. Only
-explicit bytes-only recordings (`path: null`) are lost on close.
-
-## Failure and lifecycle semantics
-
-- **A broken video track never loses the record.** If the screencast
-  dies mid-recording (browser crash, engine write error),
-  `recording.stop()` still delivers the zip — video absent or
-  partial, and the manifest records `"video": { "error": "…" }`.
-  Fail-fast applies only at the explicit `start`; after capture has
-  begun, degradation is annotated, never fatal.
-- **Concurrency: one camera per context.** Two contexts can record
-  simultaneously. (The "one active
-  recording per browser session" line in the current client docs
-  describes vibium's single-slot implementation, not the engine —
-  correct it when this lands.) Concurrent recordings in different
-  user-contexts can therefore each hold their own camera. v1 keeps
-  one video per recording; the per-context limit only means two
-  recordings can never film the same context.
-- **Cleanup:** the engine writes the video into its own temp dir;
-  session close and abandoned-recording paths delete stale files
-  (same discipline the screencast handlers have today).
-- **Manifest versioning:** the video block is additive; bump the
-  manifest schema version so viewer and Store parsers can gate on it.
-- **`offsetMs` definition:** wall-clock delta from recording t0 to
-  the `startScreencast` acknowledgement, accurate to about one frame.
-  Firefox exposes no first-frame timestamp; if it ever does, prefer
-  it.
+- If the screencast dies mid-recording, `recording.stop()` still
+  delivers the zip; the video is absent or partial and
+  `video/index.json` records `"error"`. Fail-fast applies only at
+  `start`.
+- One camera per context. Two contexts can record simultaneously;
+  two recordings cannot film the same context. (The "one active
+  recording per browser session" line in current client docs
+  describes the old single-slot implementation; correct it.)
+- Engine temp files are deleted on session close and when an
+  abandoned recording is superseded.
 
 ## Chunks and groups
 
-The video is one continuous session track. Chunks slice the timeline
-logically: a chunk's manifest records `videoRange: [startMs, endMs]`
-into the session video rather than carrying its own file — WebM can't
-be split mid-stream without transcoding, and capture stays
-encoder-free. Groups are annotations and are unaffected. Limitation: a chunk
-artifact alone does not contain its video; the range resolves
-against the final zip.
+The video is one continuous session track. A chunk's manifest
+records `videoRange: [startMs, endMs]` into the session video;
+chunk artifacts carry no video file. Groups are unaffected.
 
 ## Surfaces
 
@@ -222,81 +158,62 @@ await recording.start({ video: true });
 await recording.start({ video: { width: 1280, height: 720, frameRate: 30 } });
 ```
 
-**Python (async and sync, kwargs house style; snake_case keys map to
-the wire's camelCase, same as mime_type→mimeType):**
+**Python (async and sync; snake_case keys map to the wire's
+camelCase):**
 ```python
 await recording.start(video=True)
 await recording.start(video={"width": 1280, "height": 720, "frame_rate": 30})
 ```
 
-**Java (flat fluent setters — the client's house style has no nested
-option classes, so video flattens like every other option; setting
-any video option implies video on):**
+**Java (flat fluent setters; setting any video option implies video
+on; the client maps them onto the wire's nested `video` param):**
 ```java
 recording.start(new RecordingOptions().video(true));
 recording.start(new RecordingOptions().videoSize(1280, 720).videoFrameRate(30));
 ```
-The client maps the flat setters onto the wire's nested `video`
-param — flattening is per-surface sugar; the wire stays one shape.
 
-**CLI (flag house style; nested options flatten with a prefix; new
-options ship with the example CLAUDE.md requires):**
+**CLI:**
 ```
 vibium record start --video -o record.zip
 vibium record start --video --video-size 1280x720 --video-fps 30
 # Recording started (video: on, spooling beside record.zip)
 vibium record stop
 # Saved record.zip
-vibium record stop -o checkout-failure.zip   # override wins
+vibium record stop -o checkout-failure.zip
 ```
 
-(The start-side path exists on every surface: `-o` in the CLI,
-`path` in JS/Python/MCP, `.path()` in Java.)
-
-**MCP (`browser_record_start` gains flat properties, matching its
-existing flat schema style):**
-- `video` (boolean, optional): "Omit to record video when the
-  engine supports it (Firefox 154+). Set true to require video —
-  fails with an explanatory error on Chrome. Set false to disable."
+**MCP** — `browser_record_start` gains flat properties:
+- `video` (boolean, optional): "Omit to record video when the engine
+  supports it (Firefox 154+). Set true to require video — fails with
+  an explanatory error on Chrome. Set false to disable."
 - `video_width`, `video_height`, `video_frame_rate` (numbers,
   optional; defaults follow the viewport).
 
 **Skill:** the vibe-check SKILL.md gains recording-with-video
 guidance in the same change.
 
-Acceptance: all seven surfaces land in the same change; no surface
-ships a release behind another.
+The start-side path exists on every surface: `-o` in the CLI, `path`
+in JS/Python/MCP, `.path()` in Java.
 
-## Deliberately absent: pause()
+Acceptance: all seven surfaces land in the same change.
 
-Considered and excluded from v1. The real use cases resolve elsewhere:
-sensitive input needs **redaction across all tracks** (pausing video
-while snapshots still capture the DOM is false safety — and a
-redaction story must exist before records are uploaded anywhere);
-task boundaries are **chunks**; idle time is nearly free (still
-frames and event-driven tracks cost ~nothing). Mechanically, BiDi
-screencast has no pause — only stop/start — so pause would force
-multi-segment videos and viewer stitching, the exact complexity the
-chunk design avoids. If demand emerges post-redaction, pause must
-write explicit paused-ranges into the manifest: an evidence timeline
-may have gaps, but never silent ones.
+## pause() is excluded
+
+v1 has no `pause()`. Sensitive input is a redaction concern — every
+track captures it, not just video. Task boundaries are chunks. Idle
+time costs little in any track. BiDi screencast has no pause
+primitive, so pause would require multi-segment video and viewer
+stitching. If added later, paused ranges must be recorded in the
+manifest.
 
 ## Open questions
 
-1. Does `stopChunk` need to optionally wait for a keyframe so
-   `videoRange` cuts land clean in the viewer?
-2. Multi-context video: the engine supports one screencast per
-   context simultaneously, so "film every tab in the
-   recorded user-context" is feasible today. Shape when it comes:
-   the manifest's `video` block becomes an array (one entry per
-   context, each with its own `context` and `offsetMs`), the zip
-   carries `video/<context>.webm` per tab, cameras attach
-   event-driven (`contextCreated` starts a new tab's camera; a
-   closed tab finalizes a shorter file), and the viewer cuts between
-   cameras following step contexts — fully solving the off-camera
-   problem. Wants a scope knob (`video: { contexts: 'all' |
-   'active' | [...] }`) since every camera is an encoder in the
-   browser and agents fan out to many tabs. Deferred from v1 for
-   scope, not capability; the single-context binding ships first,
-   documented. Note the non-video tracks are already multi-tab —
-   one record.zip already carries every tab's steps and screenshots.
+1. Should `stopChunk` optionally wait for a keyframe so `videoRange`
+   cuts land clean in the viewer?
+2. Multi-context video. Feasible now — the engine runs one
+   screencast per context simultaneously. Shape: one `videos` entry
+   and one `video/<context>.webm` per tab; cameras attach on
+   `contextCreated` and finalize on context close; the viewer cuts
+   between cameras by step context. Needs a scope knob
+   (`video: { contexts: 'all' | 'active' | [...] }`) — each camera
+   is an encoder in the browser. Deferred from v1.
