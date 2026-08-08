@@ -6,12 +6,10 @@ CLI/MCP surfaces then target this shape instead of the screencast one.
 
 ## Why one API
 
-- **One artifact.** The record (`record.zip`) is the unit of evidence
-  — "not done until the results are checked in" needs one atomic
-  thing to check in. A loose video beside a zip is evidence separated
-  from its case file. (Playwright ships this seam: trace.zip carries
-  filmstrip frames while the video lands loose in a `videosDir`;
-  users trip on it.)
+- **One artifact.** The record (`record.zip`) is the unit of
+  evidence; a loose video beside a zip is evidence separated from
+  its case file. (Playwright ships this seam: trace.zip carries
+  filmstrip frames while the video lands loose in a `videosDir`.)
 - **One entry point for agents.** An agent that knows
   `recording.start()` discovers video by reading one options object.
   A sibling namespace is a second thing to know exists.
@@ -38,11 +36,10 @@ word comes last. Precedence: `stop.path` > `start.path` > bytes mode
 the daemon's working directory is not the caller's.
 
 - `video?: boolean | { width?, height?, frameRate? }` — three
-  states. **Omitted (the default): record video if the engine can**
-  — the "browser visible by default" philosophy extended to
-  after-the-fact: see what the AI did. Where the engine can't, the
-  recording proceeds and the result says so (below) — annotated,
-  never silent. **Explicit `true`: strict** — fails fast if the
+  states. **Omitted (the default): record video if the engine can.**
+  Where the engine can't, the
+  recording proceeds and the result says so (below).
+  **Explicit `true`: strict** — fails fast if the
   engine can't deliver. **Explicit `false`: off.** Dimensions
   default to the viewport — faithful to what was on screen, and it
   eliminates the letterbox padding a fixed pre-layout size causes.
@@ -63,14 +60,9 @@ public breaks.
 
 ## Zip layout and sync contract
 
-Correction from source: record.zip is a **Playwright trace-format**
-zip (`trace.trace` + `trace.network` + resources), and the MCP tool
-advertises trace-viewer compatibility. That compatibility is a
-requirement, not an accident: any tool that reads Playwright traces
-reads vibium records for free.
-
-Video is therefore **additive**: entries Playwright's viewer ignores
-and vibium's surfaces read.
+record.zip is a **Playwright trace-format** zip (`trace.trace` +
+`trace.network` + resources). Video is **additive** — new entries
+alongside the trace files, which existing trace tooling ignores.
 
 ```
 record.zip
@@ -94,8 +86,7 @@ record.zip
 An array from day one — v1 writes one entry; multi-cam appends.
 `offsetMs` is the video's start relative to the recording's t0 — the
 number the viewer needs to scrub steps and video in sync (trace
-events already carry timestamps). Acceptance test: a video-carrying
-record still opens in Playwright's trace viewer unchanged.
+events already carry timestamps).
 
 ## Format: WebM inside, forever
 
@@ -118,8 +109,7 @@ export).
   **fails fast** with today's explanatory message (Chrome: not
   implemented; Firefox: requires 154+, and the message names the
   exact install command). An explicit request the engine can't honor
-  is an error — a record that quietly lacks the video it promised is
-  the same lie as a WebM renamed to `.mp4`.
+  is an error, not a silent downgrade.
 - **Remote connections (`--connect`):** video errors with the
   existing remote-screencast message (the browser writes the file on
   the remote host). Unchanged from today; revisit if grids grow a
@@ -134,9 +124,8 @@ commits to:
 
 - The manifest's video block gains `"context"`, naming the recorded
   context.
-- Steps already carry their context; the viewer can therefore mark
-  "action moved off-camera" ranges by comparing step contexts against
-  the video's — divergence is visible, never silent.
+- Steps already carry their context; the viewer marks "action moved
+  off-camera" ranges by comparing step contexts against the video's.
 - Dimensions default to the viewport, which avoids the padding
   artifact we observed (a fixed pre-layout size letterboxes with a
   black band until first layout). Callers pinning explicit
@@ -144,7 +133,7 @@ commits to:
 - Leading warm-up frames (compositor start, about:blank flash, first
   paint of the destination) are part of the video and stay: with
   `offsetMs` and nav timestamps the viewer annotates them as the
-  page-load phase — accidental paint-timing evidence, not junk.
+  page-load phase.
 
 ## Durability: spill at start, package at stop
 
@@ -159,27 +148,19 @@ the declared path.
 If the client or vibium dies mid-recording, the spool survives.
 `vibium record recover <path>.parts/` packages what was captured —
 partial video annotated, truncated tail dropped — into a record that
-says honestly how far it got. Evidence survives the death of the
-witness; a crashed run still leaves something to check in.
+says how far it got.
 
 `start.path` **defaults to `record.zip` in the caller's working
-directory** — "screenshots save to a sensible location
-automatically," applied to records: crash durability is the
-zero-config state, not a reward for reading the docs. Bytes-only
+directory**, so crash durability is the zero-config state. Bytes-only
 capture (no file, no spool, no durability) is the explicit opt-out:
 `path: null`.
 
 ## The stop moment
 
-The instant after `stop()` is a designed surface, not an
-implementation detail — it is where Playwright earned a decade of
-goodwill with one printed line.
-
 - **Wire result** (path mode): `{ path, steps, durationMs,
   videos: [{ context, durationMs, width, height }] }` — or
   `videoUnavailable: "<engine reason>"` when the default couldn't
-  deliver. An agent learns what was captured without unzipping;
-  with the if-available default this is load-bearing, not garnish.
+  deliver. An agent learns what was captured without unzipping.
 - **CLI** prints the human version and the next move:
   `Saved record.zip (23 steps, 14s video) — view: vibium play record.zip`
 - **MCP** returns that same sentence as its text result, so an agent
@@ -191,10 +172,8 @@ goodwill with one printed line.
 
 `browser.stop()` (or session end) with a recording active
 **auto-finalizes**: the spool packages and delivers to the declared
-path, exactly as if `recording.stop()` had been called. Forgetting
-to stop a recording costs nothing — "it's at record.zip anyway."
-Only explicit bytes-only recordings (`path: null`) are lost on
-close, which is the tradeoff those callers chose.
+path, exactly as if `recording.stop()` had been called. Only
+explicit bytes-only recordings (`path: null`) are lost on close.
 
 ## Failure and lifecycle semantics
 
@@ -203,7 +182,7 @@ close, which is the tradeoff those callers chose.
   `recording.stop()` still delivers the zip — video absent or
   partial, and the manifest records `"video": { "error": "…" }`.
   Fail-fast applies only at the explicit `start`; after capture has
-  begun, degradation is annotated, never fatal and never silent.
+  begun, degradation is annotated, never fatal.
 - **Concurrency: one camera per context.** Two contexts can record
   simultaneously. (The "one active
   recording per browser session" line in the current client docs
@@ -228,15 +207,14 @@ The video is one continuous session track. Chunks slice the timeline
 logically: a chunk's manifest records `videoRange: [startMs, endMs]`
 into the session video rather than carrying its own file — WebM can't
 be split mid-stream without transcoding, and capture stays
-encoder-free. Groups are annotations and are unaffected. Honest
-limitation: a chunk artifact alone does not contain its video; the
-range resolves against the final zip.
+encoder-free. Groups are annotations and are unaffected. Limitation: a chunk
+artifact alone does not contain its video; the range resolves
+against the final zip.
 
-## Surfaces: every door, same room (all at once, per the one-binary rule)
+## Surfaces
 
 The logic lives once in the binary; each surface maps its house
-style onto the same wire param. This was review flag #2 on #307; the
-fold-in is the moment to close it everywhere. Shapes:
+style onto the same wire param.
 
 **JS (async and sync share the options type):**
 ```ts
@@ -272,8 +250,8 @@ vibium record stop
 vibium record stop -o checkout-failure.zip   # override wins
 ```
 
-(`-o` at start is the durability anchor on every surface: `path` in
-JS/Python/MCP, `.path()` in Java.)
+(The start-side path exists on every surface: `-o` in the CLI,
+`path` in JS/Python/MCP, `.path()` in Java.)
 
 **MCP (`browser_record_start` gains flat properties, matching its
 existing flat schema style):**
@@ -283,10 +261,8 @@ existing flat schema style):**
 - `video_width`, `video_height`, `video_frame_rate` (numbers,
   optional; defaults follow the viewport).
 
-**Skill (the seventh surface):** the vibe-check SKILL.md gains
-recording-with-video guidance in the same change — it is where
-agents actually learn vibium, and a feature the skill never mentions
-is a feature agents never use.
+**Skill:** the vibe-check SKILL.md gains recording-with-video
+guidance in the same change.
 
 Acceptance: all seven surfaces land in the same change; no surface
 ships a release behind another.
