@@ -4071,11 +4071,13 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	// handleBidiEvent already forwards to the recorder; replacing the handler
 	// here would silently turn off prompt tracking for the recording's duration.
 
+	// Keep the start line compact: the full engine reason reaches the
+	// caller in the stop result's videoUnavailable.
 	videoState := "off"
 	if h.recorder.ActiveVideo() != nil {
 		videoState = "on"
-	} else if reason := h.recorder.VideoUnavailable(); reason != "" {
-		videoState = "unavailable: " + reason
+	} else if h.recorder.VideoUnavailable() != "" {
+		videoState = "unavailable"
 	}
 
 	return &ToolsCallResult{

@@ -105,13 +105,15 @@ func newRecordCmd() *cobra.Command {
 			}
 			// The daemon is a separate long-lived process whose working
 			// directory is not the user's, so resolve against this shell
-			// before the path goes over the socket (#119).
-			if output != "" {
-				if abs, err := filepath.Abs(output); err == nil {
-					output = abs
-				}
-				callArgs["path"] = output
+			// before the path goes over the socket (#119) — including the
+			// record.zip default, or it lands wherever the daemon started.
+			if output == "" {
+				output = "record.zip"
 			}
+			if abs, err := filepath.Abs(output); err == nil {
+				output = abs
+			}
+			callArgs["path"] = output
 			result, err := daemonCall("browser_record_start", callArgs)
 			if err != nil {
 				printError(err)
