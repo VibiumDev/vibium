@@ -151,7 +151,9 @@ it (fails with an explanatory error on Chrome), `--video=false` to disable,
 and `--video-size 1280x720` / `--video-fps 30` to override the viewport
 defaults. The video lands inside the recording ZIP next to the trace
 (`video/<context>.webm`); it films the page that was active at start and
-does not follow tab switches.
+does not follow tab switches. Remote browser connections record every
+track except video; `--video-remote keep` records anyway and leaves the
+file on the remote host (the stop output names its path there).
 
 ```
 vibium record start --video -o run.zip

@@ -313,7 +313,7 @@ await ctx.recording.start({ video: true })
 await ctx.recording.stop()   // the zip now contains video/<context>.webm
 ```
 
-With `video` omitted, video is recorded whenever the engine supports it and skipped otherwise. `video: true` requires it — `start()` fails with an explanatory error on Chrome. `video: false` turns it off. Dimensions default to the viewport (`video: { width, height, frameRate }` to override). Remote browser connections (`--connect`) record every track except video — the stop result says why.
+With `video` omitted, video is recorded whenever the engine supports it and skipped otherwise. `video: true` requires it — `start()` fails with an explanatory error on Chrome. `video: false` turns it off. Dimensions default to the viewport (`video: { width, height, frameRate }` to override). Remote browser connections (`--connect`) record every track except video — the stop result says why. For remote hosts you control, `video: { remote: 'keep' }` records anyway and leaves the file there; see the [Record Video](../how-to-guides/record-video.md) guide.
 
 Engine requirements, Firefox channel setup, and the zip layout are covered in [Record Video](../how-to-guides/record-video.md).
 

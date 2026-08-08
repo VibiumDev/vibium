@@ -23,10 +23,13 @@ await recording.stop();                                          // delivers to 
 await recording.stop({ path: 'checkout-failure-run1234.zip' });  // override wins
 ```
 
-- `video?: boolean | { width?, height?, frameRate? }` — omitted:
-  record video if the engine supports it; otherwise the recording
-  proceeds and the stop result reports `videoUnavailable`. `true`:
-  `start` fails if the engine can't deliver. `false`: off.
+- `video?: boolean | { width?, height?, frameRate?, remote? }` —
+  omitted: record video if the engine supports it; otherwise the
+  recording proceeds and the stop result reports `videoUnavailable`.
+  `true`: `start` fails if the engine can't deliver. `false`: off.
+  `remote: 'keep'`: on a remote connection, record anyway and leave
+  the file on the remote host (see Engine semantics); ignored on
+  local connections.
 - Dimensions default to the viewport. Explicit dimensions that
   mismatch the window aspect are letterboxed by the engine.
 - `path` defaults to a timestamped `record-YYYYMMDD-HHMMSS.zip` in the
@@ -101,7 +104,15 @@ disabled, then an export.
   names the engine gap and the install command that fixes it.
 - Remote connections (`--connect`): `video: true` errors with the
   existing remote-screencast message; the engine writes the file on
-  the remote host.
+  the remote host and the protocol cannot retrieve it, so by default
+  no screencast is started at all. `video: { remote: 'keep' }` opts
+  out of that protection for hosts the caller controls: the screencast
+  records normally, the zip's manifest and the stop result carry
+  `remotePath` — the file's location on the remote host — in place of
+  an embedded video, and vibium never reads, moves, or deletes that
+  file. Retrieval and cleanup are the caller's. The engine must still
+  support the screencast (remote Firefox 154+; remote Chrome fails as
+  usual).
 
 ## Context binding
 
@@ -128,7 +139,8 @@ line.
 
 - Wire (path mode): `{ path, steps, durationMs, videos: [{ context,
   durationMs, width, height }] }`, or `videoUnavailable: "<engine
-  reason>"` in place of `videos`.
+  reason>"` in place of `videos`. A `remote: 'keep'` video's entry
+  carries `remotePath` instead of being embedded in the zip.
 - CLI: `Saved record-20260808-094123.zip (23 steps, 14s video) — view: vibium play record-20260808-094123.zip`
 - MCP: the same sentence as the tool's text result.
 - `vibium play` is specced separately.

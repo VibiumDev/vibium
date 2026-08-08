@@ -42,9 +42,10 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 
 	opts := ParseRecordingOptions(cmd.Params)
 
-	// Required video on a remote connection can never work; fail before
-	// touching the browser.
-	if r.connectURL != "" && opts.Video.Mode == VideoRequired {
+	// Required video on a remote connection can never deliver into the zip;
+	// fail before touching the browser — unless the caller opted into
+	// leaving the file on the remote host.
+	if r.connectURL != "" && opts.Video.Mode == VideoRequired && !opts.Video.RemoteKeep {
 		r.sendError(session, cmd.ID, errors.New(RemoteVideoMessage))
 		return
 	}

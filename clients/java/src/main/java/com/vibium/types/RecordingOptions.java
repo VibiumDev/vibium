@@ -19,6 +19,7 @@ public class RecordingOptions {
     private Integer videoWidth;
     private Integer videoHeight;
     private Integer videoFrameRate;
+    private String videoRemote;
     private String path;
 
     public RecordingOptions name(String name) { this.name = name; return this; }
@@ -44,6 +45,13 @@ public class RecordingOptions {
     }
     /** Video frame rate (engine default if unset). Implies video on. */
     public RecordingOptions videoFrameRate(int frameRate) { this.videoFrameRate = frameRate; return this; }
+
+    /**
+     * On a remote browser connection, "keep" records anyway and leaves the
+     * video on the remote host; the stop result carries its remote path.
+     * Retrieval and cleanup are the caller's. Implies video on.
+     */
+    public RecordingOptions videoRemote(String mode) { this.videoRemote = mode; return this; }
     /** Where the recording zip lands at stop (default: timestamped record-YYYYMMDD-HHMMSS.zip). */
     public RecordingOptions path(String path) { this.path = path; return this; }
 
@@ -62,6 +70,7 @@ public class RecordingOptions {
         if (videoWidth != null) videoParams.put("width", videoWidth);
         if (videoHeight != null) videoParams.put("height", videoHeight);
         if (videoFrameRate != null) videoParams.put("frameRate", videoFrameRate);
+        if (videoRemote != null) videoParams.put("remote", videoRemote);
         if (video != null && !video) {
             params.put("video", false);
         } else if (!videoParams.isEmpty()) {

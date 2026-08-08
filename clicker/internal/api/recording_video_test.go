@@ -69,6 +69,11 @@ func TestParseRecordingOptionsVideoShapes(t *testing.T) {
 			params: map[string]interface{}{"video": map[string]interface{}{"width": 1280.0, "height": 720.0, "frameRate": 30.0}},
 			want:   VideoOptions{Mode: VideoRequired, Width: 1280, Height: 720, FrameRate: 30},
 		},
+		{
+			name:   "remote keep",
+			params: map[string]interface{}{"video": map[string]interface{}{"remote": "keep"}},
+			want:   VideoOptions{Mode: VideoRequired, RemoteKeep: true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -185,6 +190,99 @@ func TestChunkZipCarriesVideoRangeButNoFile(t *testing.T) {
 	}
 	if !strings.Contains(string(entries["video/index.json"]), "videoRange") {
 		t.Fatalf("chunk manifest should record videoRange, got: %s", entries["video/index.json"])
+	}
+}
+
+// fakeVideoSession answers startScreencast like a remote engine would.
+type fakeVideoSession struct {
+	started bool
+}
+
+func (f *fakeVideoSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+	if method == "browsingContext.startScreencast" {
+		f.started = true
+		return json.RawMessage(`{"result":{"screencast":"sc-remote","path":"/remote/Downloads/screencast-1.webm"}}`), nil
+	}
+	return json.RawMessage(`{"result":{}}`), nil
+}
+
+func (f *fakeVideoSession) SendBidiCommandWithTimeout(method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	return f.SendBidiCommand(method, params)
+}
+
+func (f *fakeVideoSession) GetContextID() (string, error)  { return "ctx-remote", nil }
+func (f *fakeVideoSession) SetLastElementBox(box *BoxInfo) {}
+func (f *fakeVideoSession) NavTracker() *NavigationTracker { return nil }
+
+func TestRemoteKeepRecordsAndReportsRemotePath(t *testing.T) {
+	rec := NewRecorder()
+	opts := ParseRecordingOptions(map[string]interface{}{
+		"video": map[string]interface{}{"remote": "keep"},
+	})
+	rec.Start(opts, nil)
+
+	sess := &fakeVideoSession{}
+	if err := StartRecordingVideo(sess, rec, opts, true, nil); err != nil {
+		t.Fatalf("remote keep should start the screencast, got: %v", err)
+	}
+	if !sess.started {
+		t.Fatal("startScreencast was never sent")
+	}
+
+	StopRecordingVideo(sess, rec)
+	data, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readZipEntries(t, data)
+	for name := range entries {
+		if strings.HasSuffix(name, ".webm") {
+			t.Fatalf("remote-keep zip must not embed a video file, found %s", name)
+		}
+	}
+	if !strings.Contains(string(entries["video/index.json"]), `"remotePath":"/remote/Downloads/screencast-1.webm"`) {
+		t.Fatalf("manifest should carry remotePath, got: %s", entries["video/index.json"])
+	}
+
+	summary := rec.Summary()
+	if len(summary.Videos) != 1 || summary.Videos[0].RemotePath != "/remote/Downloads/screencast-1.webm" {
+		t.Fatalf("summary should carry remotePath, got: %+v", summary.Videos)
+	}
+	sentence := RecordingSavedSentence("record.zip", summary)
+	if !strings.Contains(sentence, "video on remote host: /remote/Downloads/screencast-1.webm") {
+		t.Fatalf("sentence should name the remote path, got: %q", sentence)
+	}
+}
+
+func TestRemoteWithoutKeepStillRefuses(t *testing.T) {
+	rec := NewRecorder()
+	opts := ParseRecordingOptions(map[string]interface{}{"video": true})
+	rec.Start(opts, nil)
+
+	sess := &fakeVideoSession{}
+	err := StartRecordingVideo(sess, rec, opts, true, nil)
+	if err == nil || !strings.Contains(err.Error(), "remote browser connections") {
+		t.Fatalf("required video on remote must refuse, got: %v", err)
+	}
+	if sess.started {
+		t.Fatal("startScreencast must not be sent without remote keep")
+	}
+}
+
+func TestRemoveEngineFileLeavesRemoteFilesAlone(t *testing.T) {
+	localFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(localFile, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{}, nil)
+	rec.SetVideoTrack(&VideoTrack{Context: "c", EnginePath: localFile, Remote: true, StartedAt: time.Now().UnixMilli()})
+
+	rec.RemoveEngineFile()
+	if !fileExists(localFile) {
+		t.Fatal("a remote-keep engine path must never be deleted locally")
 	}
 }
 

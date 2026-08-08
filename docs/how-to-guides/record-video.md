@@ -54,6 +54,15 @@ nothing to fetch separately. Every other track — actions, screenshots,
 snapshots, network — records fully over remote connections; only the video
 needs a local browser.
 
+For a remote host you control, `video: { remote: 'keep' }` opts out of the
+refusal: the screencast records on the remote host and stays there. The
+stop result and `video/index.json` carry `remotePath` — the file's
+location on that machine — and vibium never reads, moves, or deletes it;
+retrieval (scp, a mounted volume) and cleanup are yours. The remote engine
+must still support the screencast (Firefox 154+). CLI:
+`--video-remote keep`; MCP: `video_remote: "keep"`; Java:
+`.videoRemote("keep")`.
+
 On Linux, Vibium gives Firefox a private Downloads directory inside the
 temporary browser profile because Firefox's native command requires one. It is
 removed with the profile when the browser closes; Vibium does not create a

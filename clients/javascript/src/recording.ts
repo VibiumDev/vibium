@@ -7,6 +7,13 @@ export interface RecordingVideoOptions {
   height?: number;
   /** Video frame rate (engine default if omitted). */
   frameRate?: number;
+  /**
+   * On a remote browser connection, 'keep' records anyway and leaves the
+   * video on the remote host: the stop result and zip manifest carry its
+   * remotePath, and retrieval and cleanup are yours. Ignored on local
+   * connections.
+   */
+  remote?: 'keep';
 }
 
 export interface RecordingStartOptions {
@@ -47,6 +54,8 @@ export interface RecordingVideoSummary {
   durationMs: number;
   width: number;
   height: number;
+  /** Where a remote-keep video lives on the remote host. */
+  remotePath?: string;
   /** Set when the video pipeline died; the zip delivered without or with a partial video. */
   error?: string;
 }

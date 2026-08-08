@@ -8,9 +8,10 @@ import (
 	"time"
 )
 
-// RemoteVideoMessage explains why video capture cannot work over --connect:
-// the browser writes the video on the remote host.
-const RemoteVideoMessage = "screen recording is not supported on remote browser connections: the browser writes the video on the remote host. Use a local browser, or record without video"
+// RemoteVideoMessage explains why video capture cannot deliver over
+// --connect — the browser writes the video on the remote host — and names
+// the opt-in for hosts the caller controls.
+const RemoteVideoMessage = "screen recording is not supported on remote browser connections: the browser writes the video on the remote host. Use a local browser, record without video, or — for a remote host you control — video: {remote: 'keep'} to record and leave the file there"
 
 // stopScreencastTimeout bounds the engine's video finalization at stop.
 const stopScreencastTimeout = 15 * time.Second
@@ -35,7 +36,9 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 		return nil
 	}
 
-	if remote {
+	// remote: 'keep' opts out of the refusal: the engine records on the
+	// remote host and the file stays there, reported via remotePath.
+	if remote && !opts.Video.RemoteKeep {
 		return fail(errors.New(RemoteVideoMessage))
 	}
 
@@ -88,6 +91,7 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 		Context:    context,
 		ID:         result.Result.Screencast,
 		EnginePath: result.Result.Path,
+		Remote:     remote,
 		StartedAt:  time.Now().UnixMilli(),
 		Width:      width,
 		Height:     height,
@@ -165,6 +169,8 @@ func RecordingSavedSentence(path string, s RecordingSummary) string {
 		msg += " — video unavailable: " + s.VideoUnavailable
 	} else if len(s.Videos) > 0 && s.Videos[0].Error != "" {
 		msg += " — video error: " + s.Videos[0].Error
+	} else if len(s.Videos) > 0 && s.Videos[0].RemotePath != "" {
+		msg += " — video on remote host: " + s.Videos[0].RemotePath
 	}
 	return msg
 }

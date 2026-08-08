@@ -4043,6 +4043,9 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			video[key] = v
 		}
 	}
+	if r, ok := args["video_remote"].(string); ok && r != "" {
+		video["remote"] = r
+	}
 	if len(video) > 0 {
 		if b, ok := args["video"].(bool); !ok || b {
 			args["video"] = video
@@ -4064,10 +4067,11 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		opts.Path = abs
 	}
 
-	// Required video on a remote connection can never work; fail before
-	// touching the browser.
+	// Required video on a remote connection can never deliver into the
+	// zip; fail before touching the browser — unless the caller opted
+	// into leaving the file on the remote host.
 	remote := h.connectURL != ""
-	if remote && opts.Video.Mode == api.VideoRequired {
+	if remote && opts.Video.Mode == api.VideoRequired && !opts.Video.RemoteKeep {
 		return nil, errors.New(api.RemoteVideoMessage)
 	}
 

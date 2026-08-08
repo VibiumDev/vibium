@@ -105,6 +105,9 @@ func newRecordCmd() *cobra.Command {
 			if videoFPS > 0 {
 				callArgs["video_frame_rate"] = videoFPS
 			}
+			if videoRemote, _ := cmd.Flags().GetString("video-remote"); videoRemote != "" {
+				callArgs["video_remote"] = videoRemote
+			}
 			// The daemon is a separate long-lived process whose working
 			// directory is not the user's, so resolve against this shell
 			// before the path goes over the socket (#119) — including the
@@ -136,6 +139,7 @@ func newRecordCmd() *cobra.Command {
 	startCmd.Flags().Bool("video", false, "Require video (omit: video when the engine supports it; =false: off)")
 	startCmd.Flags().String("video-size", "", "Video dimensions as WxH, e.g. 1280x720 (default: viewport)")
 	startCmd.Flags().Int("video-fps", 0, "Video frame rate (engine default if omitted)")
+	startCmd.Flags().String("video-remote", "", "On a remote connection, \"keep\" records anyway and leaves the video on the remote host")
 	startCmd.Flags().StringP("output", "o", "", "Where the recording ZIP lands at stop (default: record-<timestamp>.zip)")
 
 	stopCmd := &cobra.Command{

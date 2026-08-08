@@ -89,7 +89,10 @@ class Recording:
                 video if the engine supports it; the stop result reports
                 videoUnavailable otherwise. True (or a dict with "width",
                 "height", "frame_rate"): start fails if the engine can't
-                deliver. False: off.
+                deliver. False: off. On a remote connection,
+                {"remote": "keep"} records anyway and leaves the video on
+                the remote host — the result carries its path there, and
+                retrieval and cleanup are yours.
             path: Where the recording zip lands at stop. Defaults to a
                 timestamped record-YYYYMMDD-HHMMSS.zip in the working
                 directory so a rerun never clobbers the previous one. None

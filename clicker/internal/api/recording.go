@@ -53,6 +53,11 @@ type VideoOptions struct {
 	Width     int
 	Height    int
 	FrameRate int
+	// RemoteKeep (video: {remote: "keep"}) records on a remote browser
+	// connection and leaves the file on the remote host: the manifest and
+	// stop result carry its path there, and cleanup is the caller's.
+	// Ignored on local connections, where the video embeds normally.
+	RemoteKeep bool
 }
 
 // ParseRecordingOptions extracts RecordingStartOptions from a params map.
@@ -109,6 +114,9 @@ func ParseRecordingOptions(params map[string]interface{}) RecordingStartOptions 
 		if f, ok := v["frameRate"].(float64); ok {
 			opts.Video.FrameRate = int(f)
 		}
+		if r, ok := v["remote"].(string); ok && r == "keep" {
+			opts.Video.RemoteKeep = true
+		}
 	}
 	if p, ok := params["path"].(string); ok {
 		opts.Path = p
@@ -125,7 +133,11 @@ type VideoTrack struct {
 	Context    string
 	ID         string // active engine screencast id; "" once stopped
 	EnginePath string // file the engine live-muxes; moved into the zip at stop
-	StartedAt  int64  // wall-clock ms at the startScreencast acknowledgement
+	// Remote: the engine wrote EnginePath on a remote host. The file is
+	// never read, moved, or deleted from here; the manifest records the
+	// path and the caller retrieves it.
+	Remote    bool
+	StartedAt int64 // wall-clock ms at the startScreencast acknowledgement
 	// OffsetMs is the video's start relative to the recording's t0, aligning
 	// the video timeline with trace event timestamps.
 	OffsetMs   float64
@@ -141,6 +153,8 @@ type VideoSummary struct {
 	DurationMs int64
 	Width      int
 	Height     int
+	// RemotePath is where a remote-keep video lives on the remote host.
+	RemotePath string
 	Error      string
 }
 
@@ -171,6 +185,9 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 				"durationMs": v.DurationMs,
 				"width":      v.Width,
 				"height":     v.Height,
+			}
+			if v.RemotePath != "" {
+				entry["remotePath"] = v.RemotePath
 			}
 			if v.Error != "" {
 				entry["error"] = v.Error
@@ -329,7 +346,7 @@ func (t *Recorder) Stop() ([]byte, error) {
 
 	t.recording = false
 	data, err := t.buildZipLocked(true)
-	if err == nil && t.video != nil && t.video.EnginePath != "" {
+	if err == nil && t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		os.Remove(t.video.EnginePath)
 		t.video.EnginePath = ""
 	}
@@ -391,11 +408,13 @@ func (t *Recorder) FinishVideo(enginePath, errMsg string) {
 }
 
 // RemoveEngineFile deletes the engine-written video temp file, for abandoned
-// recordings (superseded, or lost on session close).
+// recordings (superseded, or lost on session close). A remote-keep video is
+// never touched: its path names a file on another machine, and deleting it
+// here could hit an unrelated local file of the same name.
 func (t *Recorder) RemoveEngineFile() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.video != nil && t.video.EnginePath != "" {
+	if t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		os.Remove(t.video.EnginePath)
 		t.video.EnginePath = ""
 	}
@@ -417,13 +436,17 @@ func (t *Recorder) Summary() RecordingSummary {
 		}
 	}
 	if t.video != nil {
-		s.Videos = append(s.Videos, VideoSummary{
+		vs := VideoSummary{
 			Context:    t.video.Context,
 			DurationMs: t.video.DurationMs,
 			Width:      t.video.Width,
 			Height:     t.video.Height,
 			Error:      t.video.Error,
-		})
+		}
+		if t.video.Remote {
+			vs.RemotePath = t.video.EnginePath
+		}
+		s.Videos = append(s.Videos, vs)
 	}
 	return s
 }
@@ -1344,7 +1367,11 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 		if t.video.Error != "" {
 			entry["error"] = t.video.Error
 		}
-		if t.video.EnginePath != "" {
+		if t.video.Remote {
+			// remote: 'keep' — the file lives on the remote host; record
+			// where, and leave retrieval to the caller.
+			entry["remotePath"] = t.video.EnginePath
+		} else if t.video.EnginePath != "" {
 			// WebM is already compressed; store it instead of deflating.
 			name := "video/" + context + ".webm"
 			data, err := os.ReadFile(t.video.EnginePath)
