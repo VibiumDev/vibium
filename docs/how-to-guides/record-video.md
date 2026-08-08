@@ -23,6 +23,11 @@ The video films the browsing context that was active at `recording.start()`
 and does not follow focus. One camera per context: a second recording cannot
 film a context that is already being recorded.
 
+This guide covers the video track specifically — engine support, Firefox
+channels, and video options. For recording in general (screenshots,
+snapshots, groups, chunks, the viewer), start with the
+[Recording tutorial](../tutorials/recording.md).
+
 ## Browser support
 
 Video requires Firefox 154, which is the current Firefox beta. It reaches regular Firefox on 2026-08-18; from then on a plain `firefox.start()` is enough. Until then, pass `channel: 'beta'` when starting the browser, as in the examples below. The channel applies at install and at launch: it picks which Firefox to download and which one to run, so a plain `firefox.start()` still launches stable Firefox even after the beta is installed.
@@ -136,5 +141,6 @@ partial and `video/index.json` records the error.
 The video is one more track in the same recording zip that carries
 per-action screenshots, DOM snapshots, and network events for the Record
 Player. `video/index.json` records the video's `offsetMs` from the
-recording's start so viewers can align the two timelines. See
-[Recording format](../explanation/recording-format.md).
+recording's start so viewers can align the two timelines. See the
+[Recording tutorial](../tutorials/recording.md) for the other tracks and
+[Recording format](../explanation/recording-format.md) for the zip layout.
