@@ -7,7 +7,7 @@
  *   vibium install --engine firefox
  *
  * CI sets VIBIUM_REQUIRE_FIREFOX, which turns every skip into a failure:
- * the green check must prove Firefox and screencast actually ran.
+ * the green check must prove Firefox and video recording actually ran.
  */
 
 const { test, describe, before, after } = require('node:test');
@@ -43,18 +43,30 @@ function skipOrFail(t, reason) {
 }
 
 // Firefox gains BiDi screencast in 154; self-skip on older builds so the
-// recording tests activate on their own once the release channel catches up.
-async function startScreencastOrSkip(t, vibe) {
+// video tests activate on their own once the release channel catches up.
+async function startVideoRecordingOrSkip(t, vibe, options) {
   try {
-    await vibe.screencast.start();
+    await vibe.context.recording.start({ video: true, ...options });
     return true;
   } catch (err) {
     if (/not supported/.test(err.message)) {
-      skipOrFail(t, 'this Firefox does not support screencast yet');
+      skipOrFail(t, 'this Firefox does not support video recording yet');
       return false;
     }
     throw err;
   }
+}
+
+// Unzip a recording buffer and return { extractedDir, cleanup }.
+function unzipRecording(zipBuffer) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-rec-'));
+  const zipPath = path.join(tmpDir, 'record.zip');
+  fs.writeFileSync(zipPath, zipBuffer);
+  execFileSync('unzip', ['-o', zipPath, '-d', path.join(tmpDir, 'extracted')], { stdio: 'pipe' });
+  return {
+    extractedDir: path.join(tmpDir, 'extracted'),
+    cleanup: () => fs.rmSync(tmpDir, { recursive: true, force: true }),
+  };
 }
 
 before(async () => {
@@ -92,75 +104,85 @@ describe('JS Firefox', () => {
     }
   });
 
-  test('screencast records video natively', async (t) => {
+  test('recording captures a native video track', async (t) => {
     if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
 
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-out-'));
+    const zipPath = path.join(outDir, 'run.zip');
     const bro = await browser.start({ engine: 'firefox', headless: true });
     try {
       const vibe = await bro.page();
       await vibe.go(baseURL);
 
-      if (!(await startScreencastOrSkip(t, vibe))) return;
+      if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
 
       const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
       await link.click();
       await vibe.find('#login', { timeout: 10000 });
 
-      const video = await vibe.screencast.stop();
-      assert.ok(video.length > 1000, 'Video should have real content');
-      // WebM/Matroska EBML magic
-      assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
-        'Video should be a WebM file');
+      const zipBuffer = await vibe.context.recording.stop();
+      assert.ok(fs.existsSync(zipPath), 'Recording should land at the declared path');
+      assert.ok(zipBuffer.length > 1000, 'Recording should have real content');
+
+      const { extractedDir, cleanup } = unzipRecording(zipBuffer);
+      try {
+        const videoDir = path.join(extractedDir, 'video');
+        const videos = fs.readdirSync(videoDir).filter((f) => f.endsWith('.webm'));
+        assert.strictEqual(videos.length, 1, 'Zip should contain one video track');
+        const video = fs.readFileSync(path.join(videoDir, videos[0]));
+        assert.ok(video.length > 1000, 'Video should have real content');
+        // WebM/Matroska EBML magic
+        assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
+          'Video should be a WebM file');
+
+        const index = JSON.parse(fs.readFileSync(path.join(videoDir, 'index.json'), 'utf-8'));
+        assert.strictEqual(index.videos.length, 1, 'Manifest should list the video');
+        assert.strictEqual(index.videos[0].file, `video/${videos[0]}`, 'Manifest should name the file');
+        assert.strictEqual(index.videos[0].mimeType, 'video/webm');
+        assert.ok(index.videos[0].offsetMs >= 0, 'Manifest should carry the start offset');
+      } finally {
+        cleanup();
+      }
     } finally {
       await bro.stop();
+      fs.rmSync(outDir, { recursive: true, force: true });
     }
   });
 
-  test('screencast stop can be retried after a failed delivery', async (t) => {
-    if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
-
-    // A destination under a regular file is unwritable on every platform,
-    // without needing permission tricks.
-    const blocker = path.join(os.tmpdir(), `vibium-test-blocker-${process.pid}`);
-    fs.writeFileSync(blocker, 'not a directory');
-    const badDest = path.join(blocker, 'sub', 'video.webm');
-
-    const bro = await browser.start({ engine: 'firefox', headless: true });
-    try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-
-      if (!(await startScreencastOrSkip(t, vibe))) return;
-
-      await vibe.find('a[href="/login"]', { timeout: 5000 });
-
-      await assert.rejects(
-        () => vibe.screencast.stop({ path: badDest }),
-        (err) => /failed to save screencast/.test(err.message),
-        'Delivering to an unwritable path should fail'
-      );
-
-      // The recording must survive the failed delivery: a retried stop()
-      // without a path returns the video inline.
-      const video = await vibe.screencast.stop();
-      assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
-        'Retried stop should still deliver the WebM');
-    } finally {
-      await bro.stop();
-      fs.rmSync(blocker, { force: true });
-    }
-  });
-
-  test('screencast on chrome fails with an actionable error', async () => {
+  test('required video on chrome fails with an actionable error', async () => {
     const bro = await browser.start({ headless: true });
     try {
       const vibe = await bro.page();
       await vibe.go(baseURL);
       await assert.rejects(
-        () => vibe.screencast.start(),
+        () => vibe.context.recording.start({ video: true, path: null }),
         (err) => /not supported by this browser/.test(err.message),
-        'Chrome should explain screencast is unsupported and suggest firefox'
+        'Chrome should explain video is unsupported and name the firefox install'
       );
+    } finally {
+      await bro.stop();
+    }
+  });
+
+  test('omitted video on chrome records a trace without a video track', async () => {
+    const bro = await browser.start({ headless: true });
+    try {
+      const vibe = await bro.page();
+      await vibe.go(baseURL);
+
+      await vibe.context.recording.start({ path: null });
+      await vibe.find('a[href="/login"]', { timeout: 5000 });
+      const zipBuffer = await vibe.context.recording.stop();
+      assert.ok(zipBuffer.length > 0, 'Recording should still deliver');
+
+      const { extractedDir, cleanup } = unzipRecording(zipBuffer);
+      try {
+        const files = fs.readdirSync(extractedDir);
+        assert.ok(files.some((f) => f.endsWith('.trace')), 'Trace should be present');
+        assert.ok(!files.includes('video'), 'No video entries on an engine without support');
+      } finally {
+        cleanup();
+      }
     } finally {
       await bro.stop();
     }

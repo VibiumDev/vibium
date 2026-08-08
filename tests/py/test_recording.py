@@ -13,7 +13,7 @@ async def test_start_stop_zip(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start()
+        await ctx.recording.start(path=None)
         await vibe.go(test_server)
         data = await ctx.recording.stop()
         assert isinstance(data, bytes)
@@ -33,7 +33,7 @@ async def test_stop_with_path(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start()
+        await ctx.recording.start(path=None)
         await vibe.go(test_server)
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
             path = f.name
@@ -55,7 +55,7 @@ async def test_screenshots_png(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start(screenshots=True)
+        await ctx.recording.start(screenshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
         data = await ctx.recording.stop()
@@ -73,7 +73,7 @@ async def test_snapshots_html(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start(snapshots=True)
+        await ctx.recording.start(snapshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
         data = await ctx.recording.stop()
@@ -90,7 +90,7 @@ async def test_chunks(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start()
+        await ctx.recording.start(path=None)
         await vibe.go(test_server)
 
         await ctx.recording.start_chunk(name="chunk1")
@@ -111,7 +111,7 @@ async def test_groups(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start()
+        await ctx.recording.start(path=None)
         await ctx.recording.start_group("test-group")
         await vibe.go(test_server)
         await ctx.recording.stop_group()
@@ -128,7 +128,7 @@ async def test_network_recording(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start()
+        await ctx.recording.start(path=None)
         await vibe.go(test_server)
         await vibe.evaluate("fetch('/json')")
         await vibe.wait(500)
@@ -145,7 +145,7 @@ async def test_zip_structure(fresh_async_browser, test_server):
     ctx = await fresh_async_browser.new_context()
     try:
         vibe = await ctx.new_page()
-        await ctx.recording.start(screenshots=True, snapshots=True)
+        await ctx.recording.start(screenshots=True, snapshots=True, path=None)
         await vibe.go(test_server)
         await vibe.wait(500)
         data = await ctx.recording.stop()

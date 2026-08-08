@@ -1378,19 +1378,39 @@ func GetToolSchemas() []Tool {
 						"description": "JPEG quality 0.0-1.0 (default: 0.5, ignored for png)",
 						"default":     0.5,
 					},
+					"video": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Omit to record video when the engine supports it (Firefox 154+). Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
+					},
+					"video_width": map[string]interface{}{
+						"type":        "number",
+						"description": "Video width in pixels (defaults to the viewport)",
+					},
+					"video_height": map[string]interface{}{
+						"type":        "number",
+						"description": "Video height in pixels (defaults to the viewport)",
+					},
+					"video_frame_rate": map[string]interface{}{
+						"type":        "number",
+						"description": "Video frame rate (engine default if omitted)",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Where the recording ZIP lands at stop (default: record.zip)",
+					},
 				},
 				"additionalProperties": false,
 			},
 		},
 		{
 			Name:        "browser_record_stop",
-			Description: "Stop recording and save to a Playwright-compatible trace ZIP file",
+			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "Output file path (default: record.zip)",
+						"description": "Output file path (overrides the path declared at start; default: record.zip)",
 					},
 				},
 				"additionalProperties": false,

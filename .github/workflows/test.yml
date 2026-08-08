@@ -63,7 +63,7 @@ jobs:
     timeout-minutes: 30
 
     env:
-      # Screencast needs Firefox 154, in beta until 2026-08-18. Set job-wide
+      # Video recording needs Firefox 154, in beta until 2026-08-18. Set job-wide
       # so install and test resolve the same channel; delete this once 154
       # reaches the release channel.
       VIBIUM_FIREFOX_CHANNEL: beta
@@ -148,13 +148,13 @@ jobs:
       # startup-scale timeout because a cold launch permits two 60s attempts.
       # VIBIUM_REQUIRE_FIREFOX: the Firefox tests skip when Firefox is
       # missing or too old; in CI that must be a failure, or the check goes
-      # green without exercising Firefox or screencast at all.
+      # green without exercising Firefox or video recording at all.
       - name: Test
         run: xvfb-run --auto-servernum make test
         env:
           VIBIUM_REQUIRE_FIREFOX: 1
 
-      # The main suite above includes focused Firefox launch and screencast
+      # The main suite above includes focused Firefox launch and video recording
       # tests. This adds the browser-neutral CLI behavior without assuming
       # Chrome-only dialog or network-interception semantics.
       - name: Test Firefox core behavior

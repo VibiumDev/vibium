@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .._sync_base import _EventLoopThread
@@ -26,11 +26,14 @@ class Recording:
         bidi: Optional[bool] = None,
         format: Optional[str] = None,
         quality: Optional[float] = None,
+        video: Optional[Union[bool, Dict[str, Any]]] = None,
+        path: Optional[str] = "record.zip",
     ) -> None:
         self._loop.run(self._async.start(name=name, screenshots=screenshots,
                                           snapshots=snapshots, sources=sources,
                                           title=title, bidi=bidi,
-                                          format=format, quality=quality))
+                                          format=format, quality=quality,
+                                          video=video, path=path))
 
     def stop(self, path: Optional[str] = None) -> bytes:
         return self._loop.run(self._async.stop(path=path))

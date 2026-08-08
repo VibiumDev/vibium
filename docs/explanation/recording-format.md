@@ -20,12 +20,32 @@ A trace zip contains three kinds of entries:
 record.zip
 ├── trace.trace             # Main event timeline (newline-delimited JSON)
 ├── trace.network           # Network events (newline-delimited JSON)
-└── resources/
-    ├── page@abc123-1773879004791.jpeg  # Screenshot frames (pageId-timestamp.ext)
-    └── page@abc123-1773879004850.jpeg  # Other resources (pageId-timestamp.ext)
+├── resources/
+│   ├── page@abc123-1773879004791.jpeg  # Screenshot frames (pageId-timestamp.ext)
+│   └── page@abc123-1773879004850.jpeg  # Other resources (pageId-timestamp.ext)
+├── video/<context>.webm    # Native video track (when recorded; see below)
+└── video/index.json        # Video manifest
 ```
 
 For chunked recordings, the first chunk uses `trace.trace` / `trace.network`. Subsequent chunks use `<N>.trace` / `<N>.network` (e.g., `1.trace`, `2.trace`).
+
+## Video Entries
+
+When the recording carries a video track (`recording.start({ video })`,
+Firefox 154+), the engine-encoded WebM is stored under `video/` with a
+manifest. Video entries are additive: existing trace tooling ignores them.
+
+```json
+{"version":1,"videos":[{"file":"video/<context>.webm","context":"<browsing context id>","startedAt":1754870000123,"offsetMs":412,"width":1280,"height":720,"mimeType":"video/webm"}]}
+```
+
+`offsetMs` is the video's start relative to the recording's t0 — the
+wall-clock delta from recording start to the engine's screencast
+acknowledgement — and aligns the video timeline with trace event timestamps.
+If the video pipeline failed, the entry carries an `error` field and the
+file may be absent or partial. Chunk artifacts carry no video file; their
+manifest instead records `videoRange: [startMs, endMs]`, the chunk's span
+within the session video.
 
 Resource files use Playwright-compatible naming: `<pageId>-<wallTimeMs>.<ext>` (e.g., `resources/page@abc123-1773879004791.jpeg`).
 

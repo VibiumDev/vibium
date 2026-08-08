@@ -141,8 +141,24 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium upload "<selector>" <files...>` — set files on input[type=file]
 
 ### Recording
-- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`)
-- `vibium record stop` — stop recording and save ZIP (`-o path`)
+- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path`)
+- `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path)
+
+Recordings can include a video track of the session (Firefox 154+, local
+browsers). By default video is recorded when the engine supports it and
+skipped otherwise — the stop result says which. Pass `--video` to require
+it (fails with an explanatory error on Chrome), `--video=false` to disable,
+and `--video-size 1280x720` / `--video-fps 30` to override the viewport
+defaults. The video lands inside the recording ZIP next to the trace
+(`video/<context>.webm`); it films the page that was active at start and
+does not follow tab switches.
+
+```
+vibium record start --video -o run.zip
+# ... actions ...
+vibium record stop
+# Saved run.zip (23 steps, 14s video)
+```
 
 ### Cookies
 - `vibium cookies` — list all cookies

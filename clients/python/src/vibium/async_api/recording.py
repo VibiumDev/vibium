@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import base64
-from typing import Any, Dict, Optional, TYPE_CHECKING
+import os
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..client import BiDiClient
@@ -26,12 +27,23 @@ class Recording:
         bidi: Optional[bool] = None,
         format: Optional[str] = None,
         quality: Optional[float] = None,
+        video: Optional[Union[bool, Dict[str, Any]]] = None,
+        path: Optional[str] = "record.zip",
     ) -> None:
         """Start recording.
 
         Args:
             format: Screenshot format — 'jpeg' (default, faster/smaller) or 'png' (lossless).
             quality: JPEG quality 0.0-1.0 (default 0.5). Ignored for PNG.
+            video: Video track (Firefox 154+, local browsers). Omitted: record
+                video if the engine supports it; the stop result reports
+                videoUnavailable otherwise. True (or a dict with "width",
+                "height", "frame_rate"): start fails if the engine can't
+                deliver. False: off.
+            path: Where the recording zip lands at stop (default record.zip
+                in the working directory). None selects bytes-only capture:
+                no file is written and the recording is lost if the session
+                closes before stop().
         """
         params: Dict[str, Any] = {"userContext": self._user_context_id}
         if name is not None:
@@ -50,16 +62,31 @@ class Recording:
             params["format"] = format
         if quality is not None:
             params["quality"] = quality
+        if video is not None:
+            if isinstance(video, dict):
+                # snake_case keys map to the wire's camelCase
+                params["video"] = {
+                    {"frame_rate": "frameRate"}.get(k, k): v for k, v in video.items()
+                }
+            else:
+                params["video"] = video
+        if path is not None:
+            # The binary's working directory is not necessarily ours, so
+            # relative paths resolve here before going over the wire.
+            params["path"] = os.path.abspath(path)
         await self._client.send("vibium:recording.start", params)
 
     async def stop(self, path: Optional[str] = None) -> bytes:
-        """Stop recording and return the recording zip as bytes."""
+        """Stop recording and return the recording zip as bytes.
+
+        path overrides the path declared at start.
+        """
         params: Dict[str, Any] = {"userContext": self._user_context_id}
         if path is not None:
-            params["path"] = path
+            params["path"] = os.path.abspath(path)
         result = await self._client.send("vibium:recording.stop", params)
 
-        if path and result.get("path"):
+        if result.get("path"):
             with open(result["path"], "rb") as f:
                 return f.read()
 

@@ -75,7 +75,7 @@ Vibium's architecture follows the classic robotics control loop:
 
 ## Video Recording
 
-**Status: Shipped** via `page.screencast` (JS and Python). Uses the WebDriver BiDi `browsingContext.startScreencast` command, so the browser encodes the video itself and no FFmpeg is needed. Works on Firefox 154+; Chrome has not implemented the BiDi command yet and will work when it does. See `docs/how-to-guides/record-video.md`.
+**Status: Shipped** as a recording track: `recording.start({ video: true })` on every surface (JS, Python, Java, CLI, MCP), with the video landing inside the recording zip. Uses the WebDriver BiDi `browsingContext.startScreencast` command, so the browser encodes the video itself and no FFmpeg is needed. Works on Firefox 154+; Chrome has not implemented the BiDi command yet and will work when it does. See `docs/how-to-guides/record-video.md`.
 
 ---
 

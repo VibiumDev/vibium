@@ -121,7 +121,7 @@ describe('Recording: basic start/stop', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'basic-test' });
+      await ctx.recording.start({ path: null, name: 'basic-test' });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
@@ -171,7 +171,7 @@ describe('Recording: basic start/stop', () => {
       // Use bro.page() instead of explicit newContext() → newPage()
       const vibe = await bro.page();
 
-      await vibe.context.recording.start({ name: 'context-shortcut' });
+      await vibe.context.recording.start({ path: null, name: 'context-shortcut' });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
@@ -203,7 +203,7 @@ describe('Recording: basic start/stop', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start();
+      await ctx.recording.start({ path: null });
       await vibe.go(baseURL);
       const zipBuffer = await ctx.recording.stop({ path: recordPath });
 
@@ -217,6 +217,30 @@ describe('Recording: basic start/stop', () => {
       cleanupDir(tmpDir);
     }
   });
+
+  test('path declared at start receives the recording; stop path overrides it', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-recording-startpath-'));
+    const startPath = path.join(tmpDir, 'declared.zip');
+    const overridePath = path.join(tmpDir, 'override.zip');
+    try {
+      const ctx = await bro.newContext();
+      const vibe = await ctx.newPage();
+
+      await ctx.recording.start({ path: startPath });
+      await vibe.go(baseURL);
+      await ctx.recording.stop();
+      assert.ok(fs.existsSync(startPath), 'stop() should deliver to the path declared at start');
+
+      await ctx.recording.start({ path: startPath, name: 'second' });
+      await vibe.go(baseURL);
+      await ctx.recording.stop({ path: overridePath });
+      assert.ok(fs.existsSync(overridePath), 'stop path should win over the start path');
+
+      await ctx.close();
+    } finally {
+      cleanupDir(tmpDir);
+    }
+  });
 });
 
 describe('Recording: screenshots', () => {
@@ -227,7 +251,7 @@ describe('Recording: screenshots', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ screenshots: true });
+      await ctx.recording.start({ path: null, screenshots: true });
       await vibe.go(baseURL);
       // Wait for some screenshots to be captured
       await vibe.wait(500);
@@ -269,7 +293,7 @@ describe('Recording: snapshots', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ snapshots: true });
+      await ctx.recording.start({ path: null, snapshots: true });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
@@ -345,7 +369,7 @@ describe('Recording: chunks', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'chunk-test' });
+      await ctx.recording.start({ path: null, name: 'chunk-test' });
       await vibe.go(baseURL);
       await vibe.wait(200);
 
@@ -392,7 +416,7 @@ describe('Recording: groups', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'group-test' });
+      await ctx.recording.start({ path: null, name: 'group-test' });
       await vibe.go(baseURL);
 
       await ctx.recording.startGroup('login flow');
@@ -430,7 +454,7 @@ describe('Recording: network events', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'network-test' });
+      await ctx.recording.start({ path: null, name: 'network-test' });
       await vibe.go(baseURL);
       await vibe.wait(500);
       const zipBuffer = await ctx.recording.stop();
@@ -499,7 +523,7 @@ describe('Recording: zip structure', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ screenshots: true, snapshots: true });
+      await ctx.recording.start({ path: null, screenshots: true, snapshots: true });
       await vibe.go(baseURL);
       await vibe.wait(500);
       const zipBuffer = await ctx.recording.stop();

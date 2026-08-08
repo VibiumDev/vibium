@@ -6,6 +6,9 @@ import com.vibium.internal.BiDiClient;
 import com.vibium.types.ChunkOptions;
 import com.vibium.types.RecordingOptions;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.Map;
 
@@ -36,6 +39,10 @@ public class Recording {
                 params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
             }
         }
+        // The binary's working directory is not necessarily ours, so relative
+        // paths resolve here before going over the wire.
+        String path = params.has("path") ? params.get("path").getAsString() : "record.zip";
+        params.addProperty("path", Paths.get(path).toAbsolutePath().toString());
         client.send("vibium:recording.start", params);
     }
 
@@ -44,13 +51,20 @@ public class Recording {
         return stop(null);
     }
 
-    /** Stop recording and save to path. Returns trace data (ZIP). */
+    /** Stop recording and save to path (overrides the path declared at start). Returns trace data (ZIP). */
     public byte[] stop(String path) {
         JsonObject params = params();
         if (path != null) {
-            params.addProperty("path", path);
+            params.addProperty("path", Paths.get(path).toAbsolutePath().toString());
         }
         JsonObject result = client.send("vibium:recording.stop", params);
+        if (result.has("path")) {
+            try {
+                return Files.readAllBytes(Paths.get(result.get("path").getAsString()));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to read recording " + result.get("path").getAsString(), e);
+            }
+        }
         if (result.has("data")) {
             return Base64.getDecoder().decode(result.get("data").getAsString());
         }

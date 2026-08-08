@@ -58,10 +58,9 @@ type BrowserSession struct {
 	prompts     *PromptTracker
 	navigations *NavigationTracker
 
-	// Screencast support (native browser video recording)
-	screencastMu   sync.Mutex // serializes start/stop across their async handlers
-	screencastID   string     // active screencast id; "" = none
-	screencastPath string     // file the browser writes the video to
+	// Serializes recording start/stop across their async handlers (the
+	// video screencast negotiation spans several browser commands).
+	recordingMu sync.Mutex
 
 	// Recording support
 	recorder           *Recorder
@@ -73,20 +72,20 @@ type BrowserSession struct {
 	dispatchMu         sync.Mutex // serializes dispatch goroutines so screenshots capture correct page state
 }
 
-func (s *BrowserSession) beginScreencastOperation() bool {
-	s.screencastMu.Lock()
+func (s *BrowserSession) beginRecordingOperation() bool {
+	s.recordingMu.Lock()
 	s.mu.Lock()
 	closed := s.closed
 	s.mu.Unlock()
 	if closed {
-		s.screencastMu.Unlock()
+		s.recordingMu.Unlock()
 		return false
 	}
 	return true
 }
 
-func (s *BrowserSession) endScreencastOperation() {
-	s.screencastMu.Unlock()
+func (s *BrowserSession) endRecordingOperation() {
+	s.recordingMu.Unlock()
 }
 
 // SetLastElementBox stores the bounding box of the last resolved element for recording.
@@ -748,14 +747,6 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		go r.handleRecordingStopGroup(session, cmd)
 		return
 
-	// Screencast commands (native browser video recording)
-	case "vibium:screencast.start":
-		go r.handleScreencastStart(session, cmd)
-		return
-	case "vibium:screencast.stop":
-		go r.handleScreencastStop(session, cmd)
-		return
-
 	// Clock commands
 	case "vibium:clock.install":
 		r.dispatch(session, cmd, r.handleClockInstall)
@@ -1083,14 +1074,21 @@ func (r *Router) closeSession(session *BrowserSession) {
 	session.closed = true
 	session.mu.Unlock()
 
-	// A screencast command owns this lock until its browser command and state
+	// A recording command owns this lock until its browser commands and state
 	// update are complete. Taking it after marking the session closed drains an
 	// active operation and prevents a queued start from creating a recording
 	// after cleanup has already run.
-	session.screencastMu.Lock()
-	defer session.screencastMu.Unlock()
+	session.recordingMu.Lock()
+	defer session.recordingMu.Unlock()
 
 	fmt.Fprintf(os.Stderr, "[router] Closing browser session for client %d\n", session.Client.ID())
+
+	// An active recording auto-finalizes to its declared path, as if
+	// recording.stop() had been called; bytes-only recordings are lost.
+	// This needs the BiDi connection, so it runs before stopChan closes.
+	if session.recorder != nil {
+		FinalizeRecordingOnClose(NewAPISession(r, session, ""), session.recorder)
+	}
 
 	// Signal the routing goroutine to stop
 	close(session.stopChan)
@@ -1117,11 +1115,6 @@ func (r *Router) closeSession(session *BrowserSession) {
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
-	}
-
-	// The spec leaves deleting the browser-written recording to the local end
-	if session.screencastPath != "" {
-		os.Remove(session.screencastPath)
 	}
 
 	// Close browser

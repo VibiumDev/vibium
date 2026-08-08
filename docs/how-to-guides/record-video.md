@@ -1,13 +1,31 @@
 # Record Video
 
-`page.screencast` records the browser viewport to a video file. The browser encodes the video itself, using the WebDriver BiDi `browsingContext.startScreencast` command, so there is nothing extra to install.
+Recordings can include a video track of the session. Pass `video` to
+`recording.start()` and the browser encodes the viewport to WebM itself,
+using the WebDriver BiDi `browsingContext.startScreencast` command — nothing
+extra to install. The video lands inside the recording zip next to the trace:
 
-Only one screencast can be active in a browser session at a time. Starting a
-recording from a second page fails until the active recording is stopped.
+```
+record.zip
+├── trace.trace
+├── trace.network
+├── video/<context>.webm
+└── video/index.json
+```
+
+With `video` omitted, vibium records video whenever the engine supports it;
+otherwise the recording proceeds without it and the stop result reports
+`videoUnavailable` with the engine's reason. `video: true` requires video:
+`start` fails with an explanatory error if the engine can't deliver.
+`video: false` turns it off.
+
+The video films the browsing context that was active at `recording.start()`
+and does not follow focus. One camera per context: a second recording cannot
+film a context that is already being recorded.
 
 ## Browser support
 
-Recording requires Firefox 154, which is the current Firefox beta. It reaches regular Firefox on 2026-08-18; from then on a plain `firefox.start()` is enough. Until then, pass `channel: 'beta'` when starting the browser, as in the examples below. The channel applies at install and at launch: it picks which Firefox to download and which one to run, so a plain `firefox.start()` still launches stable Firefox even after the beta is installed.
+Video requires Firefox 154, which is the current Firefox beta. It reaches regular Firefox on 2026-08-18; from then on a plain `firefox.start()` is enough. Until then, pass `channel: 'beta'` when starting the browser, as in the examples below. The channel applies at install and at launch: it picks which Firefox to download and which one to run, so a plain `firefox.start()` still launches stable Firefox even after the beta is installed.
 
 On macOS and Linux, the clients install the selected channel automatically on
 first use. Windows users must install Firefox themselves and set
@@ -19,11 +37,12 @@ vibium install --engine firefox --firefox-channel beta
 
 The `VIBIUM_FIREFOX_CHANNEL` env var does the same as the flag and option, for cases where you cannot change the code.
 
-Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `start()` fails there with an error saying so.
+Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `video: true` fails there with an error saying so, and an omitted `video` records the trace without a video track.
 
-Screen recording is not supported on remote browser connections because the
+Video is not recorded on remote browser connections (`--connect`) because the
 browser writes the video on the remote host and Vibium cannot retrieve that
-file. Use a local browser, or `recording.start()` for a trace with screenshots.
+file. Use a local browser, or record without video for a trace with
+screenshots.
 
 On Linux, Vibium gives Firefox a private Downloads directory inside the
 temporary browser profile because Firefox's native command requires one. It is
@@ -42,15 +61,17 @@ const { firefox } = require('vibium');
 const bro = await firefox.start({ channel: 'beta' });
 const vibe = await bro.page();
 
-await vibe.screencast.start();
+await vibe.context.recording.start({ video: true, path: 'runs/login.zip' });
 await vibe.go('https://example.com');
 // ... actions to record ...
-await vibe.screencast.stop({ path: 'run.webm' });
+await vibe.context.recording.stop();
 
 await bro.stop();
 ```
 
-`stop()` without a path returns the video as a `Buffer` instead of writing a file.
+`path` defaults to `record.zip` in the working directory; `stop({ path })`
+overrides the path declared at start. `path: null` selects bytes-only
+capture — `stop()` returns the zip as a `Buffer` and nothing is written.
 
 ## Python
 
@@ -61,30 +82,59 @@ from vibium import firefox
 bro = firefox.start(channel="beta")
 vibe = bro.page()
 
-vibe.screencast.start()
+vibe.context.recording.start(video=True, path="runs/login.zip")
 vibe.go("https://example.com")
 # ... actions to record ...
-vibe.screencast.stop(path="run.webm")
+vibe.context.recording.stop()
 
 bro.stop()
 ```
 
-The Java client can launch Firefox but does not expose the screencast API yet.
+## Java
+
+```java
+recording.start(new RecordingOptions().video(true).path("runs/login.zip"));
+// ... actions to record ...
+recording.stop();
+```
+
+Setting any video option (`videoSize(1280, 720)`, `videoFrameRate(30)`)
+implies video on.
+
+## CLI
+
+```
+vibium record start --video -o run.zip
+# ... actions ...
+vibium record stop
+# Saved run.zip (23 steps, 14s video)
+```
+
+The MCP tool `browser_record_start` takes the same options as flat
+properties: `video`, `video_width`, `video_height`, `video_frame_rate`,
+`path`.
 
 ## Options
 
-JavaScript `start()` accepts `mimeType`, `width`, `height`, `frameRate`, and
-`audio`. Python uses `mime_type`, `width`, `height`, `frame_rate`, and `audio`.
-Defaults come from the browser; Firefox produces WebM. Firefox 154 rejects
-audio recording ("The audio track is not supported"); recordings are
-video-only for now.
+Video dimensions default to the viewport. Explicit dimensions that mismatch
+the window aspect are letterboxed by the engine. `frameRate` uses the
+engine's default when omitted. Firefox produces WebM; audio is not exposed
+(Firefox 154 rejects it: "The audio track is not supported").
 
 Firefox writes the file as a live stream, so the WebM header carries no duration. Every player we tried plays it fine, but some show an unknown or zero duration until playback starts.
 
-While recording, Firefox writes the in-progress file to the system Downloads folder (`screencast-<id>.webm`); that location is fixed inside Firefox. Vibium moves or deletes the file when recording stops or the session closes. If the vibium process is force-killed mid-recording, the file can be left behind there.
+While recording, Firefox writes the in-progress file to the system Downloads folder (`screencast-<id>.webm`); that location is fixed inside Firefox. Vibium moves the file into the recording zip when recording stops and deletes leftovers when the session closes. If the vibium process is force-killed mid-recording, the file can be left behind there.
 
-If `stop()` fails to deliver the video, for example because the destination path is not writable, the recording is kept: call `stop()` again with a different path, or with no path to get the video inline. The file is cleaned up when the session closes either way.
+If the browser session ends with a recording still active, the recording
+auto-finalizes and delivers to the declared path as if `stop()` had been
+called; `path: null` recordings are lost on close. If the video pipeline
+dies mid-recording, `stop()` still delivers the zip — the video is absent or
+partial and `video/index.json` records the error.
 
-## Video vs. trace recording
+## Video vs. trace tracks
 
-This is different from `recording.start()`, which produces a trace zip (per-action screenshots, DOM snapshots, and sources for the Record Player). Use the trace for debugging test runs, video for demos and reports. See [Recording format](../explanation/recording-format.md).
+The video is one more track in the same recording zip that carries
+per-action screenshots, DOM snapshots, and network events for the Record
+Player. `video/index.json` records the video's `offsetMs` from the
+recording's start so viewers can align the two timelines. See
+[Recording format](../explanation/recording-format.md).

@@ -14,7 +14,6 @@ from .element import Element
 from .context import BrowserContext
 from .clock import Clock
 from .recording import Recording
-from .screencast import Screencast
 from .dialog import Dialog
 from .route import Route
 from .network import Request, Response
@@ -44,7 +43,6 @@ __all__ = [
     "BrowserContext",
     "Clock",
     "Recording",
-    "Screencast",
     "Dialog",
     "Route",
     "Request",

@@ -8,7 +8,6 @@ import { ConsoleMessage } from './console';
 import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
-import { Screencast } from './screencast';
 import { matchPattern } from './utils/match';
 import { debug } from './utils/debug';
 
@@ -191,8 +190,6 @@ export class Page {
   readonly touch: Touch;
   /** Page-level clock control for faking timers and Date. */
   readonly clock: Clock;
-  /** Native browser video recording (Firefox 154+; Chrome pending). */
-  readonly screencast: Screencast;
 
   // Network interception state
   private routes: { pattern: string; handler: (route: Route) => void; interceptId?: string }[] = [];
@@ -222,7 +219,6 @@ export class Page {
     this.mouse = new Mouse(client, contextId);
     this.touch = new Touch(client, contextId);
     this.clock = new Clock(client, contextId);
-    this.screencast = new Screencast(client, contextId);
 
     // Initialize capture namespace
     const self = this;

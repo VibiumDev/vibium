@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -621,7 +622,16 @@ func (h *Handlers) Close() {
 	ownsRemote := h.ownsRemote
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
+	recorder := h.recorder
+	h.recorder = nil
 	h.sessionMu.Unlock()
+
+	// An active recording auto-finalizes to its declared path, as if
+	// recording.stop() had been called. This needs the BiDi connection, so
+	// it runs before the connection closes.
+	if recorder != nil && client != nil {
+		api.FinalizeRecordingOnClose(api.NewAgentSession(client), recorder)
+	}
 
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
 	// when this process created it — an attached session belongs to whoever
@@ -3993,15 +4003,52 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		return nil, fmt.Errorf("already recording — stop it first")
 	}
 
+	// Fold the MCP surface's flat video_* properties into the wire's nested
+	// video param. Dimensions imply video on unless video: false says
+	// otherwise.
+	video := map[string]interface{}{}
+	for flat, key := range map[string]string{
+		"video_width": "width", "video_height": "height", "video_frame_rate": "frameRate",
+	} {
+		if v, ok := args[flat].(float64); ok {
+			video[key] = v
+		}
+	}
+	if len(video) > 0 {
+		if b, ok := args["video"].(bool); !ok || b {
+			args["video"] = video
+		}
+	}
+
 	opts := api.ParseRecordingOptions(args)
 	if opts.Name == "" {
 		opts.Name = "record"
 	}
 	name := opts.Name
+	// The MCP surface always delivers to a file; the declared path is where
+	// an auto-finalized recording lands if the session closes mid-recording.
+	if opts.Path == "" {
+		opts.Path = "record.zip"
+	}
+	if abs, err := filepath.Abs(opts.Path); err == nil {
+		opts.Path = abs
+	}
 
-	h.recorder = api.NewRecorder()
+	// Required video on a remote connection can never work; fail before
+	// touching the browser.
+	remote := h.connectURL != ""
+	if remote && opts.Video.Mode == api.VideoRequired {
+		return nil, errors.New(api.RemoteVideoMessage)
+	}
+
+	recorder := api.NewRecorder()
 	viewport := h.queryViewport()
-	h.recorder.Start(opts, viewport)
+	recorder.Start(opts, viewport)
+
+	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+		return nil, err
+	}
+	h.recorder = recorder
 
 	// Subscribe to events and feed them to the recorder
 	h.client.SendCommand("session.subscribe", map[string]interface{}{
@@ -4024,10 +4071,18 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	// handleBidiEvent already forwards to the recorder; replacing the handler
 	// here would silently turn off prompt tracking for the recording's duration.
 
+	videoState := "off"
+	if h.recorder.ActiveVideo() != nil {
+		videoState = "on"
+	} else if reason := h.recorder.VideoUnavailable(); reason != "" {
+		videoState = "unavailable: " + reason
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording %q started (screenshots: %v, snapshots: %v)", name, opts.Screenshots, opts.Snapshots),
+			Text: fmt.Sprintf("Recording %q started (video: %s, screenshots: %v, snapshots: %v), saving to %s",
+				name, videoState, opts.Screenshots, opts.Snapshots, opts.Path),
 		}},
 	}, nil
 }
@@ -4047,7 +4102,15 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
 
+	// Finalize the video first so Stop() can move the engine's file into
+	// the zip. A dead screencast is recorded in the manifest, not an error.
+	api.StopRecordingVideo(h.newSession(), h.recorder)
+
+	// Path precedence: stop.path > start.path.
 	path, _ := args["path"].(string)
+	if path == "" {
+		path = h.recorder.Options().Path
+	}
 	if path == "" {
 		path = "record.zip"
 	}
@@ -4057,6 +4120,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		h.recorder = nil
 		return nil, fmt.Errorf("failed to stop recording: %w", err)
 	}
+	summary := h.recorder.Summary()
 
 	if err := api.WriteRecordToFile(zipData, path); err != nil {
 		h.recorder = nil
@@ -4068,7 +4132,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording saved to %s", path),
+			Text: api.RecordingSavedSentence(path, summary),
 		}},
 	}, nil
 }

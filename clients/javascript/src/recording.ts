@@ -1,5 +1,14 @@
 import { BiDiClient } from './bidi';
 
+export interface RecordingVideoOptions {
+  /** Video width in pixels (defaults to the viewport). */
+  width?: number;
+  /** Video height in pixels (defaults to the viewport). */
+  height?: number;
+  /** Video frame rate (engine default if omitted). */
+  frameRate?: number;
+}
+
 export interface RecordingStartOptions {
   name?: string;
   screenshots?: boolean;
@@ -11,9 +20,23 @@ export interface RecordingStartOptions {
   format?: 'jpeg' | 'png';
   /** JPEG quality 0.0-1.0 (default 0.5). Ignored for PNG. */
   quality?: number;
+  /**
+   * Video track (Firefox 154+, local browsers). Omitted: record video if the
+   * engine supports it; the stop result reports videoUnavailable otherwise.
+   * `true` (or explicit dimensions): start fails if the engine can't deliver.
+   * `false`: off.
+   */
+  video?: boolean | RecordingVideoOptions;
+  /**
+   * Where the recording zip lands at stop (default: record.zip in the
+   * working directory). `null` selects bytes-only capture: no file is
+   * written and the recording is lost if the session closes before stop().
+   */
+  path?: string | null;
 }
 
 export interface RecordingStopOptions {
+  /** Overrides the path declared at start. */
   path?: string;
 }
 
@@ -28,26 +51,38 @@ export class Recording {
 
   /** Start recording. */
   async start(options: RecordingStartOptions = {}): Promise<void> {
-    await this.client.send('vibium:recording.start', {
+    const { path: declaredPath, ...rest } = options;
+    const params: Record<string, unknown> = {
       userContext: this.userContextId,
-      ...options,
-    });
+      ...rest,
+    };
+    // The binary's working directory is not necessarily ours, so relative
+    // paths resolve here before going over the wire. null = bytes-only.
+    if (declaredPath !== null) {
+      const path = await import('path');
+      params.path = path.resolve(declaredPath ?? 'record.zip');
+    }
+    await this.client.send('vibium:recording.start', params);
   }
 
   /** Stop recording and return the recording zip as a Buffer. */
   async stop(options: RecordingStopOptions = {}): Promise<Buffer> {
-    const result = await this.client.send<{ path?: string; data?: string }>('vibium:recording.stop', {
+    const params: Record<string, unknown> = {
       userContext: this.userContextId,
-      ...options,
-    });
-
+    };
     if (options.path) {
+      const path = await import('path');
+      params.path = path.resolve(options.path);
+    }
+    const result = await this.client.send<{ path?: string; data?: string }>('vibium:recording.stop', params);
+
+    if (result.path) {
       // File was written by the engine; read it back
       const fs = await import('fs');
-      return fs.readFileSync(result.path!);
+      return fs.readFileSync(result.path);
     }
 
-    // Base64-encoded zip returned inline
+    // Base64-encoded zip returned inline (path: null recordings)
     return Buffer.from(result.data!, 'base64');
   }
 

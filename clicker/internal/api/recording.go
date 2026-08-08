@@ -28,6 +28,31 @@ type RecordingStartOptions struct {
 	Bidi        bool    `json:"bidi"`
 	Format      string  `json:"format"`  // "png" or "jpeg" (default "jpeg")
 	Quality     float64 `json:"quality"` // 0.0-1.0 for JPEG (default 0.5)
+	Video       VideoOptions
+	Path        string // declared delivery path; "" = bytes-only, lost on close
+}
+
+// VideoMode selects how the recording treats engine video support.
+type VideoMode int
+
+const (
+	// VideoAuto records video when the engine supports it; otherwise the
+	// recording proceeds and the stop result reports videoUnavailable.
+	VideoAuto VideoMode = iota
+	// VideoOff disables video capture.
+	VideoOff
+	// VideoRequired makes recording.start fail if the engine can't deliver.
+	VideoRequired
+)
+
+// VideoOptions is the recording's video track configuration. Dimensions
+// default to the viewport; explicit dimensions that mismatch the window
+// aspect are letterboxed by the engine.
+type VideoOptions struct {
+	Mode      VideoMode
+	Width     int
+	Height    int
+	FrameRate int
 }
 
 // ParseRecordingOptions extracts RecordingStartOptions from a params map.
@@ -63,11 +88,99 @@ func ParseRecordingOptions(params map[string]interface{}) RecordingStartOptions 
 	if q, ok := params["quality"].(float64); ok && q >= 0 && q <= 1 {
 		opts.Quality = q
 	}
+	// video: bool | {width, height, frameRate}. An explicit object counts as
+	// requiring video: the caller asked for specific output, so a silent
+	// no-video recording would be a surprise.
+	switch v := params["video"].(type) {
+	case bool:
+		if v {
+			opts.Video.Mode = VideoRequired
+		} else {
+			opts.Video.Mode = VideoOff
+		}
+	case map[string]interface{}:
+		opts.Video.Mode = VideoRequired
+		if w, ok := v["width"].(float64); ok {
+			opts.Video.Width = int(w)
+		}
+		if h, ok := v["height"].(float64); ok {
+			opts.Video.Height = int(h)
+		}
+		if f, ok := v["frameRate"].(float64); ok {
+			opts.Video.FrameRate = int(f)
+		}
+	}
+	if p, ok := params["path"].(string); ok {
+		opts.Path = p
+	}
 	return opts
 }
 
 // recordEvent is a generic recording event stored as a JSON-friendly map.
 type recordEvent = map[string]interface{}
+
+// VideoTrack is the engine screencast attached to a recording. The video is
+// one continuous session track filming the context active at start.
+type VideoTrack struct {
+	Context    string
+	ID         string // active engine screencast id; "" once stopped
+	EnginePath string // file the engine live-muxes; moved into the zip at stop
+	StartedAt  int64  // wall-clock ms at the startScreencast acknowledgement
+	// OffsetMs is the video's start relative to the recording's t0, aligning
+	// the video timeline with trace event timestamps.
+	OffsetMs   float64
+	DurationMs int64
+	Width      int
+	Height     int
+	Error      string // engine failure; the zip still delivers, video absent or partial
+}
+
+// VideoSummary is one entry of the videos array in the recording.stop result.
+type VideoSummary struct {
+	Context    string
+	DurationMs int64
+	Width      int
+	Height     int
+	Error      string
+}
+
+// RecordingSummary is the metadata carried by the recording.stop result.
+type RecordingSummary struct {
+	Steps            int
+	DurationMs       int64
+	Videos           []VideoSummary
+	VideoUnavailable string
+}
+
+// ResultFields renders the summary as wire result fields: steps, durationMs,
+// and videos — or videoUnavailable in its place.
+func (s RecordingSummary) ResultFields() map[string]interface{} {
+	fields := map[string]interface{}{
+		"steps":      s.Steps,
+		"durationMs": s.DurationMs,
+	}
+	if s.VideoUnavailable != "" {
+		fields["videoUnavailable"] = s.VideoUnavailable
+		return fields
+	}
+	if len(s.Videos) > 0 {
+		videos := make([]interface{}, 0, len(s.Videos))
+		for _, v := range s.Videos {
+			entry := map[string]interface{}{
+				"context":    strings.ToLower(v.Context),
+				"durationMs": v.DurationMs,
+				"width":      v.Width,
+				"height":     v.Height,
+			}
+			if v.Error != "" {
+				entry["error"] = v.Error
+			}
+			videos = append(videos, entry)
+		}
+		fields["videos"] = videos
+	}
+	return fields
+}
 
 // groupEntry tracks a group's name and callId so StopGroup can emit a matching "after" event.
 type groupEntry struct {
@@ -105,6 +218,10 @@ type Recorder struct {
 	monotonicBase   int64  // unix ms at recording start, all monotonic times are relative to this
 	contextId       string // unique context ID for this recording session
 	actionCounter   int    // monotonic counter for action/bidi callIds
+
+	// Video track (engine screencast folded into the recording)
+	video            *VideoTrack
+	videoUnavailable string // engine reason video could not start (auto mode)
 
 	// Screenshot goroutine control
 	screenshotStop chan struct{}
@@ -144,6 +261,8 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.resources = make(map[string][]byte)
 	t.pendingRequests = make(map[string]*pendingRequest)
 	t.groupStack = nil
+	t.video = nil
+	t.videoUnavailable = ""
 	t.chunkIndex = 0
 	t.startTime = time.Now().UnixMilli()
 	t.monotonicBase = t.startTime
@@ -197,7 +316,9 @@ func (t *Recorder) NoteDroppedEvents(count uint64) {
 	})
 }
 
-// Stop stops recording and returns the recording zip data.
+// Stop stops recording and returns the recording zip data. The engine-written
+// video file, if any, is moved into the zip: read into the archive and then
+// deleted.
 func (t *Recorder) Stop() ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -207,7 +328,104 @@ func (t *Recorder) Stop() ([]byte, error) {
 	}
 
 	t.recording = false
-	return t.buildZipLocked()
+	data, err := t.buildZipLocked(true)
+	if err == nil && t.video != nil && t.video.EnginePath != "" {
+		os.Remove(t.video.EnginePath)
+		t.video.EnginePath = ""
+	}
+	return data, err
+}
+
+// SetVideoTrack attaches the engine screencast to the recording and stamps
+// its offset from the recording's t0.
+func (t *Recorder) SetVideoTrack(v *VideoTrack) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	v.OffsetMs = float64(v.StartedAt - t.startTime)
+	t.video = v
+}
+
+// SetVideoUnavailable records why video could not start; the recording
+// proceeds without it and the stop result carries the reason.
+func (t *Recorder) SetVideoUnavailable(reason string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.videoUnavailable = reason
+}
+
+// VideoUnavailable returns the engine's reason video could not start, or "".
+func (t *Recorder) VideoUnavailable() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.videoUnavailable
+}
+
+// ActiveVideo returns a copy of the recording's video track, or nil.
+func (t *Recorder) ActiveVideo() *VideoTrack {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.video == nil {
+		return nil
+	}
+	v := *t.video
+	return &v
+}
+
+// FinishVideo marks the screencast stopped. enginePath, when non-empty,
+// is where the engine finalized the file. errMsg records a stop failure;
+// the engine path is kept so a partial live-muxed video still delivers.
+func (t *Recorder) FinishVideo(enginePath, errMsg string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.video == nil {
+		return
+	}
+	t.video.ID = ""
+	t.video.DurationMs = time.Now().UnixMilli() - t.video.StartedAt
+	if enginePath != "" {
+		t.video.EnginePath = enginePath
+	}
+	if errMsg != "" {
+		t.video.Error = errMsg
+	}
+}
+
+// RemoveEngineFile deletes the engine-written video temp file, for abandoned
+// recordings (superseded, or lost on session close).
+func (t *Recorder) RemoveEngineFile() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.video != nil && t.video.EnginePath != "" {
+		os.Remove(t.video.EnginePath)
+		t.video.EnginePath = ""
+	}
+}
+
+// Summary reports the stop-result metadata: step count, recording duration,
+// and the video track's outcome.
+func (t *Recorder) Summary() RecordingSummary {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	s := RecordingSummary{
+		DurationMs:       time.Now().UnixMilli() - t.startTime,
+		VideoUnavailable: t.videoUnavailable,
+	}
+	for _, ev := range t.events {
+		if ev["type"] == "before" && ev["class"] != "Tracing" {
+			s.Steps++
+		}
+	}
+	if t.video != nil {
+		s.Videos = append(s.Videos, VideoSummary{
+			Context:    t.video.Context,
+			DurationMs: t.video.DurationMs,
+			Width:      t.video.Width,
+			Height:     t.video.Height,
+			Error:      t.video.Error,
+		})
+	}
+	return s
 }
 
 // StartChunk starts a new chunk within the current recording.
@@ -250,7 +468,9 @@ func (t *Recorder) StartChunk(name, title string, viewport map[string]interface{
 }
 
 // StopChunk packages the current chunk into a zip and returns it.
-// Recording remains active for additional chunks.
+// Recording remains active for additional chunks. Chunk artifacts carry no
+// video file — the video is one continuous session track — but their
+// manifest records where the chunk falls in it.
 func (t *Recorder) StopChunk() ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -259,7 +479,7 @@ func (t *Recorder) StopChunk() ([]byte, error) {
 		return nil, fmt.Errorf("recording is not started")
 	}
 
-	return t.buildZipLocked()
+	return t.buildZipLocked(false)
 }
 
 // currentGroupIdLocked returns the callId of the innermost active group, or "".
@@ -1028,8 +1248,10 @@ func (t *Recorder) StartScreenshotLoop(captureFunc func() (string, string, error
 }
 
 // buildZipLocked creates the Playwright-compatible recording zip.
-// Must be called with t.mu held.
-func (t *Recorder) buildZipLocked() ([]byte, error) {
+// Must be called with t.mu held. includeVideo embeds the engine-written
+// video file (session artifact); chunk artifacts pass false and get a
+// videoRange manifest instead.
+func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	now := time.Now()
@@ -1092,11 +1314,81 @@ func (t *Recorder) buildZipLocked() ([]byte, error) {
 		rw.Write(data)
 	}
 
+	// Video entries are additive to the trace format; existing trace tooling
+	// ignores them.
+	if t.video != nil {
+		if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close zip: %w", err)
 	}
 
 	return buf.Bytes(), nil
+}
+
+// writeVideoEntriesLocked writes video/<context>.webm and video/index.json.
+// Must be called with t.mu held and t.video non-nil.
+func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includeVideo bool) error {
+	context := strings.ToLower(t.video.Context)
+
+	entry := map[string]interface{}{"context": context}
+	if includeVideo {
+		entry["startedAt"] = t.video.StartedAt
+		entry["offsetMs"] = t.video.OffsetMs
+		entry["width"] = t.video.Width
+		entry["height"] = t.video.Height
+		entry["mimeType"] = "video/webm"
+		if t.video.Error != "" {
+			entry["error"] = t.video.Error
+		}
+		if t.video.EnginePath != "" {
+			// WebM is already compressed; store it instead of deflating.
+			name := "video/" + context + ".webm"
+			data, err := os.ReadFile(t.video.EnginePath)
+			if err == nil {
+				vw, werr := zw.CreateHeader(&zip.FileHeader{
+					Name:     name,
+					Method:   zip.Store,
+					Modified: now,
+				})
+				if werr != nil {
+					return fmt.Errorf("failed to create video entry: %w", werr)
+				}
+				vw.Write(data)
+				entry["file"] = name
+			} else if t.video.Error == "" {
+				entry["error"] = "video file unreadable: " + err.Error()
+			}
+		}
+	} else {
+		// Chunk manifest: where this chunk falls in the session video.
+		start := t.monotonicBase - t.video.StartedAt
+		if start < 0 {
+			start = 0
+		}
+		entry["videoRange"] = []int64{start, time.Now().UnixMilli() - t.video.StartedAt}
+	}
+
+	iw, err := zw.CreateHeader(&zip.FileHeader{
+		Name:     "video/index.json",
+		Method:   zip.Deflate,
+		Modified: now,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create video index: %w", err)
+	}
+	index, err := json.Marshal(map[string]interface{}{
+		"version": 1,
+		"videos":  []interface{}{entry},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal video index: %w", err)
+	}
+	iw.Write(index)
+	return nil
 }
 
 // imageExtension returns the file extension for the recording's image format.
