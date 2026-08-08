@@ -1396,7 +1396,7 @@ func GetToolSchemas() []Tool {
 					},
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "Where the recording ZIP lands at stop (default: record-<timestamp>.zip)",
+						"description": "Where the recording ZIP lands at stop (default: a timestamped record-<timestamp>.zip in the server's working directory, or ~/Documents/Vibium when that isn't writable)",
 					},
 				},
 				"additionalProperties": false,

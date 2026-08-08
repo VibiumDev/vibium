@@ -111,7 +111,7 @@ func newRecordCmd() *cobra.Command {
 			// default, or it lands wherever the daemon started. The default
 			// is timestamped so a rerun never clobbers the previous run.
 			if output == "" {
-				output = api.DefaultRecordPath(name)
+				output = api.DefaultRecordPath("", name)
 			}
 			if abs, err := filepath.Abs(output); err == nil {
 				output = abs

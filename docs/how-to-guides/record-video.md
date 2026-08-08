@@ -120,7 +120,11 @@ vibium record stop
 
 The MCP tool `browser_record_start` takes the same options as flat
 properties: `video`, `video_width`, `video_height`, `video_frame_rate`,
-`path`.
+`path`. Without a `path`, the recording lands in the MCP server's working
+directory when that is a real, writable place (Claude Code launches the
+server in your project, so it lands next to your code), and in
+`~/Documents/Vibium` otherwise; the stop result names the absolute path
+either way.
 
 ## Options
 

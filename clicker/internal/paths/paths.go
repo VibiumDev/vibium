@@ -398,3 +398,15 @@ func GetScreenshotDir() (string, error) {
 		return filepath.Join(home, "Pictures", "Vibium"), nil
 	}
 }
+
+// GetRecordDir returns the default directory for recordings when the caller
+// has no usable working directory (the MCP case): ~/Documents/Vibium on
+// every platform. Recordings are work artifacts — a trace zip with
+// screenshots and video inside — not media files.
+func GetRecordDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Documents", "Vibium"), nil
+}

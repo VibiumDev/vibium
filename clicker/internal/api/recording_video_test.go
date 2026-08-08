@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -215,9 +216,15 @@ func TestDefaultRecordPathSeedsSanitizedStem(t *testing.T) {
 		}
 	}
 
-	path := DefaultRecordPath("login")
+	path := DefaultRecordPath("", "login")
 	if !regexp.MustCompile(`^login-\d{8}-\d{6}\.zip$`).MatchString(path) {
-		t.Fatalf("DefaultRecordPath(\"login\") = %q, want login-<timestamp>.zip", path)
+		t.Fatalf("DefaultRecordPath(\"\", \"login\") = %q, want login-<timestamp>.zip", path)
+	}
+
+	dir := t.TempDir()
+	inDir := DefaultRecordPath(dir, "")
+	if filepath.Dir(inDir) != dir || !strings.HasPrefix(filepath.Base(inDir), "record-") {
+		t.Fatalf("DefaultRecordPath(dir, \"\") = %q, want record-<timestamp>.zip inside %q", inDir, dir)
 	}
 }
 

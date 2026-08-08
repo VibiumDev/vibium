@@ -3993,6 +3993,35 @@ func (h *Handlers) browserUpload(args map[string]interface{}) (*ToolsCallResult,
 	}, nil
 }
 
+// recordDefaultDir picks where a pathless recording lands: the server's
+// working directory when it is a real, writable place (hosts like Claude
+// Code launch the MCP server in the project directory), else
+// ~/Documents/Vibium — because an MCP caller may have no working directory
+// to reason about, the same reasoning that gives screenshots
+// ~/Pictures/Vibium (#119).
+func recordDefaultDir() string {
+	if cwd, err := os.Getwd(); err == nil && cwd != "/" && dirWritable(cwd) {
+		return cwd
+	}
+	if dir, err := paths.GetRecordDir(); err == nil {
+		if os.MkdirAll(dir, 0o755) == nil {
+			return dir
+		}
+	}
+	return ""
+}
+
+// dirWritable reports whether the process can create files in dir.
+func dirWritable(dir string) bool {
+	probe, err := os.CreateTemp(dir, ".vibium-write-probe-*")
+	if err != nil {
+		return false
+	}
+	probe.Close()
+	os.Remove(probe.Name())
+	return true
+}
+
 // browserRecordStart starts recording.
 func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -4029,7 +4058,7 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	// an auto-finalized recording lands if the session closes mid-recording.
 	// The default is timestamped so a rerun never clobbers the previous run.
 	if opts.Path == "" {
-		opts.Path = api.DefaultRecordPath(opts.Name)
+		opts.Path = api.DefaultRecordPath(recordDefaultDir(), opts.Name)
 	}
 	if abs, err := filepath.Abs(opts.Path); err == nil {
 		opts.Path = abs
@@ -4115,7 +4144,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		path = h.recorder.Options().Path
 	}
 	if path == "" {
-		path = api.DefaultRecordPath(h.recorder.Options().Name)
+		path = api.DefaultRecordPath(recordDefaultDir(), h.recorder.Options().Name)
 	}
 
 	zipData, err := h.recorder.Stop()

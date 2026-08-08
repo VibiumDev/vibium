@@ -1548,20 +1548,20 @@ func ImageDimensions(data []byte) (int, int) {
 	return jpegDimensions(data)
 }
 
-// DefaultRecordPath returns the default recording destination:
-// <stem>-YYYYMMDD-HHMMSS.zip (relative; the caller resolves it), where the
+// DefaultRecordPath returns the default recording destination in dir
+// ("" = the working directory): <stem>-YYYYMMDD-HHMMSS.zip, where the
 // stem is the recording's name, sanitized, or "record". Timestamped so a
 // rerun never clobbers the previous artifact; same-second collisions get a
 // -2 suffix.
-func DefaultRecordPath(name string) string {
+func DefaultRecordPath(dir, name string) string {
 	stem := sanitizeRecordStem(name)
 	stamp := time.Now().Format("20060102-150405")
-	path := fmt.Sprintf("%s-%s.zip", stem, stamp)
+	path := filepath.Join(dir, fmt.Sprintf("%s-%s.zip", stem, stamp))
 	for n := 2; ; n++ {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			return path
 		}
-		path = fmt.Sprintf("%s-%s-%d.zip", stem, stamp, n)
+		path = filepath.Join(dir, fmt.Sprintf("%s-%s-%d.zip", stem, stamp, n))
 	}
 }
 
