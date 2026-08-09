@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/vibium/clicker/internal/log"
 )
 
 // RecordingStartOptions configures how recording behaves.
@@ -347,7 +349,10 @@ func (t *Recorder) Stop() ([]byte, error) {
 	t.recording = false
 	data, err := t.buildZipLocked(true)
 	if err == nil && t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
-		os.Remove(t.video.EnginePath)
+		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
+			// A leaked engine temp is worth a trace, not a failed stop (#317).
+			log.Debug("failed to delete engine video temp", "path", t.video.EnginePath, "error", rmErr)
+		}
 		t.video.EnginePath = ""
 	}
 	return data, err
@@ -415,7 +420,9 @@ func (t *Recorder) RemoveEngineFile() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
-		os.Remove(t.video.EnginePath)
+		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
+			log.Debug("failed to delete engine video temp", "path", t.video.EnginePath, "error", rmErr)
+		}
 		t.video.EnginePath = ""
 	}
 }
