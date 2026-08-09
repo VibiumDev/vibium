@@ -168,9 +168,9 @@ a video track of the session. This is the video track from a recording of a
 full checkout on [var.parts](https://var.parts), the demo shop used in the
 examples below — the exact flow the [Action Groups](#action-groups) example drives:
 
-<video src="../images/recording-sample.webm" controls muted width="640"></video>
+![Recording of a checkout journey on var.parts](../images/recording-sample.gif)
 
-*([sample video](../images/recording-sample.webm) — 8 seconds, 709 KB, exactly as the browser encoded it inside the zip: 23 steps from product page to payment)*
+*(GIF preview — the [real video track](../images/recording-sample.webm) is an 8-second, 709 KB WebM, exactly as the browser encoded it inside the zip: 23 steps from product page to payment)*
 
 ---
 
