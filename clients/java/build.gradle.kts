@@ -30,6 +30,9 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Integration tests drive the vibium binary and a live browser — neither is
+    // a Gradle input, so never let cached results skip the run.
+    outputs.upToDateWhen { false }
     // Pass VIBIUM_BIN_PATH to tests if set
     environment("VIBIUM_BIN_PATH", System.getenv("VIBIUM_BIN_PATH") ?: "")
     // Each fork is a JVM with its own Chrome (~16s/launch on macOS). Default
