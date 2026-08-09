@@ -157,6 +157,24 @@ func FinalizeRecordingOnClose(s Session, recorder *Recorder) {
 	recorder.RemoveEngineFile()
 }
 
+// FinalizeRecordingOffline delivers an active recording when the browser can
+// no longer answer: the trace packages from memory without stopping the
+// screencast, and the engine's live-muxed video file embeds as a partial
+// video when it is readable. The manifest records why the video is cut short.
+func FinalizeRecordingOffline(recorder *Recorder) {
+	if recorder == nil {
+		return
+	}
+	if recorder.IsRecording() && recorder.Options().Path != "" {
+		recorder.FinishVideo("", "browser connection lost before the screencast could be stopped")
+		if zipData, err := recorder.Stop(); err == nil {
+			WriteRecordToFile(zipData, recorder.Options().Path)
+			return
+		}
+	}
+	recorder.RemoveEngineFile()
+}
+
 // RecordingSavedSentence is the one-line stop result shown by the CLI and
 // MCP surfaces: "Saved record.zip (23 steps, 14s video)".
 func RecordingSavedSentence(path string, s RecordingSummary) string {

@@ -1379,10 +1379,12 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// where, and leave retrieval to the caller.
 			entry["remotePath"] = t.video.EnginePath
 		} else if t.video.EnginePath != "" {
-			// WebM is already compressed; store it instead of deflating.
+			// WebM is already compressed; store it instead of deflating. An
+			// empty engine file (the browser died before its first flush)
+			// is no video at all — record why instead of embedding junk.
 			name := "video/" + context + ".webm"
 			data, err := os.ReadFile(t.video.EnginePath)
-			if err == nil {
+			if err == nil && len(data) > 0 {
 				vw, werr := zw.CreateHeader(&zip.FileHeader{
 					Name:     name,
 					Method:   zip.Store,
@@ -1394,7 +1396,11 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 				vw.Write(data)
 				entry["file"] = name
 			} else if t.video.Error == "" {
-				entry["error"] = "video file unreadable: " + err.Error()
+				if err != nil {
+					entry["error"] = "video file unreadable: " + err.Error()
+				} else {
+					entry["error"] = "video file empty: the engine wrote no frames"
+				}
 			}
 		}
 	} else {

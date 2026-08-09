@@ -270,6 +270,54 @@ func TestRemoteWithoutKeepStillRefuses(t *testing.T) {
 	}
 }
 
+func TestFinalizeOfflineDeliversPartialVideoFromMemory(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	partial := []byte{0x1a, 0x45, 0xdf, 0xa3, 9, 9}
+	if err := writeTestFile(engineFile, partial); err != nil {
+		t.Fatal(err)
+	}
+	outPath := t.TempDir() + "/crash.zip"
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Path: outPath}, nil)
+	rec.SetVideoTrack(&VideoTrack{
+		Context:    "ctx-x",
+		ID:         "sc-x", // still "running" — the browser died mid-recording
+		EnginePath: engineFile,
+		StartedAt:  time.Now().UnixMilli(),
+	})
+
+	FinalizeRecordingOffline(rec)
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("offline finalize should deliver the zip: %v", err)
+	}
+	entries := readZipEntries(t, data)
+	if !bytes.Equal(entries["video/ctx-x.webm"], partial) {
+		t.Fatalf("the live-muxed partial video should embed, entries: %v", entryNames(entries))
+	}
+	if !strings.Contains(string(entries["video/index.json"]), "browser connection lost") {
+		t.Fatalf("manifest should say why the video is cut short: %s", entries["video/index.json"])
+	}
+}
+
+func TestFinalizeOfflineBytesOnlyCleansUp(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(engineFile, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{}, nil) // no declared path — lost on close
+	rec.SetVideoTrack(&VideoTrack{Context: "c", ID: "sc", EnginePath: engineFile, StartedAt: time.Now().UnixMilli()})
+
+	FinalizeRecordingOffline(rec)
+	if fileExists(engineFile) {
+		t.Fatal("bytes-only offline finalize should delete the engine temp")
+	}
+}
+
 func TestRemoveEngineFileLeavesRemoteFilesAlone(t *testing.T) {
 	localFile := t.TempDir() + "/screencast.webm"
 	if err := writeTestFile(localFile, []byte{1}); err != nil {

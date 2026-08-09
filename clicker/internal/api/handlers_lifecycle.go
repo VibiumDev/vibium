@@ -180,7 +180,7 @@ func (r *Router) handleContextClose(session *BrowserSession, cmd bidiCommand) {
 func (r *Router) handleBrowserStop(session *BrowserSession, cmd bidiCommand) {
 	// Close the session (browser + connections) — kills chromedriver + Chrome
 	r.sessions.Delete(session.Client.ID())
-	r.closeSession(session)
+	r.closeSession(session, false)
 
 	// Send success after closing so the client knows cleanup is done
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
