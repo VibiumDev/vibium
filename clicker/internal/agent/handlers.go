@@ -627,10 +627,21 @@ func (h *Handlers) Close() {
 	h.sessionMu.Unlock()
 
 	// An active recording auto-finalizes to its declared path, as if
-	// recording.stop() had been called. This needs the BiDi connection, so
-	// it runs before the connection closes.
-	if recorder != nil && client != nil {
-		api.FinalizeRecordingOnClose(api.NewAgentSession(client), recorder)
+	// recording.stop() had been called. That needs the BiDi connection —
+	// probe it first so a dead browser costs a 2s check instead of full
+	// command timeouts, and memory still delivers what it holds (#316).
+	if recorder != nil {
+		sess := api.NewAgentSession(client)
+		alive := client != nil
+		if alive {
+			_, err := sess.SendBidiCommandWithTimeout("browsingContext.getTree", map[string]interface{}{}, 2*time.Second)
+			alive = err == nil
+		}
+		if alive {
+			api.FinalizeRecordingOnClose(sess, recorder)
+		} else {
+			api.FinalizeRecordingOffline(recorder)
+		}
 	}
 
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only

@@ -370,7 +370,22 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	sessionVal, ok := r.sessions.Load(client.ID())
 	if !ok {
+		// Answer instead of dropping: a command that races session teardown
+		// (browser died, session already deleted) otherwise leaves the
+		// client waiting out its full send timeout for a reply that will
+		// never come (#316).
 		fmt.Fprintf(os.Stderr, "[router] No session for client %d\n", client.ID())
+		var cmd bidiCommand
+		if err := json.Unmarshal([]byte(msg), &cmd); err == nil && cmd.ID > 0 {
+			resp := bidiResponse{
+				ID:      cmd.ID,
+				Type:    "error",
+				Error:   "invalid session id",
+				Message: "browser session is closed",
+			}
+			data, _ := json.Marshal(resp)
+			client.Send(string(data))
+		}
 		return
 	}
 
@@ -850,7 +865,7 @@ func (r *Router) OnClientDisconnect(client ClientTransport) {
 	}
 
 	session := sessionVal.(*BrowserSession)
-	r.closeSession(session)
+	r.closeSession(session, false)
 }
 
 // routeBrowserToClient reads messages from the browser and forwards them to the client.
@@ -874,7 +889,7 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 				// sendInternalCommand calls fail immediately with "session closed"
 				// instead of waiting for the 60-second timeout.
 				r.sessions.Delete(session.Client.ID())
-				r.closeSession(session)
+				r.closeSession(session, true)
 				// Close the client WebSocket so JS/Python clients see the
 				// disconnect and can reject their pending commands.
 				session.Client.Close()
@@ -1064,8 +1079,24 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 	}
 }
 
+// probeBrowser reports whether the browser still answers commands, bounded
+// to two seconds. getTree is the cheapest command every engine implements.
+// A slow-but-alive browser misjudged as dead loses only its recording's
+// clean finalize, not the session teardown.
+func (r *Router) probeBrowser(session *BrowserSession) bool {
+	if session.BidiConn == nil {
+		return false
+	}
+	resp, err := r.sendInternalCommandWithTimeout(session, "browsingContext.getTree", map[string]interface{}{}, 2*time.Second)
+	return err == nil && checkBidiError(resp) == nil
+}
+
 // closeSession closes a browser session and cleans up resources.
-func (r *Router) closeSession(session *BrowserSession) {
+// browserDead skips the liveness probe when the caller already knows the
+// browser connection is gone (the routing goroutine saw it die), so an
+// active recording finalizes from memory immediately instead of after a
+// probe timeout.
+func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 	session.mu.Lock()
 	if session.closed {
 		session.mu.Unlock()
@@ -1073,6 +1104,21 @@ func (r *Router) closeSession(session *BrowserSession) {
 	}
 	session.closed = true
 	session.mu.Unlock()
+
+	// A dead browser cannot answer the commands recording teardown sends,
+	// and a wedged in-flight recording operation holds recordingMu until
+	// its command times out. Probe first, before taking any lock: if the
+	// browser answers, close proceeds in an order that lets the recording
+	// finalize over the connection; if it does not, closing stopChan now
+	// aborts every pending command so the mutex frees immediately and no
+	// further browser talk is attempted (#316).
+	alive := false
+	if !browserDead {
+		alive = r.probeBrowser(session)
+	}
+	if !alive {
+		close(session.stopChan)
+	}
 
 	// A recording command owns this lock until its browser commands and state
 	// update are complete. Taking it after marking the session closed drains an
@@ -1085,13 +1131,21 @@ func (r *Router) closeSession(session *BrowserSession) {
 
 	// An active recording auto-finalizes to its declared path, as if
 	// recording.stop() had been called; bytes-only recordings are lost.
-	// This needs the BiDi connection, so it runs before stopChan closes.
+	// With a live browser this runs before stopChan closes, because it
+	// needs the connection; with a dead one, what memory holds still
+	// delivers — the trace, and the live-muxed video file if readable.
 	if session.recorder != nil {
-		FinalizeRecordingOnClose(NewAPISession(r, session, ""), session.recorder)
+		if alive {
+			FinalizeRecordingOnClose(NewAPISession(r, session, ""), session.recorder)
+		} else {
+			FinalizeRecordingOffline(session.recorder)
+		}
 	}
 
 	// Signal the routing goroutine to stop
-	close(session.stopChan)
+	if alive {
+		close(session.stopChan)
+	}
 
 	// Stop screenshot loop before closing BiDi (captures use the connection)
 	if session.recorder != nil {
@@ -1129,7 +1183,7 @@ func (r *Router) closeSession(session *BrowserSession) {
 func (r *Router) CloseAll() {
 	r.sessions.Range(func(key, value interface{}) bool {
 		session := value.(*BrowserSession)
-		r.closeSession(session)
+		r.closeSession(session, false)
 		r.sessions.Delete(key)
 		return true
 	})
