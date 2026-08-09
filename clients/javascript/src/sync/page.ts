@@ -4,7 +4,6 @@ import { SyncBridge } from './bridge';
 import { ElementSync } from './element';
 import { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 import { ClockSync } from './clock';
-import { ScreencastSync } from './screencast';
 import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
 import { DialogSync, DialogData } from './dialog';
@@ -99,7 +98,6 @@ export class PageSync {
   readonly mouse: MouseSync;
   readonly touch: TouchSync;
   readonly clock: ClockSync;
-  readonly screencast: ScreencastSync;
 
   private _nextHandlerId = 0;
   private _routeHandlerIds = new Map<string, string>(); // pattern → handlerId
@@ -118,7 +116,6 @@ export class PageSync {
     this.mouse = new MouseSync(bridge, pageId);
     this.touch = new TouchSync(bridge, pageId);
     this.clock = new ClockSync(bridge, pageId);
-    this.screencast = new ScreencastSync(bridge, pageId);
 
     // Initialize waitUntil namespace
     this.waitUntil = Object.assign(

@@ -977,22 +977,6 @@ const handlers: Record<string, Handler> = {
   },
 
   // ========================
-  // Screencast commands (page-scoped)
-  // ========================
-
-  'screencast.start': async (args) => {
-    const [pageId, options] = args as [number, any];
-    await getPage(pageId).screencast.start(options);
-    return { success: true };
-  },
-
-  'screencast.stop': async (args) => {
-    const [pageId, options] = args as [number, any];
-    const buffer = await getPage(pageId).screencast.stop(options);
-    return { data: buffer.toString('base64') };
-  },
-
-  // ========================
   // Recording commands (context-scoped)
   // ========================
 
@@ -1004,8 +988,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stop': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stop(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stop(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startChunk': async (args) => {
@@ -1016,8 +1000,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stopChunk': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stopChunk(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stopChunk(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startGroup': async (args) => {

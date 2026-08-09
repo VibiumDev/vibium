@@ -1,12 +1,12 @@
 # Recording Browser Sessions
 
-Record a timeline of screenshots, network requests, DOM snapshots, and action groups — then view it in Record Player.
+Record a timeline of screenshots, network requests, DOM snapshots, action groups — and, on supported engines, a video track — then view it in Record Player.
 
 ---
 
 ## What You'll Learn
 
-How to capture a recording of a browser session and view it as an interactive timeline.
+How to capture a recording of a browser session and view it as an interactive timeline. For the video track's engine requirements and options, see the [Record Video](../how-to-guides/record-video.md) how-to guide.
 
 ---
 
@@ -21,12 +21,12 @@ async function main() {
   const bro = await browser.start()
   const vibe = await bro.page()
 
-  await vibe.context.recording.start({ screenshots: true })
+  await vibe.context.recording.start()
 
-  await vibe.go('https://example.com')
-  await vibe.find('a').click()
+  await vibe.go('https://var.parts')
+  await vibe.find({ text: 'Vibium Battery Pack' }).click()
 
-  await vibe.context.recording.stop({ path: 'record.zip' })
+  await vibe.context.recording.stop()
   await bro.stop()
 }
 
@@ -42,12 +42,12 @@ const { browser } = require('vibium/sync')
 const bro = browser.start()
 const vibe = bro.page()
 
-vibe.context.recording.start({ screenshots: true })
+vibe.context.recording.start()
 
-vibe.go('https://example.com')
-vibe.find('a').click()
+vibe.go('https://var.parts')
+vibe.find({ text: 'Vibium Battery Pack' }).click()
 
-vibe.context.recording.stop({ path: 'record.zip' })
+vibe.context.recording.stop()
 bro.stop()
 ```
 
@@ -64,12 +64,12 @@ async def main():
     bro = await browser.start()
     vibe = await bro.page()
 
-    await vibe.context.recording.start(screenshots=True)
+    await vibe.context.recording.start()
 
-    await vibe.go('https://example.com')
-    await vibe.find('a').click()
+    await vibe.go('https://var.parts')
+    await vibe.find(text='Vibium Battery Pack').click()
 
-    await vibe.context.recording.stop(path='record.zip')
+    await vibe.context.recording.stop()
     await bro.stop()
 
 asyncio.run(main())
@@ -86,13 +86,35 @@ from vibium import browser
 bro = browser.start()
 vibe = bro.page()
 
-vibe.context.recording.start(screenshots=True)
+vibe.context.recording.start()
 
-vibe.go('https://example.com')
-vibe.find('a').click()
+vibe.go('https://var.parts')
+vibe.find(text='Vibium Battery Pack').click()
 
-vibe.context.recording.stop(path='record.zip')
+vibe.context.recording.stop()
 bro.stop()
+```
+
+</details>
+
+<details>
+<summary>Java</summary>
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.SelectorOptions;
+
+var bro = Vibium.start();
+var vibe = bro.page();
+
+vibe.context().recording().start();
+
+vibe.go("https://var.parts");
+vibe.find(new SelectorOptions().text("Vibium Battery Pack")).click();
+
+vibe.context().recording().stop();
+
+bro.stop();
 ```
 
 </details>
@@ -101,17 +123,54 @@ bro.stop()
 <summary>CLI</summary>
 
 ```bash
-vibium record start --screenshots
+vibium record start
 
-vibium go https://example.com
-vibium click 'a'
+vibium go https://var.parts
+vibium find text "Vibium Battery Pack"
+vibium click @e1
 
-vibium record stop -o record.zip
+vibium record stop
 ```
 
 </details>
 
-Open `record.zip` in [Record Player](https://player.vibium.dev) to see a timeline of screenshots and actions.
+<details>
+<summary>MCP</summary>
+
+Ask your AI assistant:
+
+> "Start a recording, open var.parts and click the first product, then stop the recording"
+
+The assistant drives the same operations through the `browser_record_start` and `browser_record_stop` tools.
+
+</details>
+
+---
+
+## Where Your Recording Goes
+
+The zip lands in your **current working directory**, under a timestamped
+name so a rerun never overwrites the previous take:
+
+```
+Saved record-20260808-094123.zip (7 steps, 4s video)
+```
+
+The stop output always names the exact file. Three ways to control it:
+
+- `name` seeds the stem: `start({ name: 'login' })` → `login-20260808-094123.zip`
+- `path` (or `-o` in the CLI) picks the destination exactly — explicit paths overwrite
+- `path: null` writes no file and returns the zip bytes instead
+
+To view a recording, drop the zip onto [Record Player](https://player.vibium.dev):
+a timeline of steps and screenshots, network activity, and — on Firefox 154+ —
+a video track of the session. This is the video track from a recording of a
+full checkout on [var.parts](https://var.parts), the demo shop used in the
+examples below — the exact flow the [Action Groups](#action-groups) example drives:
+
+![Recording of a checkout journey on var.parts](../images/recording-sample.gif)
+
+*(GIF preview — the [real video track](../images/recording-sample.webm) is an 8-second, 709 KB WebM, exactly as the browser encoded it inside the zip: 23 steps from product page to payment)*
 
 ---
 
@@ -129,11 +188,10 @@ async function main() {
 
   await ctx.recording.start({ name: 'my-session' })
 
-  await vibe.go('https://example.com')
-  await vibe.find('a').click()
+  await vibe.go('https://var.parts')
+  await vibe.find({ text: 'Vibium Battery Pack' }).click()
 
-  const zip = await ctx.recording.stop()
-  require('fs').writeFileSync('record.zip', zip)
+  await ctx.recording.stop()   // saved to my-session-<timestamp>.zip (the name seeds the stem)
 
   await bro.stop()
 }
@@ -153,11 +211,10 @@ const vibe = ctx.newPage()
 
 ctx.recording.start({ name: 'my-session' })
 
-vibe.go('https://example.com')
-vibe.find('a').click()
+vibe.go('https://var.parts')
+vibe.find({ text: 'Vibium Battery Pack' }).click()
 
-const zip = ctx.recording.stop()
-require('fs').writeFileSync('record.zip', zip)
+ctx.recording.stop()   // saved to my-session-<timestamp>.zip (the name seeds the stem)
 
 bro.stop()
 ```
@@ -178,12 +235,10 @@ async def main():
 
     await ctx.recording.start(name='my-session')
 
-    await vibe.go('https://example.com')
-    await vibe.find('a').click()
+    await vibe.go('https://var.parts')
+    await vibe.find(text='Vibium Battery Pack').click()
 
-    data = await ctx.recording.stop()
-    with open('record.zip', 'wb') as f:
-        f.write(data)
+    await ctx.recording.stop()   # saved to my-session-<timestamp>.zip (the name seeds the stem)
 
     await bro.stop()
 
@@ -204,12 +259,10 @@ vibe = ctx.new_page()
 
 ctx.recording.start(name='my-session')
 
-vibe.go('https://example.com')
-vibe.find('a').click()
+vibe.go('https://var.parts')
+vibe.find(text='Vibium Battery Pack').click()
 
-data = ctx.recording.stop()
-with open('record.zip', 'wb') as f:
-    f.write(data)
+ctx.recording.stop()   # saved to my-session-<timestamp>.zip (the name seeds the stem)
 
 bro.stop()
 ```
@@ -218,26 +271,29 @@ bro.stop()
 
 Use an explicit context when you need multiple pages in the same recording, or when you want to configure context options (viewport, locale, etc.). Use `page.context` when you just want to record a single page quickly.
 
-`stop()` returns a `Buffer` containing the recording zip. You can also pass a `path` to write the file directly:
+The recording zip lands in your working directory by default, under a timestamped name (`record-20260808-094123.zip`) so a rerun never overwrites the previous one. Declare a different destination at start, or override it at stop — the stop path wins:
 
 ```javascript
-await ctx.recording.stop({ path: 'record.zip' })
+await ctx.recording.start({ path: 'runs/catalog.zip' })
+// ...
+await ctx.recording.stop({ path: 'runs/login-failed.zip' })  // override wins
 ```
 
-Enable `screenshots` and `snapshots` for a more complete recording:
+Declaring the path at start also protects the recording: if the browser session ends before `stop()`, the recording auto-finalizes and delivers there. `stop()` returns a result describing what was delivered — `path`, `steps`, `durationMs`, and `videos` (or `videoUnavailable`). Pass `path: null` (`path=None`) at start for bytes-only capture: no file is written and the result carries the zip itself (`bytes` in JS, `data` in Python) instead of a path.
+
+Screenshots are on by default. Add `snapshots` for a more complete recording (`screenshots: false` turns the filmstrip off):
 
 ```javascript
-await ctx.recording.start({ screenshots: true, snapshots: true })
+await ctx.recording.start({ snapshots: true })
 ```
 
-- **screenshots** — captures the page periodically (~100ms), creating a visual filmstrip. Identical frames are deduplicated.
-- **snapshots** — captures the full HTML when the recording stops, so you can inspect the DOM in the viewer.
+- **screenshots** — captures the page after each action (on by default), creating a visual filmstrip.
+- **snapshots** — captures the page around each action, so you can inspect it in the viewer.
 
 To reduce recording size, use JPEG format with a lower quality setting:
 
 ```javascript
 await ctx.recording.start({
-  screenshots: true,
   format: 'jpeg',
   quality: 0.3,
 })
@@ -247,31 +303,47 @@ The default format is JPEG at 0.5 quality. Lowering `quality` produces smaller f
 
 ---
 
+## Video
+
+On engines that support it (Firefox 154+, local browsers), the recording can include a video track — the browser encodes the viewport to WebM and the file lands inside the zip next to the trace:
+
+```javascript
+await ctx.recording.start({ video: true })
+// ...
+await ctx.recording.stop()   // the zip now contains video/<context>.webm
+```
+
+With `video` omitted, video is recorded whenever the engine supports it and skipped otherwise. `video: true` requires it — `start()` fails with an explanatory error on Chrome. `video: false` turns it off. Dimensions default to the viewport (`video: { width, height, frameRate }` to override). Remote browser connections (`--connect`) record every track except video — the stop result says why. For remote hosts you control, `video: { remote: 'keep' }` records anyway and leaves the file there; see the [Record Video](../how-to-guides/record-video.md) guide.
+
+Engine requirements, Firefox channel setup, and the zip layout are covered in [Record Video](../how-to-guides/record-video.md).
+
+---
+
 ## Actions
 
 Every vibium command (`click`, `fill`, `navigate`, etc.) is automatically recorded in the recording as an action marker. You don't need to wrap commands in groups to see them — they show up individually in the timeline.
 
 ```javascript
-await ctx.recording.start({ screenshots: true })
+await ctx.recording.start()
 
-await vibe.go('https://example.com')       // recorded as Page.navigate
-await vibe.find('#btn').click()             // recorded as Element.click
-await vibe.find('#input').fill('hello')     // recorded as Element.fill
+await vibe.go('https://var.parts')   // recorded as Page.navigate
+await vibe.find({ text: 'Vibium Battery Pack' }).click()   // recorded as Element.click
+await vibe.find({ role: 'button', text: 'Add to Cart' }).click()   // recorded as Element.click
 
-await ctx.recording.stop({ path: 'record.zip' })
+await ctx.recording.stop()
 ```
 
 <details>
 <summary>Sync JS</summary>
 
 ```javascript
-ctx.recording.start({ screenshots: true })
+ctx.recording.start()
 
-vibe.go('https://example.com')       // recorded as Page.navigate
-vibe.find('#btn').click()             // recorded as Element.click
-vibe.find('#input').fill('hello')     // recorded as Element.fill
+vibe.go('https://var.parts')   // recorded as Page.navigate
+vibe.find({ text: 'Vibium Battery Pack' }).click()   // recorded as Element.click
+vibe.find({ role: 'button', text: 'Add to Cart' }).click()   // recorded as Element.click
 
-ctx.recording.stop({ path: 'record.zip' })
+ctx.recording.stop()
 ```
 
 </details>
@@ -280,13 +352,13 @@ ctx.recording.stop({ path: 'record.zip' })
 <summary>Async Python</summary>
 
 ```python
-await ctx.recording.start(screenshots=True)
+await ctx.recording.start()
 
-await vibe.go('https://example.com')       # recorded as Page.navigate
-await vibe.find('#btn').click()             # recorded as Element.click
-await vibe.find('#input').fill('hello')     # recorded as Element.fill
+await vibe.go('https://var.parts')   # recorded as Page.navigate
+await vibe.find(text='Vibium Battery Pack').click()   # recorded as Element.click
+await vibe.find(role='button', text='Add to Cart').click()   # recorded as Element.click
 
-await ctx.recording.stop(path='record.zip')
+await ctx.recording.stop()
 ```
 
 </details>
@@ -295,13 +367,13 @@ await ctx.recording.stop(path='record.zip')
 <summary>Sync Python</summary>
 
 ```python
-ctx.recording.start(screenshots=True)
+ctx.recording.start()
 
-vibe.go('https://example.com')       # recorded as Page.navigate
-vibe.find('#btn').click()             # recorded as Element.click
-vibe.find('#input').fill('hello')     # recorded as Element.fill
+vibe.go('https://var.parts')   # recorded as Page.navigate
+vibe.find(text='Vibium Battery Pack').click()   # recorded as Element.click
+vibe.find(role='button', text='Add to Cart').click()   # recorded as Element.click
 
-ctx.recording.stop(path='record.zip')
+ctx.recording.stop()
 ```
 
 </details>
@@ -310,13 +382,15 @@ ctx.recording.stop(path='record.zip')
 <summary>CLI</summary>
 
 ```bash
-vibium record start --screenshots
+vibium record start
 
-vibium go https://example.com
-vibium click '#btn'
-vibium fill '#input' 'hello'
+vibium go https://var.parts
+vibium find text "Vibium Battery Pack"
+vibium click @e1
+vibium find role button --name "Add to Cart"
+vibium click @e1
 
-vibium record stop -o record.zip
+vibium record stop
 ```
 
 </details>
@@ -324,7 +398,7 @@ vibium record stop -o record.zip
 To also record the raw BiDi protocol commands sent to the browser (e.g. `input.performActions`, `script.callFunction`), enable `bidi`:
 
 ```javascript
-await ctx.recording.start({ screenshots: true, bidi: true })
+await ctx.recording.start({ bidi: true })
 ```
 
 This is useful for debugging low-level protocol issues but makes recordings larger.
@@ -333,41 +407,51 @@ This is useful for debugging low-level protocol issues but makes recordings larg
 
 ## Action Groups
 
-Use `startGroup()` and `stopGroup()` to label sections of your recording. Groups show up as named spans in the timeline.
+Use `startGroup()` and `stopGroup()` to label sections of your recording. Groups show up as named spans in the timeline. This is the full checkout journey from the sample video above — browse, add to cart, and check out:
 
 ```javascript
-await ctx.recording.start({ screenshots: true })
-await vibe.go('https://example.com')
+await ctx.recording.start({ name: 'checkout' })
+await vibe.go('https://var.parts')
 
-await ctx.recording.startGroup('fill login form')
-await vibe.find('#username').fill('alice')
-await vibe.find('#password').fill('secret')
+await ctx.recording.startGroup('pick a part')
+await vibe.find({ text: 'Vibium Battery Pack' }).click()
+await vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 await ctx.recording.stopGroup()
 
-await ctx.recording.startGroup('submit')
-await vibe.find('button[type="submit"]').click()
+await ctx.recording.startGroup('check out')
+await vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+await vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
+await vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
+await vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
+await vibe.find({ text: 'Lunar VAR Facility' }).click()
+await vibe.find({ role: 'button', text: 'Proceed to Payment' }).click()
 await ctx.recording.stopGroup()
 
-await ctx.recording.stop({ path: 'record.zip' })
+await ctx.recording.stop()   // checkout-<timestamp>.zip
 ```
 
 <details>
 <summary>Sync JS</summary>
 
 ```javascript
-ctx.recording.start({ screenshots: true })
-vibe.go('https://example.com')
+ctx.recording.start({ name: 'checkout' })
+vibe.go('https://var.parts')
 
-ctx.recording.startGroup('fill login form')
-vibe.find('#username').fill('alice')
-vibe.find('#password').fill('secret')
+ctx.recording.startGroup('pick a part')
+vibe.find({ text: 'Vibium Battery Pack' }).click()
+vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 ctx.recording.stopGroup()
 
-ctx.recording.startGroup('submit')
-vibe.find('button[type="submit"]').click()
+ctx.recording.startGroup('check out')
+vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
+vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
+vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
+vibe.find({ text: 'Lunar VAR Facility' }).click()
+vibe.find({ role: 'button', text: 'Proceed to Payment' }).click()
 ctx.recording.stopGroup()
 
-ctx.recording.stop({ path: 'record.zip' })
+ctx.recording.stop()   // checkout-<timestamp>.zip
 ```
 
 </details>
@@ -376,19 +460,24 @@ ctx.recording.stop({ path: 'record.zip' })
 <summary>Async Python</summary>
 
 ```python
-await ctx.recording.start(screenshots=True)
-await vibe.go('https://example.com')
+await ctx.recording.start(name='checkout')
+await vibe.go('https://var.parts')
 
-await ctx.recording.start_group('fill login form')
-await vibe.find('#username').fill('alice')
-await vibe.find('#password').fill('secret')
+await ctx.recording.start_group('pick a part')
+await vibe.find(text='Vibium Battery Pack').click()
+await vibe.find(role='button', text='Add to Cart').click()
 await ctx.recording.stop_group()
 
-await ctx.recording.start_group('submit')
-await vibe.find('button[type="submit"]').click()
+await ctx.recording.start_group('check out')
+await vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+await vibe.find(role='button', text='Proceed to Checkout').click()
+await vibe.find(label='Unit Designation').fill('VAR-347')
+await vibe.find(label='Service Bay').fill('Bay 14-C')
+await vibe.find(text='Lunar VAR Facility').click()
+await vibe.find(role='button', text='Proceed to Payment').click()
 await ctx.recording.stop_group()
 
-await ctx.recording.stop(path='record.zip')
+await ctx.recording.stop()  # checkout-<timestamp>.zip
 ```
 
 </details>
@@ -397,19 +486,24 @@ await ctx.recording.stop(path='record.zip')
 <summary>Sync Python</summary>
 
 ```python
-ctx.recording.start(screenshots=True)
-vibe.go('https://example.com')
+ctx.recording.start(name='checkout')
+vibe.go('https://var.parts')
 
-ctx.recording.start_group('fill login form')
-vibe.find('#username').fill('alice')
-vibe.find('#password').fill('secret')
+ctx.recording.start_group('pick a part')
+vibe.find(text='Vibium Battery Pack').click()
+vibe.find(role='button', text='Add to Cart').click()
 ctx.recording.stop_group()
 
-ctx.recording.start_group('submit')
-vibe.find('button[type="submit"]').click()
+ctx.recording.start_group('check out')
+vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+vibe.find(role='button', text='Proceed to Checkout').click()
+vibe.find(label='Unit Designation').fill('VAR-347')
+vibe.find(label='Service Bay').fill('Bay 14-C')
+vibe.find(text='Lunar VAR Facility').click()
+vibe.find(role='button', text='Proceed to Payment').click()
 ctx.recording.stop_group()
 
-ctx.recording.stop(path='record.zip')
+ctx.recording.stop()  # checkout-<timestamp>.zip
 ```
 
 </details>
@@ -418,19 +512,32 @@ ctx.recording.stop(path='record.zip')
 <summary>CLI</summary>
 
 ```bash
-vibium record start --screenshots
-vibium go https://example.com
+vibium record start --name checkout
+vibium go https://var.parts
 
-vibium record group start 'fill login form'
-vibium fill '#username' 'alice'
-vibium fill '#password' 'secret'
+vibium record group start 'pick a part'
+vibium find text "Vibium Battery Pack"
+vibium click @e1
+vibium find role button --name "Add to Cart"
+vibium click @e1
 vibium record group stop
 
-vibium record group start 'submit'
-vibium click 'button[type="submit"]'
+vibium record group start 'check out'
+vibium click 'a[href="/cart"]'   # the cart icon has no accessible name — CSS fallback
+vibium find role button --name "Proceed to Checkout"
+vibium click @e1
+vibium find label "Unit Designation"
+vibium fill @e1 "VAR-347"
+vibium find label "Service Bay"
+vibium fill @e1 "Bay 14-C"
+vibium find text "Lunar VAR Facility"
+vibium click @e1
+vibium find role button --name "Proceed to Payment"
+vibium click @e1
 vibium record group stop
 
-vibium record stop -o record.zip
+vibium record stop
+# Saved checkout-20260808-094123.zip (23 steps, 8s video)
 ```
 
 </details>
@@ -458,17 +565,17 @@ await ctx.recording.stopGroup()
 Chunks split a long recording into segments without stopping the recording. Each chunk produces its own zip.
 
 ```javascript
-await ctx.recording.start({ screenshots: true })
+await ctx.recording.start()
 
-// First chunk: login
-await vibe.go('https://example.com/login')
-await vibe.find('#username').fill('alice')
-const loginZip = await ctx.recording.stopChunk({ path: 'login.zip' })
+// First chunk: catalog
+await vibe.go('https://var.parts')
+await vibe.find({ text: 'Vibium Battery Pack' }).click()
+const catalogZip = await ctx.recording.stopChunk({ path: 'catalog.zip' })
 
-// Second chunk: dashboard
-await ctx.recording.startChunk({ name: 'dashboard' })
-await vibe.go('https://example.com/dashboard')
-const dashboardZip = await ctx.recording.stopChunk({ path: 'dashboard.zip' })
+// Second chunk: about
+await ctx.recording.startChunk({ name: 'about' })
+await vibe.go('https://var.parts/about')
+const aboutZip = await ctx.recording.stopChunk({ path: 'about.zip' })
 
 // Final stop
 await ctx.recording.stop()
@@ -478,17 +585,17 @@ await ctx.recording.stop()
 <summary>Sync JS</summary>
 
 ```javascript
-ctx.recording.start({ screenshots: true })
+ctx.recording.start()
 
-// First chunk: login
-vibe.go('https://example.com/login')
-vibe.find('#username').fill('alice')
-ctx.recording.stopChunk({ path: 'login.zip' })
+// First chunk: catalog
+vibe.go('https://var.parts')
+vibe.find({ text: 'Vibium Battery Pack' }).click()
+ctx.recording.stopChunk({ path: 'catalog.zip' })
 
-// Second chunk: dashboard
-ctx.recording.startChunk({ name: 'dashboard' })
-vibe.go('https://example.com/dashboard')
-ctx.recording.stopChunk({ path: 'dashboard.zip' })
+// Second chunk: about
+ctx.recording.startChunk({ name: 'about' })
+vibe.go('https://var.parts/about')
+ctx.recording.stopChunk({ path: 'about.zip' })
 
 // Final stop
 ctx.recording.stop()
@@ -500,17 +607,17 @@ ctx.recording.stop()
 <summary>Async Python</summary>
 
 ```python
-await ctx.recording.start(screenshots=True)
+await ctx.recording.start()
 
-# First chunk: login
-await vibe.go('https://example.com/login')
-await vibe.find('#username').fill('alice')
-await ctx.recording.stop_chunk(path='login.zip')
+# First chunk: catalog
+await vibe.go('https://var.parts')
+await vibe.find(text='Vibium Battery Pack').click()
+await ctx.recording.stop_chunk(path='catalog.zip')
 
-# Second chunk: dashboard
-await ctx.recording.start_chunk(name='dashboard')
-await vibe.go('https://example.com/dashboard')
-await ctx.recording.stop_chunk(path='dashboard.zip')
+# Second chunk: about
+await ctx.recording.start_chunk(name='about')
+await vibe.go('https://var.parts/about')
+await ctx.recording.stop_chunk(path='about.zip')
 
 # Final stop
 await ctx.recording.stop()
@@ -522,17 +629,17 @@ await ctx.recording.stop()
 <summary>Sync Python</summary>
 
 ```python
-ctx.recording.start(screenshots=True)
+ctx.recording.start()
 
-# First chunk: login
-vibe.go('https://example.com/login')
-vibe.find('#username').fill('alice')
-ctx.recording.stop_chunk(path='login.zip')
+# First chunk: catalog
+vibe.go('https://var.parts')
+vibe.find(text='Vibium Battery Pack').click()
+ctx.recording.stop_chunk(path='catalog.zip')
 
-# Second chunk: dashboard
-ctx.recording.start_chunk(name='dashboard')
-vibe.go('https://example.com/dashboard')
-ctx.recording.stop_chunk(path='dashboard.zip')
+# Second chunk: about
+ctx.recording.start_chunk(name='about')
+vibe.go('https://var.parts/about')
+ctx.recording.stop_chunk(path='about.zip')
 
 # Final stop
 ctx.recording.stop()
@@ -544,17 +651,18 @@ ctx.recording.stop()
 <summary>CLI</summary>
 
 ```bash
-vibium record start --screenshots
+vibium record start
 
-# First chunk: login
-vibium go https://example.com/login
-vibium fill '#username' 'alice'
-vibium record chunk stop -o login.zip
+# First chunk: catalog
+vibium go https://var.parts
+vibium find text "Vibium Battery Pack"
+vibium click @e1
+vibium record chunk stop -o catalog.zip
 
-# Second chunk: dashboard
-vibium record chunk start --name dashboard
-vibium go https://example.com/dashboard
-vibium record chunk stop -o dashboard.zip
+# Second chunk: about
+vibium record chunk start --name about
+vibium go https://var.parts/about
+vibium record chunk stop -o about.zip
 
 # Final stop
 vibium record stop
@@ -569,7 +677,7 @@ vibium record stop
 Open a recording in [Record Player](https://player.vibium.dev):
 
 1. Go to [player.vibium.dev](https://player.vibium.dev)
-2. Drop your `record.zip` file onto the page
+2. Drop your recording zip onto the page
 
 The viewer shows:
 - **Timeline** — scrub through screenshots frame by frame
@@ -584,18 +692,20 @@ The viewer shows:
 All recording features are available from the command line. The daemon is automatically started when needed.
 
 ```bash
-# Start recording with screenshots
-vibium record start --screenshots --snapshots --name my-session
+# Start recording (screenshots are on by default)
+vibium record start --snapshots --name my-session
 
 # Do some work
-vibium go https://example.com
-vibium click '#btn'
-vibium fill '#input' 'hello'
+vibium go https://var.parts
+vibium find text "Vibium Battery Pack"
+vibium click @e1
+vibium find role button --name "Add to Cart"
+vibium click @e1
 
 # Action groups
-vibium record group start 'login'
-vibium fill '#username' 'alice'
-vibium fill '#password' 'secret'
+vibium record group start 'pick a part'
+vibium find text "Vibium Battery Pack"
+vibium click @e1
 vibium record group stop
 
 # Chunks
@@ -603,7 +713,7 @@ vibium record chunk stop -o chunk1.zip
 vibium record chunk start --name next-chunk
 
 # Stop and save the recording
-vibium record stop -o record.zip
+vibium record stop
 ```
 
 ---
@@ -614,36 +724,56 @@ vibium record stop -o record.zip
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `name` | string | `"record"` | Name for the recording |
+| `name` | string | `"record"` | Name for the recording; also seeds the default filename stem |
 | `title` | string | — | Title shown in Record Player |
-| `screenshots` | boolean | `false` | Capture screenshots (~100ms interval) |
-| `snapshots` | boolean | `false` | Capture DOM snapshots on stop |
+| `screenshots` | boolean | `true` | Capture a screenshot after each action |
+| `snapshots` | boolean | `false` | Capture DOM snapshots around each action |
 | `sources` | boolean | `false` | Reserved for future use |
 | `bidi` | boolean | `false` | Record raw BiDi commands in the recording |
 | `format` | `'jpeg'` \| `'png'` | `'jpeg'` | Screenshot image format |
 | `quality` | number | `0.5` | JPEG quality 0.0–1.0 (ignored for PNG) |
+| `video` | boolean \| object | — | Video track (Firefox 154+). Omitted: on when supported. `true`: required. `{width, height, frameRate}` to size it |
+| `path` | string \| null | `record-<timestamp>.zip` | Where the zip lands at stop. `null`: bytes-only, no file |
 
-### stop() / stopChunk() Options
+### stop() Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `path` | string | — | File path to write the zip to |
+| `path` | string | start's `path` | Overrides the path declared at start |
 
-When `path` is omitted, the zip data is returned as a `Buffer`.
+`stop()` returns a result object: `path`, `steps`, `durationMs`, `videos` (or `videoUnavailable`), and — for bytes-only recordings — the zip itself (`bytes` in JS, `data` in Python). `stopChunk()` returns the same shape; without a `path` the chunk comes back inline.
 
 ### CLI Flags
 
 | Command | Flag | Description |
 |---------|------|-------------|
-| `record start` | `--screenshots` | Capture screenshots periodically |
+| `record start` | `--screenshots` | Capture screenshots after each action (default on) |
 | `record start` | `--snapshots` | Capture HTML snapshots |
 | `record start` | `--bidi` | Record raw BiDi commands in the recording |
 | `record start` | `--name NAME` | Name for the recording |
-| `record stop` | `-o, --output PATH` | Output file path (default: `record.zip`) |
+| `record start` | `--video` | Require video (`--video=false` to disable; omit for auto) |
+| `record start` | `--video-size WxH` | Video dimensions (default: viewport) |
+| `record start` | `--video-fps N` | Video frame rate |
+| `record start` | `-o, --output PATH` | Where the zip lands at stop (default: `record-<timestamp>.zip`) |
+| `record stop` | `-o, --output PATH` | Overrides the path declared at start |
+
+### Java
+
+Java mirrors the same options as flat fluent setters:
+
+```java
+vibe.context().recording().start(
+    new RecordingOptions().video(true).videoSize(1280, 720).path("run.zip"));
+```
+
+### MCP Tools
+
+`browser_record_start`, `browser_record_stop`, `browser_record_start_group`, `browser_record_stop_group`, `browser_record_start_chunk`, `browser_record_stop_chunk`. The start tool takes the `start()` options as flat properties: `video`, `video_width`, `video_height`, `video_frame_rate`, `path`.
 
 ---
 
 ## Next Steps
 
+- [Record Video](../how-to-guides/record-video.md) — the video track: engine support, Firefox channels, options
 - [Recording Format](../explanation/recording-format.md) — detailed spec of the zip structure
 - [Getting Started](getting-started-js.md) — first steps with Vibium

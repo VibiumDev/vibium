@@ -121,11 +121,11 @@ describe('Recording: basic start/stop', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'basic-test' });
+      await ctx.recording.start({ path: null, name: 'basic-test' });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       assert.ok(Buffer.isBuffer(zipBuffer), 'stop() should return a Buffer');
       assert.ok(zipBuffer.length > 0, 'zip should not be empty');
@@ -171,11 +171,11 @@ describe('Recording: basic start/stop', () => {
       // Use bro.page() instead of explicit newContext() → newPage()
       const vibe = await bro.page();
 
-      await vibe.context.recording.start({ name: 'context-shortcut' });
+      await vibe.context.recording.start({ path: null, name: 'context-shortcut' });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await vibe.context.recording.stop();
+      const { bytes: zipBuffer } = await vibe.context.recording.stop();
 
       assert.ok(Buffer.isBuffer(zipBuffer), 'stop() should return a Buffer');
       assert.ok(zipBuffer.length > 0, 'zip should not be empty');
@@ -203,9 +203,10 @@ describe('Recording: basic start/stop', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start();
+      await ctx.recording.start({ path: null });
       await vibe.go(baseURL);
-      const zipBuffer = await ctx.recording.stop({ path: recordPath });
+      const result = await ctx.recording.stop({ path: recordPath });
+      assert.strictEqual(result.path, recordPath, 'result should carry the delivery path');
 
       assert.ok(fs.existsSync(recordPath), 'recording file should exist at the given path');
       const fileSize = fs.statSync(recordPath).size;
@@ -214,6 +215,30 @@ describe('Recording: basic start/stop', () => {
       await ctx.close();
     } finally {
 
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('path declared at start receives the recording; stop path overrides it', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-recording-startpath-'));
+    const startPath = path.join(tmpDir, 'declared.zip');
+    const overridePath = path.join(tmpDir, 'override.zip');
+    try {
+      const ctx = await bro.newContext();
+      const vibe = await ctx.newPage();
+
+      await ctx.recording.start({ path: startPath });
+      await vibe.go(baseURL);
+      await ctx.recording.stop();
+      assert.ok(fs.existsSync(startPath), 'stop() should deliver to the path declared at start');
+
+      await ctx.recording.start({ path: startPath, name: 'second' });
+      await vibe.go(baseURL);
+      await ctx.recording.stop({ path: overridePath });
+      assert.ok(fs.existsSync(overridePath), 'stop path should win over the start path');
+
+      await ctx.close();
+    } finally {
       cleanupDir(tmpDir);
     }
   });
@@ -227,13 +252,13 @@ describe('Recording: screenshots', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ screenshots: true });
+      await ctx.recording.start({ path: null, screenshots: true });
       await vibe.go(baseURL);
       // Wait for some screenshots to be captured
       await vibe.wait(500);
       await vibe.find('#btn').click();
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -269,11 +294,11 @@ describe('Recording: snapshots', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ snapshots: true });
+      await ctx.recording.start({ path: null, snapshots: true });
       await vibe.go(baseURL);
       await vibe.find('#btn').click();
       await vibe.wait(200);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -345,13 +370,13 @@ describe('Recording: chunks', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'chunk-test' });
+      await ctx.recording.start({ path: null, name: 'chunk-test' });
       await vibe.go(baseURL);
       await vibe.wait(200);
 
       // Stop first chunk
-      const zip1 = await ctx.recording.stopChunk();
-      assert.ok(Buffer.isBuffer(zip1), 'first chunk should return a Buffer');
+      const zip1 = (await ctx.recording.stopChunk()).bytes;
+      assert.ok(Buffer.isBuffer(zip1), 'first chunk should return bytes');
 
       // Start second chunk
       await ctx.recording.startChunk({ name: 'chunk-2' });
@@ -359,8 +384,8 @@ describe('Recording: chunks', () => {
       await vibe.wait(200);
 
       // Stop second chunk
-      const zip2 = await ctx.recording.stopChunk();
-      assert.ok(Buffer.isBuffer(zip2), 'second chunk should return a Buffer');
+      const zip2 = (await ctx.recording.stopChunk()).bytes;
+      assert.ok(Buffer.isBuffer(zip2), 'second chunk should return bytes');
 
       // Verify both zips are valid
       const { tmpDir: td1, extractedDir: ed1 } = unzipRecording(zip1);
@@ -392,7 +417,7 @@ describe('Recording: groups', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'group-test' });
+      await ctx.recording.start({ path: null, name: 'group-test' });
       await vibe.go(baseURL);
 
       await ctx.recording.startGroup('login flow');
@@ -400,7 +425,7 @@ describe('Recording: groups', () => {
       await vibe.wait(200);
       await ctx.recording.stopGroup();
 
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -430,10 +455,10 @@ describe('Recording: network events', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ name: 'network-test' });
+      await ctx.recording.start({ path: null, name: 'network-test' });
       await vibe.go(baseURL);
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;
@@ -499,10 +524,10 @@ describe('Recording: zip structure', () => {
       const ctx = await bro.newContext();
       const vibe = await ctx.newPage();
 
-      await ctx.recording.start({ screenshots: true, snapshots: true });
+      await ctx.recording.start({ path: null, screenshots: true, snapshots: true });
       await vibe.go(baseURL);
       await vibe.wait(500);
-      const zipBuffer = await ctx.recording.stop();
+      const { bytes: zipBuffer } = await ctx.recording.stop();
 
       const { tmpDir: td, extractedDir } = unzipRecording(zipBuffer);
       tmpDir = td;

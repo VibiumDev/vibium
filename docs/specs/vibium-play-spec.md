@@ -11,13 +11,17 @@ WebM, which macOS QuickTime cannot open; record.zip contents are
 only viewable by uploading to Record Player. `vibium play` opens
 either in a local app window using the browser vibium already
 manages. The recording spec's stop message points at it:
-`Saved record.zip (23 steps, 14s video) — view: vibium play record.zip`.
+`Saved record-20260808-094123.zip (23 steps, 14s video) — view: vibium play record-20260808-094123.zip`.
 
 ## CLI
 
 ```
-vibium play record.zip
+vibium play record-20260808-094123.zip
 # Opens the record viewer: step timeline, screenshots, video, synced scrubbing
+
+vibium play
+# No argument: opens the most recently modified recording zip in the
+# working directory — the counterpart to the timestamped default names
 
 vibium play demo.webm
 # Plays a video file

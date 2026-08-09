@@ -324,7 +324,7 @@ test-cli-shared: build-go
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 
 # Broad Firefox core coverage through the CLI, kept separate from the focused
-# installer/channel/screencast tests in test-firefox.
+# installer/channel/video-recording tests in test-firefox.
 test-firefox-core: build-go install-firefox
 	@"$(MAKE)" test-cli-shared ENGINE=firefox; \
 	EXIT=$$?; \

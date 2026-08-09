@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 from .._types import A11yNode
 from .element import Element
 from .clock import Clock
-from .screencast import Screencast
 from .route import Route
 
 if TYPE_CHECKING:
@@ -82,7 +81,6 @@ class Page:
         self.mouse = Mouse(async_page.mouse, loop_thread)
         self.touch = Touch(async_page.touch, loop_thread)
         self.clock = Clock(async_page.clock, loop_thread)
-        self.screencast = Screencast(async_page.screencast, loop_thread)
 
         # Sync event state
         self._console_messages: List[Dict[str, str]] = []

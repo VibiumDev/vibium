@@ -12,7 +12,6 @@ from .. import errors
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
-from .screencast import Screencast
 from .route import Route
 from .network import Request, Response
 from .dialog import Dialog
@@ -104,7 +103,6 @@ class Page:
         self.mouse = Mouse(client, context_id)
         self.touch = Touch(client, context_id)
         self.clock = Clock(client, context_id)
-        self.screencast = Screencast(client, context_id)
 
         # Event state
         self._routes: List[Dict[str, Any]] = []
