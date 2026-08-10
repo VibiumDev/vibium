@@ -107,8 +107,10 @@ describe('Prompt-blocked context', () => {
 
     let dialogOpen = false;
     blocked.onDialog(() => { dialogOpen = true; });
-    blocked.find('#alert-btn').click().catch(() => {});
-    for (let i = 0; i < 50 && !dialogOpen; i++) {
+    // The click is not awaited because the alert blocks it; under load a
+    // swallowed click failure would strand the poll, so retry periodically.
+    for (let i = 0; i < 150 && !dialogOpen; i++) {
+      if (i % 15 === 0) blocked.find('#alert-btn').click().catch(() => {});
       await new Promise((r) => setTimeout(r, 100));
     }
     assert.ok(dialogOpen, 'the alert should have opened on the first page');
