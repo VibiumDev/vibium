@@ -29,7 +29,11 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (project.hasProperty("capabilityOnly")) {
+            includeTags("cross-engine")
+        }
+    }
     // Integration tests drive the vibium binary and a live browser — neither is
     // a Gradle input, so never let cached results skip the run.
     outputs.upToDateWhen { false }
@@ -39,6 +43,49 @@ tasks.test {
     // 4 mirrors test-js's JS_PARALLEL and test-python's PY_PARALLEL. Override
     // with -PjavaParallel=N (Makefile: JAVA_PARALLEL).
     maxParallelForks = (project.findProperty("javaParallel") as String?)?.toIntOrNull() ?: 4
+}
+
+// Cross-engine browser tests live in a physical root so missing capability
+// declarations cannot turn into a new filename allowlist. Validate the source
+// before JUnit launches a browser; method-level markers add requirements to the
+// mandatory class-level baseline.
+val validateCapabilityMarkers by tasks.registering {
+    inputs.dir("src/test/java/com/vibium/engine")
+    inputs.file("../../tests/capabilities.json")
+    doLast {
+        val manifestText = file("../../tests/capabilities.json").readText()
+        val manifest = Regex("\"([^\"]+)\"\\s*:\\s*\\[([^]]*)]")
+            .findAll(manifestText)
+            .associate { match ->
+                match.groupValues[1] to Regex("\"([^\"]+)\"")
+                    .findAll(match.groupValues[2]).map { it.groupValues[1] }.toSet()
+            }
+        fileTree("src/test/java/com/vibium/engine") {
+            include("*Test.java")
+        }.forEach { file ->
+            val source = file.readText()
+            if (source.contains("@Test") && !source.contains("@RequiresCapability(")) {
+                throw GradleException("${file.path}: unmarked test in Java cross-engine root")
+            }
+            Regex("@RequiresCapability\\(([^)]*)\\)").findAll(source).forEach { marker ->
+                Regex("\"([^\"]+)\"").findAll(marker.groupValues[1]).forEach { nameMatch ->
+                    val name = nameMatch.groupValues[1]
+                    val engines = manifest[name]
+                        ?: throw GradleException("${file.path}: unknown capability $name")
+                    if (System.getenv("VIBIUM_CAPABILITY_AUDIT") == "1" &&
+                        engines.isNotEmpty() && "chrome" !in engines) {
+                        throw GradleException("${file.path}: Chrome audit rejected skip for $name")
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.test {
+    dependsOn(validateCapabilityMarkers)
+    environment("VIBIUM_CAPABILITIES_FILE", file("../../tests/capabilities.json").absolutePath)
+    environment("VIBIUM_CAPABILITY_AUDIT", System.getenv("VIBIUM_CAPABILITY_AUDIT") ?: "")
 }
 
 // Copy native binaries into resources for JAR packaging

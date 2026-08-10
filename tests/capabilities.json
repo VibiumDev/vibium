@@ -1,0 +1,9 @@
+{
+  "core": ["chrome", "firefox"],
+  "network": ["chrome"],
+  "dialogs": ["chrome"],
+  "pdf": ["chrome"],
+  "prompt-blocking": ["chrome"],
+  "screencast": ["firefox"],
+  "audio": []
+}

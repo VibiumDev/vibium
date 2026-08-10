@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-mcp test-daemon test-python python-venv test-browser-modes test-firefox test-firefox-core test-java test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -71,25 +71,9 @@ FIREFOX_TEST_TIMEOUT ?= 180000
 # full test run remains Chrome-first; Firefox has a focused test target.
 ENGINE ?= chrome
 
-# CLI behavior shared by both engines. Chrome additionally runs the prompt
-# regression: Firefox permits commands while a prompt is open, so Chrome's
-# blocked-context assertion does not apply there.
-CLI_CORE_TESTS := \
-	tests/cli/navigation.test.js \
-	tests/cli/elements.test.js \
-	tests/cli/actionability.test.js \
-	tests/cli/page-reading.test.js \
-	tests/cli/input-tools.test.js \
-	tests/cli/pages.test.js \
-	tests/cli/page-context.test.js \
-	tests/cli/find-refs.test.js \
-	tests/cli/storage.test.js \
-	tests/cli/recording-latency.test.js \
-	tests/cli/viewport-window.test.js
-CLI_SHARED_TESTS := $(CLI_CORE_TESTS)
-ifeq ($(ENGINE),chrome)
-  CLI_SHARED_TESTS += tests/cli/prompt-blocked.test.js
-endif
+# Browser-driving CLI tests are discovered from a physical cross-engine root.
+# Per-test capability markers decide whether the selected engine runs or skips.
+CLI_ENGINE_TESTS := $(wildcard tests/cli/engine/*.test.js)
 
 # Default target
 all: build
@@ -321,7 +305,7 @@ test-cli-shared: build-go
 	@echo "--- CLI Shared Tests ($(ENGINE)) ---"
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@VIBIUM_ENGINE=$(ENGINE) $(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 $(CLI_SHARED_TESTS)
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 $(CLI_ENGINE_TESTS)
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 
 # Broad Firefox core coverage through the CLI, kept separate from the focused
@@ -350,42 +334,42 @@ JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		tests/js/async/async-api.test.js \
-		tests/js/async/auto-wait.test.js \
-		tests/js/async/elements.test.js \
-		tests/js/async/interaction.test.js \
-		tests/js/async/state.test.js \
-		tests/js/async/input-eval.test.js \
-		tests/js/async/network-dialog.test.js \
-		tests/js/async/console-error.test.js \
-		tests/js/async/clock.test.js \
-		tests/js/async/emulation.test.js \
-		tests/js/async/a11y.test.js \
-		tests/js/async/a11y-tree-tutorial.test.js \
-		tests/js/async/websocket.test.js \
-		tests/js/async/download-file.test.js \
-		tests/js/async/recording.test.js \
-		tests/js/async/downloads-tutorial.test.js \
-		tests/js/async/cookies.test.js \
-		tests/js/async/storage.test.js \
-		tests/js/async/frames.test.js \
-		tests/js/async/object-model.test.js \
-		tests/js/async/dispatch-concurrency.test.js \
-		tests/js/async/prompt-blocked.test.js \
-		tests/js/async/navigation.test.js \
-		tests/js/async/lifecycle.test.js \
+		tests/js/async/engine/async-api.test.js \
+		tests/js/async/engine/auto-wait.test.js \
+		tests/js/async/engine/elements.test.js \
+		tests/js/async/engine/interaction.test.js \
+		tests/js/async/engine/state.test.js \
+		tests/js/async/engine/input-eval.test.js \
+		tests/js/async/engine/network-dialog.test.js \
+		tests/js/async/engine/console-error.test.js \
+		tests/js/async/engine/clock.test.js \
+		tests/js/async/engine/emulation.test.js \
+		tests/js/async/engine/a11y.test.js \
+		tests/js/async/engine/a11y-tree-tutorial.test.js \
+		tests/js/async/engine/websocket.test.js \
+		tests/js/async/engine/download-file.test.js \
+		tests/js/async/engine/recording.test.js \
+		tests/js/async/engine/downloads-tutorial.test.js \
+		tests/js/async/engine/cookies.test.js \
+		tests/js/async/engine/storage.test.js \
+		tests/js/async/engine/frames.test.js \
+		tests/js/async/engine/object-model.test.js \
+		tests/js/async/engine/dispatch-concurrency.test.js \
+		tests/js/async/engine/prompt-blocked.test.js \
+		tests/js/async/engine/navigation.test.js \
+		tests/js/async/engine/lifecycle.test.js \
 		tests/js/async/browser-installer.test.js
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		tests/js/sync/sync-api.test.js \
-		tests/js/sync/network-events.test.js \
-		tests/js/sync/websocket-sync.test.js \
-		tests/js/sync/console-error.test.js \
-		tests/js/sync/download-sync.test.js \
-		tests/js/sync/a11y-tree-tutorial-sync.test.js \
-		tests/js/sync/downloads-tutorial-sync.test.js
+		tests/js/sync/engine/sync-api.test.js \
+		tests/js/sync/engine/network-events.test.js \
+		tests/js/sync/engine/websocket-sync.test.js \
+		tests/js/sync/engine/console-error.test.js \
+		tests/js/sync/engine/download-sync.test.js \
+		tests/js/sync/engine/a11y-tree-tutorial-sync.test.js \
+		tests/js/sync/engine/downloads-tutorial-sync.test.js
 
 test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"
@@ -395,6 +379,11 @@ test-js-process: build-go
 
 # Backward-compat aggregate: run all three JS test groups sequentially.
 test-js: test-js-async test-js-sync test-js-process
+
+test-js-engine: build-go
+	@echo "--- JS Cross-Engine Tests ($(ENGINE), parallel x$(JS_PARALLEL)) ---"
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+		tests/js/async/engine/*.test.js tests/js/sync/engine/*.test.js
 
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
@@ -434,6 +423,13 @@ test-python: build-go install-engine python-venv
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
 			--ignore=../../tests/py/test_browser_modes.py
 
+test-python-engine: build-go install-engine python-venv
+	@echo "--- Python Cross-Engine Tests ($(ENGINE), parallel x$(PY_PARALLEL)) ---"
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
+		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/engine/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
+
 # Firefox tests. Runs inside the -j parallel group: the tests are headless
 # and open one browser at a time, so they hide behind the slower Chrome
 # suites instead of adding serial wall-clock time. Skips in seconds without
@@ -465,6 +461,26 @@ JAVA_PARALLEL ?= 3
 test-java: build-go install-engine
 	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
+
+test-java-engine: build-go install-engine
+	@echo "--- Java Cross-Engine Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
+	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PcapabilityOnly -PjavaParallel=$(JAVA_PARALLEL)
+
+test-engine: test-cli-shared test-js-engine test-python-engine test-java-engine
+
+test-firefox-capabilities: build-go install-firefox
+	@"$(MAKE)" test-engine ENGINE=firefox
+
+test-capability-audit: python-venv
+	@echo "--- Browser-free Chrome Capability Audit ---"
+	node scripts/audit-node-capability-imports.mjs
+	node scripts/test-node-capability-fixture.mjs
+	VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 VIBIUM_CAPABILITY_COLLECT_ONLY=1 \
+		node --test --test-reporter=dot --test-concurrency=1 $(CLI_ENGINE_TESTS) \
+		tests/js/async/engine/*.test.js tests/js/sync/engine/*.test.js
+	@cd clients/python && . $(VENV_ACTIVATE) && \
+		VIBIUM_ENGINE=chrome python -m pytest ../../tests/py/engine/ --collect-only -q --capability-audit
+	cd clients/java && VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 ./gradlew validateCapabilityMarkers compileTestJava
 
 # Package Java JAR with native binaries
 package-java: build-go-all

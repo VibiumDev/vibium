@@ -115,7 +115,7 @@ currently requires Firefox, while PDF output may differ between engines.
 | Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |
 
-CI runs the full suite on Chrome, plus the browser-neutral CLI core and focused
-installation, launch, navigation, screenshot, channel, and video recording tests on
-Firefox. New browser-neutral CLI tests belong in `CLI_CORE_TESTS` in the
-Makefile; engine-specific behavior stays in its focused suite.
+CI runs the full suite on Chrome. A separate Firefox job runs capability-selected
+CLI and client tests plus focused installation, launch, channel, and video coverage.
+Browser-driving cross-engine tests declare their requirements through the shared
+capability adapters; unsupported features are reported as skips with reasons.

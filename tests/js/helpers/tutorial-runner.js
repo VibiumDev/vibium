@@ -16,7 +16,9 @@
  * helpers) or parsed from the markdown.
  */
 
-const { test, before, after } = require('node:test');
+// Tutorial tests are part of the cross-engine client suites. Using the same
+// adapter here prevents generated tests from bypassing capability collection.
+const { test, before, after } = require('../../helpers/capabilities').suite('core');
 const assert = require('node:assert');
 const { readFileSync } = require('fs');
 const { resolve, join } = require('path');

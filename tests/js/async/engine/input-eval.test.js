@@ -1,0 +1,330 @@
+/**
+ * JS Library Tests: Keyboard, Mouse, Screenshots, Evaluation
+ * Tests page.keyboard, page.mouse, page.screenshot (options),
+ * page.pdf, page.evaluate, page.addScript, page.addStyle, page.expose.
+ */
+
+const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
+const assert = require('node:assert');
+
+const { browser } = require('../../../../clients/javascript/dist');
+const { createTestServer } = require('../../../helpers/test-server');
+
+let server, baseURL, bro;
+
+before(async () => {
+  ({ server, baseURL } = await createTestServer());
+  bro = await browser.start({ headless: true });
+});
+
+after(async () => {
+  await bro.stop();
+  if (server) server.close();
+});
+
+// --- Keyboard, Mouse ---
+
+describe('Keyboard: page-level input', () => {
+  test('keyboard.type() types text into focused input', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/login`);
+
+    // Click the input to focus it
+    const input = await vibe.find('#username');
+    await input.click();
+
+    // Type via page.keyboard
+    await vibe.keyboard.type('tomsmith');
+
+    const val = await input.value();
+    assert.strictEqual(val, 'tomsmith');
+  });
+
+  test('keyboard.press() sends a key press', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/login`);
+
+    const input = await vibe.find('#username');
+    await input.click();
+    await vibe.keyboard.type('hello');
+
+    // Press Backspace to delete last character
+    await vibe.keyboard.press('Backspace');
+
+    const val = await input.value();
+    assert.strictEqual(val, 'hell');
+  });
+
+  test('keyboard.down() and keyboard.up() hold and release keys', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/login`);
+
+    const input = await vibe.find('#username');
+    await input.click();
+    await vibe.keyboard.type('hello');
+
+    // Hold shift, press Home to select all, release shift, then delete
+    await vibe.keyboard.down('Shift');
+    await vibe.keyboard.press('Home');
+    await vibe.keyboard.up('Shift');
+    await vibe.keyboard.press('Backspace');
+
+    const val = await input.value();
+    assert.strictEqual(val, '');
+  });
+});
+
+describe('Mouse: page-level input', () => {
+  test('mouse.click() clicks at coordinates', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/login`);
+
+    // Find the username input bounds and click it via mouse
+    const input = await vibe.find('#username');
+    const bounds = await input.bounds();
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+
+    await vibe.mouse.click(cx, cy);
+    await vibe.keyboard.type('mouseuser');
+
+    const val = await input.value();
+    assert.strictEqual(val, 'mouseuser');
+  });
+
+  test('mouse.move() moves to coordinates', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/hovers`);
+
+    // Get first figure position
+    const figure = await vibe.find('.figure');
+    const bounds = await figure.bounds();
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+
+    // Move mouse to trigger hover
+    await vibe.mouse.move(cx, cy);
+
+    // Poll for CSS transition to complete (opacity 0 → 1)
+    const visible = await vibe.evaluate(`new Promise(resolve => {
+      const check = () => {
+        const caption = document.querySelector('.figure .figcaption');
+        const style = window.getComputedStyle(caption);
+        if (style.opacity !== '0') {
+          resolve(true);
+        } else {
+          requestAnimationFrame(check);
+        }
+      };
+      check();
+      setTimeout(() => resolve(false), 2000);
+    })`);
+
+    assert.ok(visible, 'Hover caption should be visible after mouse.move');
+  });
+
+  test('mouse.wheel() scrolls the page', async () => {
+    const vibe = await bro.page();
+    await vibe.go('data:text/html,<body style="margin:0"><div style="height:5000px;background:linear-gradient(red,blue)">Tall</div></body>');
+
+    // Scroll down
+    await vibe.mouse.wheel(0, 500);
+    await vibe.wait(300);
+
+    const scrollY = await vibe.evaluate('window.scrollY;');
+    assert.ok(scrollY > 0, `Page should have scrolled down, scrollY: ${scrollY}`);
+  });
+});
+
+// --- Screenshots & PDF ---
+
+describe('Screenshots: options', () => {
+  test('screenshot() returns a PNG buffer', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const buf = await vibe.screenshot();
+    assert.ok(Buffer.isBuffer(buf), 'screenshot() should return a Buffer');
+    assert.ok(buf.length > 100, 'Screenshot should have meaningful content');
+
+    // Check PNG magic bytes
+    assert.strictEqual(buf[0], 0x89);
+    assert.strictEqual(buf[1], 0x50); // P
+    assert.strictEqual(buf[2], 0x4e); // N
+    assert.strictEqual(buf[3], 0x47); // G
+  });
+
+  test('screenshot({ fullPage: true }) captures full page', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const viewportShot = await vibe.screenshot();
+    const fullShot = await vibe.screenshot({ fullPage: true });
+
+    assert.ok(Buffer.isBuffer(fullShot), 'fullPage screenshot should return a Buffer');
+    assert.ok(fullShot.length > 100, 'fullPage screenshot should have meaningful content');
+  });
+
+  test('screenshot({ clip }) captures a specific region', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const clipShot = await vibe.screenshot({
+      clip: { x: 0, y: 0, width: 100, height: 100 },
+    });
+
+    assert.ok(Buffer.isBuffer(clipShot), 'clip screenshot should return a Buffer');
+    assert.ok(clipShot.length > 100, 'clip screenshot should have meaningful content');
+  });
+
+  test.requires('pdf')('pdf() returns a PDF buffer', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const buf = await vibe.pdf();
+    assert.ok(Buffer.isBuffer(buf), 'pdf() should return a Buffer');
+    assert.ok(buf.length > 100, 'PDF should have meaningful content');
+
+    // Check PDF magic bytes (%PDF)
+    const header = buf.subarray(0, 5).toString('ascii');
+    assert.ok(header.startsWith('%PDF'), `PDF should start with %PDF, got: ${header}`);
+  });
+});
+
+// --- Evaluation ---
+
+describe('Evaluation: page-level', () => {
+  test('eval() evaluates an expression', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const result = await vibe.evaluate('1 + 1');
+    assert.strictEqual(result, 2);
+  });
+
+  test('eval() returns strings', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const result = await vibe.evaluate('document.title');
+    assert.strictEqual(result, 'Example Domain');
+  });
+
+  test('eval() returns null for undefined', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const result = await vibe.evaluate('undefined');
+    assert.strictEqual(result, null);
+  });
+
+  test('addScript() injects inline JS', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    await vibe.addScript('window.__testVar = 42;');
+
+    const result = await vibe.evaluate('window.__testVar');
+    assert.strictEqual(result, 42);
+  });
+
+  test('addStyle() injects inline CSS', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    await vibe.addStyle('body { background-color: rgb(255, 0, 0) !important; }');
+
+    const bg = await vibe.evaluate('window.getComputedStyle(document.body).backgroundColor');
+    assert.strictEqual(bg, 'rgb(255, 0, 0)');
+  });
+
+  test('expose() injects a named function on window', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    await vibe.expose('myAdd', '(a, b) => a + b');
+
+    const result = await vibe.evaluate('window.myAdd(2, 3)');
+    assert.strictEqual(result, 5);
+  });
+
+  test('expose() survives navigation (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+    await vibe.expose('myPersist', '(a, b) => a * b');
+
+    // The test above exposes after its only navigation, so it passed even when
+    // the function was injected into just the current document. The point of
+    // exposing one is that it is there whenever the page loads.
+    await vibe.go(`${baseURL}/login`);
+    assert.strictEqual(await vibe.evaluate('typeof window.myPersist'), 'function');
+    assert.strictEqual(await vibe.evaluate('window.myPersist(3, 4)'), 12);
+
+    await vibe.go(`${baseURL}/example`);
+    assert.strictEqual(await vibe.evaluate('window.myPersist(5, 6)'), 30);
+  });
+
+  test('expose() is usable before any navigation (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+    await vibe.expose('myNow', '() => "immediate"');
+
+    // Persisting must not come at the cost of the current document.
+    assert.strictEqual(await vibe.evaluate('window.myNow()'), 'immediate');
+  });
+
+  test('expose() replaces a previous function of the same name (#135)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    await vibe.expose('myDup', '() => "first"');
+    await vibe.expose('myDup', '() => "second"');
+    assert.strictEqual(await vibe.evaluate('window.myDup()'), 'second');
+
+    await vibe.go(`${baseURL}/login`);
+    assert.strictEqual(await vibe.evaluate('window.myDup()'), 'second',
+      'the replaced definition must not come back after a navigation');
+  });
+});
+
+// --- Checkpoint ---
+
+describe('Input & Eval Checkpoint', () => {
+  test('keyboard.type, mouse.click, screenshot, eval all work together', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/login`);
+
+    // Use keyboard.type via page.keyboard
+    const input = await vibe.find('#username');
+    await input.click();
+    await vibe.keyboard.type('tomsmith');
+
+    // Use mouse.click to click password field
+    const pwInput = await vibe.find('#password');
+    const pwBounds = await pwInput.bounds();
+    await vibe.mouse.click(
+      pwBounds.x + pwBounds.width / 2,
+      pwBounds.y + pwBounds.height / 2
+    );
+    await vibe.keyboard.type('SuperSecretPassword!');
+
+    // Verify values using eval
+    const username = await vibe.evaluate('document.querySelector("#username").value');
+    assert.strictEqual(username, 'tomsmith');
+    const password = await vibe.evaluate('document.querySelector("#password").value');
+    assert.strictEqual(password, 'SuperSecretPassword!');
+
+    // Take screenshot
+    const shot = await vibe.screenshot();
+    assert.ok(Buffer.isBuffer(shot), 'Screenshot should be a buffer');
+    assert.ok(shot.length > 100, 'Screenshot should have content');
+
+    // Submit the form
+    const btn = await vibe.find('button[type="submit"]');
+    await btn.click();
+    await vibe.waitUntil.url('**/secure');
+
+    const url = await vibe.url();
+    assert.ok(url.includes('/secure'), `Should be on /secure, got: ${url}`);
+  });
+});
