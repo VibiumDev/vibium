@@ -5,5 +5,9 @@
   "pdf": ["chrome"],
   "prompt-blocking": ["chrome"],
   "screencast": ["firefox"],
-  "audio": []
+  "audio": [],
+  "console": ["chrome"],
+  "downloads": ["chrome"],
+  "popups": ["chrome"],
+  "navigation-capture": ["chrome"]
 }

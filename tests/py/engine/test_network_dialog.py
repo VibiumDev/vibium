@@ -310,6 +310,7 @@ async def test_auto_dismiss(net_browser, test_server):
 
 # --- Expect navigation ---
 
+@pytest.mark.capability("navigation-capture")
 async def test_capture_navigation(net_browser, test_server):
     vibe = await net_browser.new_page()
     await vibe.go(test_server + "/nav-test")
@@ -323,6 +324,7 @@ async def test_capture_navigation(net_browser, test_server):
 
 # --- Expect download ---
 
+@pytest.mark.capability("downloads")
 async def test_capture_download(net_browser, test_server):
     vibe = await net_browser.new_page()
     await vibe.go(test_server + "/download")

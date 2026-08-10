@@ -26,6 +26,6 @@ res.end('<a href="/file" id="dl-link">Download hello.txt</a>');
 describe('Downloads Tutorial (JS Sync)', () => {
   runTutorial('docs/tutorials/downloads-js.md', {
     mode: 'sync', standalone: true, serverCode: SERVER_CODE,
-    requireFn: tutorialRequire,
+    requireFn: tutorialRequire, requires: ['downloads'],
   });
 });

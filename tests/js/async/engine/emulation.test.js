@@ -14,6 +14,9 @@ describe('JS Emulation', () => {
 
   test('setup', async () => {
     bro = await browser.start({ headless: true });
+    // Firefox keeps the startup tab in the parent process until a
+    // navigation, where script-backed commands are refused.
+    await (await bro.page()).go('about:blank');
   });
 
   after(async () => {

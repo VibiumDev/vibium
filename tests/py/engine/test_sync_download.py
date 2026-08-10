@@ -2,7 +2,7 @@
 
 import pytest
 
-pytestmark = pytest.mark.capability("core")
+pytestmark = pytest.mark.capability("core", "downloads")
 
 
 def test_download_fires(sync_browser, test_server):

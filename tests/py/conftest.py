@@ -132,6 +132,9 @@ def sync_browser():
     """Launch a shared headless sync browser for a test module."""
     from vibium import browser
     bro = browser.start(headless=True)
+    # Firefox keeps the startup tab in the parent process until a
+    # navigation, where script-backed commands are refused.
+    bro.page().go("about:blank")
     yield bro
     bro.stop()
 
@@ -141,6 +144,10 @@ async def async_browser():
     """Launch a shared headless async browser for a test module."""
     from vibium.async_api import browser
     bro = await browser.start(headless=True)
+    # Firefox keeps the startup tab in the parent process until a
+    # navigation, where script-backed commands are refused.
+    page = await bro.page()
+    await page.go("about:blank")
     yield bro
     await bro.stop()
 
@@ -171,6 +178,9 @@ def fresh_sync_browser():
     """Launch a fresh headless sync browser for a single test."""
     from vibium import browser
     bro = browser.start(headless=True)
+    # Firefox keeps the startup tab in the parent process until a
+    # navigation, where script-backed commands are refused.
+    bro.page().go("about:blank")
     yield bro
     bro.stop()
 
@@ -184,6 +194,10 @@ async def fresh_async_browser():
     """
     from vibium.async_api import browser
     bro = await browser.start(headless=True)
+    # Firefox keeps the startup tab in the parent process until a
+    # navigation, where script-backed commands are refused.
+    page = await bro.page()
+    await page.go("about:blank")
     yield bro
     await bro.stop()
 

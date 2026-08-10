@@ -6,7 +6,7 @@
  * Uses a local HTTP server — no external network dependencies.
  */
 
-const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
+const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core", "downloads");
 const assert = require('node:assert');
 const http = require('http');
 const fs = require('fs');

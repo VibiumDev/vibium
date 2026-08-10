@@ -137,6 +137,7 @@ class WireContractTest {
      * payload carries navigation (#255).
      */
     @Test
+    @RequiresCapability("downloads")
     void onDownloadFiresAndSaveAsWritesTheFile(@TempDir Path tmp) throws Exception {
         page.go(server.baseUrl() + "/download");
 

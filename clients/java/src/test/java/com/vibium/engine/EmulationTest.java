@@ -20,6 +20,9 @@ class EmulationTest {
         server = new TestServer();
         server.start();
         browser = Vibium.start(new StartOptions().headless(true));
+        // Firefox keeps the startup tab in the parent process until a
+        // navigation, where script-backed commands are refused.
+        browser.page().go("about:blank");
     }
 
     @AfterAll

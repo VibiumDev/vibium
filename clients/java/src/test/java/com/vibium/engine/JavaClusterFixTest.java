@@ -20,6 +20,9 @@ public class JavaClusterFixTest {
     @BeforeAll
     void setup() {
         browser = Vibium.start(new StartOptions().headless(true));
+        // Firefox keeps the startup tab in the parent process until a
+        // navigation, where script-backed commands are refused.
+        browser.page().go("about:blank");
     }
 
     @AfterAll
@@ -85,6 +88,7 @@ public class JavaClusterFixTest {
     }
 
     @Test
+    @RequiresCapability("console")
     void onErrorReceivesUncaughtError() throws Exception { // #136
         Page page = browser.page();
         page.setContent("<html><body></body></html>");

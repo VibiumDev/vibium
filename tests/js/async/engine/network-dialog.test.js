@@ -470,7 +470,7 @@ describe.requires('dialogs')('Dialogs: page.onDialog', () => {
 
 // --- Capture Navigation ---
 
-describe('Capture: navigation', () => {
+describe.requires('navigation-capture')('Capture: navigation', () => {
   test('capture.navigation() resolves with URL on link click', async () => {
     const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/nav-test`);
@@ -487,7 +487,7 @@ describe('Capture: navigation', () => {
 
 // --- Capture Download ---
 
-describe('Capture: download', () => {
+describe.requires('downloads')('Capture: download', () => {
   test('capture.download() resolves with Download object', async () => {
     const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/download`);

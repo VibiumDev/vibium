@@ -6,7 +6,7 @@
  * Uses sync-test-server.js in a child process (sync API blocks the main thread).
  */
 
-const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
+const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core", "console");
 const assert = require('node:assert');
 const { fork } = require('child_process');
 const path = require('path');

@@ -6,7 +6,7 @@
  * Each test uses bro.newPage() for event handler isolation, then closes the page.
  */
 
-const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
+const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core", "console");
 const assert = require('node:assert');
 const http = require('http');
 

@@ -678,7 +678,7 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
   });
 });
 
-describe('Sync API: onPage/onPopup', () => {
+describe.requires('popups')('Sync API: onPage/onPopup', () => {
   test('onPage fires for new tabs', () => {
     const bro = browser.start({ headless: true });
     try {
@@ -723,7 +723,7 @@ describe('Sync API: onPage/onPopup', () => {
   });
 });
 
-describe('Sync API: Capture navigation', () => {
+describe.requires('navigation-capture')('Sync API: Capture navigation', () => {
 
   test('capture.navigation() returns URL on link click', () => {
     const vibe = bro.newPage();
@@ -735,7 +735,7 @@ describe('Sync API: Capture navigation', () => {
   });
 });
 
-describe('Sync API: Capture download', () => {
+describe.requires('downloads')('Sync API: Capture download', () => {
 
   test('capture.download() returns download info', () => {
     const vibe = bro.newPage();

@@ -651,6 +651,7 @@ def test_static_on_dialog(bro, test_server):
 # Console collect (2)
 # ===========================================================================
 
+@pytest.mark.capability("console")
 def test_on_console_collect(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server)
@@ -662,6 +663,7 @@ def test_on_console_collect(bro, test_server):
     vibe.close()
 
 
+@pytest.mark.capability("console")
 def test_on_error_collect(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server)
@@ -703,6 +705,7 @@ def test_capture_response_returns_dict(bro, test_server):
 # Capture navigation (1)
 # ===========================================================================
 
+@pytest.mark.capability("navigation-capture")
 def test_capture_navigation(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server + "/nav-test")
@@ -717,6 +720,7 @@ def test_capture_navigation(bro, test_server):
 # Capture download (1)
 # ===========================================================================
 
+@pytest.mark.capability("downloads")
 def test_capture_download(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server + "/download")
@@ -729,6 +733,7 @@ def test_capture_download(bro, test_server):
     vibe.close()
 
 
+@pytest.mark.capability("downloads")
 def test_capture_download_save_as(bro, test_server):
     import os
     import tempfile

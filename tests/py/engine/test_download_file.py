@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 
-pytestmark = pytest.mark.capability("core")
+pytestmark = pytest.mark.capability("core", "downloads")
 
 
 async def test_download_fires(fresh_async_browser, test_server):

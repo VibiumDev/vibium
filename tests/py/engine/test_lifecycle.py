@@ -64,6 +64,7 @@ async def test_multiple_pages_independent(fresh_async_browser, test_server):
     assert await p2.title() == "Subpage"
 
 
+@pytest.mark.capability("popups")
 async def test_on_page(fresh_async_browser):
     pages = []
     fresh_async_browser.on_page(lambda p: pages.append(p))
@@ -75,6 +76,7 @@ async def test_on_page(fresh_async_browser):
     fresh_async_browser.remove_all_listeners("page")
 
 
+@pytest.mark.capability("popups")
 async def test_on_popup(fresh_async_browser, test_server):
     popups = []
     fresh_async_browser.on_popup(lambda p: popups.append(p))
@@ -88,6 +90,7 @@ async def test_on_popup(fresh_async_browser, test_server):
     fresh_async_browser.remove_all_listeners("popup")
 
 
+@pytest.mark.capability("popups")
 async def test_remove_all_listeners(fresh_async_browser):
     pages = []
     fresh_async_browser.on_page(lambda p: pages.append(p))
@@ -102,6 +105,7 @@ async def test_remove_all_listeners(fresh_async_browser):
     assert len(pages) == 1, "Should still be 1 after removing listener"
 
 
+@pytest.mark.capability("popups")
 def test_on_page_sync(fresh_sync_browser):
     import time
     initial = fresh_sync_browser.page()
@@ -116,6 +120,7 @@ def test_on_page_sync(fresh_sync_browser):
     fresh_sync_browser.remove_all_listeners("page")
 
 
+@pytest.mark.capability("popups")
 def test_on_popup_sync(fresh_sync_browser, test_server):
     import time
     popups = []
@@ -129,6 +134,7 @@ def test_on_popup_sync(fresh_sync_browser, test_server):
     fresh_sync_browser.remove_all_listeners("popup")
 
 
+@pytest.mark.capability("popups")
 def test_remove_all_listeners_sync(fresh_sync_browser):
     import time
     initial = fresh_sync_browser.page()

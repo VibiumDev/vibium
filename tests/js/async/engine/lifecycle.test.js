@@ -154,7 +154,7 @@ describe('JS Lifecycle', () => {
     }
   });
 
-  test('browser.onPage() fires for new tabs', async () => {
+  test.requires('popups')('browser.onPage() fires for new tabs', async () => {
     await resetPages(bro);
     bro.removeAllListeners('page');
     // Flush any pending contextCreated events
@@ -174,7 +174,7 @@ describe('JS Lifecycle', () => {
     }
   });
 
-  test('browser.onPopup() fires for window.open', async () => {
+  test.requires('popups')('browser.onPopup() fires for window.open', async () => {
     await resetPages(bro);
     bro.removeAllListeners('popup');
     const popups = [];
@@ -190,7 +190,7 @@ describe('JS Lifecycle', () => {
     }
   });
 
-  test('browser.removeAllListeners() stops callbacks', async () => {
+  test.requires('popups')('browser.removeAllListeners() stops callbacks', async () => {
     await resetPages(bro);
     bro.removeAllListeners('page');
     // Flush any pending contextCreated events

@@ -18,7 +18,7 @@
 
 // Tutorial tests are part of the cross-engine client suites. Using the same
 // adapter here prevents generated tests from bypassing capability collection.
-const { test, before, after } = require('../../helpers/capabilities').suite('core');
+const { suite } = require('../../helpers/capabilities');
 const assert = require('node:assert');
 const { readFileSync } = require('fs');
 const { resolve, join } = require('path');
@@ -86,7 +86,8 @@ function extractBlocks(mdPath) {
   return blocks;
 }
 
-function runTutorial(mdPath, { browser, mode, serverCode, helpers: extraHelpers, standalone, requireFn }) {
+function runTutorial(mdPath, { browser, mode, serverCode, helpers: extraHelpers, standalone, requireFn, requires }) {
+  const { test, before, after } = suite('core', ...(requires || []));
   const _require = requireFn || require;
   const blocks = extractBlocks(mdPath);
   let helpers = extraHelpers || '';
@@ -143,14 +144,22 @@ function runTutorial(mdPath, { browser, mode, serverCode, helpers: extraHelpers,
     }
   }
 
-  // Browser lifecycle (non-standalone only) — one browser shared across all tests
+  // Browser lifecycle (non-standalone only) — one browser shared across all
+  // tests. Navigate the startup tab once: Firefox keeps it in the parent
+  // process until a navigation, where script-backed commands are refused.
   let _browser = null;
   if (!standalone) {
     if (mode === 'async') {
-      before(async () => { _browser = await browser.start({ headless: true }); });
+      before(async () => {
+        _browser = await browser.start({ headless: true });
+        await (await _browser.page()).go('about:blank');
+      });
       after(async () => { if (_browser) await _browser.stop(); });
     } else {
-      before(() => { _browser = browser.start({ headless: true }); });
+      before(() => {
+        _browser = browser.start({ headless: true });
+        _browser.page().go('about:blank');
+      });
       after(() => { if (_browser) _browser.stop(); });
     }
   }

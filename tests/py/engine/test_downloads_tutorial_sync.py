@@ -2,7 +2,7 @@
 
 import pytest
 
-pytestmark = pytest.mark.capability("core")
+pytestmark = pytest.mark.capability("core", "downloads")
 from helpers.tutorial_runner import get_tutorial_tests, start_tutorial_server, run_sync_standalone
 
 MD_PATH = "docs/tutorials/downloads-python.md"

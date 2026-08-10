@@ -31,6 +31,15 @@ async def _subscribed(vibe, ws_echo_server, ws_connections):
     raise AssertionError("onWebSocket subscription never became active")
 
 
+async def _ws_open(vibe):
+    """Wait for window.__ws to reach OPEN; send() on CONNECTING throws."""
+    for _ in range(150):
+        if await vibe.evaluate("window.__ws && window.__ws.readyState === 1"):
+            return
+        await vibe.wait(100)
+    raise AssertionError("websocket never reached OPEN")
+
+
 async def test_fires(fresh_async_browser, test_server, ws_echo_server):
     """onWebSocket fires when a WebSocket connection is opened."""
     vibe = await fresh_async_browser.new_page()
@@ -76,6 +85,7 @@ async def test_on_message_sent(fresh_async_browser, test_server, ws_echo_server)
     messages = []
     ws_connections[0].on_message(lambda data, info: messages.append({"data": data, "direction": info["direction"]}))
 
+    await _ws_open(vibe)
     await vibe.evaluate("window.__ws.send('hello')")
     await _wait_for(vibe, lambda: [m for m in messages if m["direction"] == "sent"])
     sent = [m for m in messages if m["direction"] == "sent"]
@@ -99,6 +109,7 @@ async def test_on_message_received(fresh_async_browser, test_server, ws_echo_ser
     messages = []
     ws_connections[0].on_message(lambda data, info: messages.append({"data": data, "direction": info["direction"]}))
 
+    await _ws_open(vibe)
     await vibe.evaluate("window.__ws.send('echo-me')")
     await _wait_for(vibe, lambda: [m for m in messages if m["direction"] == "received"])
     received = [m for m in messages if m["direction"] == "received"]

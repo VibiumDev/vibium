@@ -2,7 +2,7 @@
 
 import pytest
 
-pytestmark = pytest.mark.capability("core")
+pytestmark = pytest.mark.capability("core", "console")
 
 
 # --- Console ---

@@ -3,7 +3,7 @@
  * Tests page.onDownload() and removeAllListeners('download') for sync API.
  */
 
-const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
+const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core", "downloads");
 const assert = require('node:assert');
 const { fork } = require('child_process');
 const fs = require('fs');
