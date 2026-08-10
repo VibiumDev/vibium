@@ -84,7 +84,8 @@ CLI_CORE_TESTS := \
 	tests/cli/page-context.test.js \
 	tests/cli/find-refs.test.js \
 	tests/cli/storage.test.js \
-	tests/cli/recording-latency.test.js
+	tests/cli/recording-latency.test.js \
+	tests/cli/viewport-window.test.js
 CLI_SHARED_TESTS := $(CLI_CORE_TESTS)
 ifeq ($(ENGINE),chrome)
   CLI_SHARED_TESTS += tests/cli/prompt-blocked.test.js

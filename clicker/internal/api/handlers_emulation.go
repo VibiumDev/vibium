@@ -1,11 +1,8 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 )
 
 // handlePageSetViewport handles vibium:page.setViewport — sets the viewport size.
@@ -246,7 +243,7 @@ func (r *Router) handlePageSetWindow(session *BrowserSession, cmd bidiCommand) {
 		opts.Y = &yv
 	}
 
-	if err := SetWindow(session.LaunchResult.Port, session.LaunchResult.SessionID, opts); err != nil {
+	if err := SetWindow(NewAPISession(r, session, ""), opts); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -302,28 +299,6 @@ func (r *Router) handlePageSetGeolocation(session *BrowserSession, cmd bidiComma
 // Exported standalone functions — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
-// ChromedriverPost sends a POST request to a chromedriver classic WebDriver endpoint.
-func ChromedriverPost(url string, body map[string]interface{}) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("chromedriver request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("chromedriver error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
-}
-
 // WindowInfo holds OS browser window state and dimensions.
 type WindowInfo struct {
 	State  string `json:"state"`
@@ -336,27 +311,45 @@ type WindowInfo struct {
 // GetWindow returns the current OS browser window state and dimensions.
 // Uses BiDi browser.getClientWindows.
 func GetWindow(s Session) (*WindowInfo, error) {
+	win, _, err := activeClientWindow(s)
+	return win, err
+}
+
+// activeClientWindow returns the focused client window (or the first one when
+// none reports focus) along with its BiDi client window id.
+func activeClientWindow(s Session) (*WindowInfo, string, error) {
 	resp, err := s.SendBidiCommand("browser.getClientWindows", map[string]interface{}{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window: %w", err)
+		return nil, "", fmt.Errorf("failed to get window: %w", err)
 	}
 	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, bidiErr
+		return nil, "", bidiErr
 	}
 
 	var getResult struct {
 		Result struct {
-			ClientWindows []WindowInfo `json:"clientWindows"`
+			ClientWindows []struct {
+				WindowInfo
+				ClientWindow string `json:"clientWindow"`
+				Active       bool   `json:"active"`
+			} `json:"clientWindows"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(resp, &getResult); err != nil {
-		return nil, fmt.Errorf("failed to parse getClientWindows: %w", err)
+		return nil, "", fmt.Errorf("failed to parse getClientWindows: %w", err)
 	}
-	if len(getResult.Result.ClientWindows) == 0 {
-		return nil, fmt.Errorf("no client windows available")
+	windows := getResult.Result.ClientWindows
+	if len(windows) == 0 {
+		return nil, "", fmt.Errorf("no client windows available")
 	}
-
-	return &getResult.Result.ClientWindows[0], nil
+	chosen := windows[0]
+	for _, win := range windows {
+		if win.Active {
+			chosen = win
+			break
+		}
+	}
+	return &chosen.WindowInfo, chosen.ClientWindow, nil
 }
 
 // SetWindowOpts specifies the desired window state and/or dimensions.
@@ -369,41 +362,42 @@ type SetWindowOpts struct {
 }
 
 // SetWindow sets the OS browser window size, position, or state.
-// Uses chromedriver's classic WebDriver HTTP API.
-func SetWindow(port int, sessionID string, opts SetWindowOpts) error {
-	baseURL := fmt.Sprintf("http://localhost:%d/session/%s/window", port, sessionID)
+// Uses BiDi browser.setClientWindowState: the classic WebDriver endpoint
+// operates on the session's current window handle, which goes stale once
+// the page it points at is closed.
+func SetWindow(s Session, opts SetWindowOpts) error {
+	_, id, err := activeClientWindow(s)
+	if err != nil {
+		return err
+	}
 
-	// Handle named states via dedicated endpoints
-	if opts.State != "" && opts.State != "normal" {
-		endpoint := ""
-		switch opts.State {
-		case "maximized":
-			endpoint = baseURL + "/maximize"
-		case "minimized":
-			endpoint = baseURL + "/minimize"
-		case "fullscreen":
-			endpoint = baseURL + "/fullscreen"
-		default:
-			return fmt.Errorf("unsupported window state: %s", opts.State)
+	params := map[string]interface{}{"clientWindow": id}
+	switch opts.State {
+	case "maximized", "minimized", "fullscreen":
+		params["state"] = opts.State
+	case "", "normal":
+		params["state"] = "normal"
+		if opts.Width != nil {
+			params["width"] = *opts.Width
 		}
-		return ChromedriverPost(endpoint, map[string]interface{}{})
+		if opts.Height != nil {
+			params["height"] = *opts.Height
+		}
+		if opts.X != nil {
+			params["x"] = *opts.X
+		}
+		if opts.Y != nil {
+			params["y"] = *opts.Y
+		}
+	default:
+		return fmt.Errorf("unsupported window state: %s", opts.State)
 	}
 
-	// For "normal" state or dimension changes, use /window/rect
-	rect := map[string]interface{}{}
-	if opts.Width != nil {
-		rect["width"] = *opts.Width
+	resp, err := s.SendBidiCommand("browser.setClientWindowState", params)
+	if err != nil {
+		return fmt.Errorf("failed to set window: %w", err)
 	}
-	if opts.Height != nil {
-		rect["height"] = *opts.Height
-	}
-	if opts.X != nil {
-		rect["x"] = *opts.X
-	}
-	if opts.Y != nil {
-		rect["y"] = *opts.Y
-	}
-	return ChromedriverPost(baseURL+"/rect", rect)
+	return checkBidiError(resp)
 }
 
 // geolocationScript is the JS that overrides navigator.geolocation.
