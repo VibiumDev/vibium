@@ -1,7 +1,7 @@
 /**
  * Remote Browser Connect Tests
  * Tests vibium start [url], stop, VIBIUM_CONNECT_URL env var,
- * and window error for remote browsers.
+ * and window control for remote browsers.
  */
 
 const { test, describe, before, after } = require('node:test');
@@ -223,14 +223,12 @@ describe('Daemon: Remote browser connect', () => {
     assert.ok(result.result.includes('/example'), 'Should confirm navigation');
   });
 
-  test('window set returns error for remote browsers', () => {
+  test('window set works for remote browsers', () => {
     const result = clickerJSONSafe('window 800 600');
-    assert.strictEqual(result.ok, false, 'window set should fail for remote browsers');
-    assert.ok(
-      result.error.toLowerCase().includes('not supported') ||
-      result.error.toLowerCase().includes('remote'),
-      'Should mention remote browser limitation'
-    );
+    assert.strictEqual(result.ok, true, 'window set should succeed over a remote connection');
+    const win = JSON.parse(clickerJSON('window').result);
+    assert.strictEqual(win.width, 800);
+    assert.strictEqual(win.height, 600);
   });
 
   test('vibium stop stops daemon', () => {

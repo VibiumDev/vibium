@@ -56,4 +56,21 @@ describe('CLI: Viewport & Window Commands', () => {
     assert.strictEqual(win.width, 900);
     assert.strictEqual(win.height, 700);
   });
+
+  test('window resize survives closing the active page (#346)', () => {
+    execSync(`${VIBIUM} page new`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} page switch 0`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} page close`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} window 910 710`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} window`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const win = JSON.parse(result);
+    assert.strictEqual(win.width, 910);
+    assert.strictEqual(win.height, 710);
+  });
 });

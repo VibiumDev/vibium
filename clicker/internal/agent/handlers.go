@@ -3721,16 +3721,6 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 		return nil, err
 	}
 
-	if h.launchResult == nil {
-		return &ToolsCallResult{
-			Content: []Content{{
-				Type: "text",
-				Text: "Not supported for remote browsers",
-			}},
-			IsError: true,
-		}, nil
-	}
-
 	state, _ := args["state"].(string)
 	width, hasWidth := argFloat(args, "width")
 	height, hasHeight := argFloat(args, "height")
@@ -3755,7 +3745,7 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 		opts.Y = &yv
 	}
 
-	if err := api.SetWindow(h.launchResult.Port, h.launchResult.SessionID, opts); err != nil {
+	if err := api.SetWindow(h.newSession(), opts); err != nil {
 		return nil, err
 	}
 
