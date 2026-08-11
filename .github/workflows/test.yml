@@ -127,8 +127,7 @@ jobs:
       # xvfb: the Python suite's headed tests need a display.
       # The NODE_TEST_TIMEOUT override is gone with Node 20: --test-timeout is
       # per test now, not per file, so the Makefile's 30s default applies and a
-      # hung ordinary test surfaces in 30s. The Firefox target has its own
-      # startup-scale timeout because a cold launch permits two 60s attempts.
+      # hung ordinary test surfaces in 30s.
       - name: Test
         run: xvfb-run --auto-servernum make test
 

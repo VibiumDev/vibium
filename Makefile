@@ -257,7 +257,7 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java test-firefox && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
 	"$(MAKE)" test-browser-modes test-cleanup && \
 	"$(MAKE)" test-daemon test-cleanup && \
@@ -431,11 +431,10 @@ test-python-engine: build-go install-engine python-venv
 		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/engine/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
-# Firefox tests. Runs inside the -j parallel group: the tests are headless
-# and open one browser at a time, so they hide behind the slower Chrome
-# suites instead of adding serial wall-clock time. Skips in seconds without
-# Firefox (run `make install-firefox` to enable); CI sets
-# VIBIUM_REQUIRE_FIREFOX so skips fail there instead.
+# Focused Firefox installer/channel/video tests. Not part of `make test`:
+# the chrome CI job has no Firefox, so there it would only skip. The firefox
+# CI job runs this target directly with VIBIUM_REQUIRE_FIREFOX set so skips
+# fail; locally run it explicitly after `make install-firefox`.
 test-firefox: build-go
 	@echo "--- Firefox Tests ---"
 	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
