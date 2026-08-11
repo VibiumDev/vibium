@@ -358,6 +358,7 @@ test-js-async: build-go
 		tests/js/async/engine/prompt-blocked.test.js \
 		tests/js/async/engine/navigation.test.js \
 		tests/js/async/engine/lifecycle.test.js \
+		tests/js/async/chrome-video.test.js \
 		tests/js/async/browser-installer.test.js
 
 test-js-sync: build-go

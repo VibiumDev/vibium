@@ -190,26 +190,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-firefox-
 
-      # The focused Firefox suite includes Chrome-contrast tests (video
-      # recording behavior), so this job needs both browsers.
-      - name: Cache Chrome for Testing
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/browser/installer.go') }}
-          restore-keys: |
-            ${{ runner.os }}-chrome-
-
       - name: Install dependencies
         run: |
           npm ci
           npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
-      - name: Build and install browsers
+      - name: Build and install Firefox
         run: |
           make
           make install-firefox
-          make install-browser
 
       - name: Test Firefox capabilities
         run: xvfb-run --auto-servernum make test-firefox-capabilities
