@@ -415,14 +415,17 @@ python-venv:
 		fi
 
 # test_browser_modes.py is excluded here and run headed + serial by
-# test-browser-modes (see the `test` target comment).
+# test-browser-modes (see the `test` target comment). test_firefox.py is
+# excluded like the test-firefox target: it needs Firefox, which the
+# chrome CI job does not install.
 test-python: build-go install-engine python-venv
 	@echo "--- Python Client Tests ($(ENGINE), parallel x$(PY_PARALLEL)) ---"
 	@cd clients/python && \
 		. $(VENV_ACTIVATE) && \
 		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile \
-			--ignore=../../tests/py/test_browser_modes.py
+			--ignore=../../tests/py/test_browser_modes.py \
+			--ignore=../../tests/py/test_firefox.py
 
 test-python-engine: build-go install-engine python-venv
 	@echo "--- Python Cross-Engine Tests ($(ENGINE), parallel x$(PY_PARALLEL)) ---"
@@ -431,14 +434,19 @@ test-python-engine: build-go install-engine python-venv
 		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/engine/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
-# Focused Firefox installer/channel/video tests. Not part of `make test`:
-# the chrome CI job has no Firefox, so there it would only skip. The firefox
-# CI job runs this target directly with VIBIUM_REQUIRE_FIREFOX set so skips
-# fail; locally run it explicitly after `make install-firefox`.
-test-firefox: build-go
+# Focused Firefox installer/channel/video tests, JS and Python. Not part of
+# `make test`: the chrome CI job has no Firefox, so there it would only
+# skip. The firefox CI job runs this target directly with
+# VIBIUM_REQUIRE_FIREFOX set so skips fail; locally run it explicitly after
+# `make install-firefox`.
+test-firefox: build-go python-venv
 	@echo "--- Firefox Tests ---"
 	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD) node --test --test-timeout=$(FIREFOX_TEST_TIMEOUT) --test-force-exit --test-concurrency=1 tests/js/async/firefox.test.js
+	@cd clients/python && \
+		. $(VENV_ACTIVATE) && \
+		VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/test_firefox.py -v --tb=short
 
 # Headed browser-mode tests, one visible Chrome window at a time.
 test-browser-modes: build-go install-browser python-venv
