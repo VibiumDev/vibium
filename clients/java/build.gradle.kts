@@ -60,12 +60,22 @@ val validateCapabilityMarkers by tasks.registering {
                 match.groupValues[1] to Regex("\"([^\"]+)\"")
                     .findAll(match.groupValues[2]).map { it.groupValues[1] }.toSet()
             }
+        // The marker must sit on the class declaration: -PcapabilityOnly selects
+        // on the class-level tag, so a file with only method-level markers would
+        // silently drop its unmarked methods from the engine run.
+        val classMarker = Regex(
+            "@RequiresCapability\\([^)]*\\)\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s*)*" +
+            "(?:\\b(?:public|final|abstract)\\b\\s+)*class\\s"
+        )
         fileTree("src/test/java/com/vibium/engine") {
             include("*Test.java")
         }.forEach { file ->
             val source = file.readText()
-            if (source.contains("@Test") && !source.contains("@RequiresCapability(")) {
-                throw GradleException("${file.path}: unmarked test in Java cross-engine root")
+            if (source.contains("@Test") && !classMarker.containsMatchIn(source)) {
+                throw GradleException(
+                    "${file.path}: missing class-level @RequiresCapability " +
+                    "(method-level markers only add to the class baseline)"
+                )
             }
             Regex("@RequiresCapability\\(([^)]*)\\)").findAll(source).forEach { marker ->
                 Regex("\"([^\"]+)\"").findAll(marker.groupValues[1]).forEach { nameMatch ->
