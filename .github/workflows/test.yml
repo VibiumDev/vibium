@@ -209,3 +209,17 @@ jobs:
       - name: Clean up zombie processes
         if: always()
         run: make double-tap
+
+  # Branch protection requires a check named "test" (the pre-split job).
+  # This gate reports it, green only when both engine jobs pass. if: always()
+  # keeps it from being skipped on failure, which protection would treat as
+  # satisfied.
+  test:
+    runs-on: ubuntu-latest
+    needs: [chrome, firefox]
+    if: always()
+    steps:
+      - name: All suites green
+        run: |
+          test "${{ needs.chrome.result }}" = "success"
+          test "${{ needs.firefox.result }}" = "success"
