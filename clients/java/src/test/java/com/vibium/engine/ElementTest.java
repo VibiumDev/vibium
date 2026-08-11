@@ -39,8 +39,9 @@ class ElementTest {
         page.go(server.baseUrl() + "/links");
         Element link = page.find(".link");
         link.click();
-        page.waitForLoad();
-        // Should navigate to subpage
+        // waitForLoad can return before the click's navigation starts;
+        // wait for the destination URL instead.
+        page.waitForURL("**/subpage**");
         assertTrue(page.url().contains("/subpage"));
     }
 
