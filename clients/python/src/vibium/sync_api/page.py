@@ -498,11 +498,17 @@ class Page:
         """Listen for WebSocket connections opened by the page.
 
         fn receives a WebSocketInfo object with sync methods: url(), on_message(), on_close(), is_closed().
+
+        Blocks until the engine has acknowledged the monitor install, and
+        raises if it failed, the only place a sync caller can see it (#351).
         """
-        # Must run via loop thread: on_web_socket() uses asyncio.ensure_future()
-        # internally and needs a running event loop.
+        # Must run via loop thread: on_web_socket() schedules the setup
+        # command and needs a running event loop. Awaiting it here cannot
+        # deadlock: the coroutine runs on the loop thread, which stays free
+        # to run the receive loop that resolves it.
         async def _register() -> None:
             self._async.on_web_socket(fn)
+            await self._async._when_web_socket_setup()
         self._loop.run(_register())
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:
