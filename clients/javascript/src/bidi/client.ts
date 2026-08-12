@@ -6,6 +6,12 @@ export type EventHandler = (event: BiDiEvent) => void;
 
 const DEFAULT_COMMAND_TIMEOUT = 60_000;
 
+// Waiting for event setup would deadlock this one: an open dialog stops Chrome
+// answering anything else for that context, including the script.callFunction
+// that installs a WebSocket monitor, and this is the only command that closes
+// the dialog. Mirrors unblocksAnotherCommand in the Go router.
+const NEVER_WAITS = 'browsingContext.handleUserPrompt';
+
 export class BiDiClient {
   private stdin: Writable;
   private rl: ReadlineInterface;
@@ -17,6 +23,17 @@ export class BiDiClient {
   }> = new Map();
   private eventHandlers: EventHandler[] = [];
   private _closed: boolean = false;
+
+  // Event registration (page.onWebSocket, network.addDataCollector) is
+  // triggered from synchronous callback APIs with nothing for the caller to
+  // await, so its command used to be fired and forgotten. The next command — an
+  // eval that opens a socket — could reach the engine first, and the one-shot
+  // event was lost (#351).
+  //
+  // sendSetup() parks a gate here that send() waits on. Settle-only: the gate
+  // sequences commands and nothing more. A failed setup is surfaced by whoever
+  // owns that registration, not injected into an unrelated command.
+  private setupGate: Promise<void> | null = null;
 
   private constructor(stdin: Writable, stdout: Readable) {
     this.stdin = stdin;
@@ -100,6 +117,42 @@ export class BiDiClient {
   }
 
   send<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout: number = DEFAULT_COMMAND_TIMEOUT): Promise<T> {
+    const gate = this.setupGate;
+    if (gate === null || method === NEVER_WAITS) {
+      return this.dispatch<T>(method, params, timeout);
+    }
+    // Chaining directly on the gate keeps issue order: these reactions run in
+    // registration order, and the reaction that clears setupGate was registered
+    // first (in sendSetup), so a command issued after the gate opens dispatches
+    // strictly later.
+    return gate.then(() => this.dispatch<T>(method, params, timeout));
+  }
+
+  /**
+   * Send a command whose acknowledgement the next command depends on.
+   *
+   * Goes out immediately; commands sent before it is answered wait. For event
+   * registration issued from a synchronous callback API, where the caller has no
+   * promise to await (#351). The returned promise is the registration's — the
+   * caller decides how a failure is surfaced.
+   */
+  sendSetup<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout: number = DEFAULT_COMMAND_TIMEOUT): Promise<T> {
+    const result = this.dispatch<T>(method, params, timeout);
+    const settled = result.then(() => undefined, () => undefined);
+    const gate = this.setupGate === null
+      ? settled
+      : Promise.all([this.setupGate, settled]).then(() => undefined);
+    this.setupGate = gate;
+    void gate.then(() => {
+      // A registration made in the meantime replaced this gate and keeps
+      // commands waiting; only the newest one clears.
+      if (this.setupGate === gate) this.setupGate = null;
+    });
+    return result;
+  }
+
+  /** Write a command and wait for its response, bypassing the setup gate. */
+  private dispatch<T = unknown>(method: string, params: Record<string, unknown>, timeout: number): Promise<T> {
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
       const command: BiDiCommand = { id, method, params };
@@ -140,6 +193,10 @@ export class BiDiClient {
       pending.reject(new Error('Connection closed'));
       this.pendingCommands.delete(id);
     }
+
+    // Rejecting the in-flight setup settles the gate; drop it so a command
+    // racing close() fails on the closed connection instead of waiting.
+    this.setupGate = null;
 
     this.rl.close();
     try { this.stdin.end(); } catch {}

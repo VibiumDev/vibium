@@ -363,6 +363,7 @@ test-js-async: build-go
 		tests/js/async/a11y.test.js \
 		tests/js/async/a11y-tree-tutorial.test.js \
 		tests/js/async/websocket.test.js \
+		tests/js/async/event-setup-ordering.test.js \
 		tests/js/async/download-file.test.js \
 		tests/js/async/recording.test.js \
 		tests/js/async/downloads-tutorial.test.js \
@@ -382,6 +383,7 @@ test-js-sync: build-go
 		tests/js/sync/sync-api.test.js \
 		tests/js/sync/network-events.test.js \
 		tests/js/sync/websocket-sync.test.js \
+		tests/js/sync/event-setup-ordering-sync.test.js \
 		tests/js/sync/console-error.test.js \
 		tests/js/sync/download-sync.test.js \
 		tests/js/sync/a11y-tree-tutorial-sync.test.js \

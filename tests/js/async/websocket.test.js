@@ -14,11 +14,6 @@ const { WebSocketServer } = require('ws');
 const { browser } = require('../../../clients/javascript/dist');
 const { withTimeout } = require('../helpers/wait');
 
-// onWebSocket() is sync (fire-and-forget under the hood, see page.ts:945).
-// Server-side preload-script install races with the next client command.
-// 200ms is the hedge until onWebSocket becomes properly async.
-const INSTALL_BARRIER_MS = 200;
-
 // --- Local test servers ---
 
 let httpServer;
@@ -90,7 +85,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
     const vibe = await freshPage();
     try {
       const wsCreated = new Promise((resolve) => vibe.onWebSocket(() => resolve()));
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
       await withTimeout(wsCreated, 5000, 'onWebSocket to fire');
     } finally {
@@ -108,7 +102,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
           resolve();
         }),
       );
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
       await withTimeout(gotUrl, 5000, 'WS URL to be captured');
 
@@ -131,7 +124,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
         }),
       );
 
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.send('hello');
@@ -159,7 +151,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
         }),
       );
 
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.send('echo-me');
@@ -187,7 +178,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
         }),
       );
 
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.close(1000, 'done');
@@ -211,7 +201,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
         }),
       );
 
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`
         const ws = window.createWS('${wsURL}');
         ws.onopen = () => ws.close();
@@ -244,8 +233,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
       });
       const nextWs = () => new Promise((resolve) => wsWaiters.push(resolve));
 
-      await vibe.wait(INSTALL_BARRIER_MS);
-
       // Create WS on first page
       const firstSeen = nextWs();
       await vibe.evaluate(`window.createWS('${wsURL}')`);
@@ -275,7 +262,6 @@ describe('WebSocket Monitoring: page.onWebSocket', () => {
         }),
       );
 
-      await vibe.wait(INSTALL_BARRIER_MS);
       await vibe.evaluate(`window.createWS('${wsURL}')`);
       await withTimeout(firstSeen, 5000, 'first WS captured');
       assert.strictEqual(wsCount, 1);

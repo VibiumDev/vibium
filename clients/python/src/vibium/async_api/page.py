@@ -116,6 +116,7 @@ class Page:
         self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
+        self._ws_setup: Optional[Any] = None
         self._intercept_id: Optional[str] = None
         self._data_collector_id: Optional[str] = None
 
@@ -775,15 +776,27 @@ class Page:
         })
 
     def on_web_socket(self, fn: Callable[[WebSocketInfo], None]) -> None:
-        """Listen for WebSocket connections opened by the page."""
+        """Listen for WebSocket connections opened by the page.
+
+        Monitoring is installed in the engine before the next command on this
+        connection is sent, so a socket opened by the very next call cannot be
+        missed (#351).
+        """
         is_first = len(self._ws_callbacks) == 0
         self._ws_callbacks.append(fn)
         if is_first:
-            import asyncio
-            asyncio.ensure_future(
-                self._client.send("vibium:page.onWebSocket", {"context": self._context_id})
+            self._ws_setup = self._client.send_setup(
+                "vibium:page.onWebSocket", {"context": self._context_id}
             )
 
+    async def _when_web_socket_setup(self) -> None:
+        """Wait until this page's WebSocket monitor is installed.
+
+        Raises if the install failed. The sync wrapper awaits this so its blocking
+        ``on_web_socket()`` reports a failure the async caller has no way to see.
+        """
+        if self._ws_setup is not None:
+            await self._ws_setup
 
     # --- Dialog Handling ---
 
@@ -864,19 +877,23 @@ class Page:
         if self._data_collector_id is not None:
             return
         self._data_collector_id = "pending"
-        import asyncio
 
-        async def _setup() -> None:
-            try:
-                result = await self._client.send(
-                    "network.addDataCollector",
-                    {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
-                )
-                self._data_collector_id = result["collector"]
-            except Exception:
+        # send_setup, not ensure_future(send): the collector must exist before the
+        # request whose body a route/on_response handler is about to read (#351).
+        task = self._client.send_setup(
+            "network.addDataCollector",
+            {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
+        )
+
+        def _store(finished: Any) -> None:
+            if finished.cancelled() or finished.exception() is not None:
+                # Reset so a later listener retries; bodies are unavailable
+                # until then.
                 self._data_collector_id = None
+                return
+            self._data_collector_id = (finished.result() or {}).get("collector")
 
-        asyncio.ensure_future(_setup())
+        task.add_done_callback(_store)
 
     def _teardown_data_collector(self) -> None:
         cid = self._data_collector_id

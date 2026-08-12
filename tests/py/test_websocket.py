@@ -10,7 +10,6 @@ async def test_fires(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)  # Round-trip to ensure subscription is processed
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -24,7 +23,6 @@ async def test_url(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -39,7 +37,6 @@ async def test_on_message_sent(fresh_async_browser, test_server, ws_echo_server)
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -62,7 +59,6 @@ async def test_on_message_received(fresh_async_browser, test_server, ws_echo_ser
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -85,7 +81,6 @@ async def test_on_close(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -106,7 +101,6 @@ async def test_is_closed(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await vibe.wait(1000)
@@ -125,7 +119,6 @@ async def test_survives_navigation(fresh_async_browser, test_server, ws_echo_ser
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await vibe.wait(100)
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await vibe.wait(1000)

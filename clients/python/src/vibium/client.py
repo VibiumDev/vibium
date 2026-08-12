@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
 from . import errors
 from .errors import BiDiError
 
 if TYPE_CHECKING:
     from .binary import VibiumProcess
+
+
+# Waiting for event setup would deadlock this one: an open dialog stops Chrome
+# answering anything else for that context, including the script.callFunction
+# that installs a WebSocket monitor, and this is the only command that closes the
+# dialog. Mirrors unblocksAnotherCommand in the Go router.
+_NEVER_WAITS = "browsingContext.handleUserPrompt"
 
 
 class BiDiClient:
@@ -27,6 +34,22 @@ class BiDiClient:
         self._pending: Dict[int, asyncio.Future] = {}
         self._receiver_task: Optional[asyncio.Task] = None
         self._event_handlers: List[Callable[[Dict[str, Any]], None]] = []
+        # Once the connection is gone nothing will ever resolve a response
+        # future, so a command must fail rather than wait out its timeout. The
+        # gate below makes this reachable: a command parked behind setup can
+        # resume after close() has already drained the pending map.
+        self._closed = False
+
+        # Event registration (page.on_web_socket, network.addDataCollector) is
+        # triggered from synchronous callback APIs with nothing for the caller to
+        # await, so its command used to be handed to ensure_future and forgotten.
+        # The next command — an evaluate that opens a socket — could reach the
+        # engine first, and the one-shot event was lost (#351).
+        #
+        # send_setup() registers a task here that send() waits for. Settle-only:
+        # this sequences commands and nothing more. A failed setup is surfaced by
+        # whoever owns that registration, not injected into an unrelated command.
+        self._pending_setups: "Set[asyncio.Future]" = set()
 
     @classmethod
     async def connect(cls, process: VibiumProcess) -> BiDiClient:
@@ -83,12 +106,54 @@ class BiDiClient:
         except (asyncio.CancelledError, OSError):
             pass
         finally:
+            self._closed = True
             for future in self._pending.values():
                 if not future.done():
                     future.set_exception(errors.ConnectionError("Connection closed"))
 
     async def send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 60) -> Any:
-        """Send a command and wait for the response."""
+        """Send a command and wait for the response.
+
+        Waits first for any event registration still being acknowledged, so a
+        command cannot overtake the setup it depends on (#351).
+        """
+        if self._pending_setups and method != _NEVER_WAITS:
+            # wait(), not gather(): a failed registration is reported by its
+            # owner, not raised out of an unrelated command.
+            await asyncio.wait(set(self._pending_setups))
+        return await self._send(method, params, timeout)
+
+    def send_setup(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = 60,
+    ) -> "asyncio.Future":
+        """Send a command whose acknowledgement the next command depends on.
+
+        For event registration issued from a synchronous callback API, where the
+        caller has no coroutine to await (#351). Returns the task, so whoever owns
+        the registration can await it and surface a failure.
+        """
+        task = asyncio.ensure_future(self._send(method, params, timeout))
+        self._pending_setups.add(task)
+
+        def _done(finished: "asyncio.Future") -> None:
+            self._pending_setups.discard(finished)
+            if not finished.cancelled():
+                # Retrieve it here so a failure the async caller cannot see is
+                # not reported as "exception was never retrieved". Awaiting the
+                # task later still raises, which is how the sync wrapper reports.
+                finished.exception()
+
+        task.add_done_callback(_done)
+        return task
+
+    async def _send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 60) -> Any:
+        """Write a command and wait for its response, bypassing the setup gate."""
+        if self._closed:
+            raise errors.ConnectionError("Connection closed")
+
         msg_id = self._next_id
         self._next_id += 1
 
@@ -125,6 +190,15 @@ class BiDiClient:
 
     async def close(self) -> None:
         """Close the pipe connection."""
+        self._closed = True
+
+        # Cancelling the receiver leaves the setup tasks unresolved; drop them so
+        # a command racing close() fails on the closed connection rather than
+        # waiting for setup nobody will finish.
+        for task in list(self._pending_setups):
+            task.cancel()
+        self._pending_setups.clear()
+
         if self._receiver_task:
             self._receiver_task.cancel()
             try:

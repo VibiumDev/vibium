@@ -902,6 +902,10 @@ const handlers: Record<string, Handler> = {
         });
       });
     });
+    // The sync caller has no promise to await, so hold the blocking bridge call
+    // until the engine has acknowledged the install — and let a failed install
+    // raise here, the only place a sync caller can see it (#351).
+    await page._whenWebSocketSetup();
     return { success: true };
   },
 
