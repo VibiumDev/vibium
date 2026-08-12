@@ -12,6 +12,9 @@ type ElementInfo struct {
 	Tag  string  `json:"tag"`
 	Text string  `json:"text"`
 	Box  BoxInfo `json:"box"`
+	// Point is the in-view center the receivesEvents check hit-tested. Set only
+	// when that check ran; nil otherwise, and input then uses the box center.
+	Point *PointInfo `json:"point,omitempty"`
 }
 
 type BoxInfo struct {
@@ -19,6 +22,24 @@ type BoxInfo struct {
 	Y      float64 `json:"y"`
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
+}
+
+// PointInfo is a viewport coordinate pair, integer-valued because BiDi input
+// coordinates are.
+type PointInfo struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// InputPoint returns the viewport coordinates an input action should dispatch at:
+// the pixel the receivesEvents check cleared when it ran, else the bounding-box
+// center. They differ for an element larger than the viewport, whose box center
+// is off-screen (#340).
+func (info *ElementInfo) InputPoint() (int, int) {
+	if info.Point != nil {
+		return info.Point.X, info.Point.Y
+	}
+	return int(info.Box.X + info.Box.Width/2), int(info.Box.Y + info.Box.Height/2)
 }
 
 // handleVibiumFind handles the vibium:element.find / vibium:page.find command with wait-for-selector.

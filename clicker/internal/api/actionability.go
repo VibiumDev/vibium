@@ -12,7 +12,7 @@ type ActionCheck int
 const (
 	CheckVisible        ActionCheck = iota // non-zero bbox, not display:none/visibility:hidden
 	CheckStable                            // bbox unchanged after 50ms delay
-	CheckReceivesEvents                    // elementFromPoint at center hits element or descendant
+	CheckReceivesEvents                    // elementFromPoint at the in-view center hits element or descendant
 	CheckEnabled                           // not [disabled], aria-disabled, or in disabled fieldset
 	CheckEditable                          // enabled + not readonly + valid text input type
 )
@@ -34,6 +34,9 @@ type actionableResult struct {
 	Tag    string  `json:"tag,omitempty"`
 	Text   string  `json:"text,omitempty"`
 	Box    BoxInfo `json:"box,omitempty"`
+	// Point is the in-view center the receivesEvents hit test probed, null when
+	// that check did not run or nothing of the element is on screen.
+	Point *PointInfo `json:"point,omitempty"`
 }
 
 // checksContain returns true if the check set includes the given check.
@@ -102,7 +105,8 @@ func buildCSSActionableScript(ep ElementParams, checkVisible, checkReceivesEvent
 				status:'ok',
 				tag: el.tagName.toLowerCase(),
 				text: (el.innerText || '').trim(),
-				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+				point: inView
 			});
 		}
 	`
@@ -155,7 +159,8 @@ func buildSemanticActionableScript(ep ElementParams, checkVisible, checkReceives
 				status:'ok',
 				tag: el.tagName.toLowerCase(),
 				text: (el.innerText || '').trim(),
-				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+				point: inView
 			});
 		}
 	`
@@ -184,8 +189,35 @@ const EditablePredicateJS = `(!el.disabled && !el.readOnly && el.getAttribute('a
 		: (el.tagName.toLowerCase() === 'textarea' || el.isContentEditable)
 ))`
 
+// inViewCenterJS declares inViewCenter(rect): the WebDriver in-view center
+// point — the center of the element rect clipped to the viewport, floored to
+// whole pixels — or null when the clipped rect is empty.
+//
+// Probing the *full* rect center made every element more than twice the viewport
+// tall or wide permanently unclickable: the center landed off-screen, where
+// document.elementFromPoint is defined to return null, and the check blamed an
+// obstruction that did not exist (#340). Clipping is what chromedriver's Element
+// Click does, so a full-page scrim behaves the same through either driver.
+//
+// Flooring matters: BiDi input coordinates are integers, so the point returned
+// here is also the point the action dispatches at (see InputPoint).
+const inViewCenterJS = `
+			function inViewCenter(rect) {
+				const left   = Math.max(0, rect.x);
+				const right  = Math.min(window.innerWidth, rect.x + rect.width);
+				const top    = Math.max(0, rect.y);
+				const bottom = Math.min(window.innerHeight, rect.y + rect.height);
+				if (right <= left || bottom <= top) return null;
+				return { x: Math.floor((left + right) / 2), y: Math.floor((top + bottom) / 2) };
+			}
+`
+
 func actionabilityCheckBody() string {
-	return `
+	return inViewCenterJS + `
+			// Only the receivesEvents check needs a hit-test point, and only it
+			// reports one — paths without it (fill, select, scroll) keep
+			// dispatching at the bounding-box center as before.
+			const inView = chkEvents ? inViewCenter(rect) : null;
 			if (chkVisible) {
 				if (rect.width === 0 || rect.height === 0)
 					return JSON.stringify({status:'failed', check:'visible', reason:'zero size'});
@@ -227,7 +259,11 @@ func actionabilityCheckBody() string {
 				}
 			}
 			if (chkEvents) {
-				const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
+				// Nothing on screen to click. Distinct from "obscured": no
+				// element is on top, and scrolling did not bring this one in.
+				if (!inView)
+					return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element has no visible area in the viewport'});
+				const cx = inView.x, cy = inView.y;
 				// document.elementFromPoint stops at a shadow host, so an element
 				// inside a shadow root always looked obscured. Descend through
 				// each root at the same point to find what is really on top.
@@ -237,8 +273,16 @@ func actionabilityCheckBody() string {
 					if (!inner || inner === hit) break;
 					hit = inner;
 				}
-				if (!hit || (el !== hit && !el.contains(hit)))
-					return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element is obscured'});
+				const at = ' at in-view center (' + cx + ', ' + cy + ')';
+				// Separate from the obscured branch: a null hit is a hit-test
+				// fault, not an obstruction, and reporting it as one sent a real
+				// investigation looking for an overlay that was not there (#340).
+				if (!hit)
+					return JSON.stringify({status:'failed', check:'receivesEvents', reason:'no element' + at});
+				if (el !== hit && !el.contains(hit)) {
+					const blocker = hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '');
+					return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element is obscured by <' + blocker + '>' + at});
+				}
 			}
 `
 }
@@ -295,7 +339,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 					result2, err2 := callActionableScript(s, context, script, args)
 					if err2 == nil && result2.Status == "ok" {
 						if result.Box == result2.Box {
-							return &ElementInfo{Tag: result2.Tag, Text: result2.Text, Box: result2.Box}, nil
+							return &ElementInfo{Tag: result2.Tag, Text: result2.Text, Box: result2.Box, Point: result2.Point}, nil
 						}
 						// Not stable — set lastResult to indicate instability and retry
 						lastResult = &actionableResult{
@@ -306,7 +350,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 					}
 					// If second call failed, retry the whole loop
 				} else {
-					return &ElementInfo{Tag: result.Tag, Text: result.Text, Box: result.Box}, nil
+					return &ElementInfo{Tag: result.Tag, Text: result.Text, Box: result.Box, Point: result.Point}, nil
 				}
 			}
 		}

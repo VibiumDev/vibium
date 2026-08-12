@@ -383,10 +383,8 @@ func (r *Router) handleVibiumDragTo(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := srcInfo.InputPoint()
+	dstX, dstY := targetInfo.InputPoint()
 
 	dragParams := map[string]interface{}{
 		"context": context,
@@ -588,10 +586,9 @@ func (r *Router) pressKey(session *BrowserSession, context, key string) error {
 // Exported standalone input primitives — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
-// ClickAtCenter performs a mouse click at the center of an element.
+// ClickAtCenter performs a mouse click at an element's in-view center.
 func ClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := info.InputPoint()
 
 	clickParams := map[string]interface{}{
 		"context": context,
@@ -615,10 +612,9 @@ func ClickAtCenter(s Session, context string, info *ElementInfo) error {
 	return err
 }
 
-// DblClickAtCenter performs a double-click at the center of an element.
+// DblClickAtCenter performs a double-click at an element's in-view center.
 func DblClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := info.InputPoint()
 
 	dblclickParams := map[string]interface{}{
 		"context": context,
@@ -754,10 +750,9 @@ func Hover(s Session, context string, ep ElementParams) error {
 	return HoverAtCenter(s, context, info)
 }
 
-// HoverAtCenter moves the mouse to the center of an element without clicking.
+// HoverAtCenter moves the mouse to an element's in-view center without clicking.
 func HoverAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := info.InputPoint()
 
 	hoverParams := map[string]interface{}{
 		"context": context,
@@ -779,10 +774,9 @@ func HoverAtCenter(s Session, context string, info *ElementInfo) error {
 	return err
 }
 
-// TapAtCenter performs a touch tap at the center of an element.
+// TapAtCenter performs a touch tap at an element's in-view center.
 func TapAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := info.InputPoint()
 
 	tapParams := map[string]interface{}{
 		"context": context,
@@ -963,10 +957,8 @@ func DragTo(s Session, context string, source, target ElementParams) error {
 		return fmt.Errorf("target: %w", err)
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := srcInfo.InputPoint()
+	dstX, dstY := targetInfo.InputPoint()
 
 	dragParams := map[string]interface{}{
 		"context": context,

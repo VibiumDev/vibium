@@ -12,9 +12,30 @@ Before performing an action, Vibium verifies a subset of these conditions:
 |-------|--------------|----------------|
 | **Visible** | Element has non-zero size and isn't hidden by CSS (`display: none`, `visibility: hidden`) | Can't interact with invisible things |
 | **Stable** | Element's bounding box hasn't changed over 50ms | Clicking a moving target misses |
-| **ReceivesEvents** | `elementFromPoint()` at the element's center returns the element itself (or a descendant) | Clicks would go to the covering element instead |
+| **ReceivesEvents** | `elementFromPoint()` at the element's **in-view center** returns the element itself (or a descendant) | Clicks would go to the covering element instead |
 | **Enabled** | Element isn't `disabled`, `aria-disabled="true"`, or inside a disabled `<fieldset>` | Disabled controls don't respond to input |
 | **Editable** | Element accepts text input (text-type `<input>`, `<textarea>`, or `contentEditable`), and isn't `readOnly` or `aria-readonly` | Only checked for fill actions |
+
+### ReceivesEvents and the in-view center point
+
+The probe point is the WebDriver **in-view center point**: the center of the
+element's bounding rect *clipped to the viewport*, floored to whole pixels.
+
+Clipping matters for anything larger than the window. `document.elementFromPoint()`
+returns `null` outside the viewport, so probing the raw bounding-rect center made
+every element more than twice the viewport tall or wide look obscured — a
+884 × 5314 scrim in a 901 × 981 viewport was probed at y ≈ 2657, off-screen, and
+blamed on an overlay that did not exist (#340). Scrolling could not help: an
+element taller than the viewport is always already in view. The flooring keeps
+the check and the action on the same pixel, since BiDi input coordinates are
+integers — the script reports the point it probed and the action dispatches there
+(`(*ElementInfo).InputPoint()`). Only checks that include ReceivesEvents report a
+point; the others still use the bounding-box center.
+
+Failures say which of three things happened, rather than calling everything
+obscured: `element has no visible area in the viewport` (nothing on screen),
+`no element at in-view center (x, y)` (nothing painted there), or
+`element is obscured by <div#overlay> at in-view center (x, y)`.
 
 ### ReceivesEvents and shadow DOM
 
@@ -89,14 +110,24 @@ if (chkEnabled) {
 }
 if (chkEditable) { /* readOnly, aria-readonly, input type checks */ }
 if (chkEvents) {
-    const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
-    const hit = document.elementFromPoint(cx, cy);
-    if (!hit || (el !== hit && !el.contains(hit)))
-        return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element is obscured'});
+    // inViewCenter() clips the rect to the viewport and floors the result;
+    // null means no part of the element is on screen.
+    if (!inView)
+        return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element has no visible area in the viewport'});
+    const cx = inView.x, cy = inView.y;
+    let hit = document.elementFromPoint(cx, cy);   // then descends shadow roots
+    if (!hit)
+        return JSON.stringify({status:'failed', check:'receivesEvents', reason:'no element' + at});
+    if (el !== hit && !el.contains(hit)) {
+        const blocker = hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '');
+        return JSON.stringify({status:'failed', check:'receivesEvents', reason:'element is obscured by <' + blocker + '>' + at});
+    }
 }
 ```
 
-If all checks pass, the script returns `{status: "ok"}` along with the element's tag, text, and bounding box.
+If all checks pass, the script returns `{status: "ok"}` along with the element's
+tag, text, bounding box, and — when ReceivesEvents ran — the in-view `point` it
+probed, which is the coordinate the action then dispatches at.
 
 ### Stability: Go-Side Check
 
