@@ -68,7 +68,7 @@ val validateCapabilityMarkers by tasks.registering {
             "(?:\\b(?:public|final|abstract)\\b\\s+)*class\\s"
         )
         fileTree("src/test/java/com/vibium/engine") {
-            include("*Test.java")
+            include("**/*Test.java")
         }.forEach { file ->
             val source = file.readText()
             if (source.contains("@Test") && !classMarker.containsMatchIn(source)) {
