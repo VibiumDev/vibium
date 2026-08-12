@@ -454,7 +454,7 @@ test-engine: test-cli-shared test-js-engine test-python-engine test-java-engine
 test-firefox-capabilities: build-go install-firefox
 	@"$(MAKE)" test-engine ENGINE=firefox
 
-test-capability-audit: python-venv
+test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"
 	node scripts/audit-node-capability-imports.mjs
 	node scripts/test-node-capability-fixture.mjs
