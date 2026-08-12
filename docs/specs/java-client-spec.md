@@ -361,9 +361,18 @@ natives/
 At runtime, `BinaryResolver`:
 1. Checks `VIBIUM_BIN_PATH` env var
 2. Checks `PATH` for `vibium` binary
-3. Extracts from JAR to `java.io.tmpdir/vibium-<version>/vibium[-platform]`
-4. Sets executable permission
-5. Caches — only extracts once per version
+3. Extracts from JAR to `java.io.tmpdir/vibium-<version>/vibium[.exe]`
+4. Caches — only extracts once per version
+
+Step 3 is safe for several JVMs sharing one cold `java.io.tmpdir`, the normal
+state of a CI agent running a parallel test runner. A lock file in the cache
+directory serialises publication across processes — the OS releases it if the
+holder is killed — and the binary is copied to a `.part` file in that same
+directory, checked against the resource length, marked executable, then renamed
+onto the cache path with `ATOMIC_MOVE`. So a reader sees either no file or a
+complete, executable one, and a cached artifact that is zero-length, the wrong
+length, not a regular file, or not executable is re-extracted rather than
+trusted.
 
 ### Platform Detection
 
