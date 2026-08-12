@@ -1,4 +1,9 @@
-package com.vibium;
+package com.vibium.engine;
+
+import com.vibium.Vibium;
+import com.vibium.Page;
+import com.vibium.BrowserContext;
+import com.vibium.Browser;
 
 import com.vibium.types.Cookie;
 import com.vibium.types.SetCookieParam;

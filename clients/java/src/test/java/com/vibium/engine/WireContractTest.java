@@ -1,4 +1,10 @@
-package com.vibium;
+package com.vibium.engine;
+
+import com.vibium.Vibium;
+import com.vibium.Page;
+import com.vibium.Element;
+import com.vibium.Download;
+import com.vibium.Browser;
 
 import com.vibium.types.A11yNode;
 import com.vibium.types.SelectorOptions;

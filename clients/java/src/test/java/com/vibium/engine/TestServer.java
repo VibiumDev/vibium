@@ -1,4 +1,4 @@
-package com.vibium;
+package com.vibium.engine;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -13,8 +13,9 @@ import java.util.Map;
 /**
  * Local HTTP test server for Java tests.
  * Routes match the Python test_server.py so tests are equivalent.
+ * Public because tests outside the engine package use it too.
  */
-class TestServer {
+public class TestServer {
 
     private static final String HOME_HTML = "<html><head><title>Test App</title></head><body>"
         + "<h1 class=\"heading\">Welcome to test-app</h1>"
@@ -134,7 +135,7 @@ class TestServer {
     private final HttpServer server;
     private final String baseUrl;
 
-    TestServer() throws IOException {
+    public TestServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         int port = server.getAddress().getPort();
         baseUrl = "http://127.0.0.1:" + port;
@@ -183,15 +184,15 @@ class TestServer {
         });
     }
 
-    void start() {
+    public void start() {
         server.start();
     }
 
-    void stop() {
+    public void stop() {
         server.stop(0);
     }
 
-    String baseUrl() {
+    public String baseUrl() {
         return baseUrl;
     }
 

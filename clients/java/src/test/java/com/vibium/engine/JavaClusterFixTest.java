@@ -1,4 +1,8 @@
-package com.vibium;
+package com.vibium.engine;
+
+import com.vibium.Vibium;
+import com.vibium.Page;
+import com.vibium.Browser;
 
 import static org.junit.jupiter.api.Assertions.*;
 

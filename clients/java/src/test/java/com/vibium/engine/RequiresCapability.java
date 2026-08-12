@@ -1,4 +1,4 @@
-package com.vibium;
+package com.vibium.engine;
 
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Tag;
