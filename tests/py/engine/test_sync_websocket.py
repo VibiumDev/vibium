@@ -54,7 +54,6 @@ def test_fires(sync_browser, test_server, sync_ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    vibe.wait(500)
 
     vibe.evaluate(f"createWS('{sync_ws_echo_server}')")
     vibe.wait(1000)
@@ -68,7 +67,6 @@ def test_url(sync_browser, test_server, sync_ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    vibe.wait(500)
 
     vibe.evaluate(f"createWS('{sync_ws_echo_server}')")
     vibe.wait(1000)
@@ -83,7 +81,6 @@ def test_on_message_sent(sync_browser, test_server, sync_ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    vibe.wait(500)
 
     vibe.evaluate(f"window.__ws = createWS('{sync_ws_echo_server}')")
     vibe.wait(1000)
@@ -108,7 +105,6 @@ def test_on_close(sync_browser, test_server, sync_ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    vibe.wait(500)
 
     vibe.evaluate(f"window.__ws = createWS('{sync_ws_echo_server}')")
     vibe.wait(1000)
@@ -129,7 +125,6 @@ def test_is_closed(sync_browser, test_server, sync_ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    vibe.wait(500)
 
     vibe.evaluate(f"window.__ws = createWS('{sync_ws_echo_server}')")
     vibe.wait(1000)
