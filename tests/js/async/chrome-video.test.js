@@ -16,6 +16,14 @@ const path = require('node:path');
 const { browser } = require('../../../clients/javascript/dist');
 const { createTestServer } = require('../../helpers/test-server');
 
+// Chrome-only by design (outside the cross-engine roots). Skip loudly rather
+// than fail confusingly when someone runs this suite with ENGINE=firefox.
+const engine = process.env.VIBIUM_ENGINE || 'chrome';
+if (engine !== 'chrome') {
+  test(`chrome-video tests require chrome (VIBIUM_ENGINE=${engine})`, { skip: true }, () => {});
+  return;
+}
+
 let server, baseURL;
 
 // Unzip a recording buffer and return { extractedDir, cleanup }.
