@@ -74,6 +74,10 @@ ENGINE ?= chrome
 # Browser-driving CLI tests are discovered from a physical cross-engine root.
 # Per-test capability markers decide whether the selected engine runs or skips.
 CLI_ENGINE_TESTS := $(wildcard tests/cli/engine/*.test.js)
+# JS cross-engine tests use the same discovery so a new engine/ file cannot
+# run in one job but silently miss another. Chrome-only files stay explicit.
+JS_ASYNC_ENGINE_TESTS := $(wildcard tests/js/async/engine/*.test.js)
+JS_SYNC_ENGINE_TESTS := $(wildcard tests/js/sync/engine/*.test.js)
 
 # Default target
 all: build
@@ -334,43 +338,14 @@ JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		tests/js/async/engine/async-api.test.js \
-		tests/js/async/engine/auto-wait.test.js \
-		tests/js/async/engine/elements.test.js \
-		tests/js/async/engine/interaction.test.js \
-		tests/js/async/engine/state.test.js \
-		tests/js/async/engine/input-eval.test.js \
-		tests/js/async/engine/network-dialog.test.js \
-		tests/js/async/engine/console-error.test.js \
-		tests/js/async/engine/clock.test.js \
-		tests/js/async/engine/emulation.test.js \
-		tests/js/async/engine/a11y.test.js \
-		tests/js/async/engine/a11y-tree-tutorial.test.js \
-		tests/js/async/engine/websocket.test.js \
-		tests/js/async/engine/download-file.test.js \
-		tests/js/async/engine/recording.test.js \
-		tests/js/async/engine/downloads-tutorial.test.js \
-		tests/js/async/engine/cookies.test.js \
-		tests/js/async/engine/storage.test.js \
-		tests/js/async/engine/frames.test.js \
-		tests/js/async/engine/object-model.test.js \
-		tests/js/async/engine/dispatch-concurrency.test.js \
-		tests/js/async/engine/prompt-blocked.test.js \
-		tests/js/async/engine/navigation.test.js \
-		tests/js/async/engine/lifecycle.test.js \
+		$(JS_ASYNC_ENGINE_TESTS) \
 		tests/js/async/chrome-video.test.js \
 		tests/js/async/browser-installer.test.js
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		tests/js/sync/engine/sync-api.test.js \
-		tests/js/sync/engine/network-events.test.js \
-		tests/js/sync/engine/websocket-sync.test.js \
-		tests/js/sync/engine/console-error.test.js \
-		tests/js/sync/engine/download-sync.test.js \
-		tests/js/sync/engine/a11y-tree-tutorial-sync.test.js \
-		tests/js/sync/engine/downloads-tutorial-sync.test.js
+		$(JS_SYNC_ENGINE_TESTS)
 
 test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"
@@ -384,7 +359,7 @@ test-js: test-js-async test-js-sync test-js-process
 test-js-engine: build-go
 	@echo "--- JS Cross-Engine Tests ($(ENGINE), parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		tests/js/async/engine/*.test.js tests/js/sync/engine/*.test.js
+		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS)
 
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
@@ -485,7 +460,7 @@ test-capability-audit: python-venv
 	node scripts/test-node-capability-fixture.mjs
 	VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 VIBIUM_CAPABILITY_COLLECT_ONLY=1 \
 		node --test --test-reporter=dot --test-concurrency=1 $(CLI_ENGINE_TESTS) \
-		tests/js/async/engine/*.test.js tests/js/sync/engine/*.test.js
+		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS)
 	@cd clients/python && . $(VENV_ACTIVATE) && \
 		VIBIUM_ENGINE=chrome python -m pytest ../../tests/py/engine/ --collect-only -q --capability-audit
 	cd clients/java && VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 ./gradlew validateCapabilityMarkers compileTestJava
