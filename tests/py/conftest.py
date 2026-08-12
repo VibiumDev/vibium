@@ -65,6 +65,9 @@ def pytest_collection_modifyitems(config, items):
         else:
             counts["selected"] += 1
 
+        # The manifest must not list an engine for a capability unless chrome
+        # is also listed; empty entries are fine. Add an exemption mechanism
+        # before introducing one.
         if config.getoption("capability_audit") and engine == "chrome":
             invalid = [name for name in missing if manifest[name]]
             if invalid:

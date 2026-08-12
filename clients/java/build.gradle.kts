@@ -82,6 +82,9 @@ val validateCapabilityMarkers by tasks.registering {
                     val name = nameMatch.groupValues[1]
                     val engines = manifest[name]
                         ?: throw GradleException("${file.path}: unknown capability $name")
+                    // The manifest must not list an engine for a capability
+                    // unless chrome is also listed; empty entries are fine.
+                    // Add an exemption mechanism before introducing one.
                     if (System.getenv("VIBIUM_CAPABILITY_AUDIT") == "1" &&
                         engines.isNotEmpty() && "chrome" !in engines) {
                         throw GradleException("${file.path}: Chrome audit rejected skip for $name")

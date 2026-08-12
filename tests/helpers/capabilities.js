@@ -77,6 +77,9 @@ function suite(...baseRequirements) {
         for (const name of missing) {
           counts.capabilities.set(name, (counts.capabilities.get(name) || 0) + 1);
         }
+        // The manifest must not list an engine for a capability unless chrome
+        // is also listed; empty entries are fine. Add an exemption mechanism
+        // before introducing one.
         if (audit && engine === 'chrome') {
           const invalid = missing.filter((name) => manifest[name].length > 0);
           if (invalid.length) throw new Error(`Chrome audit rejected skips for: ${invalid.join(', ')}`);

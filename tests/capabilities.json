@@ -4,7 +4,6 @@
   "dialogs": ["chrome"],
   "pdf": ["chrome"],
   "prompt-blocking": ["chrome"],
-  "screencast": ["firefox"],
   "audio": [],
   "console": ["chrome"],
   "downloads": ["chrome"],
