@@ -340,12 +340,14 @@ test-js-async: build-go
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		$(JS_ASYNC_ENGINE_TESTS) \
 		tests/js/async/chrome-video.test.js \
-		tests/js/async/browser-installer.test.js
+		tests/js/async/browser-installer.test.js \
+		tests/js/async/event-setup-ordering.test.js
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		$(JS_SYNC_ENGINE_TESTS)
+		$(JS_SYNC_ENGINE_TESTS) \
+		tests/js/sync/event-setup-ordering-sync.test.js
 
 test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"

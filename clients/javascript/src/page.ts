@@ -203,6 +203,7 @@ export class Page {
   private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
+  private wsSetup: Promise<unknown> | null = null;
   private eventHandler: ((event: BiDiEvent) => void) | null = null;
   private interceptId: string | null = null;
   private dataCollectorId: string | null = null;
@@ -942,13 +943,29 @@ export class Page {
     throw new Error('Not implemented: BiDi does not support WebSocket interception');
   }
 
-  /** Listen for WebSocket connections opened by the page. */
+  /**
+   * Listen for WebSocket connections opened by the page.
+   *
+   * Monitoring is installed in the engine before the next command on this
+   * connection is sent, so a socket opened by the very next call cannot be
+   * missed (#351).
+   */
   onWebSocket(fn: (ws: WebSocketInfo) => void): void {
     const isFirst = this.wsCallbacks.length === 0;
     this.wsCallbacks.push(fn);
     if (isFirst) {
-      this.client.send('vibium:page.onWebSocket', { context: this.contextId }).catch(() => {});
+      this.wsSetup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
+      this.wsSetup.catch(err => debug('page.onWebSocket setup failed', { error: String(err) }));
     }
+  }
+
+  /**
+   * @internal Resolve when this page's WebSocket monitor is installed,
+   * rejecting if the install failed. The sync wrapper awaits it so its
+   * blocking onWebSocket() reports a failure the async caller cannot see.
+   */
+  async _whenWebSocketSetup(): Promise<void> {
+    if (this.wsSetup) await this.wsSetup;
   }
 
   // --- Dialog Handling ---
@@ -1013,13 +1030,17 @@ export class Page {
   private ensureDataCollector(): void {
     if (this.dataCollectorId !== null) return;
     this.dataCollectorId = 'pending';
-    this.client.send<{ collector: string }>(
+    // sendSetup, not send: the collector must exist before the request whose
+    // body a route/onResponse handler is about to read (#351).
+    this.client.sendSetup<{ collector: string }>(
       'network.addDataCollector',
       { dataTypes: ['request', 'response'], maxEncodedDataSize: 10 * 1024 * 1024 }
     ).then(result => {
       this.dataCollectorId = result.collector;
-    }).catch(() => {
+    }).catch(err => {
+      // Reset so a later listener retries; bodies are unavailable until then.
       this.dataCollectorId = null;
+      debug('page.ensureDataCollector failed', { error: String(err) });
     });
   }
 
