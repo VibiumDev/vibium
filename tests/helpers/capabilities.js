@@ -50,12 +50,26 @@ function installSummary() {
 }
 
 function mergeOptions(args, skipReason) {
+  // node:test's signature is ([name][, options][, fn]); the options object
+  // must sit before the callback or node silently ignores it.
   const values = [...args];
-  const options = typeof values[1] === 'object' && values[1] !== null ? { ...values[1] } : {};
-  if (skipReason) options.skip = skipReason;
-  if (typeof values[1] === 'object' && values[1] !== null) values[1] = options;
-  else values.splice(1, 0, options);
-  if (collectOnly) values[values.length - 1] = () => {};
+  const fnIndex =
+    values.length && typeof values[values.length - 1] === 'function' ? values.length - 1 : values.length;
+  let optionsIndex = -1;
+  for (let i = 0; i < fnIndex; i++) {
+    if (typeof values[i] === 'object' && values[i] !== null) {
+      optionsIndex = i;
+      break;
+    }
+  }
+  if (optionsIndex === -1) {
+    optionsIndex = typeof values[0] === 'string' ? Math.min(1, fnIndex) : 0;
+    values.splice(optionsIndex, 0, {});
+  } else {
+    values[optionsIndex] = { ...values[optionsIndex] };
+  }
+  if (skipReason) values[optionsIndex].skip = skipReason;
+  if (collectOnly && fnIndex < values.length) values[values.length - 1] = () => {};
   return values;
 }
 
@@ -103,7 +117,13 @@ function suite(...baseRequirements) {
         const previous = inherited;
         inherited = [...new Set([...inherited, ...extraRequirements])];
         try {
-          return callback(...callbackArgs);
+          const result = callback(...callbackArgs);
+          if (result && typeof result.then === 'function') {
+            // Requirements are restored synchronously below; tests registered
+            // after an await would silently lose them.
+            throw new Error('cross-engine describe callbacks must be synchronous');
+          }
+          return result;
         } finally {
           inherited = previous;
         }
