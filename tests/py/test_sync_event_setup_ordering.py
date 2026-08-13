@@ -54,3 +54,29 @@ def test_rejected_install_raises_from_on_web_socket(monkeypatch):
             bro.page().on_web_socket(lambda ws: None)
     finally:
         bro.stop()
+
+
+def test_catching_a_rejected_install_and_retrying_works(monkeypatch):
+    monkeypatch.setenv("FAKE_ENGINE_FAIL_SETUP", "once")
+    from vibium import browser
+
+    bro = browser.start(headless=True, executable_path=FAKE_ENGINE)
+    try:
+        page = bro.page()
+        seen = []
+        callback = lambda ws: seen.append(ws.url())  # noqa: E731
+        with pytest.raises(Exception, match="no preload scripts here"):
+            page.on_web_socket(callback)
+        page.on_web_socket(callback)
+        page.evaluate("openSocket()")
+        # Drain: the event reached the loop thread with the response above.
+        page.evaluate("1")
+
+        # Exactly once: the retry re-sent the install, and the raised call
+        # left no duplicate registration behind.
+        assert seen == ["ws://127.0.0.1:1/live"]
+        assert page.evaluate("__installCount") == 2, (
+            "the retry must re-send the install command"
+        )
+    finally:
+        bro.stop()

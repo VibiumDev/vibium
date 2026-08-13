@@ -3,6 +3,7 @@ import { browser, Browser } from '../browser';
 import { Page } from '../page';
 import { BrowserContext } from '../context';
 import { Element, SelectorOptions } from '../element';
+import { WebSocketInfo } from '../websocket';
 
 interface WorkerData {
   signal: Int32Array;
@@ -875,7 +876,7 @@ const handlers: Record<string, Handler> = {
     const page = getPage(pageId);
     onWebSocketHandlerIds.set(pageId, handlerId);
     let nextWsId = 0;
-    page.onWebSocket((ws) => {
+    const callback = (ws: WebSocketInfo) => {
       const hid = onWebSocketHandlerIds.get(pageId);
       if (!hid) return;
       const wsId = nextWsId++;
@@ -901,11 +902,19 @@ const handlers: Record<string, Handler> = {
           data: { type: 'close', wsId, code, reason },
         });
       });
-    });
+    };
+    page.onWebSocket(callback);
     // The sync caller has no promise to await, so hold the blocking bridge
     // call until the engine has acknowledged the install, and let a failed
     // install raise here, the only place a sync caller can see it (#351).
-    await page._whenWebSocketSetup();
+    // A raised call must have no effect, so unregister before rethrowing;
+    // a retry then registers once and re-sends the install.
+    try {
+      await page._whenWebSocketSetup();
+    } catch (err) {
+      page._removeWebSocketCallback(callback);
+      throw err;
+    }
     return { success: true };
   },
 

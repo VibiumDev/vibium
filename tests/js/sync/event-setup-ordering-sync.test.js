@@ -54,4 +54,27 @@ describeFn('Sync event setup ordering: page.onWebSocket', () => {
       delete process.env.FAKE_ENGINE_FAIL_SETUP;
     }
   });
+
+  test('catching a rejected install and retrying works', () => {
+    process.env.FAKE_ENGINE_FAIL_SETUP = 'once';
+    try {
+      withFakeEngine((vibe) => {
+        const seen = [];
+        const callback = (ws) => seen.push(ws.url());
+        assert.throws(() => vibe.onWebSocket(callback), /no preload scripts here/);
+        vibe.onWebSocket(callback);
+        vibe.evaluate('openSocket()');
+        // Drain: the event reached the worker with the response above.
+        vibe.evaluate('1');
+
+        // Exactly once: the retry re-sent the install, and the raised call
+        // left no duplicate registration behind.
+        assert.deepStrictEqual(seen, ['ws://127.0.0.1:1/live']);
+        assert.strictEqual(vibe.evaluate('__installCount'), 2,
+          'the retry must re-send the install command');
+      });
+    } finally {
+      delete process.env.FAKE_ENGINE_FAIL_SETUP;
+    }
+  });
 });

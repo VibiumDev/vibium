@@ -508,7 +508,14 @@ class Page:
         # to run the receive loop that resolves it.
         async def _register() -> None:
             self._async.on_web_socket(fn)
-            await self._async._when_web_socket_setup()
+            try:
+                await self._async._when_web_socket_setup()
+            except BaseException:
+                # A raised call must have no effect: unregister so a retry
+                # registers once and re-sends the install.
+                if fn in self._async._ws_callbacks:
+                    self._async._ws_callbacks.remove(fn)
+                raise
         self._loop.run(_register())
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:

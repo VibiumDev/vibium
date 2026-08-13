@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import fnmatch
+import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
@@ -22,6 +23,8 @@ from .websocket_info import WebSocketInfo
 if TYPE_CHECKING:
     from ..client import BiDiClient
     from .context import BrowserContext as BrowserContextType
+
+logger = logging.getLogger("vibium")
 
 
 def _match_pattern(pattern: str, url: str) -> bool:
@@ -116,7 +119,7 @@ class Page:
         self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
-        self._ws_setup: Optional[Any] = None
+        self._ws_setup: Optional[asyncio.Future] = None
         self._intercept_id: Optional[str] = None
         self._data_collector_id: Optional[str] = None
 
@@ -782,12 +785,31 @@ class Page:
         connection is sent, so a socket opened by the very next call cannot be
         missed (#351).
         """
-        is_first = len(self._ws_callbacks) == 0
         self._ws_callbacks.append(fn)
-        if is_first:
-            self._ws_setup = self._client.send_setup(
+        # Keyed on the setup state, not the callback count: after a failed
+        # install the callbacks are still registered, and the next
+        # registration must retry the install or they can never fire.
+        if self._ws_setup is None:
+            setup = self._client.send_setup(
                 "vibium:page.onWebSocket", {"context": self._context_id}
             )
+            self._ws_setup = setup
+
+            def _reset(finished: asyncio.Future) -> None:
+                if finished.cancelled():
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                elif finished.exception() is not None:
+                    # Reset so a later listener retries; sockets are
+                    # unmonitored until then. Guarded: a retry made in the
+                    # meantime owns the state.
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                    logger.debug(
+                        "page.on_web_socket setup failed: %s", finished.exception()
+                    )
+
+            setup.add_done_callback(_reset)
 
     async def _when_web_socket_setup(self) -> None:
         """Wait until this page's WebSocket monitor is installed.
@@ -796,8 +818,12 @@ class Page:
         blocking on_web_socket() reports a failure the async caller cannot
         see.
         """
-        if self._ws_setup is not None:
-            await self._ws_setup
+        # Captured before awaiting: a failed install resets _ws_setup to
+        # None, and the raise must come from the setup this caller
+        # registered under.
+        setup = self._ws_setup
+        if setup is not None:
+            await setup
 
 
     # --- Dialog Handling ---
@@ -893,6 +919,10 @@ class Page:
                 # Reset so a later listener retries; bodies are unavailable
                 # until then.
                 self._data_collector_id = None
+                if not finished.cancelled():
+                    logger.debug(
+                        "page._ensure_data_collector failed: %s", finished.exception()
+                    )
                 return
             self._data_collector_id = (finished.result() or {}).get("collector")
 

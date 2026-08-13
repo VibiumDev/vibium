@@ -951,11 +951,19 @@ export class Page {
    * missed (#351).
    */
   onWebSocket(fn: (ws: WebSocketInfo) => void): void {
-    const isFirst = this.wsCallbacks.length === 0;
     this.wsCallbacks.push(fn);
-    if (isFirst) {
-      this.wsSetup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
-      this.wsSetup.catch(err => debug('page.onWebSocket setup failed', { error: String(err) }));
+    // Keyed on the setup state, not the callback count: after a failed
+    // install the callbacks are still registered, and the next registration
+    // must retry the install or they can never fire.
+    if (this.wsSetup === null) {
+      const setup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
+      this.wsSetup = setup;
+      setup.catch(err => {
+        // Reset so a later listener retries; sockets are unmonitored until
+        // then. Guarded: a retry made in the meantime owns the state.
+        if (this.wsSetup === setup) this.wsSetup = null;
+        debug('page.onWebSocket setup failed', { error: String(err) });
+      });
     }
   }
 
@@ -965,7 +973,19 @@ export class Page {
    * blocking onWebSocket() reports a failure the async caller cannot see.
    */
   async _whenWebSocketSetup(): Promise<void> {
-    if (this.wsSetup) await this.wsSetup;
+    // Captured before awaiting: a failed install resets wsSetup to null, and
+    // the raise must come from the setup this caller registered under.
+    const setup = this.wsSetup;
+    if (setup) await setup;
+  }
+
+  /**
+   * @internal Remove one registered WebSocket callback. The sync wrapper
+   * unregisters on a failed install so its raised call has no effect.
+   */
+  _removeWebSocketCallback(fn: (ws: WebSocketInfo) => void): void {
+    const i = this.wsCallbacks.indexOf(fn);
+    if (i !== -1) this.wsCallbacks.splice(i, 1);
   }
 
   // --- Dialog Handling ---

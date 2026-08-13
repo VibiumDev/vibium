@@ -50,9 +50,33 @@ describeFn('Event setup ordering: page.onWebSocket', () => {
       vibe.onWebSocket(() => seen.push('b'));
       await vibe.evaluate('openSocket()');
 
-      // A second install would have re-armed the gate and restarted the delay.
       assert.deepStrictEqual(seen, ['a', 'b']);
+      assert.strictEqual(await vibe.evaluate('__installCount'), 1,
+        'a second registration re-sent the install command');
     });
+  });
+
+  test('a failed install is retried by the next registration', async () => {
+    // The stand-in reads this at startup, so set it before launching. Safe to
+    // mutate here: node --test gives each test file its own process.
+    process.env.FAKE_ENGINE_FAIL_SETUP = 'once';
+    try {
+      await withFakeEngine(async (vibe) => {
+        const seen = [];
+        vibe.onWebSocket(() => seen.push('a'));
+        // Wait for the failure to land; the async API only debug-logs it.
+        await vibe._whenWebSocketSetup().catch(() => {});
+        vibe.onWebSocket(() => seen.push('b'));
+        await vibe.evaluate('openSocket()');
+
+        assert.deepStrictEqual(seen, ['a', 'b'],
+          'the second registration must retry the install, healing the first callback too');
+        assert.strictEqual(await vibe.evaluate('__installCount'), 2,
+          'the retry must re-send the install command');
+      });
+    } finally {
+      delete process.env.FAKE_ENGINE_FAIL_SETUP;
+    }
   });
 
   test('a command parked behind setup fails when the connection closes', async () => {

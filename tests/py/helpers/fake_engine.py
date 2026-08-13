@@ -9,7 +9,8 @@ and moves on loses the event its next command produces (#351).
 
 Point a client at it with browser.start(executable_path=...).
 FAKE_ENGINE_SETUP_DELAY_MS adjusts the install delay (default 300).
-FAKE_ENGINE_FAIL_SETUP=1 makes the install fail.
+FAKE_ENGINE_FAIL_SETUP=1 makes every install fail; =once fails only the
+first, so tests can pin that a failed install is retried.
 """
 
 import json
@@ -18,7 +19,7 @@ import sys
 import threading
 
 SETUP_DELAY_S = float(os.environ.get("FAKE_ENGINE_SETUP_DELAY_MS", "300")) / 1000
-FAIL_SETUP = os.environ.get("FAKE_ENGINE_FAIL_SETUP") == "1"
+FAIL_SETUP = os.environ.get("FAKE_ENGINE_FAIL_SETUP", "")
 
 # The clients run `vibium is-installed` before launching.
 if len(sys.argv) > 1 and sys.argv[1] == "is-installed":
@@ -26,6 +27,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "is-installed":
 
 _lock = threading.Lock()
 _monitor_installed = False
+_install_count = 0
 
 
 def write(msg):
@@ -38,9 +40,9 @@ def ok(cmd_id, result=None):
     write({"id": cmd_id, "type": "success", "result": result or {}})
 
 
-def install_monitor(cmd_id):
+def install_monitor(cmd_id, fail):
     global _monitor_installed
-    if FAIL_SETUP:
+    if fail:
         write({"id": cmd_id, "type": "error", "error": "unsupported operation",
                "message": "no preload scripts here"})
         return
@@ -59,12 +61,22 @@ for line in sys.stdin:
     if method in ("vibium:browser.page", "vibium:browser.newPage"):
         ok(cmd_id, {"context": "ctx-1", "userContext": "default"})
     elif method == "vibium:page.onWebSocket":
-        threading.Timer(SETUP_DELAY_S, install_monitor, [cmd_id]).start()
+        # Counted before deciding failure, so __installCount below includes
+        # failed attempts and a test can pin that a retry re-sent the install.
+        _install_count += 1
+        fail = FAIL_SETUP == "1" or (FAIL_SETUP == "once" and _install_count == 1)
+        threading.Timer(SETUP_DELAY_S, install_monitor, [cmd_id, fail]).start()
     elif method == "vibium:page.eval":
-        # Stands in for `new WebSocket(...)`: only a live monitor sees it.
-        if _monitor_installed and "openSocket" in str(params.get("expression", "")):
-            write({"method": "vibium:ws.created",
-                   "params": {"context": "ctx-1", "id": 1, "url": "ws://127.0.0.1:1/live"}})
-        ok(cmd_id, {"value": None})
+        # Test back-channel, not protocol behavior: reports how many installs
+        # this engine was sent. Race-free because the eval goes through the
+        # gate, so any pending install is answered before this is.
+        if str(params.get("expression", "")) == "__installCount":
+            ok(cmd_id, {"value": _install_count})
+        else:
+            # Stands in for `new WebSocket(...)`: only a live monitor sees it.
+            if _monitor_installed and "openSocket" in str(params.get("expression", "")):
+                write({"method": "vibium:ws.created",
+                       "params": {"context": "ctx-1", "id": 1, "url": "ws://127.0.0.1:1/live"}})
+            ok(cmd_id, {"value": None})
     else:
         ok(cmd_id)

@@ -58,8 +58,39 @@ async def test_registering_twice_installs_the_monitor_once(page):
     page.on_web_socket(lambda ws: seen.append("b"))
     await page.evaluate("openSocket()")
 
-    # A second install would have re-armed the gate and restarted the delay.
     assert seen == ["a", "b"]
+    assert await page.evaluate("__installCount") == 1, (
+        "a second registration re-sent the install command"
+    )
+
+
+async def test_failed_install_is_retried_by_the_next_registration(monkeypatch):
+    # The stand-in reads this at startup, so set it before launching.
+    monkeypatch.setenv("FAKE_ENGINE_FAIL_SETUP", "once")
+    from vibium.async_api import browser
+
+    bro = await browser.start(headless=True, executable_path=FAKE_ENGINE)
+    try:
+        page = await bro.page()
+        seen = []
+        page.on_web_socket(lambda ws: seen.append("a"))
+        # Wait for the failure to land; the async API only debug-logs it.
+        try:
+            await page._when_web_socket_setup()
+        except Exception:
+            pass
+        page.on_web_socket(lambda ws: seen.append("b"))
+        await page.evaluate("openSocket()")
+
+        assert seen == ["a", "b"], (
+            "the second registration must retry the install, "
+            "healing the first callback too"
+        )
+        assert await page.evaluate("__installCount") == 2, (
+            "the retry must re-send the install command"
+        )
+    finally:
+        await bro.stop()
 
 
 async def test_command_parked_behind_setup_fails_when_the_connection_closes(page):
