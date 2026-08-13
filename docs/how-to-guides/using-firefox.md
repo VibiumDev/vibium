@@ -114,8 +114,12 @@ currently requires Firefox, while PDF output may differ between engines.
 | Dialog callbacks and `capture.dialog()` | Supported | Not supported reliably by Vibium's native Firefox path yet |
 | Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |
+| Console and page error events (`onConsole`, `onError`) | Supported | Not delivered by Vibium's native Firefox path yet |
+| Download events (`onDownload`, `capture.download()`) | Supported | Not delivered by Vibium's native Firefox path yet |
+| New tab and popup events (`onPage`, `onPopup`) | Supported | Not delivered by Vibium's native Firefox path yet |
+| Navigation capture (`capture.navigation()`) | Supported | Not delivered by Vibium's native Firefox path yet |
 
-CI runs the full suite on Chrome, plus the browser-neutral CLI core and focused
-installation, launch, navigation, screenshot, channel, and video recording tests on
-Firefox. New browser-neutral CLI tests belong in `CLI_CORE_TESTS` in the
-Makefile; engine-specific behavior stays in its focused suite.
+CI runs the full suite on Chrome. A separate Firefox job runs capability-selected
+CLI and client tests plus focused installation, launch, channel, and video coverage.
+Browser-driving cross-engine tests declare their requirements through the shared
+capability adapters; unsupported features are reported as skips with reasons.

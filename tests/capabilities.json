@@ -1,0 +1,12 @@
+{
+  "core": ["chrome", "firefox"],
+  "network": ["chrome"],
+  "dialogs": ["chrome"],
+  "pdf": ["chrome"],
+  "prompt-blocking": ["chrome"],
+  "audio": [],
+  "console": ["chrome"],
+  "downloads": ["chrome"],
+  "popups": ["chrome"],
+  "navigation-capture": ["chrome"]
+}
