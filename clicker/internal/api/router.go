@@ -251,7 +251,9 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// guarantees no command is served first. Backgrounded, a client whose
 	// first command started a download could beat it, and the file landed in
 	// the browser's own download directory where download.saveAs could not
-	// find it (#351).
+	// find it (#351). Bounded to 10s so a browser that wedges on the command
+	// delays connect by that much at most; on timeout downloads degrade the
+	// same way as any other failure here.
 	r.setupDownloads(session)
 }
 
