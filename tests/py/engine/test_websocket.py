@@ -13,24 +13,6 @@ async def _wait_for(vibe, condition, timeout_ms=15000):
         waited += 100
 
 
-async def _subscribed(vibe, ws_echo_server, ws_connections):
-    """Prove the onWebSocket subscription is active before the real test runs.
-
-    The client sends the subscribe command without awaiting it, so an early
-    createWS can race it, and the one-shot created event is then lost for
-    good. Probe with throwaway sockets until one is tracked, then drain
-    stragglers and reset.
-    """
-    for _ in range(100):
-        await vibe.evaluate(f"createWS('{ws_echo_server}').close()")
-        await _wait_for(vibe, lambda: ws_connections, timeout_ms=200)
-        if ws_connections:
-            await vibe.wait(300)
-            ws_connections.clear()
-            return
-    raise AssertionError("onWebSocket subscription never became active")
-
-
 async def _ws_open(vibe):
     """Wait for window.__ws to reach OPEN; send() on CONNECTING throws."""
     for _ in range(150):
@@ -47,7 +29,6 @@ async def test_fires(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -61,7 +42,6 @@ async def test_url(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -76,7 +56,6 @@ async def test_on_message_sent(fresh_async_browser, test_server, ws_echo_server)
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -100,7 +79,6 @@ async def test_on_message_received(fresh_async_browser, test_server, ws_echo_ser
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -124,7 +102,6 @@ async def test_on_close(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -145,7 +122,6 @@ async def test_is_closed(fresh_async_browser, test_server, ws_echo_server):
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"window.__ws = createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
@@ -164,7 +140,6 @@ async def test_survives_navigation(fresh_async_browser, test_server, ws_echo_ser
 
     ws_connections = []
     vibe.on_web_socket(lambda ws: ws_connections.append(ws))
-    await _subscribed(vibe, ws_echo_server, ws_connections)
 
     await vibe.evaluate(f"createWS('{ws_echo_server}')")
     await _wait_for(vibe, lambda: ws_connections)
