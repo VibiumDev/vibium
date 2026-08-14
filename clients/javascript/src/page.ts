@@ -203,6 +203,7 @@ export class Page {
   private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
+  private wsSetup: Promise<unknown> | null = null;
   private eventHandler: ((event: BiDiEvent) => void) | null = null;
   private interceptId: string | null = null;
   private dataCollectorId: string | null = null;
@@ -942,13 +943,49 @@ export class Page {
     throw new Error('Not implemented: BiDi does not support WebSocket interception');
   }
 
-  /** Listen for WebSocket connections opened by the page. */
+  /**
+   * Listen for WebSocket connections opened by the page.
+   *
+   * Monitoring is installed in the engine before the next command on this
+   * connection is sent, so a socket opened by the very next call cannot be
+   * missed (#351).
+   */
   onWebSocket(fn: (ws: WebSocketInfo) => void): void {
-    const isFirst = this.wsCallbacks.length === 0;
     this.wsCallbacks.push(fn);
-    if (isFirst) {
-      this.client.send('vibium:page.onWebSocket', { context: this.contextId }).catch(() => {});
+    // Keyed on the setup state, not the callback count: after a failed
+    // install the callbacks are still registered, and the next registration
+    // must retry the install or they can never fire.
+    if (this.wsSetup === null) {
+      const setup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
+      this.wsSetup = setup;
+      setup.catch(err => {
+        // Reset so a later listener retries; sockets are unmonitored until
+        // then. Guarded: a retry made in the meantime owns the state.
+        if (this.wsSetup === setup) this.wsSetup = null;
+        debug('page.onWebSocket setup failed', { error: String(err) });
+      });
     }
+  }
+
+  /**
+   * @internal Resolve when this page's WebSocket monitor is installed,
+   * rejecting if the install failed. The sync wrapper awaits it so its
+   * blocking onWebSocket() reports a failure the async caller cannot see.
+   */
+  async _whenWebSocketSetup(): Promise<void> {
+    // Captured before awaiting: a failed install resets wsSetup to null, and
+    // the raise must come from the setup this caller registered under.
+    const setup = this.wsSetup;
+    if (setup) await setup;
+  }
+
+  /**
+   * @internal Remove one registered WebSocket callback. The sync wrapper
+   * unregisters on a failed install so its raised call has no effect.
+   */
+  _removeWebSocketCallback(fn: (ws: WebSocketInfo) => void): void {
+    const i = this.wsCallbacks.indexOf(fn);
+    if (i !== -1) this.wsCallbacks.splice(i, 1);
   }
 
   // --- Dialog Handling ---
@@ -1013,13 +1050,17 @@ export class Page {
   private ensureDataCollector(): void {
     if (this.dataCollectorId !== null) return;
     this.dataCollectorId = 'pending';
-    this.client.send<{ collector: string }>(
+    // sendSetup, not send: the collector must exist before the request whose
+    // body a route/onResponse handler is about to read (#351).
+    this.client.sendSetup<{ collector: string }>(
       'network.addDataCollector',
       { dataTypes: ['request', 'response'], maxEncodedDataSize: 10 * 1024 * 1024 }
     ).then(result => {
       this.dataCollectorId = result.collector;
-    }).catch(() => {
+    }).catch(err => {
+      // Reset so a later listener retries; bodies are unavailable until then.
       this.dataCollectorId = null;
+      debug('page.ensureDataCollector failed', { error: String(err) });
     });
   }
 

@@ -245,9 +245,16 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Failed to subscribe to events for client %d: %v\n", client.ID(), err)
 	}
 
-	// Download setup is non-critical — run in background so it doesn't
-	// block client commands if Chrome is slow to respond.
-	go r.setupDownloads(session)
+	// Establish download behavior synchronously, for the same reason
+	// session.subscribe above is synchronous: OnClientConnect runs before the
+	// transport starts reading client messages, so finishing here is what
+	// guarantees no command is served first. Backgrounded, a client whose
+	// first command started a download could beat it, and the file landed in
+	// the browser's own download directory where download.saveAs could not
+	// find it (#351). Bounded to 10s so a browser that wedges on the command
+	// delays connect by that much at most; on timeout downloads degrade the
+	// same way as any other failure here.
+	r.setupDownloads(session)
 }
 
 // vibiumHandler is the signature for vibium: extension command handlers.

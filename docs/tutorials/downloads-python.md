@@ -164,12 +164,12 @@ vibe.go(base_url)
 downloads = []
 vibe.on_download(lambda dl: downloads.append(dl))
 
-# The subscription activates in the background, so a click right after
-# subscribing can go untracked. Click again until the download appears.
+vibe.find("#dl-link").click()
+
+# The download event arrives asynchronously; poll briefly for it.
 deadline = time.time() + 15
 while not downloads and time.time() < deadline:
-    vibe.find("#dl-link").click()
-    time.sleep(0.5)
+    time.sleep(0.1)
 
 assert len(downloads) >= 1
 assert downloads[0].suggested_filename() == "hello.txt"
