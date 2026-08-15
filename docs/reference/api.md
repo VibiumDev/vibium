@@ -48,12 +48,12 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 29 | Wait for page load | `vibium:page.waitForLoad` | `vibium wait load` | `browser_wait_for_load` | `page.waitForLoad(opts?)` | `page.wait_for_load(**opts)` |
 | 30 | Scroll the page | `vibium:page.scroll` | `vibium scroll <dir> <amt>` | `browser_scroll` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(dir?, amt?, sel?)` |
 | 31 | Set viewport size | `vibium:page.setViewport` | `vibium viewport <w> <h>` | `browser_set_viewport` | `page.setViewport(size)` | `page.set_viewport(size)` |
-| 32 | Get viewport size | `vibium:page.viewport` | `vibium viewport get` | `browser_get_viewport` | `page.viewport()` | `page.viewport()` |
+| 32 | Get viewport size | `vibium:page.viewport` | `vibium viewport` | `browser_get_viewport` | `page.viewport()` | `page.viewport()` |
 | 33 | Override CSS media features | `vibium:page.emulateMedia` | `vibium media <scheme>` | `browser_emulate_media` | `page.emulateMedia(opts)` | `page.emulate_media(**opts)` |
 | 34 | Set page HTML | `vibium:page.setContent` | `vibium content <html>` | `browser_set_content` | `page.setContent(html)` | `page.set_content(html)` |
 | 35 | Override geolocation | `vibium:page.setGeolocation` | `vibium geolocation <lat> <lon>` | `browser_set_geolocation` | `page.setGeolocation(coords)` | `page.set_geolocation(coords)` |
 | 36 | Set window size/position | `vibium:page.setWindow` | `vibium window <opts>` | `browser_set_window` | `page.setWindow(opts)` | `page.set_window(**opts)` |
-| 37 | Get window info | `vibium:page.window` | `vibium window get` | `browser_get_window` | `page.window()` | `page.window()` |
+| 37 | Get window info | `vibium:page.window` | `vibium window` | `browser_get_window` | `page.window()` | `page.window()` |
 | 38 | Get accessibility tree | `vibium:page.a11yTree` | `vibium a11y-tree` | `browser_a11y_tree` | `page.a11yTree(opts?)` | `page.a11y_tree(opts?)` |
 | 39 | List all frames | `vibium:page.frames` | `vibium frames` | `browser_frames` | `page.frames()` | `page.frames()` |
 | 40 | Get a frame by name/URL | `vibium:page.frame` | `vibium frame <ref>` | `browser_frame` | `page.frame(nameOrUrl)` | `page.frame(name_or_url)` |
@@ -126,7 +126,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 97 | Create a page in a context | `vibium:context.newPage` | — | — | `context.newPage()` | `context.new_page()` |
 | 98 | Close the context | `browser.removeUserContext` | — | — | `context.close()` | `context.close()` |
 | 99 | Get cookies | `vibium:context.cookies` | `vibium cookies` | `browser_get_cookies` | `context.cookies(urls?)` | `context.cookies(urls?)` |
-| 100 | Set cookies | `vibium:context.setCookies` | `vibium cookies set <n> <v>` | `browser_set_cookie` | `context.setCookies(cookies)` | `context.set_cookies(cookies)` |
+| 100 | Set cookies | `vibium:context.setCookies` | `vibium cookies <n> <v>` | `browser_set_cookie` | `context.setCookies(cookies)` | `context.set_cookies(cookies)` |
 | 101 | Clear cookies | `vibium:context.clearCookies` | `vibium cookies clear` | `browser_delete_cookies` | `context.clearCookies()` | `context.clear_cookies()` |
 | 102 | Get storage state | `vibium:context.storage` | `vibium storage` | `browser_storage_state` | `context.storage()` | `context.storage()` |
 | 103 | Set storage state | `vibium:context.setStorage` | — | `browser_restore_storage` | `context.setStorage(state)` | `context.set_storage(state)` |
@@ -177,10 +177,10 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 |---|---|---|---|---|---|---|
 | 124 | Start recording | `vibium:recording.start` | `vibium record start` | `browser_record_start` | `recording.start(opts?)` | `recording.start(opts?)` |
 | 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?)` |
-| 126 | Start a recording chunk | `vibium:recording.startChunk` | `vibium record start-chunk` | `browser_record_start_chunk` | `recording.startChunk(opts?)` | `recording.start_chunk(opts?)` |
-| 127 | Stop a recording chunk | `vibium:recording.stopChunk` | `vibium record stop-chunk` | `browser_record_stop_chunk` | `recording.stopChunk(opts?)` | `recording.stop_chunk(path?)` |
-| 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record start-group <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` |
-| 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record stop-group` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` |
+| 126 | Start a recording chunk | `vibium:recording.startChunk` | `vibium record chunk start` | `browser_record_start_chunk` | `recording.startChunk(opts?)` | `recording.start_chunk(opts?)` |
+| 127 | Stop a recording chunk | `vibium:recording.stopChunk` | `vibium record chunk stop` | `browser_record_stop_chunk` | `recording.stopChunk(opts?)` | `recording.stop_chunk(path?)` |
+| 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record group start <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` |
+| 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record group stop` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` |
 
 `recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md).
 
@@ -222,7 +222,7 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 144 | Diff page state vs last map | — | `vibium diff` | `browser_diff_map` | — | — |
 | 145 | Count elements matching selector | — | `vibium count <sel>` | `browser_count` | — | — |
 | 146 | Wait for text to appear on page | — | `vibium wait text <text>` | `browser_wait_for_text` | — | — |
-| 147 | Set the download directory | — | `vibium download set-dir <path>` | `browser_download_set_dir` | — | — |
+| 147 | Set the download directory | — | `vibium download dir <path>` | `browser_download_set_dir` | — | — |
 
 ## AI-Native (Planned)
 
