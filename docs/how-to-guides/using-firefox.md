@@ -35,7 +35,7 @@ Browser bro = Vibium.start(
 );
 ```
 
-The main use today is [video recording](record-video.md), which needs Firefox 154 while it is still in beta.
+The release channel covers everything vibium supports, including [video recording](record-video.md) (Firefox 154+); the beta is for trying upcoming Firefox changes early.
 
 ## Launch
 

@@ -400,17 +400,8 @@ func (h *Handlers) queryViewport() map[string]interface{} {
 	if context == "" {
 		return nil
 	}
-	result, err := api.EvalSimpleScript(h.newSession(), context, "() => window.innerWidth + ',' + window.innerHeight")
-	if err != nil {
-		return nil
-	}
-	parts := strings.SplitN(result, ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	w, err1 := strconv.Atoi(parts[0])
-	h2, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
+	w, h2, ok := api.QueryViewport(h.newSession(), context)
+	if !ok {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h2}
