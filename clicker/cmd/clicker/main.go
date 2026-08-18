@@ -73,6 +73,9 @@ func main() {
 			if engineName != "chrome" && engineName != "firefox" {
 				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
 			}
+			if firefoxChannel != "" && firefoxChannel != "release" && firefoxChannel != "beta" {
+				return fmt.Errorf("unsupported Firefox channel %q (supported: release, beta)", firefoxChannel)
+			}
 			// Bridge the flag to the env var, like --session: the paths
 			// package resolves the channel from the environment at both
 			// install and launch time, and a daemon child process spawned
