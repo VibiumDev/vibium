@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // resolveContext extracts the "context" param or returns the first context from getTree.
@@ -315,6 +318,28 @@ func EvalSimpleScript(s Session, context, fn string) (string, error) {
 	}
 
 	return parseScriptResult(resp)
+}
+
+// QueryViewport asks the page for its viewport size. ok is false when the
+// page cannot answer — e.g. Firefox refuses script evaluation on its
+// privileged initial page until the first navigation (#358), so a viewport
+// unknown here may become answerable later in the session.
+func QueryViewport(s Session, context string) (width, height int, ok bool) {
+	result, err := EvalSimpleScript(s, context, "() => window.innerWidth + ',' + window.innerHeight")
+	if err != nil {
+		log.Debug("viewport query failed", "context", context, "error", err)
+		return 0, 0, false
+	}
+	parts := strings.SplitN(result, ",", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(parts[0])
+	h, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 // CallScript runs a script.callFunction with arguments via the Session and
