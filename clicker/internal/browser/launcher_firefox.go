@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -209,11 +210,17 @@ func connectFirefoxBidi(wsURL string, timeout time.Duration) (*bidi.Connection, 
 	return nil, fmt.Errorf("timeout waiting for firefox BiDi endpoint: %w", lastErr)
 }
 
-// writeFirefoxPrefs writes user.js into the profile directory.
+// writeFirefoxPrefs writes user.js into the profile directory. Keys are
+// sorted so the file is identical run to run and diffs stay readable.
 func writeFirefoxPrefs(profileDir string) error {
+	keys := make([]string, 0, len(firefoxPrefs))
+	for k := range firefoxPrefs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var b []byte
-	for k, v := range firefoxPrefs {
-		b = append(b, []byte(fmt.Sprintf("user_pref(%q, %s);\n", k, prefValue(v)))...)
+	for _, k := range keys {
+		b = append(b, []byte(fmt.Sprintf("user_pref(%q, %s);\n", k, prefValue(firefoxPrefs[k])))...)
 	}
 	return os.WriteFile(filepath.Join(profileDir, "user.js"), b, 0644)
 }
