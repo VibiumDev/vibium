@@ -42,6 +42,15 @@ func TestVideoSupportErrorNamesTheInstallCommand(t *testing.T) {
 	}
 }
 
+// A browser that has the command but refuses an option already names the
+// problem; rewriting would hide it, so the error must pass through unchanged.
+func TestVideoSupportErrorPassesThroughSpecificRefusals(t *testing.T) {
+	orig := errors.New(`invalid argument: The audio track is not supported`)
+	if err := videoSupportError(orig); err != orig {
+		t.Fatalf("videoSupportError() = %v, want the original error unchanged", err)
+	}
+}
+
 func TestRequiredVideoOnRemoteConnectionFailsClearly(t *testing.T) {
 	client := &recordingTestClient{}
 	router := NewRouter("firefox", true, "ws://remote.example/session", nil)
