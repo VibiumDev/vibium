@@ -41,7 +41,7 @@ func InstallFirefox() (string, error) {
 	}
 
 	channel := paths.FirefoxChannel()
-	version, err := fetchLatestFirefoxVersion(channel)
+	version, err := resolveFirefoxVersion(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Firefox version info: %w", err)
 	}
@@ -98,6 +98,18 @@ func IsFirefoxInstalled() bool {
 	}
 	_, err = os.Stat(p)
 	return err == nil
+}
+
+// resolveFirefoxVersion returns the Firefox version to install:
+// VIBIUM_FIREFOX_VERSION when set, otherwise the channel's current version
+// from Mozilla's product-details JSON. The pin exists because "latest"
+// changes out from under CI and fleets (a beta pin silently jumped 154 to
+// 155 the day 154 reached release); it also skips the network round-trip.
+func resolveFirefoxVersion(channel string) (string, error) {
+	if v := os.Getenv("VIBIUM_FIREFOX_VERSION"); v != "" {
+		return v, nil
+	}
+	return fetchLatestFirefoxVersion(channel)
 }
 
 // fetchLatestFirefoxVersion resolves the current version for a channel from
