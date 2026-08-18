@@ -266,19 +266,37 @@ describe('JS Firefox', () => {
     );
   });
 
-  test('--firefox-channel selects a separate install', (t) => {
+  test('--firefox-channel rejects an unknown channel at the CLI', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
     if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
 
-    // Channels live in separate cache directories, so a channel that was
-    // never installed must report not-installed (exit 1) — even on machines
-    // where another channel is present. Purely a local directory check.
+    // Validated up front so a typo names the real problem instead of
+    // surfacing later as "Firefox not found" from the launcher (#314).
     assert.throws(
       () => execFileSync(bin,
         ['is-installed', '--engine', 'firefox', '--firefox-channel', 'no-such-channel'],
-        { stdio: 'ignore' }),
-      (err) => err.status === 1,
-      'A never-installed channel should report not-installed'
+        { stdio: 'pipe' }),
+      (err) => /unsupported Firefox channel/.test(err.stderr.toString()),
+      'An unknown channel should be rejected by CLI validation'
     );
+  });
+
+  test('--firefox-channel accepts the valid channels', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    // is-installed may exit 0 or 1 depending on what this machine has in
+    // its cache; the only wrong outcome is the validation error.
+    for (const channel of ['release', 'beta']) {
+      let stderr = '';
+      try {
+        execFileSync(bin, ['is-installed', '--engine', 'firefox', '--firefox-channel', channel],
+          { stdio: 'pipe' });
+      } catch (err) {
+        stderr = err.stderr.toString();
+      }
+      assert.ok(!/unsupported Firefox channel/.test(stderr),
+        `Channel "${channel}" should pass CLI validation`);
+    }
   });
 });
