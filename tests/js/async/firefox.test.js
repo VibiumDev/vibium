@@ -57,6 +57,64 @@ async function startVideoRecordingOrSkip(t, vibe, options) {
   }
 }
 
+// Minimal EBML scan for the video track's PixelWidth/PixelHeight — an
+// independent oracle for what the encoder actually produced, so the test
+// does not trust the daemon's own reporting.
+function webmPixelDimensions(buf) {
+  const DESCEND = new Set([0x18538067, 0x1654ae6b, 0xae, 0xe0]); // Segment, Tracks, TrackEntry, Video
+  const CLUSTER = 0x1f43b675;
+  let pw = 0;
+  let ph = 0;
+
+  function leadingZeros(byte) {
+    for (let i = 7; i >= 0; i--) if (byte & (1 << i)) return 7 - i;
+    return 8;
+  }
+
+  function walk(start, end) {
+    let pos = start;
+    while (pos < end && !(pw && ph)) {
+      const idLen = leadingZeros(buf[pos]) + 1;
+      if (idLen > 4 || pos + idLen > end) return;
+      let id = 0;
+      for (let i = 0; i < idLen; i++) id = id * 256 + buf[pos + i];
+      pos += idLen;
+
+      const sizeLen = leadingZeros(buf[pos]) + 1;
+      if (sizeLen > 8 || pos + sizeLen > end) return;
+      let size = buf[pos] & (0xff >> sizeLen);
+      let unknown = size === 0xff >> sizeLen;
+      for (let i = 1; i < sizeLen; i++) {
+        size = size * 256 + buf[pos + i];
+        if (buf[pos + i] !== 0xff) unknown = false;
+      }
+      pos += sizeLen;
+
+      if (id === CLUSTER) return;
+      if (DESCEND.has(id)) {
+        if (unknown || pos + size > end) {
+          walk(pos, end);
+          return;
+        }
+        walk(pos, pos + size);
+        pos += size;
+        continue;
+      }
+      if (unknown || pos + size > end) return;
+      if (id === 0xb0 || id === 0xba) {
+        let v = 0;
+        for (let i = 0; i < size; i++) v = v * 256 + buf[pos + i];
+        if (id === 0xb0 && !pw) pw = v;
+        if (id === 0xba && !ph) ph = v;
+      }
+      pos += size;
+    }
+  }
+
+  walk(0, Math.min(buf.length, 64 * 1024));
+  return { width: pw, height: ph };
+}
+
 // Unzip a recording buffer and return { extractedDir, cleanup }.
 function unzipRecording(zipBuffer) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-rec-'));
@@ -181,6 +239,13 @@ describe('JS Firefox', () => {
         const index = JSON.parse(fs.readFileSync(path.join(extractedDir, 'video', 'index.json'), 'utf-8'));
         assert.strictEqual(index.videos[0].width, video.width, 'Manifest width should match the stop result');
         assert.strictEqual(index.videos[0].height, video.height, 'Manifest height should match the stop result');
+
+        // The reported dimensions must describe the encoded stream, not the
+        // viewport the recording was asked for (#358).
+        const webm = fs.readFileSync(path.join(extractedDir, index.videos[0].file));
+        const encoded = webmPixelDimensions(webm);
+        assert.strictEqual(video.width, encoded.width, 'Reported width should match the encoded stream');
+        assert.strictEqual(video.height, encoded.height, 'Reported height should match the encoded stream');
       } finally {
         cleanup();
       }
