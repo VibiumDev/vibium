@@ -80,12 +80,20 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 		return fail(fmt.Errorf("unexpected startScreencast response"))
 	}
 
+	// Dimensions not set by the caller fall back to the viewport, which is
+	// best-effort: the query fails on pages that refuse script evaluation
+	// (e.g. Firefox's privileged initial page), leaving them 0 here. Stop
+	// retries the query once the page has navigated somewhere answerable.
 	width, height := opts.Video.Width, opts.Video.Height
 	if width == 0 {
-		width, _ = viewport["width"].(int)
+		if w, ok := viewport["width"].(int); ok {
+			width = w
+		}
 	}
 	if height == 0 {
-		height, _ = viewport["height"].(int)
+		if h, ok := viewport["height"].(int); ok {
+			height = h
+		}
 	}
 	recorder.SetVideoTrack(&VideoTrack{
 		Context:    context,
@@ -107,6 +115,15 @@ func StopRecordingVideo(s Session, recorder *Recorder) {
 	track := recorder.ActiveVideo()
 	if track == nil || track.ID == "" {
 		return
+	}
+
+	// Dimensions the start-time viewport query could not provide (#358) are
+	// usually answerable now: the refusal came from the pre-navigation
+	// privileged page, and the recorded context has since navigated.
+	if track.Width == 0 || track.Height == 0 {
+		if w, h, ok := QueryViewport(s, track.Context); ok {
+			recorder.SetVideoDimensions(w, h)
+		}
 	}
 
 	resp, err := s.SendBidiCommandWithTimeout("browsingContext.stopScreencast", map[string]interface{}{

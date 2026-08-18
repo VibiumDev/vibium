@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
@@ -480,17 +478,8 @@ func (r *Router) queryViewport(session *BrowserSession) map[string]interface{} {
 	if err != nil {
 		return nil
 	}
-	result, err := r.evalSimpleScript(session, context, "() => window.innerWidth + ',' + window.innerHeight")
-	if err != nil {
-		return nil
-	}
-	parts := strings.SplitN(result, ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	w, err1 := strconv.Atoi(parts[0])
-	h, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
+	w, h, ok := QueryViewport(NewAPISession(r, session, context), context)
+	if !ok {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h}

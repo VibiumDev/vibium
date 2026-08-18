@@ -152,6 +152,44 @@ describe('JS Firefox', () => {
     }
   });
 
+  // #358: recording.start before the first navigation reported 0x0 video
+  // dimensions — Firefox refuses the viewport script on its privileged
+  // initial page, and the failure was silently swallowed.
+  test('video dimensions are reported when recording starts before navigation', async (t) => {
+    if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
+
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-dims-'));
+    const zipPath = path.join(outDir, 'run.zip');
+    const bro = await firefox.start({ headless: true });
+    try {
+      const vibe = await bro.page();
+      await vibe.setViewport({ width: 1280, height: 720 });
+
+      // Start on the fresh pre-navigation page, like the issue repro.
+      if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
+
+      await vibe.go(baseURL);
+      const result = await vibe.context.recording.stop();
+
+      assert.strictEqual(result.videos.length, 1, 'Result should report the video track');
+      const video = result.videos[0];
+      assert.ok(video.width > 0, `Video width should be reported, got ${video.width}`);
+      assert.ok(video.height > 0, `Video height should be reported, got ${video.height}`);
+
+      const { extractedDir, cleanup } = unzipRecording(fs.readFileSync(zipPath));
+      try {
+        const index = JSON.parse(fs.readFileSync(path.join(extractedDir, 'video', 'index.json'), 'utf-8'));
+        assert.strictEqual(index.videos[0].width, video.width, 'Manifest width should match the stop result');
+        assert.strictEqual(index.videos[0].height, video.height, 'Manifest height should match the stop result');
+      } finally {
+        cleanup();
+      }
+    } finally {
+      await bro.stop();
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
   test('unknown browser is rejected with a clear error', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
     if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');

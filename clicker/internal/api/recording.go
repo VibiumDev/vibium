@@ -393,6 +393,22 @@ func (t *Recorder) ActiveVideo() *VideoTrack {
 	return &v
 }
 
+// SetVideoDimensions fills in video track dimensions that were unknown at
+// start. Known values are never overwritten and zero values never written.
+func (t *Recorder) SetVideoDimensions(width, height int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.video == nil {
+		return
+	}
+	if t.video.Width == 0 && width > 0 {
+		t.video.Width = width
+	}
+	if t.video.Height == 0 && height > 0 {
+		t.video.Height = height
+	}
+}
+
 // FinishVideo marks the screencast stopped. enginePath, when non-empty,
 // is where the engine finalized the file. errMsg records a stop failure;
 // the engine path is kept so a partial live-muxed video still delivers.
