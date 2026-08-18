@@ -143,9 +143,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Firefox 154 is beta until 2026-08-18. Remove this pin with #322 once
-      # release is the default channel exercised by installation and tests.
-      VIBIUM_FIREFOX_CHANNEL: beta
       VIBIUM_REQUIRE_FIREFOX: 1
 
     steps:

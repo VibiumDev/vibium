@@ -210,19 +210,23 @@ func RecordingSavedSentence(path string, s RecordingSummary) string {
 	return msg
 }
 
-// videoSupportError turns the browser's "unknown command" on startScreencast
-// into something the user can act on. Only that case is rewritten: a browser
-// that has the command but refuses an option already names the problem, and
+// videoSupportError turns the browser's refusal of startScreencast itself
+// into something the user can act on. Chrome has said "unknown command"
+// and, since 152, "Method browsingContext.startScreencast is not
+// implemented." Only the command-missing case is rewritten: a browser that
+// has the command but refuses an option already names the problem, and
 // replacing its message would hide it.
 func videoSupportError(err error) error {
-	if strings.Contains(err.Error(), "unknown command") {
+	msg := err.Error()
+	if strings.Contains(msg, "unknown command") ||
+		(strings.Contains(msg, "startScreencast") && strings.Contains(msg, "not implemented")) {
 		return fmt.Errorf("video recording is not supported by this browser yet " +
 			"(Chrome: not implemented; Firefox: requires 154+). " +
 			"Install it with `vibium install --engine firefox` and launch with browser \"firefox\", " +
 			"or record without video for a trace with screenshots")
 	}
-	if strings.Contains(err.Error(), "NS_ERROR_FAILURE") &&
-		strings.Contains(err.Error(), "nsIProperties.get") {
+	if strings.Contains(msg, "NS_ERROR_FAILURE") &&
+		strings.Contains(msg, "nsIProperties.get") {
 		return fmt.Errorf("Firefox could not resolve its screencast output directory")
 	}
 	return err
