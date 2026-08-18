@@ -140,13 +140,17 @@ func fetchLatestFirefoxVersion(channel string) (string, error) {
 // firefoxDownloadURL returns the Mozilla archive URL for this platform.
 // Betas live under the same releases/ tree as stable versions.
 func firefoxDownloadURL(version string) string {
+	return firefoxDownloadURLFor(runtime.GOOS, runtime.GOARCH, version)
+}
+
+func firefoxDownloadURLFor(goos, goarch, version string) string {
 	base := "https://ftp.mozilla.org/pub/firefox/releases/" + version
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		return base + "/mac/en-US/" + url.PathEscape("Firefox "+version+".dmg")
 	default: // linux
 		arch := "linux-x86_64"
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			arch = "linux-aarch64"
 		}
 		return base + "/" + arch + "/en-US/firefox-" + version + ".tar.xz"
