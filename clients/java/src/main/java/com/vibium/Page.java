@@ -9,6 +9,8 @@ import com.vibium.types.*;
 
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -18,6 +20,11 @@ import java.util.function.Function;
 public class Page {
 
     private static final Gson GSON = new Gson();
+    private static final ExecutorService NETWORK_CALLBACKS = Executors.newCachedThreadPool(r -> {
+        Thread thread = new Thread(r, "vibium-network-callback");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final BiDiClient client;
     private final String contextId;
@@ -49,6 +56,8 @@ public class Page {
 
     // Network routes
     private final List<RouteEntry> routes = new CopyOnWriteArrayList<>();
+    private final Object dataCollectorLock = new Object();
+    private String dataCollectorId;
 
     // Active downloads keyed by navigation ID
     private final Map<String, Download> activeDownloads = Collections.synchronizedMap(new HashMap<>());
@@ -501,6 +510,7 @@ public class Page {
         JsonObject params = new JsonObject();
         params.addProperty("context", contextId);
         client.send("browsingContext.close", params);
+        teardownDataCollector();
         webSockets.clear();
         client.offEvent(eventHandler);
     }
@@ -518,6 +528,7 @@ public class Page {
 
     /** Register a route handler for URL pattern matching. */
     public void route(String pattern, Consumer<Route> handler) {
+        ensureDataCollector();
         // Subscribe to network events if this is the first route
         if (routes.isEmpty()) {
             JsonObject params = contextParams();
@@ -537,6 +548,9 @@ public class Page {
                 params.addProperty("pattern", pattern);
                 client.send("network.removeIntercept", params);
             } catch (Exception ignored) {}
+            if (requestListeners.isEmpty() && responseListeners.isEmpty()) {
+                teardownDataCollector();
+            }
         }
     }
 
@@ -544,11 +558,13 @@ public class Page {
 
     /** Listen for network requests. */
     public void onRequest(Consumer<Request> callback) {
+        ensureDataCollector();
         requestListeners.add(callback);
     }
 
     /** Listen for network responses. */
     public void onResponse(Consumer<Response> callback) {
+        ensureDataCollector();
         responseListeners.add(callback);
     }
 
@@ -626,6 +642,7 @@ public class Page {
             downloadListeners.clear();
             webSocketListeners.clear();
             navigationListeners.clear();
+            if (routes.isEmpty()) teardownDataCollector();
             return;
         }
         switch (event) {
@@ -638,6 +655,9 @@ public class Page {
             case "websocket": webSocketListeners.clear(); break;
             case "navigation": navigationListeners.clear(); break;
         }
+        if (requestListeners.isEmpty() && responseListeners.isEmpty() && routes.isEmpty()) {
+            teardownDataCollector();
+        }
     }
 
     /** Remove all event listeners. */
@@ -648,6 +668,36 @@ public class Page {
     // ── Internal ────────────────────────────────────────────────
 
     BiDiClient getClient() { return client; }
+
+    private void ensureDataCollector() {
+        synchronized (dataCollectorLock) {
+            if (dataCollectorId != null) return;
+            JsonObject params = new JsonObject();
+            JsonArray dataTypes = new JsonArray();
+            dataTypes.add("request");
+            dataTypes.add("response");
+            params.add("dataTypes", dataTypes);
+            params.addProperty("maxEncodedDataSize", 10 * 1024 * 1024);
+            JsonObject result = client.send("network.addDataCollector", params);
+            dataCollectorId = result.has("collector")
+                ? result.get("collector").getAsString()
+                : null;
+        }
+    }
+
+    private void teardownDataCollector() {
+        synchronized (dataCollectorLock) {
+            if (dataCollectorId == null) return;
+            JsonObject params = new JsonObject();
+            params.addProperty("collector", dataCollectorId);
+            dataCollectorId = null;
+            try {
+                client.send("network.removeDataCollector", params);
+            } catch (Exception ignored) {
+                // The collector disappears with the browser connection.
+            }
+        }
+    }
 
     private JsonObject contextParams() {
         JsonObject params = new JsonObject();
@@ -787,25 +837,57 @@ public class Page {
             case "browsingContext.historyUpdated":
                 handleNavigationEvent(params);
                 break;
-            case "vibium:network.intercepted":
-                handleRouteEvent(params);
-                break;
         }
     }
 
     private void handleRequestEvent(JsonObject params) {
+        boolean isBlocked = params.has("isBlocked") && params.get("isBlocked").getAsBoolean();
+        if (isBlocked) {
+            handleBlockedRequest(params);
+            return;
+        }
         if (requestListeners.isEmpty()) return;
         Request request = new Request(client, params);
         for (Consumer<Request> listener : requestListeners) {
-            try { listener.accept(request); } catch (Exception ignored) {}
+            NETWORK_CALLBACKS.execute(() -> {
+                try { listener.accept(request); } catch (Exception ignored) {}
+            });
         }
+    }
+
+    private void handleBlockedRequest(JsonObject params) {
+        Request request = new Request(client, params, true);
+        String requestId = request.requestId();
+
+        for (RouteEntry entry : routes) {
+            if (matchPattern(entry.pattern, request.url())) {
+                Route route = new Route(client, contextId, requestId, request);
+                NETWORK_CALLBACKS.execute(() -> {
+                    try {
+                        entry.handler.accept(route);
+                    } catch (Exception ignored) {}
+                });
+                return;
+            }
+        }
+
+        // No matching route — continue the request so the page does not hang
+        NETWORK_CALLBACKS.execute(() -> {
+            try {
+                JsonObject continueParams = new JsonObject();
+                continueParams.addProperty("request", requestId);
+                client.send("vibium:network.continue", continueParams);
+            } catch (Exception ignored) {}
+        });
     }
 
     private void handleResponseEvent(JsonObject params) {
         if (responseListeners.isEmpty()) return;
         Response response = new Response(client, params);
         for (Consumer<Response> listener : responseListeners) {
-            try { listener.accept(response); } catch (Exception ignored) {}
+            NETWORK_CALLBACKS.execute(() -> {
+                try { listener.accept(response); } catch (Exception ignored) {}
+            });
         }
     }
 
@@ -909,31 +991,6 @@ public class Page {
     void removeConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.remove(listener); }
     void addErrorListener(Consumer<String> listener) { errorListeners.add(listener); }
     void removeErrorListener(Consumer<String> listener) { errorListeners.remove(listener); }
-
-    private void handleRouteEvent(JsonObject params) {
-        if (routes.isEmpty()) return;
-
-        String url = params.has("url") ? params.get("url").getAsString() : "";
-        String requestId = params.has("requestId") ? params.get("requestId").getAsString() : "";
-
-        for (RouteEntry entry : routes) {
-            if (matchPattern(entry.pattern, url)) {
-                Request request = new Request(client, params);
-                Route route = new Route(client, contextId, requestId, request);
-                try {
-                    entry.handler.accept(route);
-                } catch (Exception ignored) {}
-                return;
-            }
-        }
-
-        // No matching route — continue the request
-        try {
-            JsonObject continueParams = new JsonObject();
-            continueParams.addProperty("requestId", requestId);
-            client.send("vibium:network.continue", continueParams);
-        } catch (Exception ignored) {}
-    }
 
     static boolean matchPattern(String pattern, String url) {
         if (pattern == null || pattern.isEmpty()) return true;
