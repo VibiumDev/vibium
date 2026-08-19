@@ -881,7 +881,7 @@ public class Page {
 
         for (RouteEntry entry : routes) {
             if (matchPattern(entry.pattern, url)) {
-                Request request = new Request(client, params);
+                Request request = new Request(client, params, true);
                 Route route = new Route(client, contextId, requestId, request);
                 NETWORK_CALLBACKS.execute(() -> {
                     try {

@@ -20,9 +20,15 @@ public class Request {
     private final String method;
     private final Map<String, String> headers;
     private final String requestId;
+    private final boolean intercepted;
 
     Request(BiDiClient client, JsonObject params) {
+        this(client, params, false);
+    }
+
+    Request(BiDiClient client, JsonObject params, boolean intercepted) {
         this.client = client;
+        this.intercepted = intercepted;
 
         // Extract from either top-level or nested request object
         JsonObject req = params.has("request") && params.get("request").isJsonObject()
@@ -55,7 +61,10 @@ public class Request {
      * so this best-effort lookup is bounded to avoid blocking a route handler.
      */
     public String postData() {
-        if (requestId.isEmpty()) return null;
+        // network.getData waits for the request to complete. An intercepted
+        // request cannot complete until its route is continued, so issuing the
+        // lookup here would queue continuation behind an unresolved command.
+        if (intercepted || requestId.isEmpty()) return null;
         try {
             JsonObject params = new JsonObject();
             params.addProperty("dataType", "request");
