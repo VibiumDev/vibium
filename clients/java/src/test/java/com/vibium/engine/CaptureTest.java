@@ -114,11 +114,12 @@ class CaptureTest {
     @Test
     void timeoutCleansListener() {
         assertThrows(VibiumTimeoutException.class,
-            () -> page.capture().navigation(
+            () -> page.capture().event("console",
                 () -> {}, new WaitOptions().timeout(50)));
 
-        String url = page.capture().navigation(
-            () -> page.go(server.baseUrl() + "/subpage"));
-        assertTrue(url.endsWith("/subpage"));
+        ConsoleMessage message = assertInstanceOf(ConsoleMessage.class,
+            page.capture().event("console",
+                () -> page.evaluate("console.log('after timeout')")));
+        assertTrue(message.text().contains("after timeout"));
     }
 }
