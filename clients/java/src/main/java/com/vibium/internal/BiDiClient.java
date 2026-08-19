@@ -78,6 +78,7 @@ public class BiDiClient {
         if (closed) {
             throw new VibiumConnectionException("BiDi client is closed");
         }
+        StackTraceElement[] callerStack = captureCallerStack();
 
         int id = nextId.getAndIncrement();
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
@@ -116,7 +117,7 @@ public class BiDiClient {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();
             if (cause instanceof VibiumException) {
-                throw (VibiumException) cause;
+                throw attachCallerStack((VibiumException) cause, callerStack);
             }
             throw new VibiumException("Error executing " + method + ": " + cause.getMessage(), cause);
         } catch (InterruptedException e) {
@@ -124,6 +125,21 @@ public class BiDiClient {
             Thread.currentThread().interrupt();
             throw new VibiumException("Interrupted while waiting for response to " + method);
         }
+    }
+
+    static StackTraceElement[] captureCallerStack() {
+        StackTraceElement[] stack = new Throwable().getStackTrace();
+        int firstCaller = 0;
+        while (firstCaller < stack.length
+                && BiDiClient.class.getName().equals(stack[firstCaller].getClassName())) {
+            firstCaller++;
+        }
+        return java.util.Arrays.copyOfRange(stack, firstCaller, stack.length);
+    }
+
+    static <T extends VibiumException> T attachCallerStack(T error, StackTraceElement[] callerStack) {
+        error.setStackTrace(callerStack);
+        return error;
     }
 
     /**
