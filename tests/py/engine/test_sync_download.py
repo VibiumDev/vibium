@@ -20,7 +20,9 @@ def test_download_fires(sync_browser, test_server):
 def test_download_url_filename(sync_browser, test_server):
     """Download object has url and suggested_filename."""
     vibe = sync_browser.new_page()
-    vibe.go(test_server + "/download")
+    # Own filename: the session's other tests download test.txt, and Firefox
+    # reports a repeated name deduplicated ("test(1).txt").
+    vibe.go(test_server + "/download?name=named.txt")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
     link = vibe.find("#download-link")
@@ -28,7 +30,7 @@ def test_download_url_filename(sync_browser, test_server):
     vibe.wait(1000)
     assert len(downloads) >= 1
     assert "download-file" in downloads[0].url()
-    assert downloads[0].suggested_filename() == "test.txt"
+    assert downloads[0].suggested_filename() == "named.txt"
 
 
 def test_remove_download_listeners(sync_browser, test_server):
