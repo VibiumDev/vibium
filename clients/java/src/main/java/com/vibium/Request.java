@@ -29,8 +29,9 @@ public class Request {
 
         this.url = req.has("url") ? req.get("url").getAsString() : "";
         this.method = req.has("method") ? req.get("method").getAsString() : "";
-        this.requestId = req.has("requestId") ? req.get("requestId").getAsString()
-            : (params.has("requestId") ? params.get("requestId").getAsString() : "");
+        this.requestId = req.has("request") ? req.get("request").getAsString()
+            : (req.has("requestId") ? req.get("requestId").getAsString()
+            : (params.has("requestId") ? params.get("requestId").getAsString() : ""));
         this.headers = parseHeaders(req);
     }
 
@@ -45,6 +46,24 @@ public class Request {
 
     /** Get the request ID. */
     public String requestId() { return requestId; }
+
+    /** Get the request body, or null when it is unavailable. */
+    public String postData() {
+        if (requestId.isEmpty()) return null;
+        try {
+            JsonObject params = new JsonObject();
+            params.addProperty("dataType", "request");
+            params.addProperty("request", requestId);
+            JsonObject result = client.send("network.getData", params);
+            if (result.has("bytes") && result.get("bytes").isJsonObject()) {
+                JsonObject bytes = result.getAsJsonObject("bytes");
+                return bytes.has("value") ? bytes.get("value").getAsString() : null;
+            }
+        } catch (Exception ignored) {
+            // Request bodies are best-effort: browsers may not retain every body.
+        }
+        return null;
+    }
 
     private static Map<String, String> parseHeaders(JsonObject obj) {
         Map<String, String> map = new LinkedHashMap<>();
