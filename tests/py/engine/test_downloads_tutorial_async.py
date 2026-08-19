@@ -1,11 +1,11 @@
-"""Tests extracted from docs/tutorials/downloads-python.md (async)."""
+"""Tests extracted from docs/how-to-guides/downloads.md (async)."""
 
 import pytest
 
 pytestmark = pytest.mark.capability("core", "downloads")
 from helpers.tutorial_runner import get_tutorial_tests, start_tutorial_server, run_async_standalone
 
-MD_PATH = "docs/tutorials/downloads-python.md"
+MD_PATH = "docs/how-to-guides/downloads.md"
 TESTS = get_tutorial_tests(MD_PATH, mode="async")
 
 ROUTES = {

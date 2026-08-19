@@ -60,7 +60,9 @@ describe('Sync API: onDownload', () => {
 
   test('download has url and suggestedFilename', () => {
     const vibe = bro.newPage();
-    vibe.go(`${baseURL}/download`);
+    // Own filename: the session's earlier tests already downloaded test.txt,
+    // and Firefox reports a repeated name deduplicated ("test(1).txt").
+    vibe.go(`${baseURL}/download?name=named.txt`);
 
     const downloads = [];
     vibe.onDownload((dl) => {
@@ -72,7 +74,7 @@ describe('Sync API: onDownload', () => {
 
     assert.ok(downloads.length >= 1);
     assert.ok(downloads[0].url.includes('/download-file'), `URL should contain /download-file, got: ${downloads[0].url}`);
-    assert.strictEqual(downloads[0].suggestedFilename, 'test.txt');
+    assert.strictEqual(downloads[0].suggestedFilename, 'named.txt');
   });
 
   test('removeAllListeners("download") stops onDownload callbacks', () => {
@@ -110,14 +112,15 @@ describe('Sync API: onDownload', () => {
 
   test('capture.download returns path and supports saveAs', () => {
     const vibe = bro.newPage();
-    vibe.go(`${baseURL}/download`);
+    // Own filename, same reason as the suggestedFilename test above.
+    vibe.go(`${baseURL}/download?name=captured.txt`);
 
     const result = vibe.capture.download(() => {
       vibe.find('#download-link').click();
     });
 
     assert.ok(result.url.includes('/download-file'));
-    assert.strictEqual(result.suggestedFilename, 'test.txt');
+    assert.strictEqual(result.suggestedFilename, 'captured.txt');
     assert.ok(result.path, 'path should be set after capture.download');
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-dl-'));
