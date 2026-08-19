@@ -28,6 +28,7 @@ public class Page {
     private final Mouse mouse;
     private final Touch touch;
     private final Clock clock;
+    private final Capture capture;
 
     // Event listeners
     private final CopyOnWriteArrayList<Consumer<Request>> requestListeners = new CopyOnWriteArrayList<>();
@@ -37,6 +38,7 @@ public class Page {
     private final CopyOnWriteArrayList<Consumer<String>> errorListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Download>> downloadListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<WebSocketInfo>> webSocketListeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Consumer<String>> navigationListeners = new CopyOnWriteArrayList<>();
 
     // Buffered events
     private final List<ConsoleMessage> bufferedConsole = Collections.synchronizedList(new ArrayList<>());
@@ -59,6 +61,7 @@ public class Page {
         this.mouse = new Mouse(client, contextId);
         this.touch = new Touch(client, contextId);
         this.clock = new Clock(client, contextId);
+        this.capture = new Capture(this);
 
         // Register event handler
         this.eventHandler = this::handleEvent;
@@ -81,6 +84,9 @@ public class Page {
 
     /** Get the Clock for this page. */
     public Clock clock() { return clock; }
+
+    /** Get the one-shot event capture helpers for this page. */
+    public Capture capture() { return capture; }
 
     /** Get the parent BrowserContext. */
     public BrowserContext context() { return browserContext; }
@@ -601,6 +607,7 @@ public class Page {
             errorListeners.clear();
             downloadListeners.clear();
             webSocketListeners.clear();
+            navigationListeners.clear();
             return;
         }
         switch (event) {
@@ -611,6 +618,7 @@ public class Page {
             case "error": errorListeners.clear(); break;
             case "download": downloadListeners.clear(); break;
             case "websocket": webSocketListeners.clear(); break;
+            case "navigation": navigationListeners.clear(); break;
         }
     }
 
@@ -747,6 +755,11 @@ public class Page {
             case "browsingContext.downloadEnd":
                 handleDownloadCompleted(params);
                 break;
+            case "browsingContext.load":
+            case "browsingContext.fragmentNavigated":
+            case "browsingContext.historyUpdated":
+                handleNavigationEvent(params);
+                break;
             case "vibium:network.intercepted":
                 handleRouteEvent(params);
                 break;
@@ -818,6 +831,29 @@ public class Page {
             download.complete(status, path);
         }
     }
+
+    private void handleNavigationEvent(JsonObject params) {
+        String url = params.has("url") ? params.get("url").getAsString() : "";
+        if (url.isEmpty()) return;
+        for (Consumer<String> listener : navigationListeners) {
+            try { listener.accept(url); } catch (Exception ignored) {}
+        }
+    }
+
+    void addRequestListener(Consumer<Request> listener) { requestListeners.add(listener); }
+    void removeRequestListener(Consumer<Request> listener) { requestListeners.remove(listener); }
+    void addResponseListener(Consumer<Response> listener) { responseListeners.add(listener); }
+    void removeResponseListener(Consumer<Response> listener) { responseListeners.remove(listener); }
+    void addNavigationListener(Consumer<String> listener) { navigationListeners.add(listener); }
+    void removeNavigationListener(Consumer<String> listener) { navigationListeners.remove(listener); }
+    void addDownloadListener(Consumer<Download> listener) { downloadListeners.add(listener); }
+    void removeDownloadListener(Consumer<Download> listener) { downloadListeners.remove(listener); }
+    void addDialogListener(Consumer<Dialog> listener) { dialogListeners.add(listener); }
+    void removeDialogListener(Consumer<Dialog> listener) { dialogListeners.remove(listener); }
+    void addConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.add(listener); }
+    void removeConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.remove(listener); }
+    void addErrorListener(Consumer<String> listener) { errorListeners.add(listener); }
+    void removeErrorListener(Consumer<String> listener) { errorListeners.remove(listener); }
 
     private void handleRouteEvent(JsonObject params) {
         if (routes.isEmpty()) return;
