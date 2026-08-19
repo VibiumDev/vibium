@@ -801,15 +801,13 @@ func (h *Handlers) startPromptTracking() {
 		return
 	}
 
-	client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"browsingContext.userPromptOpened",
-			"browsingContext.userPromptClosed",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.load",
-		},
+	subscribeEvents(client, []string{
+		"browsingContext.userPromptOpened",
+		"browsingContext.userPromptClosed",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
 }
@@ -4077,21 +4075,19 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	h.recorder = recorder
 
 	// Subscribe to events and feed them to the recorder
-	h.client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"network.beforeRequestSent",
-			"network.responseCompleted",
-			"network.fetchError",
-			"log.entryAdded",
-			"browsingContext.userPromptOpened",
-			"browsingContext.downloadWillBegin",
-			"browsingContext.load",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.fragmentNavigated",
-			"browsingContext.historyUpdated",
-		},
+	subscribeEvents(h.client, []string{
+		"network.beforeRequestSent",
+		"network.responseCompleted",
+		"network.fetchError",
+		"log.entryAdded",
+		"browsingContext.userPromptOpened",
+		"browsingContext.downloadWillBegin",
+		"browsingContext.load",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.fragmentNavigated",
+		"browsingContext.historyUpdated",
 	})
 	h.recordDropBase = h.client.DroppedEvents()
 	// handleBidiEvent already forwards to the recorder; replacing the handler

@@ -113,14 +113,26 @@ tasks.register<Copy>("copyNativeBinaries") {
     into("src/main/resources/natives")
 }
 
+// BinaryResolver keys its extraction cache on this resource; without it every
+// jar extracts to vibium-unknown and the first install pins its binary (#330).
+val writeVersionResource by tasks.registering {
+    val versionFile = file("src/main/resources/vibium-version.txt")
+    inputs.property("version", vibiumVersion)
+    outputs.file(versionFile)
+    doLast {
+        versionFile.parentFile.mkdirs()
+        versionFile.writeText(vibiumVersion + "\n")
+    }
+}
+
 // Don't fail build if native binaries aren't present (dev mode)
 tasks.named("processResources") {
-    dependsOn(tasks.named("copyNativeBinaries"))
+    dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
 
 // sourcesJar also reads src/main/resources, so it needs the same dependency
 tasks.named("sourcesJar") {
-    dependsOn(tasks.named("copyNativeBinaries"))
+    dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
 
 // Copy runtime dependencies for JShell / standalone use
