@@ -775,5 +775,5 @@ vibe.context().recording().start(
 ## Next Steps
 
 - [Record Video](../how-to-guides/record-video.md) — the video track: engine support, Firefox channels, options
-- [Recording Format](../explanation/recording-format.md) — detailed spec of the zip structure
+- [Recording Format](../reference/recording-format.md) — detailed spec of the zip structure
 - [Getting Started](getting-started-js.md) — first steps with Vibium

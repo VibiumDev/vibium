@@ -31,7 +31,7 @@ endif
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
-# so 'cat' must be on PATH (add Git's usr/bin — see docs/how-to-guides/local-dev-setup-x86-windows.md)
+# so 'cat' must be on PATH (add Git's usr/bin — see docs/contributing/local-dev-setup-x86-windows.md)
 VERSION := $(shell cat VERSION)
 # Allow V= as shorthand for VERSION=
 ifdef V

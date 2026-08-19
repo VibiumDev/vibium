@@ -24,7 +24,7 @@ res.end('<a href="/file" id="dl-link">Download hello.txt</a>');
 `;
 
 describe('Downloads Tutorial (JS Async)', () => {
-  runTutorial('docs/tutorials/downloads-js.md', {
+  runTutorial('docs/how-to-guides/downloads.md', {
     mode: 'async', standalone: true, serverCode: SERVER_CODE,
     requireFn: tutorialRequire, requires: ['downloads'],
   });

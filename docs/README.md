@@ -21,4 +21,5 @@ needs two verbs, it is two docs.
 Everything else here is internal, outside those four: **specs/**
 (design docs for unbuilt things), **plans/** (implementation plans),
 **updates/** (release notes and progress posts), **trackers/**
-(living status pages).
+(living status pages), and **contributing/** (maintainer and contributor
+runbooks).
