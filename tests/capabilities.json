@@ -1,12 +1,12 @@
 {
   "core": ["chrome", "firefox"],
-  "network": ["chrome"],
-  "dialogs": ["chrome"],
+  "network": ["chrome", "firefox"],
+  "dialogs": ["chrome", "firefox"],
   "pdf": ["chrome"],
-  "prompt-blocking": ["chrome"],
+  "prompt-blocking": ["chrome", "firefox"],
   "audio": [],
-  "console": ["chrome"],
-  "downloads": ["chrome"],
-  "popups": ["chrome"],
-  "navigation-capture": ["chrome"]
+  "console": ["chrome", "firefox"],
+  "downloads": ["chrome", "firefox"],
+  "popups": ["chrome", "firefox"],
+  "navigation-capture": ["chrome", "firefox"]
 }
