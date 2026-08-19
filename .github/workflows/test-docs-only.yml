@@ -1,0 +1,67 @@
+# Same-name no-op twin of test.yml for documentation-only changes.
+#
+# test.yml skips these paths entirely, so a docs-only PR would leave the
+# required chrome/firefox/test checks "Expected, waiting for status" forever
+# and grey out the merge button. This workflow reports the same check names
+# as immediate successes instead. Keep the paths list below identical to
+# test.yml's paths-ignore list: a path present there but missing here blocks
+# docs-only PRs again; a path present here but missing there double-reports.
+name: Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/explanation/**'
+      - 'docs/how-to-guides/**'
+      - 'docs/images/**'
+      - 'docs/plans/**'
+      - 'docs/reference/**'
+      - 'docs/specs/**'
+      - 'docs/trackers/**'
+      - 'docs/updates/**'
+      - 'docs/README.md'
+      - 'CLAUDE.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
+      - 'ROADMAP.md'
+  pull_request:
+    paths:
+      - 'docs/explanation/**'
+      - 'docs/how-to-guides/**'
+      - 'docs/images/**'
+      - 'docs/plans/**'
+      - 'docs/reference/**'
+      - 'docs/specs/**'
+      - 'docs/trackers/**'
+      - 'docs/updates/**'
+      - 'docs/README.md'
+      - 'CLAUDE.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
+      - 'ROADMAP.md'
+
+permissions:
+  contents: read
+
+jobs:
+  chrome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs-only change
+        run: echo "Documentation-only change, browser suites not applicable."
+
+  firefox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs-only change
+        run: echo "Documentation-only change, browser suites not applicable."
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [chrome, firefox]
+    steps:
+      - name: All suites green
+        run: echo "Documentation-only change, nothing to test."
