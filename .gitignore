@@ -81,6 +81,7 @@ scripts/package-lock.json
 clients/java/build/
 clients/java/.gradle/
 clients/java/src/main/resources/natives/
+clients/java/src/main/resources/vibium-version.txt
 vibium-bundle.zip
 
 # Python
