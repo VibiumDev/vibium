@@ -1,9 +1,9 @@
 {
   "core": ["chrome", "firefox"],
   "network": ["chrome"],
-  "dialogs": ["chrome"],
+  "dialogs": ["chrome", "firefox"],
   "pdf": ["chrome"],
-  "prompt-blocking": ["chrome"],
+  "prompt-blocking": ["chrome", "firefox"],
   "audio": [],
   "console": ["chrome", "firefox"],
   "downloads": ["chrome", "firefox"],

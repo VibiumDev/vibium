@@ -112,7 +112,7 @@ currently requires Firefox, while PDF output may differ between engines.
 |------------|--------|---------|
 | Navigation, elements, input, pages, screenshots, storage, and trace recording | Supported | Supported and covered by the Firefox core suite |
 | Native video (`recording.start({ video: true })`) | Not implemented by Chrome yet | Firefox 154+; see [Record Video](record-video.md) |
-| Dialog callbacks and `capture.dialog()` | Supported | Not supported reliably by Vibium's native Firefox path yet |
+| Dialog callbacks and `capture.dialog()` | Supported | Supported and covered by the cross-engine suites |
 | Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |
 | Console and page error events (`onConsole`, `onError`) | Supported | Supported and covered by the cross-engine suites |
