@@ -216,34 +216,41 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	go r.routeBrowserToClient(session)
 
 	// Subscribe to events synchronously — must complete before client commands
-	// so Chrome delivers events (contextCreated, beforeRequestSent, etc.) from
-	// the very first navigation. Without this, a fast client could send commands
-	// before Chrome knows to forward events, causing missed events or hangs.
-	_, err = r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
-		"events": []string{
-			"browsingContext.contextCreated",
-			"network.beforeRequestSent",
-			"network.responseCompleted",
-			"browsingContext.userPromptOpened",
-			"browsingContext.userPromptClosed",
-			"log.entryAdded",
-			"browsingContext.downloadWillBegin",
-			"browsingContext.downloadEnd",
-			"browsingContext.load",
-			// navigationStarted/Failed/Aborted bracket an in-flight navigation, so
-			// a filmstrip capture can wait it out instead of timing out (#289).
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.fragmentNavigated",
-			// SPA routing via history.pushState/replaceState changes the URL
-			// without a load or fragment event (#126).
-			"browsingContext.historyUpdated",
-		},
+	// so the browser delivers events (contextCreated, beforeRequestSent, etc.)
+	// from the very first navigation. Without this, a fast client could send
+	// commands before the browser knows to forward events, causing missed
+	// events or hangs. SubscribeEvents falls back to per-event subscription
+	// when the batch fails: Firefox rejects the whole batch over the one name
+	// it does not implement (navigationAborted), which used to silence every
+	// event on the Firefox path (#348).
+	bidi.SubscribeEvents(func(events []string) error {
+		resp, err := r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
+			"events": events,
+		})
+		if err != nil {
+			return err
+		}
+		return checkBidiError(resp)
+	}, []string{
+		"browsingContext.contextCreated",
+		"network.beforeRequestSent",
+		"network.responseCompleted",
+		"browsingContext.userPromptOpened",
+		"browsingContext.userPromptClosed",
+		"log.entryAdded",
+		"browsingContext.downloadWillBegin",
+		"browsingContext.downloadEnd",
+		"browsingContext.load",
+		// navigationStarted/Failed/Aborted bracket an in-flight navigation, so
+		// a filmstrip capture can wait it out instead of timing out (#289).
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.fragmentNavigated",
+		// SPA routing via history.pushState/replaceState changes the URL
+		// without a load or fragment event (#126).
+		"browsingContext.historyUpdated",
 	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[router] Failed to subscribe to events for client %d: %v\n", client.ID(), err)
-	}
 
 	// Establish download behavior synchronously, for the same reason
 	// session.subscribe above is synchronous: OnClientConnect runs before the

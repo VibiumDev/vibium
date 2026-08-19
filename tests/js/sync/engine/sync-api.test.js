@@ -698,6 +698,9 @@ describe.requires('popups')('Sync API: onPage/onPopup', () => {
       const popups = [];
       bro.onPopup((p) => popups.push(p));
       const page = bro.page();
+      // Firefox's initial page is a privileged parent-process context that
+      // rejects script.evaluate; navigate somewhere evaluable first.
+      page.go(baseURL);
       page.evaluate("window.open('about:blank')");
       assert.strictEqual(popups.length, 1);
       assert.ok(popups[0], 'Should receive a PageSync');
