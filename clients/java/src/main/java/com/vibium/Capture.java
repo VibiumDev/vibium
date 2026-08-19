@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -149,8 +150,9 @@ public final class Capture {
         }
 
         CompletableFuture<T> captured = new CompletableFuture<>();
+        AtomicBoolean actionStarted = new AtomicBoolean();
         Consumer<T> handler = value -> {
-            if (matches.test(value)) {
+            if (actionStarted.get() && matches.test(value)) {
                 captured.complete(value);
             }
         };
@@ -158,7 +160,10 @@ public final class Capture {
         register.accept(handler);
         CompletableFuture<Void> actionFuture;
         try {
-            actionFuture = CompletableFuture.runAsync(action, ACTIONS);
+            actionFuture = CompletableFuture.runAsync(() -> {
+                actionStarted.set(true);
+                action.run();
+            }, ACTIONS);
         } catch (RuntimeException error) {
             unregister.accept(handler);
             throw error;
