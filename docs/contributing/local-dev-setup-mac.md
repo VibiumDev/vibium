@@ -25,7 +25,7 @@ Before starting, check the [system requirements](../reference/mac-system-require
 Assuming macOS VM dev on macOS (via UTM).
 
 If `make test` takes ~18 minutes instead of ~6, see
-[Slow Chrome Launch in a macOS VM](slow-chrome-launch-in-macos-vm.md) — a
+[Slow Chrome Launch in a macOS VM](../how-to-guides/slow-chrome-launch-in-macos-vm.md) — a
 broken virtual GPU adds ~15s to every Chrome launch.
 
 ## Install UTM (on host)

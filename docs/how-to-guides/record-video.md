@@ -162,4 +162,4 @@ per-action screenshots, DOM snapshots, and network events for the Record
 Player. `video/index.json` records the video's `offsetMs` from the
 recording's start so viewers can align the two timelines. See the
 [Recording tutorial](../tutorials/recording.md) for the other tracks and
-[Recording format](../explanation/recording-format.md) for the zip layout.
+[Recording format](../reference/recording-format.md) for the zip layout.

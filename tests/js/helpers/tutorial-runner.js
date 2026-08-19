@@ -68,6 +68,18 @@ function extractBlocks(mdPath) {
         }
         continue;
       }
+
+      // A marker binds to the code block immediately after it or not at all.
+      // Any other fenced block (another language, plain ```) must consume a
+      // pending marker: in a doc that mixes languages, a marker left pending
+      // across foreign blocks would attach to the next javascript block
+      // anywhere in the file.
+      if (line.match(/^```/)) {
+        inCodeBlock = true;
+        isAnnotated = false;
+        pending = null;
+        continue;
+      }
     } else {
       if (line.match(/^```\s*$/)) {
         inCodeBlock = false;
