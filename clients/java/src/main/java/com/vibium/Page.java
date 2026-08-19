@@ -46,6 +46,9 @@ public class Page {
     private final CopyOnWriteArrayList<Consumer<Download>> downloadListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<WebSocketInfo>> webSocketListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<String>> navigationListeners = new CopyOnWriteArrayList<>();
+    private final Map<Integer, WebSocketInfo> webSockets = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Object webSocketSetupLock = new Object();
+    private volatile boolean webSocketMonitorInstalled = false;
 
     // Buffered events
     private final List<ConsoleMessage> bufferedConsole = Collections.synchronizedList(new ArrayList<>());
@@ -508,6 +511,7 @@ public class Page {
         params.addProperty("context", contextId);
         client.send("browsingContext.close", params);
         teardownDataCollector();
+        webSockets.clear();
         client.offEvent(eventHandler);
     }
 
@@ -601,6 +605,20 @@ public class Page {
     /** Listen for WebSocket connections. */
     public void onWebSocket(Consumer<WebSocketInfo> callback) {
         webSocketListeners.add(callback);
+        if (webSocketMonitorInstalled) return;
+
+        synchronized (webSocketSetupLock) {
+            if (webSocketMonitorInstalled) return;
+            try {
+                // Synchronous by design: the monitor is installed before the
+                // caller can issue the command that opens the socket (#351).
+                client.send("vibium:page.onWebSocket", contextParams());
+                webSocketMonitorInstalled = true;
+            } catch (RuntimeException error) {
+                webSocketListeners.remove(callback);
+                throw error;
+            }
+        }
     }
 
     /** Get buffered console messages. */
@@ -805,6 +823,15 @@ public class Page {
             case "browsingContext.downloadEnd":
                 handleDownloadCompleted(params);
                 break;
+            case "vibium:ws.created":
+                handleWebSocketCreated(params);
+                break;
+            case "vibium:ws.message":
+                handleWebSocketMessage(params);
+                break;
+            case "vibium:ws.closed":
+                handleWebSocketClosed(params);
+                break;
             case "browsingContext.load":
             case "browsingContext.fragmentNavigated":
             case "browsingContext.historyUpdated":
@@ -912,6 +939,34 @@ public class Page {
             String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
             download.complete(status, path);
         }
+    }
+
+    private void handleWebSocketCreated(JsonObject params) {
+        if (!params.has("id")) return;
+        int id = params.get("id").getAsInt();
+        WebSocketInfo info = new WebSocketInfo(params);
+        webSockets.put(id, info);
+        for (Consumer<WebSocketInfo> listener : webSocketListeners) {
+            try { listener.accept(info); } catch (Exception ignored) {}
+        }
+    }
+
+    private void handleWebSocketMessage(JsonObject params) {
+        if (!params.has("id")) return;
+        WebSocketInfo info = webSockets.get(params.get("id").getAsInt());
+        if (info == null) return;
+        String data = params.has("data") ? params.get("data").getAsString() : "";
+        String direction = params.has("direction") ? params.get("direction").getAsString() : "";
+        info.emitMessage(data, direction);
+    }
+
+    private void handleWebSocketClosed(JsonObject params) {
+        if (!params.has("id")) return;
+        WebSocketInfo info = webSockets.remove(params.get("id").getAsInt());
+        if (info == null) return;
+        Integer code = params.has("code") ? params.get("code").getAsInt() : null;
+        String reason = params.has("reason") ? params.get("reason").getAsString() : null;
+        info.emitClose(code, reason);
     }
 
     private void handleNavigationEvent(JsonObject params) {
