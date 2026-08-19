@@ -1,6 +1,6 @@
 {
   "core": ["chrome", "firefox"],
-  "network": ["chrome"],
+  "network": ["chrome", "firefox"],
   "dialogs": ["chrome"],
   "pdf": ["chrome"],
   "prompt-blocking": ["chrome"],
