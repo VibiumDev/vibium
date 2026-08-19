@@ -723,12 +723,14 @@ def test_capture_navigation(bro, test_server):
 @pytest.mark.capability("downloads")
 def test_capture_download(bro, test_server):
     vibe = bro.new_page()
-    vibe.go(test_server + "/download")
+    # Own filename: another test in this session downloads test.txt, and
+    # Firefox reports a repeated name deduplicated ("test(1).txt").
+    vibe.go(test_server + "/download?name=sync-captured.txt")
     with vibe.capture.download() as info:
         vibe.find("#download-link").click()
     assert info.value is not None
     assert "/download-file" in info.value["url"]
-    assert info.value["suggested_filename"] == "test.txt"
+    assert info.value["suggested_filename"] == "sync-captured.txt"
     assert info.value["path"] is not None
     vibe.close()
 
