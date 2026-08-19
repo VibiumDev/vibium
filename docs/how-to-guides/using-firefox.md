@@ -104,6 +104,7 @@ currently requires Firefox, while PDF output may differ between engines.
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
 | `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
 | `VIBIUM_FIREFOX_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--firefox-channel` or the clients' `channel` option |
+| `VIBIUM_FIREFOX_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the channel's latest; keeps CI and fleets on one version until you move the pin |
 
 ## Feature notes
 
