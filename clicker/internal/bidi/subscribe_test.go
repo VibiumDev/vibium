@@ -2,7 +2,10 @@ package bidi
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -48,6 +51,37 @@ func TestSubscribeEventsFallsBackPerEvent(t *testing.T) {
 	}
 	if subscribed["bad"] {
 		t.Fatal("rejected event must not be recorded as subscribed")
+	}
+}
+
+// A dead connection fails the batch and every per-event retry. The warning
+// must then carry the transport error, not blame the event names.
+// Swaps os.Stderr to capture the warning, so it must never run in parallel.
+func TestSubscribeEventsTransportFailureReportsBatchError(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	rejected := SubscribeEvents(func([]string) error {
+		return fmt.Errorf("connection lost waiting for response to session.subscribe")
+	}, []string{"a", "b"})
+
+	w.Close()
+	os.Stderr = origStderr
+	out, _ := io.ReadAll(r)
+
+	if !reflect.DeepEqual(rejected, []string{"a", "b"}) {
+		t.Fatalf("rejected = %v, want all events", rejected)
+	}
+	if !strings.Contains(string(out), "connection lost") {
+		t.Fatalf("warning must carry the batch error, got: %q", out)
+	}
+	if strings.Contains(string(out), "rejected event subscription for") {
+		t.Fatalf("transport failure must not be reported as rejected names, got: %q", out)
 	}
 }
 
