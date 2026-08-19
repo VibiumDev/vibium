@@ -115,10 +115,10 @@ currently requires Firefox, while PDF output may differ between engines.
 | Dialog callbacks and `capture.dialog()` | Supported | Supported and covered by the cross-engine suites |
 | Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |
-| Console and page error events (`onConsole`, `onError`) | Supported | Not delivered by Vibium's native Firefox path yet |
-| Download events (`onDownload`, `capture.download()`) | Supported | Not delivered by Vibium's native Firefox path yet |
-| New tab and popup events (`onPage`, `onPopup`) | Supported | Not delivered by Vibium's native Firefox path yet |
-| Navigation capture (`capture.navigation()`) | Supported | Not delivered by Vibium's native Firefox path yet |
+| Console and page error events (`onConsole`, `onError`) | Supported | Supported and covered by the cross-engine suites |
+| Download events (`onDownload`, `capture.download()`) | Supported | Supported and covered by the cross-engine suites |
+| New tab and popup events (`onPage`, `onPopup`) | Supported | Supported and covered by the cross-engine suites |
+| Navigation capture (`capture.navigation()`) | Supported | Supported and covered by the cross-engine suites |
 
 CI runs the full suite on Chrome. A separate Firefox job runs capability-selected
 CLI and client tests plus focused installation, launch, channel, and video coverage.
