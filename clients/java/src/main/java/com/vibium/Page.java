@@ -797,13 +797,15 @@ public class Page {
             case "browsingContext.downloadEnd":
                 handleDownloadCompleted(params);
                 break;
-            case "vibium:network.intercepted":
-                handleRouteEvent(params);
-                break;
         }
     }
 
     private void handleRequestEvent(JsonObject params) {
+        boolean isBlocked = params.has("isBlocked") && params.get("isBlocked").getAsBoolean();
+        if (isBlocked) {
+            handleBlockedRequest(params);
+            return;
+        }
         if (requestListeners.isEmpty()) return;
         Request request = new Request(client, params);
         for (Consumer<Request> listener : requestListeners) {
@@ -811,6 +813,32 @@ public class Page {
                 try { listener.accept(request); } catch (Exception ignored) {}
             });
         }
+    }
+
+    private void handleBlockedRequest(JsonObject params) {
+        Request request = new Request(client, params, true);
+        String requestId = request.requestId();
+
+        for (RouteEntry entry : routes) {
+            if (matchPattern(entry.pattern, request.url())) {
+                Route route = new Route(client, contextId, requestId, request);
+                NETWORK_CALLBACKS.execute(() -> {
+                    try {
+                        entry.handler.accept(route);
+                    } catch (Exception ignored) {}
+                });
+                return;
+            }
+        }
+
+        // No matching route — continue the request so the page does not hang
+        NETWORK_CALLBACKS.execute(() -> {
+            try {
+                JsonObject continueParams = new JsonObject();
+                continueParams.addProperty("request", requestId);
+                client.send("vibium:network.continue", continueParams);
+            } catch (Exception ignored) {}
+        });
     }
 
     private void handleResponseEvent(JsonObject params) {
@@ -871,35 +899,6 @@ public class Page {
             String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
             download.complete(status, path);
         }
-    }
-
-    private void handleRouteEvent(JsonObject params) {
-        if (routes.isEmpty()) return;
-
-        String url = params.has("url") ? params.get("url").getAsString() : "";
-        String requestId = params.has("requestId") ? params.get("requestId").getAsString() : "";
-
-        for (RouteEntry entry : routes) {
-            if (matchPattern(entry.pattern, url)) {
-                Request request = new Request(client, params, true);
-                Route route = new Route(client, contextId, requestId, request);
-                NETWORK_CALLBACKS.execute(() -> {
-                    try {
-                        entry.handler.accept(route);
-                    } catch (Exception ignored) {}
-                });
-                return;
-            }
-        }
-
-        // No matching route — continue the request
-        NETWORK_CALLBACKS.execute(() -> {
-            try {
-                JsonObject continueParams = new JsonObject();
-                continueParams.addProperty("requestId", requestId);
-                client.send("vibium:network.continue", continueParams);
-            } catch (Exception ignored) {}
-        });
     }
 
     static boolean matchPattern(String pattern, String url) {
