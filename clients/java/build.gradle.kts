@@ -29,7 +29,11 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (project.hasProperty("capabilityOnly")) {
+            includeTags("cross-engine")
+        }
+    }
     // Integration tests drive the vibium binary and a live browser — neither is
     // a Gradle input, so never let cached results skip the run.
     outputs.upToDateWhen { false }
@@ -39,6 +43,62 @@ tasks.test {
     // 4 mirrors test-js's JS_PARALLEL and test-python's PY_PARALLEL. Override
     // with -PjavaParallel=N (Makefile: JAVA_PARALLEL).
     maxParallelForks = (project.findProperty("javaParallel") as String?)?.toIntOrNull() ?: 4
+}
+
+// Cross-engine browser tests live in a physical root so missing capability
+// declarations cannot turn into a new filename allowlist. Validate the source
+// before JUnit launches a browser; method-level markers add requirements to the
+// mandatory class-level baseline.
+val validateCapabilityMarkers by tasks.registering {
+    inputs.dir("src/test/java/com/vibium/engine")
+    inputs.file("../../tests/capabilities.json")
+    doLast {
+        val manifestText = file("../../tests/capabilities.json").readText()
+        val manifest = Regex("\"([^\"]+)\"\\s*:\\s*\\[([^]]*)]")
+            .findAll(manifestText)
+            .associate { match ->
+                match.groupValues[1] to Regex("\"([^\"]+)\"")
+                    .findAll(match.groupValues[2]).map { it.groupValues[1] }.toSet()
+            }
+        // The marker must sit on the class declaration: -PcapabilityOnly selects
+        // on the class-level tag, so a file with only method-level markers would
+        // silently drop its unmarked methods from the engine run.
+        val classMarker = Regex(
+            "@RequiresCapability\\([^)]*\\)\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s*)*" +
+            "(?:\\b(?:public|final|abstract)\\b\\s+)*class\\s"
+        )
+        fileTree("src/test/java/com/vibium/engine") {
+            include("**/*Test.java")
+        }.forEach { file ->
+            val source = file.readText()
+            if (source.contains("@Test") && !classMarker.containsMatchIn(source)) {
+                throw GradleException(
+                    "${file.path}: missing class-level @RequiresCapability " +
+                    "(method-level markers only add to the class baseline)"
+                )
+            }
+            Regex("@RequiresCapability\\(([^)]*)\\)").findAll(source).forEach { marker ->
+                Regex("\"([^\"]+)\"").findAll(marker.groupValues[1]).forEach { nameMatch ->
+                    val name = nameMatch.groupValues[1]
+                    val engines = manifest[name]
+                        ?: throw GradleException("${file.path}: unknown capability $name")
+                    // The manifest must not list an engine for a capability
+                    // unless chrome is also listed; empty entries are fine.
+                    // Add an exemption mechanism before introducing one.
+                    if (System.getenv("VIBIUM_CAPABILITY_AUDIT") == "1" &&
+                        engines.isNotEmpty() && "chrome" !in engines) {
+                        throw GradleException("${file.path}: Chrome audit rejected skip for $name")
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.test {
+    dependsOn(validateCapabilityMarkers)
+    environment("VIBIUM_CAPABILITIES_FILE", file("../../tests/capabilities.json").absolutePath)
+    environment("VIBIUM_CAPABILITY_AUDIT", System.getenv("VIBIUM_CAPABILITY_AUDIT") ?: "")
 }
 
 // Copy native binaries into resources for JAR packaging
@@ -53,14 +113,26 @@ tasks.register<Copy>("copyNativeBinaries") {
     into("src/main/resources/natives")
 }
 
+// BinaryResolver keys its extraction cache on this resource; without it every
+// jar extracts to vibium-unknown and the first install pins its binary (#330).
+val writeVersionResource by tasks.registering {
+    val versionFile = file("src/main/resources/vibium-version.txt")
+    inputs.property("version", vibiumVersion)
+    outputs.file(versionFile)
+    doLast {
+        versionFile.parentFile.mkdirs()
+        versionFile.writeText(vibiumVersion + "\n")
+    }
+}
+
 // Don't fail build if native binaries aren't present (dev mode)
 tasks.named("processResources") {
-    dependsOn(tasks.named("copyNativeBinaries"))
+    dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
 
 // sourcesJar also reads src/main/resources, so it needs the same dependency
 tasks.named("sourcesJar") {
-    dependsOn(tasks.named("copyNativeBinaries"))
+    dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
 
 // Copy runtime dependencies for JShell / standalone use

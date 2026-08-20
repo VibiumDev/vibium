@@ -49,7 +49,8 @@ const (
 
 // VideoOptions is the recording's video track configuration. Dimensions
 // default to the viewport; explicit dimensions that mismatch the window
-// aspect are letterboxed by the engine.
+// aspect are letterboxed by the engine. The dimensions reported at stop
+// describe the encoded stream, read from the WebM itself at packaging.
 type VideoOptions struct {
 	Mode      VideoMode
 	Width     int
@@ -144,9 +145,11 @@ type VideoTrack struct {
 	// the video timeline with trace event timestamps.
 	OffsetMs   float64
 	DurationMs int64
-	Width      int
-	Height     int
-	Error      string // engine failure; the zip still delivers, video absent or partial
+	// Width/Height describe the encoded stream once the engine file is read
+	// at packaging; until then they hold the requested or viewport size.
+	Width  int
+	Height int
+	Error  string // engine failure; the zip still delivers, video absent or partial
 }
 
 // VideoSummary is one entry of the videos array in the recording.stop result.
@@ -391,6 +394,22 @@ func (t *Recorder) ActiveVideo() *VideoTrack {
 	}
 	v := *t.video
 	return &v
+}
+
+// SetVideoDimensions fills in video track dimensions that were unknown at
+// start. Known values are never overwritten and zero values never written.
+func (t *Recorder) SetVideoDimensions(width, height int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.video == nil {
+		return
+	}
+	if t.video.Width == 0 && width > 0 {
+		t.video.Width = width
+	}
+	if t.video.Height == 0 && height > 0 {
+		t.video.Height = height
+	}
 }
 
 // FinishVideo marks the screencast stopped. enginePath, when non-empty,
@@ -1366,6 +1385,18 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 
 	entry := map[string]interface{}{"context": context}
 	if includeVideo {
+		var data []byte
+		var readErr error
+		if !t.video.Remote && t.video.EnginePath != "" {
+			data, readErr = os.ReadFile(t.video.EnginePath)
+			// The encoded stream is the authoritative dimension source: the
+			// start-time value is the viewport, which the screencast surface
+			// need not match (#358). Read before reporting so the manifest
+			// and the stop summary both describe the actual video.
+			if w, h, ok := webmDimensions(data); ok {
+				t.video.Width, t.video.Height = w, h
+			}
+		}
 		entry["startedAt"] = t.video.StartedAt
 		entry["offsetMs"] = t.video.OffsetMs
 		entry["width"] = t.video.Width
@@ -1383,8 +1414,7 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// empty engine file (the browser died before its first flush)
 			// is no video at all — record why instead of embedding junk.
 			name := "video/" + context + ".webm"
-			data, err := os.ReadFile(t.video.EnginePath)
-			if err == nil && len(data) > 0 {
+			if readErr == nil && len(data) > 0 {
 				vw, werr := zw.CreateHeader(&zip.FileHeader{
 					Name:     name,
 					Method:   zip.Store,
@@ -1396,8 +1426,8 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 				vw.Write(data)
 				entry["file"] = name
 			} else if t.video.Error == "" {
-				if err != nil {
-					entry["error"] = "video file unreadable: " + err.Error()
+				if readErr != nil {
+					entry["error"] = "video file unreadable: " + readErr.Error()
 				} else {
 					entry["error"] = "video file empty: the engine wrote no frames"
 				}

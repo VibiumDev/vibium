@@ -35,7 +35,7 @@ Browser bro = Vibium.start(
 );
 ```
 
-The main use today is [video recording](record-video.md), which needs Firefox 154 while it is still in beta.
+The release channel covers everything vibium supports, including [video recording](record-video.md) (Firefox 154+); the beta is for trying upcoming Firefox changes early.
 
 ## Launch
 
@@ -104,6 +104,7 @@ currently requires Firefox, while PDF output may differ between engines.
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
 | `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
 | `VIBIUM_FIREFOX_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--firefox-channel` or the clients' `channel` option |
+| `VIBIUM_FIREFOX_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the channel's latest; keeps CI and fleets on one version until you move the pin |
 
 ## Feature notes
 
@@ -111,11 +112,15 @@ currently requires Firefox, while PDF output may differ between engines.
 |------------|--------|---------|
 | Navigation, elements, input, pages, screenshots, storage, and trace recording | Supported | Supported and covered by the Firefox core suite |
 | Native video (`recording.start({ video: true })`) | Not implemented by Chrome yet | Firefox 154+; see [Record Video](record-video.md) |
-| Dialog callbacks and `capture.dialog()` | Supported | Not supported reliably by Vibium's native Firefox path yet |
-| Network events and request interception | Supported | Not supported reliably by Vibium's native Firefox path yet |
+| Dialog callbacks and `capture.dialog()` | Supported | Supported and covered by the cross-engine suites |
+| Network events and request interception | Supported | Supported and covered by the cross-engine suites |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |
+| Console and page error events (`onConsole`, `onError`) | Supported | Supported and covered by the cross-engine suites |
+| Download events (`onDownload`, `capture.download()`) | Supported | Supported and covered by the cross-engine suites |
+| New tab and popup events (`onPage`, `onPopup`) | Supported | Supported and covered by the cross-engine suites |
+| Navigation capture (`capture.navigation()`) | Supported | Supported and covered by the cross-engine suites |
 
-CI runs the full suite on Chrome, plus the browser-neutral CLI core and focused
-installation, launch, navigation, screenshot, channel, and video recording tests on
-Firefox. New browser-neutral CLI tests belong in `CLI_CORE_TESTS` in the
-Makefile; engine-specific behavior stays in its focused suite.
+CI runs the full suite on Chrome. A separate Firefox job runs capability-selected
+CLI and client tests plus focused installation, launch, channel, and video coverage.
+Browser-driving cross-engine tests declare their requirements through the shared
+capability adapters; unsupported features are reported as skips with reasons.

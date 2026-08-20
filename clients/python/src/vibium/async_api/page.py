@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import fnmatch
+import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
@@ -22,6 +23,8 @@ from .websocket_info import WebSocketInfo
 if TYPE_CHECKING:
     from ..client import BiDiClient
     from .context import BrowserContext as BrowserContextType
+
+logger = logging.getLogger("vibium")
 
 
 def _match_pattern(pattern: str, url: str) -> bool:
@@ -116,6 +119,7 @@ class Page:
         self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
+        self._ws_setup: Optional[asyncio.Future] = None
         self._intercept_id: Optional[str] = None
         self._data_collector_id: Optional[str] = None
 
@@ -775,14 +779,51 @@ class Page:
         })
 
     def on_web_socket(self, fn: Callable[[WebSocketInfo], None]) -> None:
-        """Listen for WebSocket connections opened by the page."""
-        is_first = len(self._ws_callbacks) == 0
+        """Listen for WebSocket connections opened by the page.
+
+        Monitoring is installed in the engine before the next command on this
+        connection is sent, so a socket opened by the very next call cannot be
+        missed (#351).
+        """
         self._ws_callbacks.append(fn)
-        if is_first:
-            import asyncio
-            asyncio.ensure_future(
-                self._client.send("vibium:page.onWebSocket", {"context": self._context_id})
+        # Keyed on the setup state, not the callback count: after a failed
+        # install the callbacks are still registered, and the next
+        # registration must retry the install or they can never fire.
+        if self._ws_setup is None:
+            setup = self._client.send_setup(
+                "vibium:page.onWebSocket", {"context": self._context_id}
             )
+            self._ws_setup = setup
+
+            def _reset(finished: asyncio.Future) -> None:
+                if finished.cancelled():
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                elif finished.exception() is not None:
+                    # Reset so a later listener retries; sockets are
+                    # unmonitored until then. Guarded: a retry made in the
+                    # meantime owns the state.
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                    logger.debug(
+                        "page.on_web_socket setup failed: %s", finished.exception()
+                    )
+
+            setup.add_done_callback(_reset)
+
+    async def _when_web_socket_setup(self) -> None:
+        """Wait until this page's WebSocket monitor is installed.
+
+        Raises if the install failed. The sync wrapper awaits this so its
+        blocking on_web_socket() reports a failure the async caller cannot
+        see.
+        """
+        # Captured before awaiting: a failed install resets _ws_setup to
+        # None, and the raise must come from the setup this caller
+        # registered under.
+        setup = self._ws_setup
+        if setup is not None:
+            await setup
 
 
     # --- Dialog Handling ---
@@ -864,19 +905,28 @@ class Page:
         if self._data_collector_id is not None:
             return
         self._data_collector_id = "pending"
-        import asyncio
 
-        async def _setup() -> None:
-            try:
-                result = await self._client.send(
-                    "network.addDataCollector",
-                    {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
-                )
-                self._data_collector_id = result["collector"]
-            except Exception:
+        # send_setup, not ensure_future(send): the collector must exist before
+        # the request whose body a route/on_response handler is about to read
+        # (#351).
+        task = self._client.send_setup(
+            "network.addDataCollector",
+            {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
+        )
+
+        def _store(finished: Any) -> None:
+            if finished.cancelled() or finished.exception() is not None:
+                # Reset so a later listener retries; bodies are unavailable
+                # until then.
                 self._data_collector_id = None
+                if not finished.cancelled():
+                    logger.debug(
+                        "page._ensure_data_collector failed: %s", finished.exception()
+                    )
+                return
+            self._data_collector_id = (finished.result() or {}).get("collector")
 
-        asyncio.ensure_future(_setup())
+        task.add_done_callback(_store)
 
     def _teardown_data_collector(self) -> None:
         cid = self._data_collector_id

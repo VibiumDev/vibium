@@ -41,7 +41,7 @@ func InstallFirefox() (string, error) {
 	}
 
 	channel := paths.FirefoxChannel()
-	version, err := fetchLatestFirefoxVersion(channel)
+	version, err := resolveFirefoxVersion(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Firefox version info: %w", err)
 	}
@@ -100,6 +100,18 @@ func IsFirefoxInstalled() bool {
 	return err == nil
 }
 
+// resolveFirefoxVersion returns the Firefox version to install:
+// VIBIUM_FIREFOX_VERSION when set, otherwise the channel's current version
+// from Mozilla's product-details JSON. The pin exists because "latest"
+// changes out from under CI and fleets (a beta pin silently jumped 154 to
+// 155 the day 154 reached release); it also skips the network round-trip.
+func resolveFirefoxVersion(channel string) (string, error) {
+	if v := os.Getenv("VIBIUM_FIREFOX_VERSION"); v != "" {
+		return v, nil
+	}
+	return fetchLatestFirefoxVersion(channel)
+}
+
 // fetchLatestFirefoxVersion resolves the current version for a channel from
 // Mozilla's product-details JSON.
 func fetchLatestFirefoxVersion(channel string) (string, error) {
@@ -140,13 +152,17 @@ func fetchLatestFirefoxVersion(channel string) (string, error) {
 // firefoxDownloadURL returns the Mozilla archive URL for this platform.
 // Betas live under the same releases/ tree as stable versions.
 func firefoxDownloadURL(version string) string {
+	return firefoxDownloadURLFor(runtime.GOOS, runtime.GOARCH, version)
+}
+
+func firefoxDownloadURLFor(goos, goarch, version string) string {
 	base := "https://ftp.mozilla.org/pub/firefox/releases/" + version
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		return base + "/mac/en-US/" + url.PathEscape("Firefox "+version+".dmg")
 	default: // linux
 		arch := "linux-x86_64"
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			arch = "linux-aarch64"
 		}
 		return base + "/" + arch + "/en-US/firefox-" + version + ".tar.xz"

@@ -55,6 +55,17 @@ def extract_blocks(md_path):
                 else:
                     is_annotated = False
                 continue
+
+            # A marker binds to the code block immediately after it or not at
+            # all. Any other fenced block (another language, plain ```) must
+            # consume a pending marker: in a doc that mixes languages, a
+            # marker left pending across foreign blocks would attach to the
+            # next python block anywhere in the file.
+            if re.match(r"^```", line):
+                in_code_block = True
+                is_annotated = False
+                pending = None
+                continue
         else:
             if re.match(r"^```\s*$", line):
                 in_code_block = False
