@@ -32,6 +32,7 @@ Power users can override defaults (headless mode, custom paths, etc.) when neede
 
 ## Rules
 
+- Client library launch code must not shell out to vibium subcommands other than `pipe` — `pipe` ensures the browser is installed itself (#312). User-facing CLI install passthroughs are the one exception.
 - Prioritize bug fixes over new features
 - Run tests before committing: `make test`
 - Always fix flaky tests immediately when they show up — never dismiss them as "pre-existing"
