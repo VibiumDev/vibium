@@ -14,6 +14,11 @@ if (!['chrome', 'firefox'].includes(engine)) {
 
 const collectOnly = process.env.VIBIUM_CAPABILITY_COLLECT_ONLY === '1';
 const audit = process.env.VIBIUM_CAPABILITY_AUDIT === '1';
+// node --test runs each file in its own process, so printing here means one
+// summary per file. When a summary file is set, each process appends its
+// counts there and scripts/report-capability-summary.mjs prints one roll-up
+// for the whole run.
+const summaryFile = process.env.VIBIUM_CAPABILITY_SUMMARY_FILE;
 const counts = { collected: 0, selected: 0, skipped: 0, capabilities: new Map() };
 let summaryInstalled = false;
 let summaryPrinted = false;
@@ -37,6 +42,19 @@ function installSummary() {
   const printSummary = () => {
     if (summaryPrinted) return;
     summaryPrinted = true;
+    if (summaryFile) {
+      fs.appendFileSync(
+        summaryFile,
+        JSON.stringify({
+          engine,
+          collected: counts.collected,
+          selected: counts.selected,
+          skipped: counts.skipped,
+          capabilities: Object.fromEntries(counts.capabilities),
+        }) + '\n'
+      );
+      return;
+    }
     console.log(
       `capabilities: engine=${engine} collected=${counts.collected} ` +
       `selected=${counts.selected} skipped=${counts.skipped}`
