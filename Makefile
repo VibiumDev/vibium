@@ -79,6 +79,11 @@ CLI_ENGINE_TESTS := $(wildcard tests/cli/engine/*.test.js)
 JS_ASYNC_ENGINE_TESTS := $(wildcard tests/js/async/engine/*.test.js)
 JS_SYNC_ENGINE_TESTS := $(wildcard tests/js/sync/engine/*.test.js)
 
+# node --test prints the capability summary once per test process (one per
+# file). Each Node target collects per-process counts in its own file here and
+# prints a single roll-up afterwards.
+CAP_SUMMARY_DIR := $(CURDIR)/tests/.capability-summary
+
 # Default target
 all: build
 
@@ -309,7 +314,12 @@ test-cli-shared: build-go
 	@echo "--- CLI Shared Tests ($(ENGINE)) ---"
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 	@VIBIUM_ENGINE=$(ENGINE) $(CURDIR)/clicker/bin/vibium$(EXE) daemon start --headless
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 $(CLI_ENGINE_TESTS)
+	@mkdir -p $(CAP_SUMMARY_DIR) && rm -f $(CAP_SUMMARY_DIR)/cli-$(ENGINE).ndjson
+	VIBIUM_ENGINE=$(ENGINE) VIBIUM_CAPABILITY_SUMMARY_FILE=$(CAP_SUMMARY_DIR)/cli-$(ENGINE).ndjson \
+		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 $(CLI_ENGINE_TESTS); \
+	EXIT=$$?; \
+	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/cli-$(ENGINE).ndjson; \
+	exit $$EXIT
 	@$(CURDIR)/clicker/bin/vibium$(EXE) daemon stop 2>/dev/null || true
 
 # Broad Firefox core coverage through the CLI, kept separate from the focused
@@ -337,17 +347,27 @@ JS_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 test-js-async: build-go
 	@echo "--- JS Async Tests (parallel x$(JS_PARALLEL)) ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+	@mkdir -p $(CAP_SUMMARY_DIR) && rm -f $(CAP_SUMMARY_DIR)/js-async-$(ENGINE).ndjson
+	VIBIUM_ENGINE=$(ENGINE) VIBIUM_CAPABILITY_SUMMARY_FILE=$(CAP_SUMMARY_DIR)/js-async-$(ENGINE).ndjson \
+		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		$(JS_ASYNC_ENGINE_TESTS) \
 		tests/js/async/chrome-video.test.js \
 		tests/js/async/browser-installer.test.js \
-		tests/js/async/event-setup-ordering.test.js
+		tests/js/async/event-setup-ordering.test.js; \
+	EXIT=$$?; \
+	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/js-async-$(ENGINE).ndjson; \
+	exit $$EXIT
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+	@mkdir -p $(CAP_SUMMARY_DIR) && rm -f $(CAP_SUMMARY_DIR)/js-sync-$(ENGINE).ndjson
+	VIBIUM_ENGINE=$(ENGINE) VIBIUM_CAPABILITY_SUMMARY_FILE=$(CAP_SUMMARY_DIR)/js-sync-$(ENGINE).ndjson \
+		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		$(JS_SYNC_ENGINE_TESTS) \
-		tests/js/sync/event-setup-ordering-sync.test.js
+		tests/js/sync/event-setup-ordering-sync.test.js; \
+	EXIT=$$?; \
+	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/js-sync-$(ENGINE).ndjson; \
+	exit $$EXIT
 
 test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"
@@ -360,8 +380,13 @@ test-js: test-js-async test-js-sync test-js-process
 
 test-js-engine: build-go
 	@echo "--- JS Cross-Engine Tests ($(ENGINE), parallel x$(JS_PARALLEL)) ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS)
+	@mkdir -p $(CAP_SUMMARY_DIR) && rm -f $(CAP_SUMMARY_DIR)/js-engine-$(ENGINE).ndjson
+	VIBIUM_ENGINE=$(ENGINE) VIBIUM_CAPABILITY_SUMMARY_FILE=$(CAP_SUMMARY_DIR)/js-engine-$(ENGINE).ndjson \
+		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
+		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS); \
+	EXIT=$$?; \
+	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/js-engine-$(ENGINE).ndjson; \
+	exit $$EXIT
 
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
@@ -460,12 +485,20 @@ test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"
 	node scripts/audit-node-capability-imports.mjs
 	node scripts/test-node-capability-fixture.mjs
+	@mkdir -p $(CAP_SUMMARY_DIR) && rm -f $(CAP_SUMMARY_DIR)/audit.ndjson
 	VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 VIBIUM_CAPABILITY_COLLECT_ONLY=1 \
+		VIBIUM_CAPABILITY_SUMMARY_FILE=$(CAP_SUMMARY_DIR)/audit.ndjson \
 		node --test --test-reporter=dot --test-concurrency=1 $(CLI_ENGINE_TESTS) \
-		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS)
+		$(JS_ASYNC_ENGINE_TESTS) $(JS_SYNC_ENGINE_TESTS); \
+	EXIT=$$?; \
+	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/audit.ndjson; \
+	exit $$EXIT
 	@cd clients/python && . $(VENV_ACTIVATE) && \
 		VIBIUM_ENGINE=chrome python -m pytest ../../tests/py/engine/ --collect-only -q --capability-audit
+	@cd clients/python && . $(VENV_ACTIVATE) && \
+		VIBIUM_ENGINE=chrome python ../../scripts/test_pytest_capability_fixture.py
 	cd clients/java && VIBIUM_ENGINE=chrome VIBIUM_CAPABILITY_AUDIT=1 ./gradlew validateCapabilityMarkers compileTestJava
+	./scripts/test-java-capability-fixture.sh
 
 # Package Java JAR with native binaries
 package-java: build-go-all

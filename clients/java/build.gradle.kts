@@ -49,8 +49,13 @@ tasks.test {
 // declarations cannot turn into a new filename allowlist. Validate the source
 // before JUnit launches a browser; method-level markers add requirements to the
 // mandatory class-level baseline.
+// -PcapabilityMarkerRoot points the validator at a synthetic tree so the
+// fixture runner can assert it still rejects bad markers.
+val capabilityMarkerRoot =
+    (findProperty("capabilityMarkerRoot") as String?) ?: "src/test/java/com/vibium/engine"
+
 val validateCapabilityMarkers by tasks.registering {
-    inputs.dir("src/test/java/com/vibium/engine")
+    inputs.dir(capabilityMarkerRoot)
     inputs.file("../../tests/capabilities.json")
     doLast {
         val manifestText = file("../../tests/capabilities.json").readText()
@@ -67,7 +72,7 @@ val validateCapabilityMarkers by tasks.registering {
             "@RequiresCapability\\([^)]*\\)\\s*(?:@[\\w.]+(?:\\([^)]*\\))?\\s*)*" +
             "(?:\\b(?:public|final|abstract)\\b\\s+)*class\\s"
         )
-        fileTree("src/test/java/com/vibium/engine") {
+        fileTree(capabilityMarkerRoot) {
             include("**/*Test.java")
         }.forEach { file ->
             val source = file.readText()
