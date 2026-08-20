@@ -188,7 +188,8 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 	}
 	tmpPath := tmpFile.Name()
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", err
