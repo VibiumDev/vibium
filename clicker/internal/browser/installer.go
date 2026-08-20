@@ -175,6 +175,9 @@ func findDownloadURL(downloads []Download, platform string) string {
 }
 
 // downloadAndExtract downloads a zip file and extracts it to the destination.
+// Unlike Firefox (SHA256SUMS, verified in installer_firefox.go), Chrome for
+// Testing publishes no checksums — its downloads JSON carries only platform
+// and url — so there is nothing official to verify the archive against.
 func downloadAndExtract(url, destDir string) error {
 	// Download to temp file
 	resp, err := http.Get(url)
