@@ -1,7 +1,7 @@
 /**
  * JS Library Tests: Navigation
  * Tests page.go(), back(), forward(), reload(), url(), title(), content(),
- * waitUntil.url(), waitUntil.loaded()
+ * waitForURL(), waitForLoad()
  */
 
 const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
@@ -77,34 +77,41 @@ describe('JS Navigation', () => {
     assert.ok(content.includes('Welcome to the-internet'), 'Should contain page content');
   });
 
-  test('page.waitUntil.url() waits for matching URL', async () => {
+  test('page.waitForURL() waits for matching URL', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    // URL should already match — waitUntil.url should return immediately
-    await vibe.waitUntil.url('/login', { timeout: 5000 });
+    // URL should already match — waitForURL should return immediately
+    await vibe.waitForURL('/login', { timeout: 5000 });
 
     const url = await vibe.url();
     assert.ok(url.includes('/login'), 'Should have matched login URL');
   });
 
-  test('page.waitUntil.loaded() waits for load state', async () => {
+  test('page.waitForLoad() waits for load state', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/');
-    await vibe.waitUntil.loaded('complete', { timeout: 10000 });
+    await vibe.waitForLoad('complete', { timeout: 10000 });
     // If we get here, it passed
     assert.ok(true);
   });
 
-  test('page.waitUntil.url() times out on mismatch', async () => {
+  test('page.waitForURL() times out on mismatch', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/');
 
     await assert.rejects(
-      () => vibe.waitUntil.url('**/nonexistent-page-xyz', { timeout: 1000 }),
+      () => vibe.waitForURL('**/nonexistent-page-xyz', { timeout: 1000 }),
       /timeout/i,
       'Should timeout when URL does not match'
     );
+  });
+
+  test('waitUntil.url() and .loaded() still work as deprecated aliases (#304)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL + '/login');
+    await vibe.waitUntil.url('/login', { timeout: 5000 });
+    await vibe.waitUntil.loaded('complete', { timeout: 10000 });
   });
 
   test('a non-timeout error is not mislabeled as a timeout (#64)', async () => {

@@ -84,6 +84,24 @@ describe('Sync API: Navigation', () => {
     assert.ok(url.includes('127.0.0.1'), 'Should contain host');
   });
 
+  test('waitForURL / waitForLoad / waitForFunction resolve (#304)', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    vibe.waitForURL('**/', { timeout: 5000 });
+    vibe.waitForLoad('complete', { timeout: 10000 });
+    const value = vibe.waitForFunction(`document.readyState === 'complete'`, { timeout: 5000 });
+    assert.ok(value, 'waitForFunction should return truthy value');
+  });
+
+  test('waitUntil still works as a deprecated alias (#304)', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    vibe.waitUntil.url('**/', { timeout: 5000 });
+    vibe.waitUntil.loaded('complete', { timeout: 10000 });
+    const value = vibe.waitUntil(`document.readyState === 'complete'`, { timeout: 5000 });
+    assert.ok(value, 'waitUntil alias should return truthy value');
+  });
+
   test('title() returns page title', () => {
     const vibe = bro.page();
     vibe.go(baseURL);

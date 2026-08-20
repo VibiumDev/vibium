@@ -42,7 +42,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 23 | Add a style tag | `vibium:page.addStyle` | ⬜ | ⬜ | `page.addStyle(src)` | `page.add_style(src)` | `page.addStyle(src)` |
 | 24 | Expose a function to the page | `vibium:page.expose` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` | `page.expose(name, fn)` |
 | 25 | Wait for a duration | `vibium:page.wait` | `vibium sleep <ms>` | `browser_sleep` | `page.wait(ms)` | `page.wait(ms)` | `page.sleep(ms)` |
-| 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | `page.waitFor(sel, opts?)` | `page.wait_for(sel, **opts)` | `page.waitFor(sel, options?)` |
+| 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | — | — | `page.waitFor(sel, options?)` |
 | 27 | Wait for JS function to return truthy | `vibium:page.waitForFunction` | `vibium wait fn <expr>` | `browser_wait_for_fn` | `page.waitForFunction(fn, opts?)` | `page.wait_for_function(fn, **opts)` | `page.waitForFunction(fn, options?)` |
 | 28 | Wait for URL to match | `vibium:page.waitForURL` | `vibium wait url <pat>` | `browser_wait_for_url` | `page.waitForURL(url, opts?)` | `page.wait_for_url(url, **opts)` | `page.waitForURL(url, options?)` |
 | 29 | Wait for page load | `vibium:page.waitForLoad` | `vibium wait load` | `browser_wait_for_load` | `page.waitForLoad(opts?)` | `page.wait_for_load(**opts)` | `page.waitForLoad(options?)` |
@@ -209,7 +209,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 |---|---|---|---|---|---|---|---|
 | 139 | Save a download to path | `vibium:download.saveAs` | ⬜ | ⬜ | `download.saveAs(path)` | `download.save_as(path)` | `download.saveAs(path)` |
 | 140 | Get download URL | *from event data* | — | — | `download.url()` | `download.url()` | `download.url()` |
-| 141 | Get download filename | *from event data* | — | — | `download.filename()` | `download.filename()` | `download.suggestedFilename()` |
+| 141 | Get download filename | *from event data* | — | — | `download.suggestedFilename()` | `download.suggested_filename()` | `download.suggestedFilename()` |
 | 142 | Get download path | *from event data* | — | — | `download.path()` | `download.path()` | `download.path()` |
 
 ## Request

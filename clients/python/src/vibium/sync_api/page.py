@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .._types import A11yNode
@@ -187,8 +188,25 @@ class Page:
 
     @property
     def wait_until(self) -> _SyncWaitUntilNamespace:
-        """Wait until a condition is met. Callable or use .url() / .loaded() sub-methods."""
+        """Deprecated alias — use wait_for_function / wait_for_url / wait_for_load."""
+        warnings.warn(
+            "wait_until is deprecated; use wait_for_function, wait_for_url, or wait_for_load",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _SyncWaitUntilNamespace(self)
+
+    def wait_for_function(self, fn: str, timeout: Optional[int] = None) -> Any:
+        """Wait until a function returns a truthy value."""
+        return self._loop.run(self._async._wait_for_function(fn, timeout))
+
+    def wait_for_url(self, pattern: str, timeout: Optional[int] = None) -> None:
+        """Wait until the page URL matches a pattern."""
+        self._loop.run(self._async._wait_for_url(pattern, timeout))
+
+    def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
+        """Wait until the page reaches a load state."""
+        self._loop.run(self._async._wait_for_load(state, timeout))
 
     def wait(self, ms: int) -> None:
         self._loop.run(self._async.wait(ms))

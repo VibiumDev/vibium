@@ -160,7 +160,7 @@ describe('Element: el.setFiles', () => {
       await vibe.find('#file-input').setFiles([testFile]);
       // setFiles may resolve before the change-event handler runs in Chrome
       // and updates #file-name. Poll the DOM instead of sleeping.
-      await vibe.waitUntil(
+      await vibe.waitForFunction(
         `() => document.getElementById('file-name').textContent === 'upload-test.txt'`,
         { timeout: 5000 },
       );
