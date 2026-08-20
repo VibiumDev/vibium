@@ -305,7 +305,7 @@ test-go:
 # Process tests run separately with --test-concurrency=1 to avoid interference
 test-cli: build-go
 	@echo "--- CLI Tests (no daemon) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js tests/cli/packaging.test.js tests/cli/wrapper.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js tests/cli/packaging.test.js tests/cli/release-versioning.test.js tests/cli/wrapper.test.js
 	@"$(MAKE)" test-cli-shared ENGINE=$(ENGINE)
 	@echo "--- CLI Process Tests (sequential) ---"
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js
@@ -579,24 +579,7 @@ get-version:
 # Usage: make set-version VERSION=x.x.x  (or V=x.x.x)
 set-version:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make set-version VERSION=x.x.x"; exit 1; fi
-	@echo "$(VERSION)" > VERSION
-	@# Update all package.json version fields
-	@for f in package.json packages/*/package.json clients/javascript/package.json; do \
-		sed -i '' 's/"version": "[^"]*"/"version": "$(VERSION)"/' "$$f"; \
-	done
-	@# Update optionalDependencies versions in main package
-	@sed -i '' 's/"\(@vibium\/[^"]*\)": "[^"]*"/"\1": "$(VERSION)"/g' packages/vibium/package.json
-	@# Update all pyproject.toml files
-	@for f in clients/python/pyproject.toml packages/python/*/pyproject.toml; do \
-		sed -i '' 's/^version = "[^"]*"/version = "$(VERSION)"/' "$$f"; \
-	done
-	@# Update platform package dependency versions in main Python package
-	@sed -i '' 's/vibium-\([^>]*\)>=[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/vibium-\1>=$(VERSION)/g' clients/python/pyproject.toml
-	@# Update Python __version__ in __init__.py files
-	@sed -i '' 's/__version__ = "[^"]*"/__version__ = "$(VERSION)"/' clients/python/src/vibium/__init__.py
-	@for f in packages/python/*/src/*/__init__.py; do \
-		sed -i '' 's/__version__ = "[^"]*"/__version__ = "$(VERSION)"/' "$$f"; \
-	done
+	@node scripts/set-version.mjs --version "$(VERSION)"
 	@# Regenerate package-lock.json with new versions
 	@rm -f package-lock.json
 	@npm install --package-lock-only --silent

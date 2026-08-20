@@ -1,0 +1,565 @@
+name: Nightly Release
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify local packages without publishing
+        type: boolean
+        default: true
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: read
+
+env:
+  NODE_VERSION: '24'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.select.outputs.publish }}
+      sha: ${{ steps.select.outputs.sha }}
+      committed_at: ${{ steps.select.outputs.committed_at }}
+      npm_version: ${{ steps.metadata.outputs.npmVersion }}
+      python_version: ${{ steps.metadata.outputs.pythonVersion }}
+      maven_version: ${{ steps.metadata.outputs.mavenVersion }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      stable_npm: ${{ steps.stable.outputs.latest }}
+    steps:
+      - name: Select newest green commit on main
+        id: select
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const commits = await github.paginate(github.rest.repos.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: 'main',
+              per_page: 50,
+            });
+            let selected;
+            for (const commit of commits) {
+              const checks = await github.paginate(github.rest.checks.listForRef, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: commit.sha,
+                per_page: 100,
+              });
+              const latest = checks
+                .filter(check => check.name === 'test')
+                .sort((left, right) => new Date(right.started_at ?? right.created_at) - new Date(left.started_at ?? left.created_at))[0];
+              if (latest?.conclusion === 'success') {
+                selected = commit;
+                break;
+              }
+            }
+            if (!selected) {
+              core.setFailed('No CI-green commit found in the newest 50 commits on main');
+              return;
+            }
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const complete = releases.some(release =>
+              !release.draft && release.prerelease && release.tag_name.startsWith('nightly-') &&
+              release.tag_name.endsWith(`-${selected.sha.slice(0, 7)}`));
+            core.setOutput('sha', selected.sha);
+            core.setOutput('committed_at', selected.commit.committer.date);
+            core.setOutput('publish', complete ? 'false' : 'true');
+            if (complete) core.notice(`Nightly already exists for ${selected.sha}; skipping`);
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.select.outputs.publish == 'true'
+        with:
+          ref: ${{ steps.select.outputs.sha }}
+          persist-credentials: false
+
+      - name: Generate registry coordinates
+        if: steps.select.outputs.publish == 'true'
+        id: metadata
+        run: node scripts/nightly-metadata.mjs '${{ steps.select.outputs.sha }}' '${{ steps.select.outputs.committed_at }}'
+
+      - name: Record stable npm version
+        if: steps.select.outputs.publish == 'true'
+        id: stable
+        run: echo "latest=$(npm view vibium dist-tags.latest)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: select
+    if: needs.select.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Apply nightly versions
+        run: |
+          node scripts/set-version.mjs \
+            --version '${{ needs.select.outputs.npm_version }}' \
+            --python-version '${{ needs.select.outputs.python_version }}' \
+            --python-exact
+          npm install --package-lock-only --ignore-scripts
+          npm ci
+
+      - name: Build distributions
+        run: |
+          make package
+          clients/java/gradlew -p clients/java jar sourcesJar javadocJar \
+            -PvibiumVersion='${{ needs.select.outputs.maven_version }}'
+
+      - name: Assemble and inspect release bundle
+        run: |
+          mkdir -p release/npm release/python release/java release/bin
+          for package in packages/linux-x64 packages/linux-arm64 packages/darwin-x64 packages/darwin-arm64 packages/win32-x64 packages/vibium; do
+            npm pack "./$package" --pack-destination release/npm
+          done
+          cp packages/python/*/dist/*.whl clients/python/dist/*.whl release/python/
+          cp clients/java/build/libs/*.jar release/java/
+          cp clicker/bin/vibium-* release/bin/
+          node scripts/nightly-metadata.mjs \
+            '${{ needs.select.outputs.sha }}' '${{ needs.select.outputs.committed_at }}' \
+            release/manifest.json
+          for archive in release/npm/vibium-{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}-*.tgz; do
+            tar -tzf "$archive" | grep -q 'package/LICENSE'
+            tar -tzf "$archive" | grep -q 'package/NOTICE'
+            tar -tzf "$archive" | grep -Eq 'package/bin/vibium(.exe)?$'
+          done
+          main_archive="release/npm/vibium-${{ needs.select.outputs.npm_version }}.tgz"
+          for entry in LICENSE NOTICE dist/index.js dist/index.mjs dist/index.d.ts dist/sync.js dist/sync.mjs dist/sync.d.ts dist/worker.js; do
+            tar -tzf "$main_archive" | grep -q "package/$entry"
+          done
+          for wheel in release/python/vibium_{linux_x64,linux_arm64,darwin_x64,darwin_arm64,win32_x64}-*.whl; do
+            unzip -l "$wheel" | grep -q 'LICENSE'
+            unzip -l "$wheel" | grep -q 'NOTICE'
+            unzip -l "$wheel" | grep -Eq 'bin/vibium(.exe)?$'
+          done
+          unzip -l "release/python/vibium-${{ needs.select.outputs.python_version }}-py3-none-any.whl" | grep -q 'vibium/__init__.py'
+          for native in vibium-darwin-amd64 vibium-darwin-arm64 vibium-linux-amd64 vibium-linux-arm64 vibium-windows-amd64.exe; do
+            jar tf "release/java/vibium-${{ needs.select.outputs.maven_version }}.jar" | grep -q "natives/$native"
+          done
+          find release/bin -type f ! -perm -u+x -print -quit | grep -q . && exit 1 || true
+          find release -type f ! -name SHA256SUMS ! -name manifest.json -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS
+          node scripts/finalize-nightly-manifest.mjs release
+          find release -type f -size 0 -print -quit | grep -q . && exit 1 || true
+          {
+            echo '### Nightly artifact sizes'
+            echo '```'
+            du -h release/npm/* release/python/* release/java/* release/bin/*
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-distributions
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  local-smoke:
+    needs: [select, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            npm_platform: linux-x64
+            python_platform: linux_x64
+          - runner: ubuntu-24.04-arm
+            npm_platform: linux-arm64
+            python_platform: linux_arm64
+          - runner: macos-15-intel
+            npm_platform: darwin-x64
+            python_platform: darwin_x64
+          - runner: macos-15
+            npm_platform: darwin-arm64
+            python_platform: darwin_arm64
+          - runner: windows-2025
+            npm_platform: win32-x64
+            python_platform: win32_x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version: '21'
+          distribution: temurin
+      - name: Install local npm and Python packages
+        shell: bash
+        run: |
+          mkdir smoke && cd smoke
+          npm init -y
+          npm install \
+            "../release/npm/vibium-${{ matrix.npm_platform }}-${{ needs.select.outputs.npm_version }}.tgz" \
+            "../release/npm/vibium-${{ needs.select.outputs.npm_version }}.tgz"
+          npx vibium --version
+          python -m pip install websockets
+          python -m pip install --no-deps \
+            ../release/python/vibium_${{ matrix.python_platform }}-${{ needs.select.outputs.python_version }}-*.whl \
+            ../release/python/vibium-${{ needs.select.outputs.python_version }}-*.whl
+          vibium --version
+
+  draft-release:
+    needs: [select, local-smoke]
+    if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view '${{ needs.select.outputs.tag }}' >/dev/null 2>&1 || \
+            gh release create '${{ needs.select.outputs.tag }}' --draft --prerelease \
+              --target '${{ needs.select.outputs.sha }}' --title '${{ needs.select.outputs.tag }}' \
+              --notes 'Automated, unsupported nightly build from main.'
+          gh release upload '${{ needs.select.outputs.tag }}' \
+            release/bin/* release/java/* release/npm/* release/python/* \
+            release/manifest.json release/SHA256SUMS --clobber
+
+  publish-npm:
+    needs: [select, local-smoke, draft-release]
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Publish exact candidate versions
+        run: |
+          for package in @vibium/linux-x64 @vibium/linux-arm64 @vibium/darwin-x64 @vibium/darwin-arm64 @vibium/win32-x64 vibium; do
+            npm view "$package@${{ needs.select.outputs.npm_version }}" version >/dev/null 2>&1 && continue
+            file="release/npm/${package/@vibium\//vibium-}-${{ needs.select.outputs.npm_version }}.tgz"
+            npm publish "$file" --access public --tag nightly-candidate
+          done
+
+  publish-pypi-platforms:
+    needs: [select, local-smoke, draft-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [vibium_darwin_arm64, vibium_darwin_x64, vibium_linux_arm64, vibium_linux_x64, vibium_win32_x64]
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - name: Select one project for its scoped trusted publisher
+        run: |
+          mkdir publish
+          cp release/python/${{ matrix.package }}-${{ needs.select.outputs.python_version }}-*.whl publish/
+      - name: Publish Python prereleases
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: publish
+          skip-existing: true
+          verbose: true
+
+  publish-pypi-main:
+    needs: [select, publish-pypi-platforms]
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - name: Select the main project for its scoped trusted publisher
+        run: |
+          mkdir publish
+          cp release/python/vibium-${{ needs.select.outputs.python_version }}-*.whl publish/
+      - name: Publish Python client prerelease
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: publish
+          skip-existing: true
+          verbose: true
+
+  publish-maven:
+    needs: [select, local-smoke, draft-release]
+    runs-on: ubuntu-latest
+    environment: nightly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+      - name: Publish mutable snapshot
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          SIGNING_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          make build-go-all VERSION='${{ needs.select.outputs.maven_version }}'
+          clients/java/gradlew -p clients/java publishAllPublicationsToCentralSnapshotsRepository \
+            -PvibiumVersion='${{ needs.select.outputs.maven_version }}' \
+            -Psigning.gnupg.passphrase="$SIGNING_PASSWORD"
+
+  public-smoke:
+    needs: [select, publish-npm, publish-pypi-main, publish-maven]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+          - runner: ubuntu-24.04-arm
+          - runner: macos-15-intel
+          - runner: macos-15
+          - runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          java-version: '21'
+          distribution: temurin
+      - name: Install exact public versions
+        shell: bash
+        run: |
+          for delay in 5 10 20 40 80; do
+            npm view 'vibium@${{ needs.select.outputs.npm_version }}' version && break
+            sleep "$delay"
+          done
+          mkdir smoke && cd smoke && npm init -y
+          npm install 'vibium@${{ needs.select.outputs.npm_version }}'
+          npx vibium --version
+          for delay in 5 10 20 40 80; do
+            python -m pip install --pre 'vibium==${{ needs.select.outputs.python_version }}' && break
+            sleep "$delay"
+          done
+          vibium --version
+          if [ '${{ matrix.runner }}' = 'ubuntu-24.04' ]; then
+            echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+            node -e "const {browser}=require('vibium/sync'); const bro=browser.start({headless:true}); try { const page=bro.page(); page.go('data:text/html,<h1>nightly</h1>'); if(page.find('h1').text()!=='nightly') process.exitCode=1; } finally { bro.stop(); }"
+            python -c "from vibium import browser; bro=browser.start(headless=True); page=bro.page(); page.go('data:text/html,<h1>nightly</h1>'); assert page.find('h1').text() == 'nightly'; bro.stop()"
+            mkdir java-smoke
+            mvn -q dependency:copy \
+              -Dartifact='com.vibium:vibium:${{ needs.select.outputs.maven_version }}' \
+              -DoutputDirectory=java-smoke -Dmdep.stripVersion=true \
+              -DremoteRepositories='central-snapshots::default::https://central.sonatype.com/repository/maven-snapshots/'
+            mvn -q dependency:copy -Dartifact='com.google.code.gson:gson:2.11.0' \
+              -DoutputDirectory=java-smoke -Dmdep.stripVersion=true
+            printf '%s\n' \
+              'import com.vibium.Vibium;' \
+              'import com.vibium.types.StartOptions;' \
+              'public class Hello {' \
+              '  public static void main(String[] args) {' \
+              '    var bro = Vibium.start(new StartOptions().headless(true));' \
+              '    try { var page = bro.page(); page.go("data:text/html,<h1>nightly</h1>"); if (!page.find("h1").text().equals("nightly")) throw new AssertionError(); }' \
+              '    finally { bro.stop(); }' \
+              '  }' \
+              '}' > java-smoke/Hello.java
+            javac -cp 'java-smoke/*' java-smoke/Hello.java
+            java -cp 'java-smoke/*:java-smoke' Hello
+            mkdir stable && cd stable
+            npm init -y
+            npm install vibium
+            test "$(node -p "require('./node_modules/vibium/package.json').version")" = '${{ needs.select.outputs.stable_npm }}'
+            python -m venv stable-venv
+            stable-venv/bin/pip install vibium
+            stable-venv/bin/python -c "import vibium; assert 'dev' not in vibium.__version__"
+          fi
+
+  promote:
+    needs: [select, public-smoke]
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-distributions
+          path: release
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Check dist-tag token expiry
+        env:
+          EXPIRES_AT: ${{ vars.NPM_DIST_TAG_TOKEN_EXPIRES_AT }}
+        run: |
+          test -n "$EXPIRES_AT"
+          expires=$(date -u -d "$EXPIRES_AT" +%s)
+          now=$(date -u +%s)
+          test "$expires" -gt "$now" || {
+            echo 'NPM_DIST_TAG_TOKEN expired; rotate it and update NPM_DIST_TAG_TOKEN_EXPIRES_AT.' >&2
+            exit 1
+          }
+          if [ $((expires - now)) -lt $((30 * 24 * 60 * 60)) ]; then
+            echo '::warning::NPM_DIST_TAG_TOKEN expires within 30 days; rotate it and update NPM_DIST_TAG_TOKEN_EXPIRES_AT.'
+          fi
+      - name: Finalize the audit manifest in the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          metadata_url='https://central.sonatype.com/repository/maven-snapshots/com/vibium/vibium/${{ needs.select.outputs.maven_version }}/maven-metadata.xml'
+          for delay in 5 10 20 40 80; do
+            curl --fail --silent --show-error "$metadata_url" -o maven-metadata.xml && break
+            sleep "$delay"
+          done
+          resolved=$(node -e "const s=require('fs').readFileSync('maven-metadata.xml','utf8'); const v=[...s.matchAll(/<snapshotVersion>[\\s\\S]*?<extension>jar<\\/extension>[\\s\\S]*?<value>([^<]+)<\\/value>/g)][0]?.[1]; if(!v)process.exit(1); process.stdout.write(v)")
+          node scripts/finalize-nightly-manifest.mjs release "$resolved"
+          gh release upload '${{ needs.select.outputs.tag }}' release/manifest.json --clobber
+      - name: Promote verified npm versions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
+        run: |
+          for package in @vibium/linux-x64 @vibium/linux-arm64 @vibium/darwin-x64 @vibium/darwin-arm64 @vibium/win32-x64; do
+            npm dist-tag add "$package@${{ needs.select.outputs.npm_version }}" nightly
+          done
+          npm dist-tag add 'vibium@${{ needs.select.outputs.npm_version }}' nightly
+          test "$(npm view vibium dist-tags.latest)" = '${{ needs.select.outputs.stable_npm }}'
+          test "$(npm view vibium dist-tags.nightly)" = '${{ needs.select.outputs.npm_version }}'
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit '${{ needs.select.outputs.tag }}' --draft=false --prerelease
+
+  cleanup:
+    needs: [select, promote]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Remove bulky assets after 30 days, retaining audit files
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner, repo: context.repo.repo, per_page: 100,
+            });
+            for (const release of releases) {
+              if (!release.prerelease || !release.tag_name.startsWith('nightly-') ||
+                  new Date(release.published_at).valueOf() >= cutoff) continue;
+              for (const asset of release.assets) {
+                if (asset.name === 'manifest.json' || asset.name === 'SHA256SUMS') continue;
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner, repo: context.repo.repo, asset_id: asset.id,
+                });
+              }
+            }
+
+  notify:
+    if: always() && (needs.select.result == 'failure' || (needs.select.outputs.publish == 'true' && (github.event_name != 'workflow_dispatch' || inputs.dry_run == false)))
+    needs: [select, build, local-smoke, draft-release, publish-npm, publish-pypi-platforms, publish-pypi-main, publish-maven, public-smoke, promote, cleanup]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update, or resolve the nightly failure issue
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          VERSION: ${{ needs.select.outputs.npm_version }}
+          SHA: ${{ needs.select.outputs.sha }}
+        with:
+          script: |
+            const results = JSON.parse(process.env.RESULTS);
+            const failed = Object.entries(results)
+              .filter(([, value]) => value.result === 'failure')
+              .map(([name]) => name);
+            try {
+              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'nightly-failure' });
+            } catch {
+              await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo,
+                name: 'nightly-failure', color: 'B60205', description: 'Automated nightly release is failing' });
+            }
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'nightly-failure', per_page: 100,
+            });
+            const marker = open.find(issue => issue.title === 'Nightly release failure');
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            if (failed.length) {
+              const body = `Nightly ${process.env.VERSION} (${process.env.SHA}) failed in: ${failed.join(', ')}.\n\n${run}`;
+              if (marker) await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: marker.number, body });
+              else await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo,
+                title: 'Nightly release failure', body, labels: ['nightly-failure'] });
+            } else if (marker) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: marker.number, body: `Recovered in ${run}.` });
+              await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: marker.number, state: 'closed' });
+            }
