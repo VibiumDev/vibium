@@ -254,11 +254,32 @@ export class PageSync {
     };
   }
 
-  /** Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods. */
+  /**
+   * Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods.
+   * @deprecated Use waitForFunction(), waitForURL(), or waitForLoad().
+   */
   readonly waitUntil: ((fn: string, options?: { timeout?: number }) => unknown) & {
+    /** @deprecated Use waitForURL(). */
     url(pattern: string, options?: { timeout?: number }): void;
+    /** @deprecated Use waitForLoad(). */
     loaded(state?: string, options?: { timeout?: number }): void;
   };
+
+  /** Wait until a function returns a truthy value. */
+  waitForFunction(fn: string, options?: { timeout?: number }): unknown {
+    const result = this._bridge.call<{ value: unknown }>('page.waitForFunction', [this._pageId, fn, options]);
+    return result.value;
+  }
+
+  /** Wait until the page URL matches a pattern. */
+  waitForURL(pattern: string, options?: { timeout?: number }): void {
+    this._bridge.call('page.waitForURL', [this._pageId, pattern, options]);
+  }
+
+  /** Wait until the page reaches a load state. */
+  waitForLoad(state?: string, options?: { timeout?: number }): void {
+    this._bridge.call('page.waitForLoad', [this._pageId, state, options]);
+  }
 
   wait(ms: number): void {
     this._bridge.call('page.wait', [this._pageId, ms]);

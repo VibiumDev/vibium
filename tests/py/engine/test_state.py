@@ -154,10 +154,10 @@ async def test_wait_ms(async_page, test_server):
     await async_page.wait(100)  # should not throw
 
 
-async def test_wait_until_function(async_page, test_server):
+async def test_wait_for_function(async_page, test_server):
     await async_page.go(test_server)
     await async_page.evaluate("setTimeout(() => { window.__ready = true }, 200)")
-    result = await async_page.wait_until("() => window.__ready", timeout=5000)
+    result = await async_page.wait_for_function("() => window.__ready", timeout=5000)
     assert result is True
 
 

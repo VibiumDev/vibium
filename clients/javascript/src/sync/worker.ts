@@ -399,19 +399,19 @@ const handlers: Record<string, Handler> = {
 
   'page.waitForURL': async (args) => {
     const [pageId, pattern, options] = args as [number, string, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.url(pattern, options);
+    await getPage(pageId).waitForURL(pattern, options);
     return { success: true };
   },
 
   'page.waitForLoad': async (args) => {
     const [pageId, state, options] = args as [number, string | undefined, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.loaded(state, options);
+    await getPage(pageId).waitForLoad(state, options);
     return { success: true };
   },
 
   'page.waitForFunction': async (args) => {
     const [pageId, fn, options] = args as [number, string, { timeout?: number } | undefined];
-    const value = await getPage(pageId).waitUntil(fn, options);
+    const value = await getPage(pageId).waitForFunction(fn, options);
     return { value };
   },
 

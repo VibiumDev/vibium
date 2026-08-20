@@ -596,13 +596,31 @@ export class Page {
     event(name: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<unknown>;
   };
 
-  /** Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods. */
+  /**
+   * Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods.
+   * @deprecated Use waitForFunction(), waitForURL(), or waitForLoad().
+   */
   readonly waitUntil: ((fn: string, options?: { timeout?: number }) => Promise<unknown>) & {
-    /** Wait until the page URL matches a pattern. */
+    /** @deprecated Use waitForURL(). */
     url(pattern: string, options?: { timeout?: number }): Promise<void>;
-    /** Wait until the page reaches a load state. */
+    /** @deprecated Use waitForLoad(). */
     loaded(state?: string, options?: { timeout?: number }): Promise<void>;
   };
+
+  /** Wait until a function returns a truthy value. */
+  async waitForFunction(fn: string, options?: { timeout?: number }): Promise<unknown> {
+    return this._waitForFunction(fn, options);
+  }
+
+  /** Wait until the page URL matches a pattern. */
+  async waitForURL(pattern: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForURL(pattern, options);
+  }
+
+  /** Wait until the page reaches a load state. */
+  async waitForLoad(state?: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForLoad(state, options);
+  }
 
   /** Wait for a fixed amount of time (milliseconds). Discouraged but useful for debugging. */
   async wait(ms: number): Promise<void> {

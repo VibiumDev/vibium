@@ -195,8 +195,17 @@ def test_click_navigates(bro, test_server):
     vibe.go(test_server)
     link = vibe.find('a[href="/subpage"]')
     link.click()
-    vibe.wait_until.url("**/subpage")
+    vibe.wait_for_url("**/subpage")
     assert vibe.title() == "Subpage"
+
+
+def test_wait_for_names_and_deprecated_alias(bro, test_server):
+    vibe = bro.page()
+    vibe.go(test_server)
+    vibe.wait_for_load()
+    assert vibe.wait_for_function("() => document.readyState === 'complete'", timeout=5000)
+    with pytest.warns(DeprecationWarning):
+        vibe.wait_until.loaded()
 
 
 def test_fill_and_value(bro, test_server):
