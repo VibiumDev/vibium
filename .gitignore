@@ -102,3 +102,6 @@ packages/python/*/src/*/bin/vibium.exe
 **/NOTICE
 !/LICENSE
 !/NOTICE
+
+# Per-process capability counts collected during a test run
+tests/.capability-summary/
