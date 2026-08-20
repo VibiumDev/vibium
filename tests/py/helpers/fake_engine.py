@@ -21,10 +21,6 @@ import threading
 SETUP_DELAY_S = float(os.environ.get("FAKE_ENGINE_SETUP_DELAY_MS", "300")) / 1000
 FAIL_SETUP = os.environ.get("FAKE_ENGINE_FAIL_SETUP", "")
 
-# The clients run `vibium is-installed` before launching.
-if len(sys.argv) > 1 and sys.argv[1] == "is-installed":
-    sys.exit(0)
-
 _lock = threading.Lock()
 _monitor_installed = False
 _install_count = 0

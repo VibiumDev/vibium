@@ -352,7 +352,7 @@ test-js-async: build-go
 		$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		$(JS_ASYNC_ENGINE_TESTS) \
 		tests/js/async/chrome-video.test.js \
-		tests/js/async/browser-installer.test.js \
+		tests/js/async/pipe-launch.test.js \
 		tests/js/async/event-setup-ordering.test.js; \
 	EXIT=$$?; \
 	node scripts/report-capability-summary.mjs $(CAP_SUMMARY_DIR)/js-async-$(ENGINE).ndjson; \
