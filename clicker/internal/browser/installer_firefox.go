@@ -1,6 +1,8 @@
 package browser
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -63,14 +66,28 @@ func InstallFirefox() (string, error) {
 	downloadURL := firefoxDownloadURL(version)
 	fmt.Printf("Downloading Firefox from %s...\n", downloadURL)
 
+	pattern := "firefox-*.tar.xz"
+	if runtime.GOOS == "darwin" {
+		pattern = "firefox-*.dmg"
+	}
+	archivePath, err := downloadToTemp(downloadURL, pattern)
+	if err != nil {
+		return "", fmt.Errorf("failed to download Firefox: %w", err)
+	}
+	defer os.Remove(archivePath)
+
+	if err := verifyFirefoxArchive(archivePath, version); err != nil {
+		return "", fmt.Errorf("Firefox download failed verification: %w", err)
+	}
+
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create version dir: %w", err)
 	}
 
 	if runtime.GOOS == "darwin" {
-		err = installFirefoxDMG(downloadURL, versionDir)
+		err = installFirefoxDMG(archivePath, versionDir)
 	} else {
-		err = installFirefoxTarXZ(downloadURL, versionDir)
+		err = installFirefoxTarXZ(archivePath, versionDir)
 	}
 	if err != nil {
 		os.RemoveAll(versionDir)
@@ -156,17 +173,100 @@ func firefoxDownloadURL(version string) string {
 }
 
 func firefoxDownloadURLFor(goos, goarch, version string) string {
-	base := "https://ftp.mozilla.org/pub/firefox/releases/" + version
+	segments := strings.Split(firefoxArchiveRelPath(goos, goarch, version), "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "https://ftp.mozilla.org/pub/firefox/releases/" + version + "/" + strings.Join(segments, "/")
+}
+
+// firefoxArchiveRelPath returns the archive's path relative to the release
+// directory, unescaped, exactly as it appears in Mozilla's SHA256SUMS.
+func firefoxArchiveRelPath(goos, goarch, version string) string {
 	switch goos {
 	case "darwin":
-		return base + "/mac/en-US/" + url.PathEscape("Firefox "+version+".dmg")
+		return "mac/en-US/Firefox " + version + ".dmg"
 	default: // linux
 		arch := "linux-x86_64"
 		if goarch == "arm64" {
 			arch = "linux-aarch64"
 		}
-		return base + "/" + arch + "/en-US/firefox-" + version + ".tar.xz"
+		return arch + "/en-US/firefox-" + version + ".tar.xz"
 	}
+}
+
+// verifyFirefoxArchive checks the downloaded archive against Mozilla's
+// published SHA256SUMS for the release, before anything unpacks it.
+func verifyFirefoxArchive(archivePath, version string) error {
+	sums, err := fetchFirefoxChecksums(version)
+	if err != nil {
+		return fmt.Errorf("fetching SHA256SUMS: %w", err)
+	}
+	relPath := firefoxArchiveRelPath(runtime.GOOS, runtime.GOARCH, version)
+	if err := verifyArchiveAgainstSums(archivePath, sums, relPath); err != nil {
+		return err
+	}
+	fmt.Printf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
+	return nil
+}
+
+// fetchFirefoxChecksums downloads the SHA256SUMS body for a release.
+func fetchFirefoxChecksums(version string) (string, error) {
+	resp, err := http.Get("https://ftp.mozilla.org/pub/firefox/releases/" + version + "/SHA256SUMS")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// verifyArchiveAgainstSums compares the file's SHA256 with the entry for
+// relPath in a SHA256SUMS body (lines of "<hex>  <path>").
+func verifyArchiveAgainstSums(archivePath, sums, relPath string) error {
+	want := findFirefoxChecksum(sums, relPath)
+	if want == "" {
+		return fmt.Errorf("no SHA256SUMS entry for %q", relPath)
+	}
+	got, err := sha256File(archivePath)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("SHA256 mismatch for %q: got %s, want %s", relPath, got, want)
+	}
+	return nil
+}
+
+// findFirefoxChecksum returns the hash listed for relPath, or "" if absent.
+func findFirefoxChecksum(sums, relPath string) string {
+	for _, line := range strings.Split(sums, "\n") {
+		hash, path, ok := strings.Cut(line, "  ")
+		if ok && path == relPath {
+			return hash
+		}
+	}
+	return ""
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // downloadToTemp downloads a URL to a temp file and returns its path.
@@ -204,13 +304,7 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 // installFirefoxDMG mounts the DMG and copies Firefox.app into versionDir.
 // cp -R (not Go file walking) preserves the app bundle's symlinks and
 // permissions, which code signing validation depends on.
-func installFirefoxDMG(downloadURL, versionDir string) error {
-	dmgPath, err := downloadToTemp(downloadURL, "firefox-*.dmg")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(dmgPath)
-
+func installFirefoxDMG(dmgPath, versionDir string) error {
 	mountPoint, err := os.MkdirTemp("", "firefox-dmg-")
 	if err != nil {
 		return err
@@ -230,13 +324,7 @@ func installFirefoxDMG(downloadURL, versionDir string) error {
 
 // installFirefoxTarXZ extracts the Linux tar.xz (a firefox/ directory) into
 // versionDir. The system tar handles xz; Go's stdlib does not.
-func installFirefoxTarXZ(downloadURL, versionDir string) error {
-	tarPath, err := downloadToTemp(downloadURL, "firefox-*.tar.xz")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tarPath)
-
+func installFirefoxTarXZ(tarPath, versionDir string) error {
 	if out, err := exec.Command("tar", "-xJf", tarPath, "-C", versionDir).CombinedOutput(); err != nil {
 		return fmt.Errorf("extracting Firefox archive failed: %w: %s", err, out)
 	}
