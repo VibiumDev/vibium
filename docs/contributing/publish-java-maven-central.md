@@ -2,6 +2,9 @@
 
 Step-by-step guide using the Central Portal (central.sonatype.com).
 
+This document covers immutable stable releases. Automated mutable snapshots use
+the separate [nightly release process](publishing-nightly-releases.md).
+
 **Already done the one-time setup?** Skip to [Step 6: Build and Stage](#6-build-and-stage).
 
 ---

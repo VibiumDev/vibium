@@ -2,6 +2,11 @@
 
 End-to-end checklist for releasing a new version of Vibium.
 
+For automated prereleases from `main`, see
+[Publishing Nightly Releases](publishing-nightly-releases.md). Nightly
+publication never promotes npm's `latest` tag and does not replace this stable
+release checklist.
+
 ## Prerequisites
 
 Before your first release, ensure you have:

@@ -6,7 +6,9 @@ plugins {
 }
 
 // Read version from root VERSION file
-val vibiumVersion = file("../../VERSION").readText().trim()
+val vibiumVersion = providers.gradleProperty("vibiumVersion")
+    .orElse(file("../../VERSION").readText().trim())
+    .get()
 version = vibiumVersion
 group = "com.vibium"
 
@@ -197,6 +199,14 @@ publishing {
         maven {
             name = "staging"
             url = uri(layout.buildDirectory.dir("staging-deploy"))
+        }
+        maven {
+            name = "centralSnapshots"
+            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+            credentials {
+                username = System.getenv("MAVEN_CENTRAL_USERNAME")
+                password = System.getenv("MAVEN_CENTRAL_PASSWORD")
+            }
         }
     }
 }
