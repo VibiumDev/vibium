@@ -1,8 +1,8 @@
 /**
  * JS Library Tests: Element State + Waiting
  * Tests el.text, innerText, html, value, attr, bounds, isVisible, isHidden,
- * isEnabled, isChecked, isEditable, eval, screenshot, waitUntil.
- * Also tests page.wait, page.waitUntil.
+ * isEnabled, isChecked, isEditable, eval, screenshot, waitForFunction.
+ * Also tests page.wait, page.waitForFunction.
  */
 
 const { test, describe, before, after } = require("../../../helpers/capabilities").suite("core");
@@ -207,12 +207,20 @@ describe('Page Waiting', () => {
     assert.ok(elapsed >= 150, `Should wait at least 150ms, waited ${elapsed}ms`);
   });
 
-  test('waitUntil(fn) resolves when function returns truthy', async () => {
+  test('waitForFunction(fn) resolves when function returns truthy', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const result = await vibe.waitForFunction('() => document.querySelector("h1") !== null');
+    assert.ok(result, 'waitForFunction should return truthy value');
+  });
+
+  test('waitUntil(fn) still works as a deprecated alias (#304)', async () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
     const result = await vibe.waitUntil('() => document.querySelector("h1") !== null');
-    assert.ok(result, 'waitUntil should return truthy value');
+    assert.ok(result, 'waitUntil alias should return truthy value');
   });
 
   test('waitUntil(bare expression) resolves, not just functions (#123)', async () => {
@@ -220,8 +228,8 @@ describe('Page Waiting', () => {
     await vibe.go('data:text/html,<h1>hi</h1>');
 
     // A bare boolean expression (no "() =>") previously always timed out.
-    const result = await vibe.waitUntil(`document.readyState === 'complete'`, { timeout: 3000 });
-    assert.ok(result, 'bare-expression waitUntil should resolve');
+    const result = await vibe.waitForFunction(`document.readyState === 'complete'`, { timeout: 3000 });
+    assert.ok(result, 'bare-expression waitForFunction should resolve');
   });
 });
 

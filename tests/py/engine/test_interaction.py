@@ -9,7 +9,7 @@ async def test_click_navigates(async_page, test_server):
     await async_page.go(test_server)
     link = await async_page.find('a[href="/subpage"]')
     await link.click()
-    await async_page.wait_until.url("**/subpage")
+    await async_page.wait_for_url("**/subpage")
     assert await async_page.title() == "Subpage"
 
 

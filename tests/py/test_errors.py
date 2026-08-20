@@ -138,6 +138,6 @@ async def test_timeout_error_is_catchable_as_builtin(async_page, test_server):
     import vibium
 
     await async_page.go(test_server)
-    # Use wait_until with an expression that never becomes truthy to get a pure timeout
+    # Use wait_for_function with an expression that never becomes truthy to get a pure timeout
     with pytest.raises(builtins.TimeoutError):
-        await async_page.wait_until("() => false", timeout=500)
+        await async_page.wait_for_function("() => false", timeout=500)

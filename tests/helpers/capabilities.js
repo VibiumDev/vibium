@@ -14,6 +14,11 @@ if (!['chrome', 'firefox'].includes(engine)) {
 
 const collectOnly = process.env.VIBIUM_CAPABILITY_COLLECT_ONLY === '1';
 const audit = process.env.VIBIUM_CAPABILITY_AUDIT === '1';
+// node --test runs each file in its own process, so printing here means one
+// summary per file. When a summary file is set, each process appends its
+// counts there and scripts/report-capability-summary.mjs prints one roll-up
+// for the whole run.
+const summaryFile = process.env.VIBIUM_CAPABILITY_SUMMARY_FILE;
 const counts = { collected: 0, selected: 0, skipped: 0, capabilities: new Map() };
 let summaryInstalled = false;
 let summaryPrinted = false;
@@ -37,6 +42,19 @@ function installSummary() {
   const printSummary = () => {
     if (summaryPrinted) return;
     summaryPrinted = true;
+    if (summaryFile) {
+      fs.appendFileSync(
+        summaryFile,
+        JSON.stringify({
+          engine,
+          collected: counts.collected,
+          selected: counts.selected,
+          skipped: counts.skipped,
+          capabilities: Object.fromEntries(counts.capabilities),
+        }) + '\n'
+      );
+      return;
+    }
     console.log(
       `capabilities: engine=${engine} collected=${counts.collected} ` +
       `selected=${counts.selected} skipped=${counts.skipped}`
@@ -80,6 +98,12 @@ function suite(...baseRequirements) {
   validate(baseRequirements);
   installSummary();
   let inherited = [...baseRequirements];
+  // node:test runs before/after hooks even when every test in scope is
+  // skipped, so hooks registered under missing requirements must become
+  // no-ops. Skipping the describe itself would not work: node never invokes
+  // a skipped describe's callback, so its tests would vanish from the
+  // summary counts instead of being reported as skipped.
+  let suppressHooks = missingCapabilities(baseRequirements).length > 0;
 
   function wrapTest(extraRequirements = []) {
     return (...args) => {
@@ -115,7 +139,9 @@ function suite(...baseRequirements) {
       const mergedCallbackIndex = callbackIndex + (values.length - args.length);
       values[mergedCallbackIndex] = (...callbackArgs) => {
         const previous = inherited;
+        const previousSuppress = suppressHooks;
         inherited = [...new Set([...inherited, ...extraRequirements])];
+        suppressHooks = suppressHooks || missingCapabilities(inherited).length > 0;
         try {
           const result = callback(...callbackArgs);
           if (result && typeof result.then === 'function') {
@@ -126,6 +152,7 @@ function suite(...baseRequirements) {
           return result;
         } finally {
           inherited = previous;
+          suppressHooks = previousSuppress;
         }
       };
       return nodeTest.describe(...values);
@@ -137,14 +164,19 @@ function suite(...baseRequirements) {
   test.requires = (...names) => wrapTest(names);
   describe.requires = (...names) => wrapDescribe(names);
 
-  const noopHook = collectOnly ? () => {} : null;
+  // Suppression is decided at registration time; describe callbacks are
+  // synchronous (enforced above), so the flag is accurate for nested hooks.
+  const wrapHook = (register) => (...args) => {
+    if (collectOnly || suppressHooks) return;
+    return register(...args);
+  };
   return {
     test,
     describe,
-    before: noopHook || nodeTest.before,
-    after: noopHook || nodeTest.after,
-    beforeEach: noopHook || nodeTest.beforeEach,
-    afterEach: noopHook || nodeTest.afterEach,
+    before: wrapHook(nodeTest.before),
+    after: wrapHook(nodeTest.after),
+    beforeEach: wrapHook(nodeTest.beforeEach),
+    afterEach: wrapHook(nodeTest.afterEach),
   };
 }
 

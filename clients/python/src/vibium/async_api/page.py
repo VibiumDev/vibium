@@ -7,6 +7,7 @@ import base64
 import fnmatch
 import logging
 import re
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .. import errors
@@ -259,8 +260,25 @@ class Page:
 
     @property
     def wait_until(self) -> _WaitUntilNamespace:
-        """Wait until a condition is met. Callable or use .url() / .loaded() sub-methods."""
+        """Deprecated alias — use wait_for_function / wait_for_url / wait_for_load."""
+        warnings.warn(
+            "wait_until is deprecated; use wait_for_function, wait_for_url, or wait_for_load",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _WaitUntilNamespace(self)
+
+    async def wait_for_function(self, fn: str, timeout: Optional[int] = None) -> Any:
+        """Wait until a function returns a truthy value."""
+        return await self._wait_for_function(fn, timeout)
+
+    async def wait_for_url(self, pattern: str, timeout: Optional[int] = None) -> None:
+        """Wait until the page URL matches a pattern."""
+        await self._wait_for_url(pattern, timeout)
+
+    async def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
+        """Wait until the page reaches a load state."""
+        await self._wait_for_load(state, timeout)
 
     async def wait(self, ms: int) -> None:
         """Wait for a fixed amount of time (milliseconds)."""
