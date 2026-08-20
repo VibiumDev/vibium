@@ -3,6 +3,7 @@ import { BiDiClient, BiDiEvent } from './bidi';
 import { Page } from './page';
 import { BrowserContext } from './context';
 import { debug, info } from './utils/debug';
+import { checkNodeVersion } from './utils/version';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
