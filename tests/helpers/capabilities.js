@@ -98,6 +98,12 @@ function suite(...baseRequirements) {
   validate(baseRequirements);
   installSummary();
   let inherited = [...baseRequirements];
+  // node:test runs before/after hooks even when every test in scope is
+  // skipped, so hooks registered under missing requirements must become
+  // no-ops. Skipping the describe itself would not work: node never invokes
+  // a skipped describe's callback, so its tests would vanish from the
+  // summary counts instead of being reported as skipped.
+  let suppressHooks = missingCapabilities(baseRequirements).length > 0;
 
   function wrapTest(extraRequirements = []) {
     return (...args) => {
@@ -133,7 +139,9 @@ function suite(...baseRequirements) {
       const mergedCallbackIndex = callbackIndex + (values.length - args.length);
       values[mergedCallbackIndex] = (...callbackArgs) => {
         const previous = inherited;
+        const previousSuppress = suppressHooks;
         inherited = [...new Set([...inherited, ...extraRequirements])];
+        suppressHooks = suppressHooks || missingCapabilities(inherited).length > 0;
         try {
           const result = callback(...callbackArgs);
           if (result && typeof result.then === 'function') {
@@ -144,6 +152,7 @@ function suite(...baseRequirements) {
           return result;
         } finally {
           inherited = previous;
+          suppressHooks = previousSuppress;
         }
       };
       return nodeTest.describe(...values);
@@ -155,14 +164,19 @@ function suite(...baseRequirements) {
   test.requires = (...names) => wrapTest(names);
   describe.requires = (...names) => wrapDescribe(names);
 
-  const noopHook = collectOnly ? () => {} : null;
+  // Suppression is decided at registration time; describe callbacks are
+  // synchronous (enforced above), so the flag is accurate for nested hooks.
+  const wrapHook = (register) => (...args) => {
+    if (collectOnly || suppressHooks) return;
+    return register(...args);
+  };
   return {
     test,
     describe,
-    before: noopHook || nodeTest.before,
-    after: noopHook || nodeTest.after,
-    beforeEach: noopHook || nodeTest.beforeEach,
-    afterEach: noopHook || nodeTest.afterEach,
+    before: wrapHook(nodeTest.before),
+    after: wrapHook(nodeTest.after),
+    beforeEach: wrapHook(nodeTest.beforeEach),
+    afterEach: wrapHook(nodeTest.afterEach),
   };
 }
 
