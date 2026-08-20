@@ -31,7 +31,7 @@ endif
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
-# so 'cat' must be on PATH (add Git's usr/bin — see docs/how-to-guides/local-dev-setup-x86-windows.md)
+# so 'cat' must be on PATH (add Git's usr/bin — see docs/contributing/local-dev-setup-x86-windows.md)
 VERSION := $(shell cat VERSION)
 # Allow V= as shorthand for VERSION=
 ifdef V
@@ -340,12 +340,14 @@ test-js-async: build-go
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
 		$(JS_ASYNC_ENGINE_TESTS) \
 		tests/js/async/chrome-video.test.js \
-		tests/js/async/browser-installer.test.js
+		tests/js/async/browser-installer.test.js \
+		tests/js/async/event-setup-ordering.test.js
 
 test-js-sync: build-go
 	@echo "--- JS Sync Tests (parallel x$(JS_PARALLEL)) ---"
 	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=$(JS_PARALLEL) \
-		$(JS_SYNC_ENGINE_TESTS)
+		$(JS_SYNC_ENGINE_TESTS) \
+		tests/js/sync/event-setup-ordering-sync.test.js
 
 test-js-process: build-go
 	@echo "--- JS Process Tests (sequential) ---"

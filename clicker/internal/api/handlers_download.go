@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // setupDownloads creates a temp dir and tells the browser to save downloads there.
@@ -20,14 +21,14 @@ func (r *Router) setupDownloads(session *BrowserSession) {
 	session.downloadDir = dir
 	session.mu.Unlock()
 
-	_, err = r.sendInternalCommand(session, "browser.setDownloadBehavior", map[string]interface{}{
+	_, err = r.sendInternalCommandWithTimeout(session, "browser.setDownloadBehavior", map[string]interface{}{
 		"downloadBehavior": map[string]interface{}{
 			"type":              "allowed",
 			"destinationFolder": dir,
 		},
-	})
+	}, 10*time.Second)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[router] Failed to set download behavior: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[router] Failed to set download behavior (downloads stay in the browser's default dir; download.saveAs will not find them): %v\n", err)
 	}
 }
 

@@ -3,5 +3,5 @@ const { browser } = require('../../../../clients/javascript/dist');
 const { runTutorial } = require('../../helpers/tutorial-runner');
 
 describe('A11y Tree Tutorial (JS Async)', () => {
-  runTutorial('docs/tutorials/a11y-tree-js.md', { browser, mode: 'async' });
+  runTutorial('docs/how-to-guides/accessibility-tree.md', { browser, mode: 'async' });
 });

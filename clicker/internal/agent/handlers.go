@@ -400,17 +400,8 @@ func (h *Handlers) queryViewport() map[string]interface{} {
 	if context == "" {
 		return nil
 	}
-	result, err := api.EvalSimpleScript(h.newSession(), context, "() => window.innerWidth + ',' + window.innerHeight")
-	if err != nil {
-		return nil
-	}
-	parts := strings.SplitN(result, ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	w, err1 := strconv.Atoi(parts[0])
-	h2, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
+	w, h2, ok := api.QueryViewport(h.newSession(), context)
+	if !ok {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h2}
@@ -810,15 +801,13 @@ func (h *Handlers) startPromptTracking() {
 		return
 	}
 
-	client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"browsingContext.userPromptOpened",
-			"browsingContext.userPromptClosed",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.load",
-		},
+	subscribeEvents(client, []string{
+		"browsingContext.userPromptOpened",
+		"browsingContext.userPromptClosed",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
 }
@@ -4086,21 +4075,19 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	h.recorder = recorder
 
 	// Subscribe to events and feed them to the recorder
-	h.client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"network.beforeRequestSent",
-			"network.responseCompleted",
-			"network.fetchError",
-			"log.entryAdded",
-			"browsingContext.userPromptOpened",
-			"browsingContext.downloadWillBegin",
-			"browsingContext.load",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.fragmentNavigated",
-			"browsingContext.historyUpdated",
-		},
+	subscribeEvents(h.client, []string{
+		"network.beforeRequestSent",
+		"network.responseCompleted",
+		"network.fetchError",
+		"log.entryAdded",
+		"browsingContext.userPromptOpened",
+		"browsingContext.downloadWillBegin",
+		"browsingContext.load",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.fragmentNavigated",
+		"browsingContext.historyUpdated",
 	})
 	h.recordDropBase = h.client.DroppedEvents()
 	// handleBidiEvent already forwards to the recorder; replacing the handler

@@ -327,13 +327,15 @@ async def test_capture_navigation(net_browser, test_server):
 @pytest.mark.capability("downloads")
 async def test_capture_download(net_browser, test_server):
     vibe = await net_browser.new_page()
-    await vibe.go(test_server + "/download")
+    # Own filename so a repeated test.txt in this session cannot come back
+    # deduplicated ("test(1).txt") on Firefox.
+    await vibe.go(test_server + "/download?name=net-captured.txt")
     link = await vibe.find("#download-link")
     async with vibe.capture.download() as info:
         await link.click()
     assert info.value is not None
-    assert info.value.url().endswith("/download-file") or "/download-file" in info.value.url()
-    assert info.value.suggested_filename() == "test.txt"
+    assert "/download-file" in info.value.url()
+    assert info.value.suggested_filename() == "net-captured.txt"
     await vibe.close()
 
 

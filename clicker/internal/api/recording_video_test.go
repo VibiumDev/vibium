@@ -35,10 +35,30 @@ func TestVideoSupportErrorExplainsFirefoxOutputFailure(t *testing.T) {
 	}
 }
 
+// Chrome 152 changed its startScreencast refusal from "unknown command" to
+// this message; both mean the command does not exist and both must rewrite.
+func TestVideoSupportErrorRecognizesChromeNotImplemented(t *testing.T) {
+	err := videoSupportError(errors.New(
+		`unsupported operation: Method browsingContext.startScreencast is not implemented.`,
+	))
+	if !strings.Contains(err.Error(), "vibium install --engine firefox") {
+		t.Fatalf("error should name the install command, got: %v", err)
+	}
+}
+
 func TestVideoSupportErrorNamesTheInstallCommand(t *testing.T) {
 	err := videoSupportError(errors.New(`unknown command: browsingContext.startScreencast`))
 	if !strings.Contains(err.Error(), "vibium install --engine firefox") {
 		t.Fatalf("error should name the install command, got: %v", err)
+	}
+}
+
+// A browser that has the command but refuses an option already names the
+// problem; rewriting would hide it, so the error must pass through unchanged.
+func TestVideoSupportErrorPassesThroughSpecificRefusals(t *testing.T) {
+	orig := errors.New(`invalid argument: The audio track is not supported`)
+	if err := videoSupportError(orig); err != orig {
+		t.Fatalf("videoSupportError() = %v, want the original error unchanged", err)
 	}
 }
 

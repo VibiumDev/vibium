@@ -30,17 +30,17 @@ snapshots, groups, chunks, the viewer), start with the
 
 ## Browser support
 
-Video requires Firefox 154, which is the current Firefox beta. It reaches regular Firefox on 2026-08-18; from then on a plain `firefox.start()` is enough. Until then, pass `channel: 'beta'` when starting the browser, as in the examples below. The channel applies at install and at launch: it picks which Firefox to download and which one to run, so a plain `firefox.start()` still launches stable Firefox even after the beta is installed.
+Video requires Firefox 154 or newer, which regular Firefox ships since 2026-08-18. A plain `firefox.start()` is enough: it installs and launches the release channel.
 
-On macOS and Linux, the clients install the selected channel automatically on
+On macOS and Linux, the clients install Firefox automatically on
 first use. Windows users must install Firefox themselves and set
 `VIBIUM_FIREFOX_PATH`. To install it ahead of time on a supported platform:
 
 ```
-vibium install --engine firefox --firefox-channel beta
+vibium install --engine firefox
 ```
 
-The `VIBIUM_FIREFOX_CHANNEL` env var does the same as the flag and option, for cases where you cannot change the code.
+To record against the Firefox beta instead, select the channel with `--firefox-channel beta`, the clients' `channel` option, or the `VIBIUM_FIREFOX_CHANNEL` env var; see [Using Firefox](using-firefox.md#release-channels).
 
 Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `video: true` fails there with an error saying so, and an omitted `video` records the trace without a video track.
 
@@ -76,8 +76,7 @@ See [Using Firefox](using-firefox.md) for installing and selecting Firefox in ge
 ```js
 const { firefox } = require('vibium');
 
-// channel: 'beta' is needed until Firefox 154 reaches stable on 2026-08-18
-const bro = await firefox.start({ channel: 'beta' });
+const bro = await firefox.start();
 const vibe = await bro.page();
 
 await vibe.context.recording.start({ video: true, path: 'runs/login.zip' });
@@ -100,8 +99,7 @@ carries the zip itself.
 ```python
 from vibium import firefox
 
-# channel="beta" is needed until Firefox 154 reaches stable on 2026-08-18
-bro = firefox.start(channel="beta")
+bro = firefox.start()
 vibe = bro.page()
 
 vibe.context.recording.start(video=True, path="runs/login.zip")
@@ -164,4 +162,4 @@ per-action screenshots, DOM snapshots, and network events for the Record
 Player. `video/index.json` records the video's `offsetMs` from the
 recording's start so viewers can align the two timelines. See the
 [Recording tutorial](../tutorials/recording.md) for the other tracks and
-[Recording format](../explanation/recording-format.md) for the zip layout.
+[Recording format](../reference/recording-format.md) for the zip layout.

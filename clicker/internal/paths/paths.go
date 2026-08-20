@@ -227,10 +227,21 @@ func GetFirefoxExecutableForChannel(channel string) (string, error) {
 
 // resolveFirefoxVersionDir returns the newest cached Firefox version
 // directory containing the executable, mirroring resolveVersionDir.
+// VIBIUM_FIREFOX_VERSION pins the choice: the pinned version must also be
+// what launches, or newest-cached would silently run a different Firefox
+// than the pin installed.
 func resolveFirefoxVersionDir(channel string) (string, error) {
 	ffDir, err := GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", err
+	}
+
+	if v := os.Getenv("VIBIUM_FIREFOX_VERSION"); v != "" {
+		dir := filepath.Join(ffDir, v)
+		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
+			return "", err
+		}
+		return dir, nil
 	}
 
 	entries, err := os.ReadDir(ffDir)
