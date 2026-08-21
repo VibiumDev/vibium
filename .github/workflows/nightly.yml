@@ -132,8 +132,13 @@ jobs:
       # stamped @vibium/* optional dependencies do not exist on npm until
       # this same run publishes them, so an install after stamping silently
       # drops them from the lockfile and npm ci fails the sync check.
+      # The lockfile is generated on macOS, so rollup's Linux native module is
+      # missing from it and has to be added separately, locked to the rollup
+      # version the lockfile installed (same workaround as test.yml).
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
       - name: Apply nightly versions
         run: |
