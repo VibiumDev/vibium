@@ -299,7 +299,12 @@ jobs:
             release/bin/* release/java/* release/npm/* release/python/* \
             release/manifest.json release/SHA256SUMS --clobber
 
+  # The three registry jobs (and public-smoke behind them) stay parked until
+  # the trusted publishers and signing secrets exist (#396): set the
+  # NIGHTLY_PUBLISH_REGISTRIES repository variable to 'true' to enable them.
+  # The GitHub prerelease in promote ships either way.
   publish-npm:
+    if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
     needs: [select, local-smoke, draft-release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -326,6 +331,7 @@ jobs:
           done
 
   publish-pypi-platforms:
+    if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
     needs: [select, local-smoke, draft-release]
     strategy:
       fail-fast: false
@@ -376,6 +382,7 @@ jobs:
           verbose: true
 
   publish-maven:
+    if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
     needs: [select, local-smoke, draft-release]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -480,8 +487,16 @@ jobs:
             stable-venv/bin/python -c "import vibium; assert 'dev' not in vibium.__version__"
           fi
 
+  # Publishes the GitHub prerelease once the bundle has passed local-smoke.
+  # With registries enabled, public-smoke must also pass first; with them
+  # parked (skipped), the release ships on the strength of local-smoke alone.
   promote:
-    needs: [select, public-smoke]
+    needs: [select, local-smoke, draft-release, public-smoke]
+    if: >-
+      !cancelled() &&
+      needs.local-smoke.result == 'success' &&
+      needs.draft-release.result == 'success' &&
+      (needs.public-smoke.result == 'success' || needs.public-smoke.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: nightly
@@ -502,6 +517,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Check dist-tag token expiry
+        if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
         env:
           EXPIRES_AT: ${{ vars.NPM_DIST_TAG_TOKEN_EXPIRES_AT }}
         run: |
@@ -515,7 +531,10 @@ jobs:
           if [ $((expires - now)) -lt $((30 * 24 * 60 * 60)) ]; then
             echo '::warning::NPM_DIST_TAG_TOKEN expires within 30 days; rotate it and update NPM_DIST_TAG_TOKEN_EXPIRES_AT.'
           fi
+      # The manifest's final Maven coordinate only exists after publish-maven,
+      # so with registries parked the release keeps the as-built manifest.
       - name: Finalize the audit manifest in the draft release
+        if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           # Same reason as draft-release: no checkout, so gh release needs
@@ -531,6 +550,7 @@ jobs:
           node scripts/finalize-nightly-manifest.mjs release "$resolved"
           gh release upload '${{ needs.select.outputs.tag }}' release/manifest.json --clobber
       - name: Promote verified npm versions
+        if: vars.NIGHTLY_PUBLISH_REGISTRIES == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_DIST_TAG_TOKEN }}
         run: |
