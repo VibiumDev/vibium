@@ -270,6 +270,10 @@ jobs:
       - name: Create or update draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job: gh release resolves the repo from the
+          # git remote unless GH_REPO names it (gh api calls are unaffected,
+          # they use explicit repos/... paths).
+          GH_REPO: ${{ github.repository }}
         run: |
           tag='${{ needs.select.outputs.tag }}'
           # A draft's tag does not exist until publish, so drafts are not
@@ -514,6 +518,9 @@ jobs:
       - name: Finalize the audit manifest in the draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Same reason as draft-release: no checkout, so gh release needs
+          # the repo named explicitly.
+          GH_REPO: ${{ github.repository }}
         run: |
           metadata_url='https://central.sonatype.com/repository/maven-snapshots/com/vibium/vibium/${{ needs.select.outputs.maven_version }}/maven-metadata.xml'
           for delay in 5 10 20 40 80; do
@@ -536,6 +543,7 @@ jobs:
       - name: Publish GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh release edit '${{ needs.select.outputs.tag }}' --draft=false --prerelease
 
   # Depends only on select so pruning keeps running while publishing is red;
