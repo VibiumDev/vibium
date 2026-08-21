@@ -128,14 +128,19 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      # Install from the committed lockfile BEFORE stamping versions: the
+      # stamped @vibium/* optional dependencies do not exist on npm until
+      # this same run publishes them, so an install after stamping silently
+      # drops them from the lockfile and npm ci fails the sync check.
+      - name: Install dependencies
+        run: npm ci
+
       - name: Apply nightly versions
         run: |
           node scripts/set-version.mjs \
             --version '${{ needs.select.outputs.npm_version }}' \
             --python-version '${{ needs.select.outputs.python_version }}' \
             --python-exact
-          npm install --package-lock-only --ignore-scripts
-          npm ci
 
       - name: Build distributions
         run: |
