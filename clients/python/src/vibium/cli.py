@@ -20,7 +20,7 @@ def main():
 
     if command == "install":
         install_browser()
-    elif command == "version":
+    elif command in ("version", "--version", "-V"):
         from . import __version__
         print(f"vibium {__version__}")
     else:
