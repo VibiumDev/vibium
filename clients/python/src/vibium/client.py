@@ -172,7 +172,16 @@ class BiDiClient:
         try:
             line = json.dumps(command) + "\n"
             self._stdin.write(line.encode())  # type: ignore[union-attr]
-            await self._stdin.drain()  # type: ignore[union-attr]
+            # drain() carries no deadline of its own. If the vibium process
+            # stops reading stdin, it blocks before the response timer below
+            # ever starts, turning a wedged pipe into a hang that outlives
+            # every client timeout (#397).
+            try:
+                await asyncio.wait_for(self._stdin.drain(), timeout=timeout)  # type: ignore[union-attr]
+            except asyncio.TimeoutError:
+                raise errors.TimeoutError(
+                    f"Command '{method}' was not accepted by the vibium process after {timeout}s"
+                )
             try:
                 response = await asyncio.wait_for(future, timeout=timeout)
             except asyncio.TimeoutError:
