@@ -89,30 +89,5 @@ for (const relative of [
   );
 }
 
-// Java has no lockfile, so its docs pin a coordinate readers copy verbatim.
-// Prereleases are skipped: nightly Java builds publish as a `YYYY.M-SNAPSHOT`
-// snapshot, not as the npm-style version this script is handed.
-const isPrerelease = !/^\d+\.\d+\.\d+$/.test(npmVersion);
-if (!isPrerelease) {
-  for (const relative of [
-    "README.md",
-    "docs/tutorials/getting-started-java.md",
-  ]) {
-    update(relative, (source) =>
-      source
-        .replace(/(com\.vibium:vibium:)[\d.]+/g, `$1${npmVersion}`)
-        .replace(
-          /(<artifactId>vibium<\/artifactId>\s*<version>)[^<]+/g,
-          `$1${npmVersion}`,
-        )
-        .replace(/(vibium-)[\d.]+(\.jar)/g, `$1${npmVersion}$2`)
-        .replace(
-          /(maven2\/com\/vibium\/vibium\/)[\d.]+(\/)/g,
-          `$1${npmVersion}$2`,
-        ),
-    );
-  }
-}
-
 writeFileSync(resolve(root, "VERSION"), `${npmVersion}\n`);
 console.log(JSON.stringify({ npmVersion, pythonVersion, exactPythonDependencies }));

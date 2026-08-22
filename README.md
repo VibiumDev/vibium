@@ -89,7 +89,7 @@ pip install vibium   # Python
 
 **Java** (Gradle):
 ```groovy
-implementation 'com.vibium:vibium:26.8.21'
+implementation 'com.vibium:vibium:26.3.18'
 ```
 
 **Java** (Maven):
@@ -97,7 +97,7 @@ implementation 'com.vibium:vibium:26.8.21'
 <dependency>
     <groupId>com.vibium</groupId>
     <artifactId>vibium</artifactId>
-    <version>26.8.21</version>
+    <version>26.3.18</version>
 </dependency>
 ```
 
@@ -108,7 +108,6 @@ This installs the Vibium binary and downloads Chrome automatically. No manual br
 **Async API:**
 ```javascript
 import { browser } from 'vibium'
-import fs from 'node:fs/promises'
 
 const bro = await browser.start()
 const vibe = await bro.page()
@@ -222,7 +221,7 @@ bro.stop();
 │  └─────┬────────┘ └──────┬─────┘  │        ┌──────────────────┐
 │        └───────▲─────────┘        │        │                  │
 │                │                  │        │                  │
-│         ┌──────▼───────┐          │  BiDi  │    Web Browser   │
+│         ┌──────▼───────┐          │  BiDi  │  Chrome Browser  │
 │         │  BiDi Proxy  │          │◄──────►│                  │
 │         └──────────────┘          │        │                  │
 └───────────────────────────────────┘        └──────────────────┘
@@ -270,6 +269,7 @@ V1 focuses on the core loop: browser control via CLI, MCP, and client libraries.
 See [ROADMAP.md](ROADMAP.md) for planned features:
 - Cortex (memory/navigation layer)
 - Retina (recording extension)
+- Video recording
 - AI-powered locators
 
 ---
