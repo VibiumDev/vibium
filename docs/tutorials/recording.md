@@ -324,9 +324,35 @@ The `video` option has three settings:
   rather than producing a recording that silently lacks it.
 - **`false`** — no video track.
 
-Dimensions default to the viewport; pass `video: { width, height, frameRate }`
-to override. Remote browser connections (`--connect`) record every track except
-video, and the stop result says why; for a remote host you control,
+Video is sized to the viewport and captured at the engine's default frame rate.
+To change either, pass an object instead of a boolean. Every field is optional:
+
+```javascript
+await ctx.recording.start({ video: { height: 480 } })        // scale down
+await ctx.recording.start({ video: { frameRate: 10 } })      // smaller file
+await ctx.recording.start({ video: { height: 480, frameRate: 10 } })
+```
+
+In Python the fields are snake_case:
+
+```python
+vibe.context.recording.start(video={"height": 480, "frame_rate": 10})
+```
+
+Two things to know about the size. **An object counts as asking for video**, the
+same as `video: true` — you named specific output, so a recording that silently
+skipped it would be a surprise. And **the size is a request**: the engine keeps
+the viewport's aspect ratio and derives the other side, so `{ height: 480 }` on a
+16:9 viewport encodes 854×480, and asking for 640×480 there gets you 640×360. The
+stop result reports what was actually encoded:
+
+```javascript
+const result = await ctx.recording.stop()
+result.videos   // [{ context, durationMs, width: 854, height: 480 }]
+```
+
+Remote browser connections (`--connect`) record every track except video, and
+the stop result says why; for a remote host you control,
 `video: { remote: 'keep' }` records anyway and leaves the file there. See the
 [Record Video](../how-to-guides/record-video.md) guide.
 
