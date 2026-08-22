@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java stage-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -514,31 +514,47 @@ test-capability-audit: build-js python-venv
 	./scripts/test-java-capability-fixture.sh
 
 # Package Java JAR with native binaries
-package-java: build-go-all
-	cd clients/java && ./gradlew jar
-
-# Stage the signed Java artifacts for a Maven Central release, into
-# clients/java/build/staging-deploy. Going through make is what supplies
-# build-go-all (the JAR's native binaries), VIBIUM_BIN_PATH (so a global
-# vibium cannot outrank this build, #331), and VIBIUM_VM_FAST_LAUNCH (the
-# dead-GPU shim). A bare ./gradlew in clients/java gets none of them.
+# Build the uploadable Maven Central bundle: cross-compiled binaries, a signed
+# and verified staging tree, and vibium-bundle.zip at the repo root.
+#
+# Going through make is what supplies build-go-all (the JAR's native
+# binaries), VIBIUM_BIN_PATH (so a globally installed vibium cannot outrank
+# the build being published, #331), and VIBIUM_VM_FAST_LAUNCH (the dead-GPU
+# shim). A bare ./gradlew in clients/java gets none of them.
+#
 # See docs/contributing/publish-java-maven-central.md for the upload steps.
-stage-java: build-go-all $(FAST_LAUNCH_DEP)
+package-java: build-go-all $(FAST_LAUNCH_DEP)
 	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		./gradlew clean build publish -PjavaParallel=$(JAVA_STAGE_PARALLEL) \
 		$(if $(SKIP_TESTS),-x test)
 	@"$(MAKE)" --no-print-directory verify-staged-java
-
-# Assert the staged tree is uploadable before anyone zips it. Gradle's
-# verifyNativeBinaries covers the JAR contents; signing has no such guard, and
-# an unsigned stage is only rejected later by Central. Maven Central releases
-# are immutable, so every check here is cheaper than the alternative.
-verify-staged-java:
-	@version=$$(cat VERSION); 	dir="clients/java/build/staging-deploy/com/vibium/vibium/$$version"; 	if [ ! -d "$$dir" ]; then echo "stage-java: $$dir missing" >&2; exit 1; fi; 	fail=0; 	for artifact in "vibium-$$version.jar" "vibium-$$version-sources.jar" 			"vibium-$$version-javadoc.jar" "vibium-$$version.pom"; do 		if [ ! -f "$$dir/$$artifact" ]; then echo "stage-java: missing $$artifact" >&2; fail=1; 		elif [ ! -f "$$dir/$$artifact.asc" ]; then echo "stage-java: $$artifact is not signed" >&2; fail=1; fi; 	done; 	natives=$$(jar tf "$$dir/vibium-$$version.jar" 2>/dev/null | grep -c 'natives/vibium' || true); 	if [ "$$natives" -ne 5 ]; then echo "stage-java: JAR carries $$natives of 5 native binaries" >&2; fail=1; fi; 	if [ "$$fail" -ne 0 ]; then exit 1; fi; 	echo "stage-java: $$version staged, 4 artifacts signed, $$natives natives"
+	@rm -f $(CURDIR)/vibium-bundle.zip
+	@cd clients/java/build/staging-deploy && zip -qr $(CURDIR)/vibium-bundle.zip \
+		com/ -x 'com/vibium/vibium/maven-metadata.xml*'
+	@echo "package-java: vibium-bundle.zip ready to upload"
 
 # Serial by default: each test JVM launches its own Chrome and a few fail to
 # connect when four start at once.
 JAVA_STAGE_PARALLEL ?= 1
+
+# Assert the staged tree is uploadable before it is zipped. Gradle's
+# verifyNativeBinaries covers the JAR contents; signing has no such guard, and
+# an unsigned stage is only rejected later by Central. Maven Central releases
+# are immutable, so every check here is cheaper than the alternative.
+verify-staged-java:
+	@version=$$(cat VERSION); \
+	dir="clients/java/build/staging-deploy/com/vibium/vibium/$$version"; \
+	if [ ! -d "$$dir" ]; then echo "package-java: $$dir missing" >&2; exit 1; fi; \
+	fail=0; \
+	for artifact in "vibium-$$version.jar" "vibium-$$version-sources.jar" \
+			"vibium-$$version-javadoc.jar" "vibium-$$version.pom"; do \
+		if [ ! -f "$$dir/$$artifact" ]; then echo "package-java: missing $$artifact" >&2; fail=1; \
+		elif [ ! -f "$$dir/$$artifact.asc" ]; then echo "package-java: $$artifact is not signed" >&2; fail=1; fi; \
+	done; \
+	natives=$$(jar tf "$$dir/vibium-$$version.jar" 2>/dev/null | grep -c 'natives/vibium' || true); \
+	if [ "$$natives" -ne 5 ]; then echo "package-java: JAR carries $$natives of 5 native binaries" >&2; fail=1; fi; \
+	if [ "$$fail" -ne 0 ]; then exit 1; fi; \
+	echo "package-java: $$version staged, 4 artifacts signed, $$natives natives"
 
 # Interactive JShell with the Java client
 jshell: build-java
@@ -651,9 +667,8 @@ help:
 	@echo "  make package               - Build all packages (npm + Python)"
 	@echo "  make package-js            - Build npm packages only"
 	@echo "  make package-python        - Build Python wheels only"
-	@echo "  make package-java          - Build Java JAR with native binaries"
-	@echo "  make stage-java            - Stage signed Java artifacts for a Maven"
-	@echo "                               Central release (SKIP_TESTS=1 to skip tests)"
+	@echo "  make package-java          - Build the signed Maven Central bundle"
+	@echo "                               (SKIP_TESTS=1 to skip the test run)"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test                  - Build everything and run all tests (CLI + JS + MCP + Python + Java)"
