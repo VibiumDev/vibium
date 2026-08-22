@@ -216,7 +216,15 @@ signing {
     sign(publishing.publications["mavenJava"])
 }
 
-// Only sign when publishing
+// Sign for any publish to a real repository. Keying on ":publish" matched
+// only the aggregate task, so every publishAllPublicationsTo<Name>Repository
+// invocation skipped signing silently -- the manual release staged unsigned
+// artifacts, and the nightly pushed unsigned snapshots despite importing a
+// key and passing a passphrase. publishToMavenLocal stays unsigned.
 tasks.withType<Sign>().configureEach {
-    onlyIf { gradle.taskGraph.hasTask(":publish") }
+    onlyIf {
+        gradle.taskGraph.allTasks.any {
+            it is org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+        }
+    }
 }

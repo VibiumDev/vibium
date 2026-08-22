@@ -84,7 +84,7 @@ signing.gnupg.keyName=<KEY_ID>
 signing.gnupg.passphrase=<your-gpg-passphrase>   # optional — skips the pinentry dialog
 ```
 
-**Note:** If you omit the passphrase, a pinentry dialog will pop up during `./gradlew publish` asking for it. That's normal.
+**Note:** If you omit the passphrase, a pinentry dialog will pop up during the staging step asking for it. That's normal.
 
 The build.gradle.kts already has the `maven-publish` and `signing` plugins configured.
 
@@ -97,20 +97,40 @@ Save your Sonatype token (from step 4) somewhere handy — you'll need it for th
 First, bump the version. This updates `VERSION` and all package manifests (JS, Python, Java) in one step:
 
 ```bash
-make set-version V=26.3.18
+make set-version V=26.8.21
 ```
 
 Then build from the repo root:
 
 ```bash
-# Build all platform binaries (required for the JAR)
+# Build all platform binaries. The JAR packages these; without them
+# copyNativeBinaries silently copies nothing and the JAR ships empty.
 make build-go-all
 
-# Clean and rebuild the Java client, then stage signed artifacts
+# Clean and rebuild the Java client, then stage signed artifacts.
+# VIBIUM_BIN_PATH is required -- see the warning below.
 cd clients/java
-./gradlew clean build publish -PjavaParallel=1
+VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
+  ./gradlew clean build publishAllPublicationsToStagingRepository -PjavaParallel=1
 cd ../..
 ```
+
+> **`VIBIUM_BIN_PATH` is not optional.** `BinaryResolver` resolves in the order
+> `VIBIUM_BIN_PATH` -> `PATH` -> the JAR's own packaged binary, so a `vibium`
+> installed globally (`npm install -g vibium`, Homebrew) **outranks the build
+> you are publishing**. Tests then run the old binary against the new client
+> and fail in ways that do not name the cause -- a null `screencastSupportError`,
+> a `VibiumException` that never throws, an empty selector from
+> `WireContractTest`. `make test-java` sets this variable, which is why
+> `make test` passes while this command fails. Tracked as #331.
+
+> **Do not use the bare `publish` task.** Two repositories are registered:
+> `staging` (the local `build/staging-deploy` directory this flow needs) and
+> `centralSnapshots` (the Sonatype snapshots endpoint the nightly uses).
+> `publish` targets both, so it fails on `credentials.username doesn't have a
+> configured value` unless `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`
+> are exported -- and a stable release must not push a snapshot anyway. Name
+> the staging repository explicitly.
 
 > **`-PjavaParallel=1` is intentional.** `build` runs the test suite, and each
 > test class launches its own Chrome. At the default `maxParallelForks=4`, four
@@ -118,8 +138,10 @@ cd ../..
 > (`VibiumConnectionException` / `IOException` at `Vibium.start()`) — a launch
 > race, not a real failure. Running the tests serially avoids it. If you've
 > already validated with `make test` and just want to stage artifacts, you can
-> skip the tests instead with `./gradlew clean build publish -x test` (the
-> published jar/sources/javadoc are identical either way).
+> skip the tests instead by adding `-x test` to the command above (the
+> published jar/sources/javadoc are identical either way). If you do, run the
+> native-binary check below by hand -- skipping tests removes the only signal
+> that would have caught an empty JAR.
 
 This creates the signed artifacts in `clients/java/build/staging-deploy/`.
 
@@ -142,6 +164,22 @@ vibium-<version>-javadoc.jar.asc
 
 Plus `.md5` and `.sha1` checksums for each.
 
+Confirm the JAR actually carries the five native binaries. Maven Central
+releases are immutable, so an empty JAR cannot be replaced -- only superseded
+by another version:
+
+```console
+$ jar tf clients/java/build/staging-deploy/com/vibium/vibium/*/vibium-*.jar | grep natives/
+natives/vibium-darwin-amd64
+natives/vibium-darwin-arm64
+natives/vibium-linux-amd64
+natives/vibium-linux-arm64
+natives/vibium-windows-amd64.exe
+```
+
+Fewer than five means `make build-go-all` did not run, or ran before something
+cleaned `clicker/bin`. Rebuild and stage again.
+
 ---
 
 ## 7. Create the Bundle
@@ -150,11 +188,25 @@ Maven Central expects a single zip bundle:
 
 ```bash
 cd clients/java/build/staging-deploy
-zip -r ../../../../vibium-bundle.zip com/
+zip -r ../../../../vibium-bundle.zip com/ -x 'com/vibium/vibium/maven-metadata.xml*'
 cd ../../../..
 ```
 
-This creates `vibium-bundle.zip` in the repo root.
+This creates `vibium-bundle.zip` in the repo root. `maven-metadata.xml` is
+excluded: Gradle writes it into the staging directory, but it describes a
+repository rather than a deployment and is not part of a release bundle.
+
+Check the bundle before uploading — it should contain the four artifacts, four
+signatures, and their checksums, and nothing above the version directory:
+
+```console
+$ unzip -l vibium-bundle.zip | grep -cE 'vibium-[0-9.]+(-sources|-javadoc)?\.(jar|pom)$'
+4
+$ unzip -l vibium-bundle.zip | grep -c '\.asc$'
+5
+$ unzip -l vibium-bundle.zip | grep -c 'maven-metadata'
+0
+```
 
 ---
 
