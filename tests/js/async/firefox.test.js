@@ -276,7 +276,7 @@ describe('JS Firefox', () => {
       () => execFileSync(bin,
         ['is-installed', '--engine', 'firefox', '--channel', 'no-such-channel'],
         { stdio: 'pipe' }),
-      (err) => /unsupported Firefox channel/.test(err.stderr.toString()),
+      (err) => /unsupported channel/.test(err.stderr.toString()),
       'An unknown channel should be rejected by CLI validation'
     );
   });
@@ -295,7 +295,7 @@ describe('JS Firefox', () => {
       } catch (err) {
         stderr = err.stderr.toString();
       }
-      assert.ok(!/unsupported Firefox channel/.test(stderr),
+      assert.ok(!/unsupported channel/.test(stderr),
         `Channel "${channel}" should pass CLI validation`);
     }
   });
