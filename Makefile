@@ -481,11 +481,11 @@ build-java: build-go
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
 JAVA_PARALLEL ?= 3
-test-java: build-go install-engine
+test-java: build-go install-engine $(FAST_LAUNCH_DEP)
 	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
-test-java-engine: build-go install-engine
+test-java-engine: build-go install-engine $(FAST_LAUNCH_DEP)
 	@echo "--- Java Cross-Engine Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PcapabilityOnly -PjavaParallel=$(JAVA_PARALLEL)
 
@@ -517,25 +517,18 @@ test-capability-audit: build-js python-venv
 # Build the uploadable Maven Central bundle: cross-compiled binaries, a signed
 # and verified staging tree, and vibium-bundle.zip at the repo root.
 #
-# Going through make is what supplies build-go-all (the JAR's native
-# binaries), VIBIUM_BIN_PATH (so a globally installed vibium cannot outrank
-# the build being published, #331), and VIBIUM_VM_FAST_LAUNCH (the dead-GPU
-# shim). A bare ./gradlew in clients/java gets none of them.
+# Packaging only: run the tests with make test-java, which supplies
+# VIBIUM_BIN_PATH so a globally installed vibium cannot outrank the build
+# under test (#331), and the dead-GPU shim.
 #
 # See docs/contributing/publish-java-maven-central.md for the upload steps.
-package-java: build-go-all $(FAST_LAUNCH_DEP)
-	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
-		./gradlew clean build publish -PjavaParallel=$(JAVA_STAGE_PARALLEL) \
-		$(if $(SKIP_TESTS),-x test)
+package-java: build-go-all
+	cd clients/java && ./gradlew clean publish
 	@"$(MAKE)" --no-print-directory verify-staged-java
 	@rm -f $(CURDIR)/vibium-bundle.zip
 	@cd clients/java/build/staging-deploy && zip -qr $(CURDIR)/vibium-bundle.zip \
 		com/ -x 'com/vibium/vibium/maven-metadata.xml*'
 	@echo "package-java: vibium-bundle.zip ready to upload"
-
-# Serial by default: each test JVM launches its own Chrome and a few fail to
-# connect when four start at once.
-JAVA_STAGE_PARALLEL ?= 1
 
 # Assert the staged tree is uploadable before it is zipped. Gradle's
 # verifyNativeBinaries covers the JAR contents; signing has no such guard, and
@@ -668,7 +661,6 @@ help:
 	@echo "  make package-js            - Build npm packages only"
 	@echo "  make package-python        - Build Python wheels only"
 	@echo "  make package-java          - Build the signed Maven Central bundle"
-	@echo "                               (SKIP_TESTS=1 to skip the test run)"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test                  - Build everything and run all tests (CLI + JS + MCP + Python + Java)"

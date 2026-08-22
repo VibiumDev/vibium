@@ -95,10 +95,11 @@ Save your Sonatype token (from step 4) somewhere handy — you'll need it for th
 ## 6. Build the Bundle
 
 Bump the version — this updates `VERSION` and all package manifests (JS,
-Python, Java) in one step — then build:
+Python, Java) in one step — then test and package:
 
 ```bash
 make set-version V=26.8.21
+make test-java
 make package-java
 ```
 
@@ -107,18 +108,17 @@ package-java: 26.8.21 staged, 4 artifacts signed, 5 natives
 package-java: vibium-bundle.zip ready to upload
 ```
 
-That cross-compiles the native binaries the JAR packages, stages signed
-artifacts into `clients/java/build/staging-deploy/`, checks that every artifact
-exists, is signed, and carries all five natives, and zips `vibium-bundle.zip`
-at the repo root. It fails rather than producing a bundle Central will reject.
+`package-java` cross-compiles the native binaries the JAR packages, stages
+signed artifacts into `clients/java/build/staging-deploy/`, checks that every
+artifact exists, is signed, and carries all five natives, and zips
+`vibium-bundle.zip` at the repo root. It fails rather than producing a bundle
+Central will reject. It does not run tests — `make test-java` does, or
+`make test` if you want the whole suite.
 
-Run it through `make`, not `./gradlew` directly: the Makefile supplies
+Run both through `make`, not `./gradlew` directly: the Makefile supplies
 `VIBIUM_BIN_PATH` (so a globally installed `vibium` cannot outrank the build
-being published, #331) and the shim that skips the ~15s Metal stall per Chrome
+under test, #331) and the shim that skips the ~15s Metal stall per Chrome
 launch on an affected macOS VM. A bare `./gradlew` gets neither.
-
-`SKIP_TESTS=1` skips the test run if you already ran `make test`;
-`JAVA_STAGE_PARALLEL=4` runs them in parallel instead.
 
 To look at what was staged:
 
@@ -221,6 +221,7 @@ would pass even on a JAR with no binaries in it.
 ```bash
 # Full publish flow (from repo root)
 make set-version V=<version>
+make test-java
 make package-java
 
 # Upload via web: central.sonatype.com → Publishing → Upload vibium-bundle.zip → Publish
