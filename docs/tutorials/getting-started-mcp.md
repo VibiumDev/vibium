@@ -146,7 +146,7 @@ npx -y vibium install
 On macOS, if you see a Gatekeeper warning about chromedriver, run:
 
 ```bash
-xattr -cr "$(npx -y vibium which chromedriver)"
+xattr -cr "$(npx -y vibium paths | sed -n 's/^Chromedriver: //p')"
 ```
 
 ### Changes not taking effect
