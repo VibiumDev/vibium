@@ -207,9 +207,14 @@ serve: build-go
 # caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
 # reason. Bump *_PARALLEL on machines with more cores/memory.
 #
-# SUITE_PARALLEL caps how many suites the middle phase runs at once.
-# Default 4; drop to 1 on a small machine to run suites one at a time
-# (peak Chromes = the *_PARALLEL fan-out of a single suite).
+# SUITE_PARALLEL caps how many suites the middle phase runs at once. The
+# desktop default of 1 runs suites one at a time (peak Chromes = the
+# *_PARALLEL fan-out of a single suite) so a dev machine stays usable;
+# CI overrides to 4 (see .github/workflows/test.yml).
+#
+# Do not raise this default to match CI. At 4, the fan-outs multiply --
+# on a 12-core box JS_PARALLEL and PY_PARALLEL are 6 each, so the middle
+# phase peaks near 15 concurrent Chromes and beachballs the machine (#230).
 #
 # test-browser-modes runs in its own serial phase because its tests open
 # visible Chrome windows (headed coverage is intentional — that's what
@@ -220,7 +225,7 @@ serve: build-go
 # test-daemon also runs serially: its tests start and stop the one shared
 # daemon at a fixed socket path, so any suite that auto-starts a daemon
 # alongside them would fight over it.
-SUITE_PARALLEL ?= 4
+SUITE_PARALLEL ?= 1
 
 # Per-suite browser fan-out, derived from core count: half the cores, floor 3.
 # A 12-core dev box gets 6; CI's 4-vCPU runner stays at the long-standing 3.

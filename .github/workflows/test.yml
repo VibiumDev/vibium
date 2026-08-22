@@ -129,7 +129,7 @@ jobs:
       # per test now, not per file, so the Makefile's 30s default applies and a
       # hung ordinary test surfaces in 30s.
       - name: Test
-        run: xvfb-run --auto-servernum make test
+        run: xvfb-run --auto-servernum make test SUITE_PARALLEL=4
 
       - name: Audit capability selection
         run: make test-capability-audit
