@@ -168,8 +168,14 @@ Confirm the JAR actually carries the five native binaries. Maven Central
 releases are immutable, so an empty JAR cannot be replaced -- only superseded
 by another version:
 
+Run this from the repo root. Name the JAR explicitly — a `vibium-*.jar` glob
+also matches the sources and javadoc JARs, and `jar tf` takes a single archive
+and treats the rest as entry filters, so it prints nothing and looks like a
+failure:
+
 ```console
-$ jar tf clients/java/build/staging-deploy/com/vibium/vibium/*/vibium-*.jar | grep natives/
+$ V=$(cat VERSION)
+$ jar tf clients/java/build/staging-deploy/com/vibium/vibium/$V/vibium-$V.jar | grep natives/
 natives/vibium-darwin-amd64
 natives/vibium-darwin-arm64
 natives/vibium-linux-amd64
