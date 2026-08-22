@@ -103,45 +103,22 @@ make set-version V=26.8.21
 Then build from the repo root:
 
 ```bash
-# Build all platform binaries. The JAR packages these; without them
-# copyNativeBinaries silently copies nothing and the JAR ships empty.
 make build-go-all
 
-# Clean and rebuild the Java client, then stage signed artifacts.
-# VIBIUM_BIN_PATH is required -- see the warning below.
 cd clients/java
 VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
   ./gradlew clean build publishAllPublicationsToStagingRepository -PjavaParallel=1
 cd ../..
 ```
 
-> **`VIBIUM_BIN_PATH` is not optional.** `BinaryResolver` resolves in the order
-> `VIBIUM_BIN_PATH` -> `PATH` -> the JAR's own packaged binary, so a `vibium`
-> installed globally (`npm install -g vibium`, Homebrew) **outranks the build
-> you are publishing**. Tests then run the old binary against the new client
-> and fail in ways that do not name the cause -- a null `screencastSupportError`,
-> a `VibiumException` that never throws, an empty selector from
-> `WireContractTest`. `make test-java` sets this variable, which is why
-> `make test` passes while this command fails. Tracked as #331.
-
-> **Do not use the bare `publish` task.** Two repositories are registered:
-> `staging` (the local `build/staging-deploy` directory this flow needs) and
-> `centralSnapshots` (the Sonatype snapshots endpoint the nightly uses).
-> `publish` targets both, so it fails on `credentials.username doesn't have a
-> configured value` unless `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`
-> are exported -- and a stable release must not push a snapshot anyway. Name
-> the staging repository explicitly.
-
-> **`-PjavaParallel=1` is intentional.** `build` runs the test suite, and each
-> test class launches its own Chrome. At the default `maxParallelForks=4`, four
-> Chromes start at once and a couple often fail to connect
-> (`VibiumConnectionException` / `IOException` at `Vibium.start()`) — a launch
-> race, not a real failure. Running the tests serially avoids it. If you've
-> already validated with `make test` and just want to stage artifacts, you can
-> skip the tests instead by adding `-x test` to the command above (the
-> published jar/sources/javadoc are identical either way). If you do, run the
-> native-binary check below by hand -- skipping tests removes the only signal
-> that would have caught an empty JAR.
+- `make build-go-all` — the JAR packages these binaries.
+- `VIBIUM_BIN_PATH` — required. A globally installed `vibium` otherwise
+  outranks the build being published and the tests fail against it (#331).
+- `publishAllPublicationsToStagingRepository`, not `publish` — `publish` also
+  targets the `centralSnapshots` repository and fails without its credentials.
+- `-PjavaParallel=1` — runs the browser tests serially; the default of 4
+  launches four Chromes at once and some fail to connect. Add `-x test` to
+  skip them if you already ran `make test`.
 
 This creates the signed artifacts in `clients/java/build/staging-deploy/`.
 
@@ -168,15 +145,9 @@ Confirm the JAR actually carries the five native binaries. Maven Central
 releases are immutable, so an empty JAR cannot be replaced -- only superseded
 by another version:
 
-The staging step enforces this itself: `verifyNativeBinaries` fails the publish
-with `refusing to publish a JAR without native binaries` when any are absent,
-so a JAR that reaches `staging-deploy` already has all five. The command below
-is for confirming by hand.
-
-Run it from the repo root, and name the JAR explicitly — a `vibium-*.jar` glob
-also matches the sources and javadoc JARs, and `jar tf` takes a single archive
-and treats the rest as entry filters, so it prints nothing and looks like a
-failure:
+`verifyNativeBinaries` fails the publish if any are missing, so this is a
+by-hand confirmation. Name the JAR explicitly — a `vibium-*.jar` glob also
+matches the sources and javadoc JARs and prints nothing.
 
 ```console
 $ V=$(cat VERSION)
@@ -188,8 +159,6 @@ natives/vibium-linux-arm64
 natives/vibium-windows-amd64.exe
 ```
 
-Fewer than five means `make build-go-all` did not run, or ran before something
-cleaned `clicker/bin`. Rebuild and stage again.
 
 ---
 
@@ -204,11 +173,9 @@ cd ../../../..
 ```
 
 This creates `vibium-bundle.zip` in the repo root. `maven-metadata.xml` is
-excluded: Gradle writes it into the staging directory, but it describes a
-repository rather than a deployment and is not part of a release bundle.
+excluded — it describes a repository, not a deployment.
 
-Check the bundle before uploading — it should contain the four artifacts, four
-signatures, and their checksums, and nothing above the version directory:
+Check it before uploading:
 
 ```console
 $ unzip -l vibium-bundle.zip | grep -cE 'vibium-[0-9.]+(-sources|-javadoc)?\.(jar|pom)$'
@@ -278,15 +245,25 @@ mkdir /tmp/vibium-java-test && cd /tmp/vibium-java-test
 
 cat > Test.java << 'EOF'
 import com.vibium.Vibium;
+import com.vibium.types.StartOptions;
+
 public class Test {
     public static void main(String[] args) {
-        System.out.println("Vibium loaded: " + Vibium.class.getName());
+        var bro = Vibium.start(new StartOptions().headless(true));
+        try {
+            var page = bro.page();
+            page.go("data:text/html,<h1>ok</h1>");
+            if (!page.find("h1").text().equals("ok")) throw new AssertionError();
+            System.out.println("Vibium OK");
+        } finally {
+            bro.stop();
+        }
     }
 }
 EOF
 
 # Download the JAR
-VERSION=$(cat /path/to/vibium/VERSION)
+VERSION=<version>
 curl -LO "https://repo1.maven.org/maven2/com/vibium/vibium/$VERSION/vibium-$VERSION.jar"
 curl -LO "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar"
 
@@ -294,17 +271,26 @@ javac -cp "vibium-$VERSION.jar:gson-2.11.0.jar" Test.java
 java -cp ".:vibium-$VERSION.jar:gson-2.11.0.jar" Test
 ```
 
+This launches a browser from the JAR's packaged binary. Printing a class name
+would pass even on a JAR with no binaries in it.
+
 ---
 
 ## Quick Reference
 
 ```bash
 # Full publish flow (from repo root)
+make set-version V=<version>
 make build-go-all
-# -PjavaParallel=1 runs the browser tests serially to avoid Chrome launch races
-cd clients/java && ./gradlew clean build publish -PjavaParallel=1 && cd ../..
 
-cd clients/java/build/staging-deploy && zip -r ../../../../vibium-bundle.zip com/ && cd ../../../..
+cd clients/java
+VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
+  ./gradlew clean build publishAllPublicationsToStagingRepository -PjavaParallel=1
+cd ../..
+
+cd clients/java/build/staging-deploy
+zip -r ../../../../vibium-bundle.zip com/ -x 'com/vibium/vibium/maven-metadata.xml*'
+cd ../../../..
 
 # Upload via web: central.sonatype.com → Publishing → Upload vibium-bundle.zip → Publish
 ```
@@ -328,7 +314,7 @@ Central Portal checks these keyservers: `keyserver.ubuntu.com`, `keys.openpgp.or
 
 ### "Missing javadoc JAR" or "Missing sources JAR"
 
-The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`. Just make sure `./gradlew build` runs before `./gradlew publish`.
+The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`. Just make sure `build` runs before the staging task.
 
 ### Namespace verification stuck
 
