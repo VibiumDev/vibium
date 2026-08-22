@@ -115,45 +115,19 @@ directly in `clients/java` gets none of that.
 `make stage-java SKIP_TESTS=1` skips the test run if you already ran
 `make test`; `JAVA_STAGE_PARALLEL=4` runs them in parallel instead.
 
-This creates the signed artifacts in `clients/java/build/staging-deploy/`.
+This stages the signed artifacts in `clients/java/build/staging-deploy/` and
+checks them, failing if an artifact is missing, unsigned, or the JAR does not
+carry all five native binaries:
 
-Verify the staged files:
+```console
+stage-java: 26.8.21 staged, 4 artifacts signed, 5 natives
+```
+
+To look for yourself:
+
 ```bash
 ls -R clients/java/build/staging-deploy/com/vibium/vibium/
 ```
-
-You should see:
-```
-vibium-<version>.jar
-vibium-<version>.jar.asc          (GPG signature)
-vibium-<version>.pom
-vibium-<version>.pom.asc
-vibium-<version>-sources.jar
-vibium-<version>-sources.jar.asc
-vibium-<version>-javadoc.jar
-vibium-<version>-javadoc.jar.asc
-```
-
-Plus `.md5` and `.sha1` checksums for each.
-
-Confirm the JAR actually carries the five native binaries. Maven Central
-releases are immutable, so an empty JAR cannot be replaced -- only superseded
-by another version:
-
-`verifyNativeBinaries` fails the publish if any are missing, so this is a
-by-hand confirmation. Name the JAR explicitly — a `vibium-*.jar` glob also
-matches the sources and javadoc JARs and prints nothing.
-
-```console
-$ V=$(cat VERSION)
-$ jar tf clients/java/build/staging-deploy/com/vibium/vibium/$V/vibium-$V.jar | grep natives/
-natives/vibium-darwin-amd64
-natives/vibium-darwin-arm64
-natives/vibium-linux-amd64
-natives/vibium-linux-arm64
-natives/vibium-windows-amd64.exe
-```
-
 
 ---
 

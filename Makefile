@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java stage-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java stage-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -527,6 +527,14 @@ stage-java: build-go-all $(FAST_LAUNCH_DEP)
 	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		./gradlew clean build publish -PjavaParallel=$(JAVA_STAGE_PARALLEL) \
 		$(if $(SKIP_TESTS),-x test)
+	@"$(MAKE)" --no-print-directory verify-staged-java
+
+# Assert the staged tree is uploadable before anyone zips it. Gradle's
+# verifyNativeBinaries covers the JAR contents; signing has no such guard, and
+# an unsigned stage is only rejected later by Central. Maven Central releases
+# are immutable, so every check here is cheaper than the alternative.
+verify-staged-java:
+	@version=$$(cat VERSION); 	dir="clients/java/build/staging-deploy/com/vibium/vibium/$$version"; 	if [ ! -d "$$dir" ]; then echo "stage-java: $$dir missing" >&2; exit 1; fi; 	fail=0; 	for artifact in "vibium-$$version.jar" "vibium-$$version-sources.jar" 			"vibium-$$version-javadoc.jar" "vibium-$$version.pom"; do 		if [ ! -f "$$dir/$$artifact" ]; then echo "stage-java: missing $$artifact" >&2; fail=1; 		elif [ ! -f "$$dir/$$artifact.asc" ]; then echo "stage-java: $$artifact is not signed" >&2; fail=1; fi; 	done; 	natives=$$(jar tf "$$dir/vibium-$$version.jar" 2>/dev/null | grep -c 'natives/vibium' || true); 	if [ "$$natives" -ne 5 ]; then echo "stage-java: JAR carries $$natives of 5 native binaries" >&2; fail=1; fi; 	if [ "$$fail" -ne 0 ]; then exit 1; fi; 	echo "stage-java: $$version staged, 4 artifacts signed, $$natives natives"
 
 # Serial by default: each test JVM launches its own Chrome and a few fail to
 # connect when four start at once.
