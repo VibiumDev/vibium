@@ -168,7 +168,12 @@ Confirm the JAR actually carries the five native binaries. Maven Central
 releases are immutable, so an empty JAR cannot be replaced -- only superseded
 by another version:
 
-Run this from the repo root. Name the JAR explicitly — a `vibium-*.jar` glob
+The staging step enforces this itself: `verifyNativeBinaries` fails the publish
+with `refusing to publish a JAR without native binaries` when any are absent,
+so a JAR that reaches `staging-deploy` already has all five. The command below
+is for confirming by hand.
+
+Run it from the repo root, and name the JAR explicitly — a `vibium-*.jar` glob
 also matches the sources and javadoc JARs, and `jar tf` takes a single archive
 and treats the rest as entry filters, so it prints nothing and looks like a
 failure:

@@ -137,6 +137,35 @@ tasks.named("processResources") {
     dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
 
+// copyNativeBinaries is a Copy over ../../clicker/bin; with that directory
+// unpopulated it succeeds having copied nothing, and the JAR ships with no
+// binaries at all. Dev builds tolerate that deliberately. A publish must not:
+// Maven Central releases are immutable, so an empty JAR can only be superseded.
+val requiredNatives = listOf(
+    "vibium-darwin-amd64",
+    "vibium-darwin-arm64",
+    "vibium-linux-amd64",
+    "vibium-linux-arm64",
+    "vibium-windows-amd64.exe",
+)
+val verifyNativeBinaries by tasks.registering {
+    dependsOn(tasks.named("copyNativeBinaries"))
+    doLast {
+        val dir = file("src/main/resources/natives")
+        val missing = requiredNatives.filter { !dir.resolve(it).exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "refusing to publish a JAR without native binaries: " +
+                    missing.joinToString(", ") +
+                    "\nRun 'make build-go-all' from the repo root, then stage again."
+            )
+        }
+    }
+}
+
+tasks.withType<org.gradle.api.publish.maven.tasks.PublishToMavenRepository>()
+    .configureEach { dependsOn(verifyNativeBinaries) }
+
 // sourcesJar also reads src/main/resources, so it needs the same dependency
 tasks.named("sourcesJar") {
     dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
