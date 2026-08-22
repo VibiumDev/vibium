@@ -100,28 +100,20 @@ First, bump the version. This updates `VERSION` and all package manifests (JS, P
 make set-version V=26.8.21
 ```
 
-Then build from the repo root:
+Then, from the repo root:
 
 ```bash
-make build-go-all
-
-cd clients/java
-VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
-  ./gradlew clean build publish -PjavaParallel=1
-cd ../..
+make stage-java
 ```
 
-- `make build-go-all` — the JAR packages these binaries.
-- `VIBIUM_BIN_PATH` — required. A globally installed `vibium` otherwise
-  outranks the build being published and the tests fail against it (#331).
-- `-PjavaParallel=1` — runs the browser tests serially; the default of 4
-  launches four Chromes at once and some fail to connect. Add `-x test` to
-  skip them if you already ran `make test`.
+That runs `build-go-all` for the JAR's native binaries, builds the shim that
+skips the ~15s Metal stall on an affected macOS VM, sets `VIBIUM_BIN_PATH` so a
+globally installed `vibium` cannot outrank the build being published (#331),
+and runs `clean build publish` with the tests serial. Running `./gradlew`
+directly in `clients/java` gets none of that.
 
-`publish` here writes to the local `staging-deploy` directory, not to Central —
-steps 7 and 8 do that. It is what produces the Maven layout the bundle needs:
-`build` alone gives you `build/libs/*.jar` with no POM, checksums, or `.asc`
-files.
+`make stage-java SKIP_TESTS=1` skips the test run if you already ran
+`make test`; `JAVA_STAGE_PARALLEL=4` runs them in parallel instead.
 
 This creates the signed artifacts in `clients/java/build/staging-deploy/`.
 
@@ -284,12 +276,7 @@ would pass even on a JAR with no binaries in it.
 ```bash
 # Full publish flow (from repo root)
 make set-version V=<version>
-make build-go-all
-
-cd clients/java
-VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
-  ./gradlew clean build publish -PjavaParallel=1
-cd ../..
+make stage-java
 
 cd clients/java/build/staging-deploy
 zip -r ../../../../vibium-bundle.zip com/ -x 'com/vibium/vibium/maven-metadata.xml*'

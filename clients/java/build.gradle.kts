@@ -106,6 +106,10 @@ tasks.test {
     dependsOn(validateCapabilityMarkers)
     environment("VIBIUM_CAPABILITIES_FILE", file("../../tests/capabilities.json").absolutePath)
     environment("VIBIUM_CAPABILITY_AUDIT", System.getenv("VIBIUM_CAPABILITY_AUDIT") ?: "")
+    // Without this each Chrome launch pays the ~15s dead-GPU Metal stall on an
+    // affected macOS VM guest. The Makefile computes it; a bare ./gradlew does
+    // not, which is why the publish flow was slower than make test-java.
+    environment("VIBIUM_VM_FAST_LAUNCH", System.getenv("VIBIUM_VM_FAST_LAUNCH") ?: "")
 }
 
 // Copy native binaries into resources for JAR packaging

@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java stage-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -517,9 +517,20 @@ test-capability-audit: build-js python-venv
 package-java: build-go-all
 	cd clients/java && ./gradlew jar
 
-# Publish Java JAR to Maven Central
-publish-java: package-java
-	cd clients/java && ./gradlew publishAllPublicationsToSonatypeCentralRepository
+# Stage the signed Java artifacts for a Maven Central release, into
+# clients/java/build/staging-deploy. Going through make is what supplies
+# build-go-all (the JAR's native binaries), VIBIUM_BIN_PATH (so a global
+# vibium cannot outrank this build, #331), and VIBIUM_VM_FAST_LAUNCH (the
+# dead-GPU shim). A bare ./gradlew in clients/java gets none of them.
+# See docs/contributing/publish-java-maven-central.md for the upload steps.
+stage-java: build-go-all $(FAST_LAUNCH_DEP)
+	cd clients/java && VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
+		./gradlew clean build publish -PjavaParallel=$(JAVA_STAGE_PARALLEL) \
+		$(if $(SKIP_TESTS),-x test)
+
+# Serial by default: each test JVM launches its own Chrome and a few fail to
+# connect when four start at once.
+JAVA_STAGE_PARALLEL ?= 1
 
 # Interactive JShell with the Java client
 jshell: build-java
