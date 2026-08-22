@@ -28,7 +28,7 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
   vibium start --engine firefox
   # Start with Firefox instead of Chrome
 
-  vibium start --engine firefox --firefox-channel beta
+  vibium start --engine firefox --channel beta
   # Start with the installed Firefox beta instead of the release build
 
   vibium start ws://remote:9515/session

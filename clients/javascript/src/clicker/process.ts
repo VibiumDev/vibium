@@ -54,7 +54,7 @@ export class VibiumProcess {
       args.push('--engine', options.engine);
     }
     if (options.channel) {
-      args.push('--firefox-channel', options.channel);
+      args.push('--channel', options.channel);
     }
     if (options.headless === true) {
       args.push('--headless');

@@ -205,7 +205,7 @@ class VibiumProcess:
         if engine:
             args.extend(["--engine", engine])
         if channel:
-            args.extend(["--firefox-channel", channel])
+            args.extend(["--channel", channel])
         if headless:
             args.append("--headless")
         if connect_url:

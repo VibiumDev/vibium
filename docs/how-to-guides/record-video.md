@@ -34,13 +34,13 @@ Video requires Firefox 154 or newer, which regular Firefox ships since 2026-08-1
 
 On macOS and Linux, the clients install Firefox automatically on
 first use. Windows users must install Firefox themselves and set
-`VIBIUM_FIREFOX_PATH`. To install it ahead of time on a supported platform:
+`VIBIUM_ENGINE_PATH`. To install it ahead of time on a supported platform:
 
 ```
 vibium install --engine firefox
 ```
 
-To record against the Firefox beta instead, select the channel with `--firefox-channel beta`, the clients' `channel` option, or the `VIBIUM_FIREFOX_CHANNEL` env var; see [Using Firefox](using-firefox.md#release-channels).
+To record against the Firefox beta instead, select the channel with `--channel beta`, the clients' `channel` option, or the `VIBIUM_ENGINE_CHANNEL` env var; see [Using Firefox](using-firefox.md#release-channels).
 
 Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `video: true` fails there with an error saying so, and an omitted `video` records the trace without a video track.
 

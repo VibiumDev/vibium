@@ -15,11 +15,11 @@ Firefox: /Users/you/Library/Caches/vibium/firefox/release/153.0.3/Firefox.app/Co
 Firefox installs into the vibium cache next to Chrome for Testing. The vibium
 binary auto-installs the selected engine on first launch on macOS and Linux,
 same as Chrome, so all clients get it for free. On Windows, Firefox auto-install is not available:
-install Firefox yourself and point `VIBIUM_FIREFOX_PATH` at `firefox.exe`.
+install Firefox yourself and point `VIBIUM_ENGINE_PATH` at `firefox.exe`.
 
 ### Release channels
 
-`--firefox-channel beta` (or `VIBIUM_FIREFOX_CHANNEL=beta`) selects the Firefox beta instead of the release build. The channel applies to install and launch alike: each channel is cached separately, and only the selected one is run, so an installed beta never shadows stable. In the clients, pass `channel` when starting the browser:
+`--channel beta` (or `VIBIUM_ENGINE_CHANNEL=beta`) selects the Firefox beta instead of the release build. The channel applies to install and launch alike: each channel is cached separately, and only the selected one is run, so an installed beta never shadows stable. In the clients, pass `channel` when starting the browser:
 
 ```js
 const bro = await firefox.start({ channel: 'beta' });
@@ -102,9 +102,12 @@ currently requires Firefox, while PDF output may differ between engines.
 | Variable | Effect |
 |----------|--------|
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
-| `VIBIUM_FIREFOX_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
-| `VIBIUM_FIREFOX_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--firefox-channel` or the clients' `channel` option |
-| `VIBIUM_FIREFOX_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the channel's latest; keeps CI and fleets on one version until you move the pin |
+| `VIBIUM_ENGINE_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
+| `VIBIUM_ENGINE_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--channel` or the clients' `channel` option |
+| `VIBIUM_ENGINE_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the channel's latest; keeps CI and fleets on one version until you move the pin |
+
+The names are engine-neutral, but only Firefox implements them today. Setting
+any of them with `--engine chrome` is an error rather than a silent no-op.
 
 ## Feature notes
 
