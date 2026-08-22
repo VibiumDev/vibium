@@ -266,7 +266,7 @@ describe('JS Firefox', () => {
     );
   });
 
-  test('--firefox-channel rejects an unknown channel at the CLI', (t) => {
+  test('--channel rejects an unknown channel at the CLI', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
     if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
 
@@ -274,14 +274,14 @@ describe('JS Firefox', () => {
     // surfacing later as "Firefox not found" from the launcher (#314).
     assert.throws(
       () => execFileSync(bin,
-        ['is-installed', '--engine', 'firefox', '--firefox-channel', 'no-such-channel'],
+        ['is-installed', '--engine', 'firefox', '--channel', 'no-such-channel'],
         { stdio: 'pipe' }),
       (err) => /unsupported Firefox channel/.test(err.stderr.toString()),
       'An unknown channel should be rejected by CLI validation'
     );
   });
 
-  test('--firefox-channel accepts the valid channels', (t) => {
+  test('--channel accepts the valid channels', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
     if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
 
@@ -290,7 +290,7 @@ describe('JS Firefox', () => {
     for (const channel of ['release', 'beta']) {
       let stderr = '';
       try {
-        execFileSync(bin, ['is-installed', '--engine', 'firefox', '--firefox-channel', channel],
+        execFileSync(bin, ['is-installed', '--engine', 'firefox', '--channel', channel],
           { stdio: 'pipe' });
       } catch (err) {
         stderr = err.stderr.toString();

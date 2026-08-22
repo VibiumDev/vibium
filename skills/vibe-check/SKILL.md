@@ -5,7 +5,7 @@ description: Browser automation for AI agents. Use when the user needs to naviga
 
 # Vibium Browser Automation — CLI Reference
 
-The `vibium` CLI automates Chrome via the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
+The `vibium` CLI automates Chrome (and Firefox, via `--engine firefox`) from the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
 
 ```
 vibium go <url> && vibium map && vibium click @e1 && vibium map
@@ -190,6 +190,7 @@ vibium record stop
 - `vibium daemon start` — start background browser
 - `vibium daemon status` — check if running
 - `vibium daemon stop` — stop daemon
+- `vibium --session <name> <command>` — run against an isolated daemon and browser
 
 ## Common Patterns
 
@@ -278,6 +279,18 @@ vibium map
 vibium stop
 ```
 
+### Concurrent sessions (isolated browsers)
+```sh
+# Two scripts on one host, each with its own daemon and browser
+export VIBIUM_SESSION=checkout-tests
+vibium go https://example.com/checkout
+vibium daemon stop
+
+# Or per command, to drive two browsers from one script
+vibium --session buyer go https://shop.example.com
+vibium --session seller go https://shop.example.com/admin
+```
+
 ### Multi-page workflow
 ```sh
 vibium page new https://docs.example.com
@@ -355,9 +368,12 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 
 | Flag | Description |
 |------|-------------|
+| `--engine <name>` | Browser engine: `chrome` (default) or `firefox` (env: `VIBIUM_ENGINE`) |
+| `--channel <ch>` | Engine release channel: `release` (default) or `beta` — Firefox only (env: `VIBIUM_ENGINE_CHANNEL`) |
 | `--headless` | Hide browser window |
 | `--json` | Output as JSON |
 | `-v, --verbose` | Debug logging |
+| `--session <name>` | Isolated daemon + browser for concurrent use (env: `VIBIUM_SESSION`) |
 
 ## Tips
 
@@ -375,3 +391,4 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 - `vibium check`/`vibium uncheck` are idempotent — safe to call without checking state first
 - Screenshots save to the current directory by default (`-o` to change)
 - Use `vibium storage` / `vibium storage restore` to persist auth across sessions
+- Without `--session`, all commands on a host share one daemon and one browser — set `VIBIUM_SESSION` when running concurrently

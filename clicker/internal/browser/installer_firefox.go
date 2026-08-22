@@ -22,25 +22,25 @@ const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_vers
 // InstallFirefox downloads Firefox from Mozilla's release archive into the
 // vibium cache and returns the executable path. Skips the download if the
 // current version is already installed. The channel comes from
-// VIBIUM_FIREFOX_CHANNEL (default "release"; "beta" for pre-release testing).
+// VIBIUM_ENGINE_CHANNEL (default "release"; "beta" for pre-release testing).
 //
 // Windows is unsupported: Mozilla ships only installer executables there, no
 // archive build we can unpack into the cache. Install Firefox manually and
-// set VIBIUM_FIREFOX_PATH instead.
+// set VIBIUM_ENGINE_PATH instead.
 func InstallFirefox() (string, error) {
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return "", fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
 
-	if p := os.Getenv("VIBIUM_FIREFOX_PATH"); p != "" {
+	if p := os.Getenv("VIBIUM_ENGINE_PATH"); p != "" {
 		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("VIBIUM_FIREFOX_PATH is set but not usable: %w", err)
+			return "", fmt.Errorf("VIBIUM_ENGINE_PATH is set but not usable: %w", err)
 		}
 		return p, nil
 	}
 
 	if runtime.GOOS == "windows" {
-		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_FIREFOX_PATH to firefox.exe")
+		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_ENGINE_PATH to firefox.exe")
 	}
 
 	channel := paths.FirefoxChannel()
@@ -118,12 +118,12 @@ func IsFirefoxInstalled() bool {
 }
 
 // resolveFirefoxVersion returns the Firefox version to install:
-// VIBIUM_FIREFOX_VERSION when set, otherwise the channel's current version
+// VIBIUM_ENGINE_VERSION when set, otherwise the channel's current version
 // from Mozilla's product-details JSON. The pin exists because "latest"
 // changes out from under CI and fleets (a beta pin silently jumped 154 to
 // 155 the day 154 reached release); it also skips the network round-trip.
 func resolveFirefoxVersion(channel string) (string, error) {
-	if v := os.Getenv("VIBIUM_FIREFOX_VERSION"); v != "" {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
 		return v, nil
 	}
 	return fetchLatestFirefoxVersion(channel)

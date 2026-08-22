@@ -178,7 +178,7 @@ install-browser: build-go
 
 # Install Firefox (optional locally — the Firefox tests self-skip without it).
 # CI runs this so those tests actually execute. Channel comes from
-# VIBIUM_FIREFOX_CHANNEL (beta until Firefox 154 reaches stable).
+# VIBIUM_ENGINE_CHANNEL (beta until Firefox 154 reaches stable).
 install-firefox: build-go
 	./clicker/bin/vibium$(EXE) install --engine firefox
 
@@ -602,6 +602,7 @@ set-version:
 	@echo "  - packages/python/*/pyproject.toml (5 platform packages)"
 	@echo "  - packages/python/*/src/*/__init__.py (5 platform packages)"
 	@echo "  - package-lock.json (regenerated)"
+	@echo "  - README.md + docs/tutorials/getting-started-java.md (Maven coordinates)"
 
 # Show available targets
 help:
@@ -635,7 +636,7 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"
-	@echo "  make install-firefox       - Install Firefox (channel via VIBIUM_FIREFOX_CHANNEL)"
+	@echo "  make install-firefox       - Install Firefox (channel via VIBIUM_ENGINE_CHANNEL)"
 	@echo "  make deps                  - Install npm dependencies"
 	@echo "  make serve                 - Start proxy server on :9515"
 	@echo "  make double-tap            - Kill zombie Chrome/chromedriver processes"
