@@ -5,7 +5,7 @@ Step-by-step guide using the Central Portal (central.sonatype.com).
 This document covers immutable stable releases. Automated mutable snapshots use
 the separate [nightly release process](publishing-nightly-releases.md).
 
-**Already done the one-time setup?** Skip to [Step 6: Build and Stage](#6-build-and-stage).
+**Already done the one-time setup?** Skip to [Step 6: Build the Bundle](#6-build-the-bundle).
 
 ---
 
@@ -84,7 +84,7 @@ signing.gnupg.keyName=<KEY_ID>
 signing.gnupg.passphrase=<your-gpg-passphrase>   # optional — skips the pinentry dialog
 ```
 
-**Note:** If you omit the passphrase, a pinentry dialog will pop up during `./gradlew publish` asking for it. That's normal.
+**Note:** If you omit the passphrase, a pinentry dialog will pop up during the staging step asking for it. That's normal.
 
 The build.gradle.kts already has the `maven-publish` and `signing` plugins configured.
 
@@ -92,73 +92,43 @@ Save your Sonatype token (from step 4) somewhere handy — you'll need it for th
 
 ---
 
-## 6. Build and Stage
+## 6. Build the Bundle
 
-First, bump the version. This updates `VERSION` and all package manifests (JS, Python, Java) in one step:
-
-```bash
-make set-version V=26.3.18
-```
-
-Then build from the repo root:
+Bump the version — this updates `VERSION` and all package manifests (JS,
+Python, Java) in one step — then test and package:
 
 ```bash
-# Build all platform binaries (required for the JAR)
-make build-go-all
-
-# Clean and rebuild the Java client, then stage signed artifacts
-cd clients/java
-./gradlew clean build publish -PjavaParallel=1
-cd ../..
+make set-version V=26.8.21
+make test-java
+make package-java
 ```
 
-> **`-PjavaParallel=1` is intentional.** `build` runs the test suite, and each
-> test class launches its own Chrome. At the default `maxParallelForks=4`, four
-> Chromes start at once and a couple often fail to connect
-> (`VibiumConnectionException` / `IOException` at `Vibium.start()`) — a launch
-> race, not a real failure. Running the tests serially avoids it. If you've
-> already validated with `make test` and just want to stage artifacts, you can
-> skip the tests instead with `./gradlew clean build publish -x test` (the
-> published jar/sources/javadoc are identical either way).
+```console
+package-java: 26.8.21 staged, 4 artifacts signed, 5 natives
+package-java: vibium-bundle.zip ready to upload
+```
 
-This creates the signed artifacts in `clients/java/build/staging-deploy/`.
+`package-java` cross-compiles the native binaries the JAR packages, stages
+signed artifacts into `clients/java/build/staging-deploy/`, checks that every
+artifact exists, is signed, and carries all five natives, and zips
+`vibium-bundle.zip` at the repo root. It fails rather than producing a bundle
+Central will reject. It does not run tests — `make test-java` does, or
+`make test` if you want the whole suite.
 
-Verify the staged files:
+Run both through `make`, not `./gradlew` directly: the Makefile supplies
+`VIBIUM_BIN_PATH` (so a globally installed `vibium` cannot outrank the build
+under test, #331) and the shim that skips the ~15s Metal stall per Chrome
+launch on an affected macOS VM. A bare `./gradlew` gets neither.
+
+To look at what was staged:
+
 ```bash
 ls -R clients/java/build/staging-deploy/com/vibium/vibium/
 ```
 
-You should see:
-```
-vibium-<version>.jar
-vibium-<version>.jar.asc          (GPG signature)
-vibium-<version>.pom
-vibium-<version>.pom.asc
-vibium-<version>-sources.jar
-vibium-<version>-sources.jar.asc
-vibium-<version>-javadoc.jar
-vibium-<version>-javadoc.jar.asc
-```
-
-Plus `.md5` and `.sha1` checksums for each.
-
 ---
 
-## 7. Create the Bundle
-
-Maven Central expects a single zip bundle:
-
-```bash
-cd clients/java/build/staging-deploy
-zip -r ../../../../vibium-bundle.zip com/
-cd ../../../..
-```
-
-This creates `vibium-bundle.zip` in the repo root.
-
----
-
-## 8. Upload to Central Portal
+## 7. Upload to Central Portal
 
 ### Option A: Web UI
 
@@ -202,7 +172,7 @@ curl -X POST \
 
 ---
 
-## 9. Verify
+## 8. Verify
 
 After publishing, artifacts appear on Maven Central within ~30 minutes.
 
@@ -215,15 +185,25 @@ mkdir /tmp/vibium-java-test && cd /tmp/vibium-java-test
 
 cat > Test.java << 'EOF'
 import com.vibium.Vibium;
+import com.vibium.types.StartOptions;
+
 public class Test {
     public static void main(String[] args) {
-        System.out.println("Vibium loaded: " + Vibium.class.getName());
+        var bro = Vibium.start(new StartOptions().headless(true));
+        try {
+            var page = bro.page();
+            page.go("data:text/html,<h1>ok</h1>");
+            if (!page.find("h1").text().equals("ok")) throw new AssertionError();
+            System.out.println("Vibium OK");
+        } finally {
+            bro.stop();
+        }
     }
 }
 EOF
 
 # Download the JAR
-VERSION=$(cat /path/to/vibium/VERSION)
+VERSION=<version>
 curl -LO "https://repo1.maven.org/maven2/com/vibium/vibium/$VERSION/vibium-$VERSION.jar"
 curl -LO "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar"
 
@@ -231,17 +211,18 @@ javac -cp "vibium-$VERSION.jar:gson-2.11.0.jar" Test.java
 java -cp ".:vibium-$VERSION.jar:gson-2.11.0.jar" Test
 ```
 
+This launches a browser from the JAR's packaged binary. Printing a class name
+would pass even on a JAR with no binaries in it.
+
 ---
 
 ## Quick Reference
 
 ```bash
 # Full publish flow (from repo root)
-make build-go-all
-# -PjavaParallel=1 runs the browser tests serially to avoid Chrome launch races
-cd clients/java && ./gradlew clean build publish -PjavaParallel=1 && cd ../..
-
-cd clients/java/build/staging-deploy && zip -r ../../../../vibium-bundle.zip com/ && cd ../../../..
+make set-version V=<version>
+make test-java
+make package-java
 
 # Upload via web: central.sonatype.com → Publishing → Upload vibium-bundle.zip → Publish
 ```
@@ -265,7 +246,7 @@ Central Portal checks these keyservers: `keyserver.ubuntu.com`, `keys.openpgp.or
 
 ### "Missing javadoc JAR" or "Missing sources JAR"
 
-The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`. Just make sure `./gradlew build` runs before `./gradlew publish`.
+The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`, and `make package-java` fails if either is missing from the staged tree.
 
 ### Namespace verification stuck
 
