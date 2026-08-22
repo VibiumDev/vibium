@@ -270,6 +270,7 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
 	"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-firefox test-cleanup && \
 	"$(MAKE)" test-daemon test-cleanup && \
 	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
@@ -437,11 +438,17 @@ test-python-engine: build-go install-engine python-venv
 		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/engine/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
-# Focused Firefox installer/channel/video tests, JS and Python. Not part of
-# `make test`: the chrome CI job has no Firefox, so there it would only
-# skip. The firefox CI job runs this target directly with
-# VIBIUM_REQUIRE_FIREFOX set so skips fail; locally run it explicitly after
-# `make install-firefox`.
+# Focused Firefox installer/channel/video tests, JS and Python.
+#
+# Part of `make test`. The browser-launching cases self-skip when Firefox is
+# absent, but the CLI channel/engine validation cases need no browser at all
+# and run everywhere -- excluding the whole target once let a renamed CLI
+# error reach CI green-locally, red-on-push. Where Firefox is missing this
+# costs a few seconds of skips.
+#
+# The firefox CI job still runs this target directly with
+# VIBIUM_REQUIRE_FIREFOX set, which turns those skips into failures. Run
+# `make install-firefox` to exercise the full set locally.
 test-firefox: build-go python-venv
 	@echo "--- Firefox Tests ---"
 	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
