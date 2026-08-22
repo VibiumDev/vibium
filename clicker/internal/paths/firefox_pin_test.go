@@ -21,7 +21,7 @@ func fakeFirefoxInstall(t *testing.T, cacheDir, channel, version string) {
 	}
 }
 
-// VIBIUM_FIREFOX_VERSION pins which cached version launches: newest-cached
+// VIBIUM_ENGINE_VERSION pins which cached version launches: newest-cached
 // would silently run a different Firefox than the pin installed (#326).
 func TestFirefoxExecutablePinnedVersionWins(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -29,12 +29,12 @@ func TestFirefoxExecutablePinnedVersionWins(t *testing.T) {
 	}
 	cacheDir := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
-	t.Setenv("VIBIUM_FIREFOX_PATH", "")
-	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	fakeFirefoxInstall(t, cacheDir, "release", "153.0.4")
 	fakeFirefoxInstall(t, cacheDir, "release", "154.0")
 
-	t.Setenv("VIBIUM_FIREFOX_VERSION", "153.0.4")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "153.0.4")
 	got, err := GetFirefoxExecutable()
 	if err != nil {
 		t.Fatalf("GetFirefoxExecutable() error = %v", err)
@@ -50,11 +50,11 @@ func TestFirefoxExecutablePinnedVersionWins(t *testing.T) {
 func TestFirefoxExecutableMissingPinnedVersionErrors(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
-	t.Setenv("VIBIUM_FIREFOX_PATH", "")
-	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	fakeFirefoxInstall(t, cacheDir, "release", "154.0")
 
-	t.Setenv("VIBIUM_FIREFOX_VERSION", "153.0.4")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "153.0.4")
 	if _, err := GetFirefoxExecutable(); err == nil {
 		t.Fatal("GetFirefoxExecutable() should error when the pinned version is not cached")
 	}
@@ -64,9 +64,9 @@ func TestFirefoxExecutableMissingPinnedVersionErrors(t *testing.T) {
 func TestFirefoxExecutableUnpinnedPicksNewest(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
-	t.Setenv("VIBIUM_FIREFOX_PATH", "")
-	t.Setenv("VIBIUM_FIREFOX_CHANNEL", "")
-	t.Setenv("VIBIUM_FIREFOX_VERSION", "")
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
 	fakeFirefoxInstall(t, cacheDir, "release", "153.0.4")
 	fakeFirefoxInstall(t, cacheDir, "release", "154.0")
 

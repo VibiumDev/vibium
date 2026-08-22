@@ -68,7 +68,7 @@ public class VibiumProcess {
         }
 
         if (channel != null && !channel.isEmpty()) {
-            cmd.add("--firefox-channel");
+            cmd.add("--channel");
             cmd.add(channel);
         }
 

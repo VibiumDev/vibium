@@ -454,7 +454,7 @@ func KillOrphanedChromeProcesses() {
 }
 
 // KillOrphanedFirefoxProcesses is the Firefox counterpart. A system Firefox
-// pointed at via VIBIUM_FIREFOX_PATH lives outside the cache dir and is
+// pointed at via VIBIUM_ENGINE_PATH lives outside the cache dir and is
 // never matched.
 func KillOrphanedFirefoxProcesses() {
 	ffDir, err := paths.GetFirefoxDir()

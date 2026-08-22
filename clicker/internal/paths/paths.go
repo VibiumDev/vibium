@@ -180,10 +180,10 @@ func getChromedriverPathInVersion(versionDir string) string {
 }
 
 // FirefoxChannel returns the Firefox release channel to install and run.
-// Defaults to "release"; override with VIBIUM_FIREFOX_CHANNEL (e.g. "beta")
+// Defaults to "release"; override with VIBIUM_ENGINE_CHANNEL (e.g. "beta")
 // to run features that have not reached stable yet.
 func FirefoxChannel() string {
-	if c := os.Getenv("VIBIUM_FIREFOX_CHANNEL"); c != "" {
+	if c := os.Getenv("VIBIUM_ENGINE_CHANNEL"); c != "" {
 		return c
 	}
 	return "release"
@@ -208,14 +208,14 @@ func GetFirefoxDirForChannel(channel string) (string, error) {
 }
 
 // GetFirefoxExecutable returns the path to the cached Firefox executable.
-// VIBIUM_FIREFOX_PATH overrides the cache lookup (e.g. a system Firefox).
+// VIBIUM_ENGINE_PATH overrides the cache lookup (e.g. a system Firefox).
 func GetFirefoxExecutable() (string, error) {
 	return GetFirefoxExecutableForChannel(FirefoxChannel())
 }
 
 // GetFirefoxExecutableForChannel returns the Firefox executable for channel.
 func GetFirefoxExecutableForChannel(channel string) (string, error) {
-	if p := os.Getenv("VIBIUM_FIREFOX_PATH"); p != "" {
+	if p := os.Getenv("VIBIUM_ENGINE_PATH"); p != "" {
 		return p, nil
 	}
 	dir, err := resolveFirefoxVersionDir(channel)
@@ -227,7 +227,7 @@ func GetFirefoxExecutableForChannel(channel string) (string, error) {
 
 // resolveFirefoxVersionDir returns the newest cached Firefox version
 // directory containing the executable, mirroring resolveVersionDir.
-// VIBIUM_FIREFOX_VERSION pins the choice: the pinned version must also be
+// VIBIUM_ENGINE_VERSION pins the choice: the pinned version must also be
 // what launches, or newest-cached would silently run a different Firefox
 // than the pin installed.
 func resolveFirefoxVersionDir(channel string) (string, error) {
@@ -236,7 +236,7 @@ func resolveFirefoxVersionDir(channel string) (string, error) {
 		return "", err
 	}
 
-	if v := os.Getenv("VIBIUM_FIREFOX_VERSION"); v != "" {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
 		dir := filepath.Join(ffDir, v)
 		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
 			return "", err

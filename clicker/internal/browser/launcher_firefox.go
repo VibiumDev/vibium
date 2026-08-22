@@ -57,7 +57,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	}
 	firefoxPath, err := paths.GetFirefoxExecutableForChannel(channel)
 	if err != nil {
-		return nil, fmt.Errorf("Firefox not found: run `vibium install --engine firefox` or set VIBIUM_FIREFOX_PATH")
+		return nil, fmt.Errorf("Firefox not found: run `vibium install --engine firefox` or set VIBIUM_ENGINE_PATH")
 	}
 	log.Debug("found firefox", "path", firefoxPath)
 
