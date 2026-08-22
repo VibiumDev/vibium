@@ -229,12 +229,20 @@ publishing {
             name = "staging"
             url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
-        maven {
-            name = "centralSnapshots"
-            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            credentials {
-                username = System.getenv("MAVEN_CENTRAL_USERNAME")
-                password = System.getenv("MAVEN_CENTRAL_PASSWORD")
+        // Nightly snapshots only, and only when its credentials are present.
+        // Registering this unconditionally made the plain `publish` task target
+        // it too, so a stable release from a laptop failed on a missing
+        // username instead of staging locally.
+        val centralUser = System.getenv("MAVEN_CENTRAL_USERNAME")
+        val centralPassword = System.getenv("MAVEN_CENTRAL_PASSWORD")
+        if (!centralUser.isNullOrBlank() && !centralPassword.isNullOrBlank()) {
+            maven {
+                name = "centralSnapshots"
+                url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+                credentials {
+                    username = centralUser
+                    password = centralPassword
+                }
             }
         }
     }

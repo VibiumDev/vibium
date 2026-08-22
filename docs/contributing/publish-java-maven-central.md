@@ -107,15 +107,13 @@ make build-go-all
 
 cd clients/java
 VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
-  ./gradlew clean build publishAllPublicationsToStagingRepository -PjavaParallel=1
+  ./gradlew clean build publish -PjavaParallel=1
 cd ../..
 ```
 
 - `make build-go-all` — the JAR packages these binaries.
 - `VIBIUM_BIN_PATH` — required. A globally installed `vibium` otherwise
   outranks the build being published and the tests fail against it (#331).
-- `publishAllPublicationsToStagingRepository`, not `publish` — `publish` also
-  targets the `centralSnapshots` repository and fails without its credentials.
 - `-PjavaParallel=1` — runs the browser tests serially; the default of 4
   launches four Chromes at once and some fail to connect. Add `-x test` to
   skip them if you already ran `make test`.
@@ -285,7 +283,7 @@ make build-go-all
 
 cd clients/java
 VIBIUM_BIN_PATH=$(git rev-parse --show-toplevel)/clicker/bin/vibium \
-  ./gradlew clean build publishAllPublicationsToStagingRepository -PjavaParallel=1
+  ./gradlew clean build publish -PjavaParallel=1
 cd ../..
 
 cd clients/java/build/staging-deploy
@@ -314,7 +312,7 @@ Central Portal checks these keyservers: `keyserver.ubuntu.com`, `keys.openpgp.or
 
 ### "Missing javadoc JAR" or "Missing sources JAR"
 
-The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`. Just make sure `build` runs before the staging task.
+The `build.gradle.kts` already has `withSourcesJar()` and `withJavadocJar()`. Just make sure `build` runs before `publish`.
 
 ### Namespace verification stuck
 
