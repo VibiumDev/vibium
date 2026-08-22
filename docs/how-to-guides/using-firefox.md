@@ -114,7 +114,7 @@ any of them with `--engine chrome` is an error rather than a silent no-op.
 | Capability | Chrome | Firefox |
 |------------|--------|---------|
 | Navigation, elements, input, pages, screenshots, storage, and trace recording | Supported | Supported and covered by the Firefox core suite |
-| Native video (`recording.start({ video: true })`) | Not implemented by Chrome yet | Firefox 154+; see [Record Video](record-video.md) |
+| Native video (`recording.start()`) | Not implemented by Chrome yet | Firefox 154+; see [Record Video](record-video.md) |
 | Dialog callbacks and `capture.dialog()` | Supported | Supported and covered by the cross-engine suites |
 | Network events and request interception | Supported | Supported and covered by the cross-engine suites |
 | PDF printing (`page.pdf`) | Supported | Output and support may differ |

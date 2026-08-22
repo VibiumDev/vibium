@@ -305,15 +305,30 @@ The default format is JPEG at 0.5 quality. Lowering `quality` produces smaller f
 
 ## Video
 
-On engines that support it (Firefox 154+, local browsers), the recording can include a video track — the browser encodes the viewport to WebM and the file lands inside the zip next to the trace:
+On engines that support it (Firefox 154+, local browsers), a recording includes
+a video track automatically — the browser encodes the viewport to WebM and the
+file lands inside the zip next to the trace. You do not have to ask for it:
 
 ```javascript
-await ctx.recording.start({ video: true })
+await ctx.recording.start()
 // ...
-await ctx.recording.stop()   // the zip now contains video/<context>.webm
+await ctx.recording.stop()   // on Firefox the zip contains video/<context>.webm
 ```
 
-With `video` omitted, video is recorded whenever the engine supports it and skipped otherwise. `video: true` requires it — `start()` fails with an explanatory error on Chrome. `video: false` turns it off. Dimensions default to the viewport (`video: { width, height, frameRate }` to override). Remote browser connections (`--connect`) record every track except video — the stop result says why. For remote hosts you control, `video: { remote: 'keep' }` records anyway and leaves the file there; see the [Record Video](../how-to-guides/record-video.md) guide.
+The `video` option has three settings:
+
+- **omitted** — record video where the engine supports it, and carry on without
+  it where it doesn't. The stop result reports `videoUnavailable` with the
+  engine's reason.
+- **`true`** — video is mandatory. `start()` fails with an explanatory error
+  rather than producing a recording that silently lacks it.
+- **`false`** — no video track.
+
+Dimensions default to the viewport; pass `video: { width, height, frameRate }`
+to override. Remote browser connections (`--connect`) record every track except
+video, and the stop result says why; for a remote host you control,
+`video: { remote: 'keep' }` records anyway and leaves the file there. See the
+[Record Video](../how-to-guides/record-video.md) guide.
 
 Engine requirements, Firefox channel setup, and the zip layout are covered in [Record Video](../how-to-guides/record-video.md).
 
