@@ -65,10 +65,26 @@ public final class Capture {
     }
 
     public String navigation(Runnable action, WaitOptions options) {
+        // page.go() returns once navigation completes, but its event is
+        // delivered asynchronously and can land after this capture registers
+        // its handler and actionStarted flips -- that guard only rejects
+        // events seen before the action begins. Matching any navigation then
+        // completes on the stale event and returns the previous URL. Wait for
+        // a move away from where the page is now instead.
+        //
+        // The trade-off: a navigation to the URL the page is already on is not
+        // captured. Returning the wrong URL is the worse failure.
+        String from;
+        try {
+            from = page.url();
+        } catch (RuntimeException ignored) {
+            from = null;
+        }
+        String previous = from;
         return await(
             handler -> page.addNavigationListener(handler),
             handler -> page.removeNavigationListener(handler),
-            value -> true,
+            value -> previous == null || !previous.equals(value),
             action,
             options,
             "navigation");
