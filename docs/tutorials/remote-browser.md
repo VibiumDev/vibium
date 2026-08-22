@@ -145,6 +145,22 @@ print(page.find("h1").text())    # "Example Domain"
 bro.stop()
 ```
 
+### Java
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.StartOptions;
+
+var bro = Vibium.start(new StartOptions().connectURL("ws://your-server:9515/session"));
+var page = bro.page();
+
+page.go("https://example.com");
+System.out.println(page.title());            // "Example Domain"
+System.out.println(page.find("h1").text());  // "Example Domain"
+
+bro.stop();
+```
+
 ---
 
 ## With Authentication
@@ -196,6 +212,14 @@ Sync:
 bro = browser.start("wss://cloud.example.com/bidi", headers={
     "Authorization": "Bearer my-token",
 })
+```
+
+**Java:**
+
+```java
+var bro = Vibium.start(new StartOptions()
+    .connectURL("wss://cloud.example.com/bidi")
+    .connectHeaders(Map.of("Authorization", "Bearer my-token")));
 ```
 
 ---

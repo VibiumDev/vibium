@@ -339,6 +339,14 @@ In Python the fields are snake_case:
 vibe.context.recording.start(video={"height": 480, "frame_rate": 10})
 ```
 
+Java uses flat setters. `videoSize` takes both dimensions, so pick a pair on the
+viewport's aspect ratio rather than a single side:
+
+```java
+vibe.context().recording().start(new RecordingOptions().videoFrameRate(10));
+vibe.context().recording().start(new RecordingOptions().videoSize(854, 480));
+```
+
 Two things to know about the size. **An object counts as asking for video**, the
 same as `video: true` — you named specific output, so a recording that silently
 skipped it would be a surprise. And **the size is a request**: the engine keeps
