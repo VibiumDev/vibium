@@ -118,6 +118,11 @@ cd ../..
   launches four Chromes at once and some fail to connect. Add `-x test` to
   skip them if you already ran `make test`.
 
+`publish` here writes to the local `staging-deploy` directory, not to Central —
+steps 7 and 8 do that. It is what produces the Maven layout the bundle needs:
+`build` alone gives you `build/libs/*.jar` with no POM, checksums, or `.asc`
+files.
+
 This creates the signed artifacts in `clients/java/build/staging-deploy/`.
 
 Verify the staged files:
