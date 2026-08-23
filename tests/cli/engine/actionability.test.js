@@ -172,6 +172,56 @@ describe('CLI: fillable input types', () => {
   });
 });
 
+describe('CLI: receivesEvents hit-tests the in-view center (#340)', () => {
+  const run = (cmd, opts = {}) =>
+    execSync(`${VIBIUM} ${cmd}`, { encoding: 'utf-8', timeout: 30000, ...opts });
+
+  // The reported reproduction: a full-page scrim three viewports tall. Its
+  // bounding-rect center is off-screen, elementFromPoint returns null there, and
+  // the check called it obscured — leaving the element permanently unclickable.
+  // Sized in vh so the case holds at any viewport, with no sleeps or constants.
+  const TALL_SCRIM =
+    '<body style="margin:0"><div style="position:relative;height:300vh;background:#ddd">x' +
+    '<div id="scrim" style="position:absolute;top:0;left:0;width:100%;height:100%;' +
+    'background:#333;opacity:.3;z-index:12"></div></div>';
+
+  test('clicks an element three viewports tall, at the center of its visible area', () => {
+    run(`content '${TALL_SCRIM}'`);
+    // Record where the pointer actually landed: this must prove the click
+    // coordinate, not just that the check returned ok.
+    run(
+      `eval 'window.__hits = []; document.getElementById("scrim").addEventListener("click", function (e) { window.__hits.push([e.clientX, e.clientY]) })'`
+    );
+
+    assert.match(run(`click "#scrim" --timeout 5s`), /Clicked/i, 'a full-page scrim must be clickable');
+
+    const { hits, w, h } = JSON.parse(
+      run(`eval 'JSON.stringify({ hits: window.__hits, w: window.innerWidth, h: window.innerHeight })'`)
+    );
+    assert.strictEqual(hits.length, 1, 'the scrim should have received exactly one click');
+    const [x, y] = hits[0];
+    // The scrim spans the viewport vertically, so the in-view center row is
+    // exactly floor(height / 2). The bounding-rect center was 1.5x the viewport.
+    assert.strictEqual(y, Math.floor(h / 2), 'click must land on the in-view center row');
+    assert.ok(x >= 0 && x < w, `click x ${x} must be inside the 0..${w} viewport`);
+  });
+
+  const VEILED_BUTTON =
+    '<body style="margin:0"><button id="go" style="width:100px;height:40px">Go</button>' +
+    '<div id="veil" style="position:fixed;top:0;left:0;width:100vw;height:100vh;' +
+    'background:#0008;z-index:99"></div>';
+
+  test('a covered button still reports obscured', () => {
+    run(`content '${VEILED_BUTTON}'`);
+
+    assert.throws(
+      () => run(`click "#go" --timeout 1s`, { stdio: 'pipe' }),
+      /receivesEvents check failed — element is obscured by <div#veil>/i,
+      'clipping the probe point must not weaken the check'
+    );
+  });
+});
+
 describe('CLI: operation preconditions', () => {
   test('check refuses a non-checkbox instead of silently succeeding (#195)', () => {
     execSync(`${VIBIUM} content '<p id="p">not a checkbox</p><input type="checkbox" id="cb">'`, {
