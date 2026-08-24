@@ -106,6 +106,10 @@ tasks.test {
     dependsOn(validateCapabilityMarkers)
     environment("VIBIUM_CAPABILITIES_FILE", file("../../tests/capabilities.json").absolutePath)
     environment("VIBIUM_CAPABILITY_AUDIT", System.getenv("VIBIUM_CAPABILITY_AUDIT") ?: "")
+    // Without this each Chrome launch pays the ~15s dead-GPU Metal stall on an
+    // affected macOS VM guest. The Makefile computes it; a bare ./gradlew does
+    // not, which is why the publish flow was slower than make test-java.
+    environment("VIBIUM_VM_FAST_LAUNCH", System.getenv("VIBIUM_VM_FAST_LAUNCH") ?: "")
 }
 
 // Copy native binaries into resources for JAR packaging
@@ -136,6 +140,35 @@ val writeVersionResource by tasks.registering {
 tasks.named("processResources") {
     dependsOn(tasks.named("copyNativeBinaries"), writeVersionResource)
 }
+
+// copyNativeBinaries is a Copy over ../../clicker/bin; with that directory
+// unpopulated it succeeds having copied nothing, and the JAR ships with no
+// binaries at all. Dev builds tolerate that deliberately. A publish must not:
+// Maven Central releases are immutable, so an empty JAR can only be superseded.
+val requiredNatives = listOf(
+    "vibium-darwin-amd64",
+    "vibium-darwin-arm64",
+    "vibium-linux-amd64",
+    "vibium-linux-arm64",
+    "vibium-windows-amd64.exe",
+)
+val verifyNativeBinaries by tasks.registering {
+    dependsOn(tasks.named("copyNativeBinaries"))
+    doLast {
+        val dir = file("src/main/resources/natives")
+        val missing = requiredNatives.filter { !dir.resolve(it).exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "refusing to publish a JAR without native binaries: " +
+                    missing.joinToString(", ") +
+                    "\nRun 'make build-go-all' from the repo root, then stage again."
+            )
+        }
+    }
+}
+
+tasks.withType<org.gradle.api.publish.maven.tasks.PublishToMavenRepository>()
+    .configureEach { dependsOn(verifyNativeBinaries) }
 
 // sourcesJar also reads src/main/resources, so it needs the same dependency
 tasks.named("sourcesJar") {
@@ -200,12 +233,20 @@ publishing {
             name = "staging"
             url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
-        maven {
-            name = "centralSnapshots"
-            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            credentials {
-                username = System.getenv("MAVEN_CENTRAL_USERNAME")
-                password = System.getenv("MAVEN_CENTRAL_PASSWORD")
+        // Nightly snapshots only, and only when its credentials are present.
+        // Registering this unconditionally made the plain `publish` task target
+        // it too, so a stable release from a laptop failed on a missing
+        // username instead of staging locally.
+        val centralUser = System.getenv("MAVEN_CENTRAL_USERNAME")
+        val centralPassword = System.getenv("MAVEN_CENTRAL_PASSWORD")
+        if (!centralUser.isNullOrBlank() && !centralPassword.isNullOrBlank()) {
+            maven {
+                name = "centralSnapshots"
+                url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+                credentials {
+                    username = centralUser
+                    password = centralPassword
+                }
             }
         }
     }
@@ -216,7 +257,15 @@ signing {
     sign(publishing.publications["mavenJava"])
 }
 
-// Only sign when publishing
+// Sign for any publish to a real repository. Keying on ":publish" matched
+// only the aggregate task, so every publishAllPublicationsTo<Name>Repository
+// invocation skipped signing silently -- the manual release staged unsigned
+// artifacts, and the nightly pushed unsigned snapshots despite importing a
+// key and passing a passphrase. publishToMavenLocal stays unsigned.
 tasks.withType<Sign>().configureEach {
-    onlyIf { gradle.taskGraph.hasTask(":publish") }
+    onlyIf {
+        gradle.taskGraph.allTasks.any {
+            it is org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+        }
+    }
 }
