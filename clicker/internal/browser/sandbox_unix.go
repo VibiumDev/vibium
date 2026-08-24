@@ -5,7 +5,6 @@ package browser
 import (
 	"errors"
 	"os"
-	"strings"
 )
 
 // errRootSandbox explains the one launch failure that looks like a crash but is
@@ -27,8 +26,9 @@ func checkSandboxable() error {
 	if os.Geteuid() != 0 {
 		return nil
 	}
-	// Already opted out, so root is fine.
-	for _, arg := range strings.Fields(os.Getenv("VIBIUM_CHROME_ARGS")) {
+	// Already opted out, so root is fine. Same split as customChromeArgs, so
+	// this check sees the flags Chrome will actually receive.
+	for _, arg := range customChromeArgs() {
 		if arg == "--no-sandbox" {
 			return nil
 		}
