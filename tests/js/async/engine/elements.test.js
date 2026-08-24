@@ -55,6 +55,18 @@ describe('Element Finding', () => {
     assert.ok(paragraphs.length > 0, 'Should find at least one paragraph');
   });
 
+  test('findAll returns an empty array when nothing matches (#411)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    // timeout 0 means a single immediate check, so "none" comes back fast
+    // instead of after the default 30s wait.
+    const start = Date.now();
+    const none = await vibe.findAll('#definitely-not-on-this-page', { timeout: 0 });
+    assert.deepStrictEqual(none, [], 'Should resolve to an empty array, not throw');
+    assert.ok(Date.now() - start < 5000, 'timeout 0 should not wait out the default');
+  });
+
   test('findAll()[0] returns first element', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);

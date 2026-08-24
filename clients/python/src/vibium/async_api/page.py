@@ -229,7 +229,11 @@ class Page:
         near: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all elements matching a selector or semantic options."""
+        """Find all elements matching a selector or semantic options.
+
+        Waits up to the timeout for at least one match, then returns an empty
+        list if there is none. A timeout of 0 checks once without waiting.
+        """
         params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
         if selector is not None:
             params["selector"] = selector

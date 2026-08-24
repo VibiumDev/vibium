@@ -672,7 +672,11 @@ export class Page {
     return fluent(promise);
   }
 
-  /** Find all elements matching a CSS selector or semantic options. Waits for at least one. */
+  /**
+   * Find all elements matching a CSS selector or semantic options. Waits up
+   * to the timeout for at least one match, then returns an empty array if
+   * there is none. A timeout of 0 checks once without waiting.
+   */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.contextId,
