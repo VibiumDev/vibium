@@ -73,28 +73,63 @@ public final class BinaryResolver {
             return null;
         }
 
-        try {
+        try (InputStream in = stream) {
             // Read version for cache directory
             String version = readVersion();
             Path extractDir = Paths.get(System.getProperty("java.io.tmpdir"), "vibium-" + version);
             Files.createDirectories(extractDir);
 
             Path target = extractDir.resolve(PlatformDetector.executableName());
-
-            // Only extract if not already present
-            if (!Files.exists(target)) {
-                Files.copy(stream, target, StandardCopyOption.REPLACE_EXISTING);
-                // Set executable permission on Unix
-                if (!System.getProperty("os.name", "").toLowerCase().contains("windows")) {
-                    target.toFile().setExecutable(true);
-                }
-            }
-            stream.close();
-            return target.toAbsolutePath().toString();
+            Path extracted = extractTo(in, extractDir, target, isWindows());
+            return extracted.toAbsolutePath().toString();
         } catch (IOException e) {
-            try { stream.close(); } catch (IOException ignored) {}
             return null;
         }
+    }
+
+    /**
+     * Extracts the binary so the target path only ever names a complete,
+     * executable file: the bytes go to a private temp file, the executable
+     * bit is set there, and an atomic rename publishes it. The old code
+     * guarded on Files.exists(target), which is true from the first byte of
+     * another JVM's in-progress copy, so parallel JVMs on a cold cache were
+     * handed a half-written, not-yet-executable binary (#329).
+     *
+     * Visible for testing.
+     */
+    static Path extractTo(InputStream in, Path extractDir, Path target, boolean windows) throws IOException {
+        if (isUsable(target, windows)) {
+            return target;
+        }
+
+        Path tmp = Files.createTempFile(extractDir, ".extract-", ".tmp");
+        try {
+            Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+            if (!windows) {
+                tmp.toFile().setExecutable(true);
+            }
+            // On POSIX the rename atomically replaces a stale or concurrent
+            // target. On Windows it can fail if another JVM's binary is in
+            // place or running; theirs is complete, so use it.
+            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException moveFailed) {
+            Files.deleteIfExists(tmp);
+            if (isUsable(target, windows)) {
+                return target;
+            }
+            throw moveFailed;
+        }
+        return target;
+    }
+
+    // A completed extraction is executable; existence alone can be a
+    // half-written file from a concurrent or crashed extraction.
+    private static boolean isUsable(Path target, boolean windows) {
+        return Files.exists(target) && (windows || Files.isExecutable(target));
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("windows");
     }
 
     private static String readVersion() {
