@@ -24,6 +24,17 @@ import (
 // launch ~16s) so a wedged chromedriver can't hang it indefinitely.
 const sessionCreateTimeout = 30 * time.Second
 
+// chromedriverReadyTimeout bounds the wait for chromedriver's /status endpoint
+// after spawning it.
+const chromedriverReadyTimeout = 10 * time.Second
+
+// LaunchBudget is the wall clock a launch may legitimately spend inside its
+// own bounds: chromedriverReadyTimeout, then session creation capped at
+// sessionCreateTimeout on either route, plus slack for process spawn and the
+// WebSocket handshake. Deadlines that wait on a launch (the daemon client's
+// read deadline) derive from this instead of guessing (#407).
+const LaunchBudget = chromedriverReadyTimeout + sessionCreateTimeout + 5*time.Second
+
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
 	w      io.Writer
@@ -171,7 +182,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 
 	// Wait for chromedriver to be ready
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
-	if err := waitForChromedriver(baseURL, 10*time.Second); err != nil {
+	if err := waitForChromedriver(baseURL, chromedriverReadyTimeout); err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("chromedriver failed to start: %w", err)
 	}
