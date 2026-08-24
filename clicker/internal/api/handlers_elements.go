@@ -30,11 +30,7 @@ func (r *Router) handleVibiumFind(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-	timeout := DefaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
+	timeout := findTimeout(cmd.Params)
 
 	script, args := BuildFindScript(cmd.Params, false)
 
@@ -65,11 +61,7 @@ func (r *Router) handleVibiumFindAll(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-	timeout := DefaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
+	timeout := findTimeout(cmd.Params)
 
 	hasText, _ := cmd.Params["hasText"].(string)
 	has, _ := cmd.Params["has"].(string)
@@ -92,6 +84,16 @@ func (r *Router) handleVibiumFindAll(session *BrowserSession, cmd bidiCommand) {
 		"elements": elements,
 		"count":    len(elements),
 	})
+}
+
+// findTimeout reads the caller's find timeout. An explicit 0 means one
+// immediate check with no waiting; only an absent timeout gets the default.
+// The old `> 0` guard silently replaced a caller's 0 with 30 seconds (#411).
+func findTimeout(params map[string]interface{}) time.Duration {
+	if ms, ok := params["timeout"].(float64); ok {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return DefaultTimeout
 }
 
 // BuildFindScript builds the JS function and arguments for element finding.
@@ -379,12 +381,13 @@ func (r *Router) waitForElementWithScript(session *BrowserSession, context, scri
 	return WaitForElementWithScript(NewAPISession(r, session, context), context, script, args, timeout)
 }
 
-// waitForElements polls until at least one matching element is found, then returns all.
+// waitForElements polls until at least one matching element is found, then
+// returns all. At the deadline it returns an empty slice, not an error: a
+// collection query whose answer is "none" is a valid result, and the singular
+// find is the call that treats absence as failure (#411).
 func (r *Router) waitForElements(session *BrowserSession, context, script string, args []map[string]interface{}, hasText, has string, timeout time.Duration) ([]map[string]interface{}, error) {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
-
-	desc := describeSelector(args)
 
 	for {
 		params := map[string]interface{}{
@@ -416,7 +419,7 @@ func (r *Router) waitForElements(session *BrowserSession, context, script string
 		}
 
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timeout after %s waiting for '%s': no elements found", timeout, desc)
+			return []map[string]interface{}{}, nil
 		}
 
 		time.Sleep(interval)

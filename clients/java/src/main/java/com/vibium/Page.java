@@ -175,12 +175,19 @@ public class Page {
         return elementFromResult(result, "", 0, locatorParams(options));
     }
 
-    /** Find all matching elements by CSS selector. */
+    /**
+     * Find all matching elements by CSS selector. Waits up to the timeout
+     * for at least one match, then returns an empty list if there is none.
+     */
     public List<Element> findAll(String selector) {
         return findAll(selector, (FindOptions) null);
     }
 
-    /** Find all matching elements by CSS selector with options. */
+    /**
+     * Find all matching elements by CSS selector with options. Waits up to
+     * the timeout for at least one match, then returns an empty list if
+     * there is none. A timeout of 0 checks once without waiting.
+     */
     public List<Element> findAll(String selector, FindOptions options) {
         JsonObject params = contextParams();
         params.addProperty("selector", selector);
@@ -191,7 +198,11 @@ public class Page {
         return elementsFromResult(result, selector);
     }
 
-    /** Find all matching elements by semantic selector. */
+    /**
+     * Find all matching elements by semantic selector. Waits up to the
+     * timeout for at least one match, then returns an empty list if there
+     * is none.
+     */
     public List<Element> findAll(SelectorOptions options) {
         JsonObject params = contextParams();
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
