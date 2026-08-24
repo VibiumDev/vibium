@@ -49,6 +49,11 @@ type Message struct {
 	// Event fields
 	Method string          `json:"method,omitempty"`
 	Params json.RawMessage `json:"params,omitempty"`
+
+	// ErrMessage carries the error detail. The spec sends `message` as a
+	// sibling of `error`, not nested inside it, so it must be captured on
+	// the frame or the detail is gone before anything can print it (#343).
+	ErrMessage string `json:"message,omitempty"`
 }
 
 // IsResponse returns true if the message is a response (has an ID).
@@ -75,12 +80,18 @@ func (m *Message) GetError() (*ErrorData, error) {
 	// Try to unmarshal as ErrorData object
 	var errData ErrorData
 	if err := json.Unmarshal(m.Error, &errData); err != nil {
-		// If that fails, it might be a plain string
+		// A spec-compliant endpoint sends `error` as a bare code string
+		// with the detail in the sibling `message`. Falling back to the
+		// code here is what printed it twice (#343).
 		var errStr string
 		if err := json.Unmarshal(m.Error, &errStr); err != nil {
 			return nil, err
 		}
-		return &ErrorData{Error: errStr, Message: errStr}, nil
+		detail := m.ErrMessage
+		if detail == "" {
+			detail = errStr
+		}
+		return &ErrorData{Error: errStr, Message: detail}, nil
 	}
 	return &errData, nil
 }

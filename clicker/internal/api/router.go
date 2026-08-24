@@ -17,6 +17,11 @@ import (
 // DefaultTimeout is the default timeout for element resolution and actionability checks.
 const DefaultTimeout = 30 * time.Second
 
+// A healthy client drains its pipe in microseconds; a Send this slow means
+// events are queuing behind a reader that has stalled. Well above scheduler
+// jitter on a loaded CI runner so the log stays quiet in healthy runs.
+const slowClientSend = time.Second
+
 // BrowserSession represents a browser session connected to a client.
 type BrowserSession struct {
 	LaunchResult *browser.LaunchResult
@@ -971,10 +976,23 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			continue
 		}
 
-		// Forward message to client
+		// Forward message to client. A Send that blocks means the client has
+		// stopped reading its pipe: every event after this one queues behind
+		// it and reaches the client late, which shows up as flaky waiters and
+		// listeners firing after removal (#397). Log the stall so an incident
+		// names the wedged side instead of leaving only a hung test.
+		sendStart := time.Now()
 		if err := session.Client.Send(msg); err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to send to client %d: %v\n", session.Client.ID(), err)
 			return
+		}
+		if elapsed := time.Since(sendStart); elapsed >= slowClientSend {
+			method := bidiEvent.Method
+			if method == "" {
+				method = "response"
+			}
+			fmt.Fprintf(os.Stderr, "[router] slow delivery to client %d: %s blocked %.1fs (client not reading?)\n",
+				session.Client.ID(), method, elapsed.Seconds())
 		}
 	}
 }
