@@ -8,12 +8,21 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/paths"
 )
 
-const (
+// Vars, not consts, so tests can shrink them to hermetic sizes.
+var (
 	dialTimeout = 2 * time.Second
 	readTimeout = 60 * time.Second
+
+	// launchGrace is added to the read deadline once when the daemon reports
+	// a browser launch in progress. Derived from the launch path's own bounds
+	// so the client outlasts a legitimately slow launch without hiding a
+	// wedged daemon: no launch notification means the plain readTimeout
+	// still applies (#407).
+	launchGrace = browser.LaunchBudget
 )
 
 // ToolError is an error the daemon itself reported. It means the daemon was
@@ -140,12 +149,38 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	// bufio.Reader grows as needed; bufio.Scanner failed with "token too long"
 	// on any response over its fixed buffer — a long page's text, a large
 	// storage state (#209).
-	line, err := bufio.NewReader(conn).ReadBytes('\n')
-	if err != nil && len(line) == 0 {
-		if err != io.EOF {
-			return nil, fmt.Errorf("read response: %w", err)
+	reader := bufio.NewReader(conn)
+	var line []byte
+	extended := false
+	for {
+		line, err = reader.ReadBytes('\n')
+		if err != nil && len(line) == 0 {
+			if err != io.EOF {
+				return nil, fmt.Errorf("read response: %w", err)
+			}
+			return nil, fmt.Errorf("daemon closed connection without response")
 		}
-		return nil, fmt.Errorf("daemon closed connection without response")
+		if err != nil {
+			break // partial final line; let the response parse report it
+		}
+
+		// The daemon may send notifications (no id) ahead of the response.
+		// A launch notification means the daemon committed to a browser
+		// launch, so the response can legitimately take the launch bounds
+		// plus a normal command on top; extend the deadline once from here.
+		// Unknown notifications are skipped without extending.
+		var msg struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		if json.Unmarshal(line, &msg) == nil && msg.Method != "" && len(msg.ID) == 0 {
+			if msg.Method == launchingBrowserMethod && !extended {
+				extended = true
+				conn.SetReadDeadline(time.Now().Add(launchGrace + readTimeout))
+			}
+			continue
+		}
+		break
 	}
 
 	var resp agent.Response

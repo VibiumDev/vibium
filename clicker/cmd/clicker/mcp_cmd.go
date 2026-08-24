@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -11,6 +12,19 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 	"github.com/vibium/clicker/internal/process"
 )
+
+// mcpToolList renders the served tools for --help from the same registry the
+// tools/list request reads, so the help cannot drift from the server again: a
+// hand-written copy here had frozen at 22 of 85 tools (#393).
+func mcpToolList() string {
+	tools := agent.GetToolSchemas()
+	var b strings.Builder
+	fmt.Fprintf(&b, "The server provides %d browser automation tools:\n", len(tools))
+	for _, t := range tools {
+		fmt.Fprintf(&b, "  - %s: %s\n", t.Name, t.Description)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
 
 func newMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,29 +35,7 @@ func newMCPCmd() *cobra.Command {
 This runs a JSON-RPC 2.0 server over stdin/stdout, designed for integration
 with LLM agents like Claude Code.
 
-The server provides browser automation tools:
-  - browser_start: Start a browser session
-  - browser_navigate: Go to a URL
-  - browser_click: Click an element
-  - browser_type: Type into an element
-  - browser_screenshot: Capture the page
-  - browser_find: Find element info
-  - browser_evaluate: Execute JavaScript
-  - browser_stop: Stop the browser
-  - browser_get_text: Get page/element text
-  - browser_get_url: Get current URL
-  - browser_get_title: Get page title
-  - browser_get_html: Get page/element HTML
-  - browser_find_all: Find all matching elements
-  - browser_wait: Wait for element state
-  - browser_hover: Hover over an element
-  - browser_select: Select a dropdown option
-  - browser_scroll: Scroll the page
-  - browser_keys: Press keys
-  - browser_new_page: Open a new page
-  - browser_list_pages: List open pages
-  - browser_switch_page: Switch pages
-  - browser_close_page: Close a page`,
+` + mcpToolList(),
 		Example: `  # Run directly (for testing)
   vibium mcp
 
