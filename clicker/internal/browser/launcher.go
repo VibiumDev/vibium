@@ -24,6 +24,17 @@ import (
 // launch ~16s) so a wedged chromedriver can't hang it indefinitely.
 const sessionCreateTimeout = 30 * time.Second
 
+// chromedriverReadyTimeout bounds the wait for chromedriver's /status endpoint
+// after spawning it.
+const chromedriverReadyTimeout = 10 * time.Second
+
+// LaunchBudget is the wall clock a launch may legitimately spend inside its
+// own bounds: chromedriverReadyTimeout, then session creation capped at
+// sessionCreateTimeout on either route, plus slack for process spawn and the
+// WebSocket handshake. Deadlines that wait on a launch (the daemon client's
+// read deadline) derive from this instead of guessing (#407).
+const LaunchBudget = chromedriverReadyTimeout + sessionCreateTimeout + 5*time.Second
+
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
 	w      io.Writer
@@ -171,7 +182,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 
 	// Wait for chromedriver to be ready
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
-	if err := waitForChromedriver(baseURL, 10*time.Second); err != nil {
+	if err := waitForChromedriver(baseURL, chromedriverReadyTimeout); err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("chromedriver failed to start: %w", err)
 	}
@@ -284,9 +295,10 @@ func chromeArgs(headless bool) []string {
 	if headless {
 		args = append(args, "--headless=new")
 	}
-	// Append any custom flags from VIBIUM_CHROME_ARGS (space-separated) so users
-	// can pass --no-sandbox etc. in root/CI/container environments where Chrome
-	// refuses to start otherwise. Empty tokens (from extra whitespace) are skipped.
+	// Append any custom flags from VIBIUM_CHROME_ARGS (space-separated, with
+	// quoting for values that contain spaces) so users can pass --no-sandbox
+	// etc. in root/CI/container environments where Chrome refuses to start
+	// otherwise. Empty tokens (from extra whitespace) are skipped.
 	args = append(args, customChromeArgs()...)
 	return args
 }
@@ -302,10 +314,49 @@ func vmFastLaunchShim() string {
 }
 
 // customChromeArgs reads extra Chrome flags from the VIBIUM_CHROME_ARGS
-// environment variable, splitting on whitespace and dropping empty tokens.
-// Returns nil when the variable is unset or contains only whitespace.
+// environment variable. Returns nil when the variable is unset or contains
+// only whitespace.
 func customChromeArgs() []string {
-	return strings.Fields(os.Getenv("VIBIUM_CHROME_ARGS"))
+	return splitFlagString(os.Getenv("VIBIUM_CHROME_ARGS"))
+}
+
+// splitFlagString splits a space-separated flag string, honoring single and
+// double quotes so a value may contain spaces: --profile-directory="Profile 1"
+// is one token with the quotes removed. strings.Fields cut such values at the
+// space, so the quoted part reached Chrome as a separate flag (#306). An
+// unterminated quote runs to the end of the string.
+func splitFlagString(s string) []string {
+	var args []string
+	var cur strings.Builder
+	inToken := false
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else {
+				cur.WriteByte(c)
+			}
+		case c == '\'' || c == '"':
+			quote = c
+			inToken = true
+		case c == ' ' || c == '\t' || c == '\n':
+			if inToken {
+				args = append(args, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+		default:
+			cur.WriteByte(c)
+			inToken = true
+		}
+	}
+	if inToken {
+		args = append(args, cur.String())
+	}
+	return args
 }
 
 // buildCapabilities returns the capabilities map for BiDi session.new.
