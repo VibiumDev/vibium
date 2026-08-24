@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java publish-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -93,7 +93,7 @@ build: build-go build-js build-java
 # Build vibium binary
 build-go: deps
 	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
-	cd clicker && go build -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
+	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
 		target_dir="node_modules/@vibium/$$platform/bin"; \
@@ -113,11 +113,11 @@ build-js: deps
 build-go-all:
 	@echo "Cross-compiling vibium for all platforms..."
 	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
-	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
-	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
-	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker
-	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-arm64 ./cmd/clicker
-	cd clicker && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-windows-amd64.exe ./cmd/clicker
+	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
+	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
+	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker
+	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-arm64 ./cmd/clicker
+	cd clicker && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-windows-amd64.exe ./cmd/clicker
 	@echo "Done. Built binaries:"
 	@ls -lh clicker/bin/vibium-*
 
@@ -178,7 +178,7 @@ install-browser: build-go
 
 # Install Firefox (optional locally — the Firefox tests self-skip without it).
 # CI runs this so those tests actually execute. Channel comes from
-# VIBIUM_FIREFOX_CHANNEL (beta until Firefox 154 reaches stable).
+# VIBIUM_ENGINE_CHANNEL (beta until Firefox 154 reaches stable).
 install-firefox: build-go
 	./clicker/bin/vibium$(EXE) install --engine firefox
 
@@ -207,9 +207,14 @@ serve: build-go
 # caps the peak; the *_PARALLEL defaults are tuned conservatively for the same
 # reason. Bump *_PARALLEL on machines with more cores/memory.
 #
-# SUITE_PARALLEL caps how many suites the middle phase runs at once.
-# Default 4; drop to 1 on a small machine to run suites one at a time
-# (peak Chromes = the *_PARALLEL fan-out of a single suite).
+# SUITE_PARALLEL caps how many suites the middle phase runs at once. The
+# desktop default of 1 runs suites one at a time (peak Chromes = the
+# *_PARALLEL fan-out of a single suite) so a dev machine stays usable;
+# CI overrides to 4 (see .github/workflows/test.yml).
+#
+# Do not raise this default to match CI. At 4, the fan-outs multiply --
+# on a 12-core box JS_PARALLEL and PY_PARALLEL are 6 each, so the middle
+# phase peaks near 15 concurrent Chromes and beachballs the machine (#230).
 #
 # test-browser-modes runs in its own serial phase because its tests open
 # visible Chrome windows (headed coverage is intentional — that's what
@@ -220,7 +225,7 @@ serve: build-go
 # test-daemon also runs serially: its tests start and stop the one shared
 # daemon at a fixed socket path, so any suite that auto-starts a daemon
 # alongside them would fight over it.
-SUITE_PARALLEL ?= 4
+SUITE_PARALLEL ?= 1
 
 # Per-suite browser fan-out, derived from core count: half the cores, floor 3.
 # A 12-core dev box gets 6; CI's 4-vCPU runner stays at the long-standing 3.
@@ -270,6 +275,7 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
 	"$(MAKE)" test-cleanup && \
 	"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-firefox test-cleanup && \
 	"$(MAKE)" test-daemon test-cleanup && \
 	"$(MAKE)" test-js-sync; \
 	EXIT=$$?; \
@@ -437,11 +443,17 @@ test-python-engine: build-go install-engine python-venv
 		VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
 		$(TIMEOUT_CMD_ABS) python -m pytest ../../tests/py/engine/ -v --tb=short -x -n $(PY_PARALLEL) --dist=loadfile
 
-# Focused Firefox installer/channel/video tests, JS and Python. Not part of
-# `make test`: the chrome CI job has no Firefox, so there it would only
-# skip. The firefox CI job runs this target directly with
-# VIBIUM_REQUIRE_FIREFOX set so skips fail; locally run it explicitly after
-# `make install-firefox`.
+# Focused Firefox installer/channel/video tests, JS and Python.
+#
+# Part of `make test`. The browser-launching cases self-skip when Firefox is
+# absent, but the CLI channel/engine validation cases need no browser at all
+# and run everywhere -- excluding the whole target once let a renamed CLI
+# error reach CI green-locally, red-on-push. Where Firefox is missing this
+# costs a few seconds of skips.
+#
+# The firefox CI job still runs this target directly with
+# VIBIUM_REQUIRE_FIREFOX set, which turns those skips into failures. Run
+# `make install-firefox` to exercise the full set locally.
 test-firefox: build-go python-venv
 	@echo "--- Firefox Tests ---"
 	VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) \
@@ -469,11 +481,11 @@ build-java: build-go
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
 JAVA_PARALLEL ?= 3
-test-java: build-go install-engine
+test-java: build-go install-engine $(FAST_LAUNCH_DEP)
 	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
-test-java-engine: build-go install-engine
+test-java-engine: build-go install-engine $(FAST_LAUNCH_DEP)
 	@echo "--- Java Cross-Engine Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PcapabilityOnly -PjavaParallel=$(JAVA_PARALLEL)
 
@@ -502,12 +514,40 @@ test-capability-audit: build-js python-venv
 	./scripts/test-java-capability-fixture.sh
 
 # Package Java JAR with native binaries
+# Build the uploadable Maven Central bundle: cross-compiled binaries, a signed
+# and verified staging tree, and vibium-bundle.zip at the repo root.
+#
+# Packaging only: run the tests with make test-java, which supplies
+# VIBIUM_BIN_PATH so a globally installed vibium cannot outrank the build
+# under test (#331), and the dead-GPU shim.
+#
+# See docs/contributing/publish-java-maven-central.md for the upload steps.
 package-java: build-go-all
-	cd clients/java && ./gradlew jar
+	cd clients/java && ./gradlew clean publish
+	@"$(MAKE)" --no-print-directory verify-staged-java
+	@rm -f $(CURDIR)/vibium-bundle.zip
+	@cd clients/java/build/staging-deploy && zip -qr $(CURDIR)/vibium-bundle.zip \
+		com/ -x 'com/vibium/vibium/maven-metadata.xml*'
+	@echo "package-java: vibium-bundle.zip ready to upload"
 
-# Publish Java JAR to Maven Central
-publish-java: package-java
-	cd clients/java && ./gradlew publishAllPublicationsToSonatypeCentralRepository
+# Assert the staged tree is uploadable before it is zipped. Gradle's
+# verifyNativeBinaries covers the JAR contents; signing has no such guard, and
+# an unsigned stage is only rejected later by Central. Maven Central releases
+# are immutable, so every check here is cheaper than the alternative.
+verify-staged-java:
+	@version=$$(cat VERSION); \
+	dir="clients/java/build/staging-deploy/com/vibium/vibium/$$version"; \
+	if [ ! -d "$$dir" ]; then echo "package-java: $$dir missing" >&2; exit 1; fi; \
+	fail=0; \
+	for artifact in "vibium-$$version.jar" "vibium-$$version-sources.jar" \
+			"vibium-$$version-javadoc.jar" "vibium-$$version.pom"; do \
+		if [ ! -f "$$dir/$$artifact" ]; then echo "package-java: missing $$artifact" >&2; fail=1; \
+		elif [ ! -f "$$dir/$$artifact.asc" ]; then echo "package-java: $$artifact is not signed" >&2; fail=1; fi; \
+	done; \
+	natives=$$(jar tf "$$dir/vibium-$$version.jar" 2>/dev/null | grep -c 'natives/vibium' || true); \
+	if [ "$$natives" -ne 5 ]; then echo "package-java: JAR carries $$natives of 5 native binaries" >&2; fail=1; fi; \
+	if [ "$$fail" -ne 0 ]; then exit 1; fi; \
+	echo "package-java: $$version staged, 4 artifacts signed, $$natives natives"
 
 # Interactive JShell with the Java client
 jshell: build-java
@@ -602,6 +642,7 @@ set-version:
 	@echo "  - packages/python/*/pyproject.toml (5 platform packages)"
 	@echo "  - packages/python/*/src/*/__init__.py (5 platform packages)"
 	@echo "  - package-lock.json (regenerated)"
+	@echo "  - README.md + docs/tutorials/getting-started-java.md (Maven coordinates)"
 
 # Show available targets
 help:
@@ -612,14 +653,14 @@ help:
 	@echo "  make build-go              - Build vibium binary"
 	@echo "  make build-js              - Build JS client"
 	@echo "  make build-java            - Build Java client JAR"
-	@echo "  make jshell               - Interactive JShell with the Java client"
+	@echo "  make jshell                - Interactive JShell with the Java client"
 	@echo "  make build-go-all          - Cross-compile vibium for all platforms"
 	@echo ""
 	@echo "Package:"
 	@echo "  make package               - Build all packages (npm + Python)"
 	@echo "  make package-js            - Build npm packages only"
 	@echo "  make package-python        - Build Python wheels only"
-	@echo "  make package-java          - Build Java JAR with native binaries"
+	@echo "  make package-java          - Build the signed Maven Central bundle"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test                  - Build everything and run all tests (CLI + JS + MCP + Python + Java)"
@@ -630,12 +671,16 @@ help:
 	@echo "  make test-python           - Run Python client tests"
 	@echo "  make test-browser-modes    - Run headed browser-mode tests (JS + Python, serial)"
 	@echo "  make test-java             - Run Java client tests"
-	@echo "  make test VM_FAST_LAUNCH=1 - macOS VM only: skip the ~15s dead-GPU"
-	@echo "                               stall on every Chrome launch"
+	@echo "  make test-firefox          - Run Firefox installer/channel/video tests"
+	@echo "                               (browser cases skip without Firefox)"
+	@echo "  make test SUITE_PARALLEL=n - Suites to run at once (default 1; the"
+	@echo "                               per-suite fan-out multiplies it)"
+	@echo "  make test VM_FAST_LAUNCH=1 - macOS VM only: force the dead-GPU shim on"
+	@echo "                               (0 to force off). Auto-detected otherwise."
 	@echo ""
 	@echo "Other:"
 	@echo "  make install-browser       - Install Chrome for Testing"
-	@echo "  make install-firefox       - Install Firefox (channel via VIBIUM_FIREFOX_CHANNEL)"
+	@echo "  make install-firefox       - Install Firefox (channel via VIBIUM_ENGINE_CHANNEL)"
 	@echo "  make deps                  - Install npm dependencies"
 	@echo "  make serve                 - Start proxy server on :9515"
 	@echo "  make double-tap            - Kill zombie Chrome/chromedriver processes"

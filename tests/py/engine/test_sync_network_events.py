@@ -78,19 +78,24 @@ def test_remove_request_listeners(sync_browser, test_server):
     vibe.remove_all_listeners("request")
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    assert len(urls) == 0
+    # Scoped to doFetch()'s own request. The navigation above can still
+    # deliver an event in the window between subscribing and removing,
+    # which is not what removal is being tested for.
+    assert [u for u in urls if "/api/data" in u] == []
 
 
 def test_remove_response_listeners(sync_browser, test_server):
     """remove_all_listeners('response') stops on_response callbacks."""
     vibe = sync_browser.new_page()
     vibe.go(test_server + "/fetch")
-    statuses = []
-    vibe.on_response(lambda resp: statuses.append(resp.status()))
+    seen = []
+    vibe.on_response(lambda resp: seen.append(resp.url()))
     vibe.remove_all_listeners("response")
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    assert len(statuses) == 0
+    # Scoped like the request case above: a late navigation response
+    # otherwise fails this spuriously.
+    assert [u for u in seen if "/api/data" in u] == []
 
 
 def test_on_request_post_data(sync_browser, test_server):

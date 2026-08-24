@@ -32,21 +32,21 @@ describe('JavaScript pipe launch', () => {
     const logPath = path.join(os.tmpdir(), `vibium-pipe-${process.pid}-${Date.now()}.log`);
     const { binary, dir } = fakeVibium(logPath, READY_SCRIPT);
     const oldEngine = process.env.VIBIUM_ENGINE;
-    const oldChannel = process.env.VIBIUM_FIREFOX_CHANNEL;
+    const oldChannel = process.env.VIBIUM_ENGINE_CHANNEL;
     process.env.VIBIUM_ENGINE = 'firefox';
-    process.env.VIBIUM_FIREFOX_CHANNEL = 'beta';
+    process.env.VIBIUM_ENGINE_CHANNEL = 'beta';
     try {
       const bro = await browser.start({ executablePath: binary });
       await bro.stop();
-      // No --engine/--firefox-channel: the binary reads the env itself.
+      // No --engine/--channel: the binary reads the env itself.
       assert.deepStrictEqual(fs.readFileSync(logPath, 'utf8').trim().split('\n'), [
         'pipe',
       ]);
     } finally {
       if (oldEngine === undefined) delete process.env.VIBIUM_ENGINE;
       else process.env.VIBIUM_ENGINE = oldEngine;
-      if (oldChannel === undefined) delete process.env.VIBIUM_FIREFOX_CHANNEL;
-      else process.env.VIBIUM_FIREFOX_CHANNEL = oldChannel;
+      if (oldChannel === undefined) delete process.env.VIBIUM_ENGINE_CHANNEL;
+      else process.env.VIBIUM_ENGINE_CHANNEL = oldChannel;
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(logPath, { force: true });
     }
@@ -63,7 +63,7 @@ describe('JavaScript pipe launch', () => {
       });
       await bro.stop();
       assert.deepStrictEqual(fs.readFileSync(logPath, 'utf8').trim().split('\n'), [
-        'pipe --engine firefox --firefox-channel beta',
+        'pipe --engine firefox --channel beta',
       ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
