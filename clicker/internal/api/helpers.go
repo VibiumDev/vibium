@@ -301,8 +301,36 @@ func (r *Router) resolveElement(session *BrowserSession, context string, ep Elem
 // Exported standalone functions — usable from both proxy and MCP handlers.
 // ---------------------------------------------------------------------------
 
+// evalNavigationRetryBudget bounds how long EvalSimpleScript keeps retrying
+// an eval whose realm a navigation tore down. The gap between the old realm
+// dying and the new document's realm existing is milliseconds; the budget
+// only has to outlast a slow document swap, not a page load.
+const evalNavigationRetryBudget = 2 * time.Second
+
+// realmDestroyedByNavigation reports whether a script command failed because
+// a navigation replaced the document under it. Chrome reports the torn-down
+// realm as "Execution context was destroyed"; Firefox aborts the in-flight
+// query ("destroyed before query") or reports the context discarded.
+func realmDestroyedByNavigation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context was destroyed") ||
+		strings.Contains(msg, "destroyed before query") ||
+		strings.Contains(msg, "browsing context discarded")
+}
+
 // EvalSimpleScript runs a no-argument script.callFunction via the Session and
 // returns the string result.
+//
+// A navigation destroys the document's realm the instant it commits, so a
+// command landing in that window fails — exactly one failure per navigation
+// under a tight poll (#335). The browsing context survives the navigation,
+// so the eval is retried against the document that replaces it, bounded by
+// evalNavigationRetryBudget. The capture path handles the same race with
+// captureWithNavigationRetry; script commands do get an answer (an error),
+// so retrying on that answer is enough here.
 func EvalSimpleScript(s Session, context, fn string) (string, error) {
 	params := map[string]interface{}{
 		"functionDeclaration": fn,
@@ -311,13 +339,34 @@ func EvalSimpleScript(s Session, context, fn string) (string, error) {
 		"awaitPromise":        false,
 		"resultOwnership":     "root",
 	}
-
-	resp, err := s.SendBidiCommand("script.callFunction", params)
-	if err != nil {
-		return "", err
+	send := func() (string, error) {
+		resp, err := s.SendBidiCommand("script.callFunction", params)
+		if err != nil {
+			return "", err
+		}
+		return parseScriptResult(resp)
 	}
 
-	return parseScriptResult(resp)
+	out, err := send()
+	deadline := time.Now().Add(evalNavigationRetryBudget)
+	for err != nil && time.Now().Before(deadline) {
+		nav := s.NavTracker()
+		navigating := nav != nil && nav.IsNavigating(context)
+		if !navigating && !realmDestroyedByNavigation(err) {
+			break
+		}
+		// The event naming the navigation can trail the failed command by
+		// ~10ms (#291), so the tracker may not know about it yet: settle
+		// when it does, pause briefly when only the error message says a
+		// navigation happened.
+		if navigating {
+			nav.WaitForSettled(context, time.Until(deadline))
+		} else {
+			time.Sleep(25 * time.Millisecond)
+		}
+		out, err = send()
+	}
+	return out, err
 }
 
 // QueryViewport asks the page for its viewport size. ok is false when the
