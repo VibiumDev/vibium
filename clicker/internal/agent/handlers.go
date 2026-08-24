@@ -60,6 +60,18 @@ type Handlers struct {
 	// launchedChannel distinguishes separately installed Firefox channels.
 	// It is empty for Chrome and remote sessions.
 	launchedChannel string
+
+	// launchNotify, when set, is called once at the moment a tool call
+	// commits to launching or connecting a browser, so the caller can warn
+	// its client that the response will take up to the launch bounds. The
+	// daemon sets it per request under the same mutex that serializes
+	// handler calls; it must not be mutated while a call is in flight.
+	launchNotify func()
+}
+
+// SetLaunchNotify installs (or clears, with nil) the launch-start callback.
+func (h *Handlers) SetLaunchNotify(fn func()) {
+	h.launchNotify = fn
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -688,6 +700,12 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				Text: "Browser already running",
 			}},
 		}, nil
+	}
+
+	// Past the no-op checks a launch (or remote connect) really starts, and
+	// the caller may be about to wait longer than an ordinary command.
+	if h.launchNotify != nil {
+		h.launchNotify()
 	}
 
 	// Remote browser connect mode
