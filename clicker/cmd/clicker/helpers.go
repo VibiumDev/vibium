@@ -82,8 +82,8 @@ func parseFlagsAllowNegative(cmd *cobra.Command, raw []string) ([]string, error)
 	}
 
 	// DisableFlagParsing also disables cobra's help interception, so -h and
-	// --help land in the flag set unhandled — the command would then run for
-	// real, destructively for fill (#422, #423). Honor the flag here.
+	// --help land in the flag set unhandled and the command runs for real,
+	// destructively for fill (#422, #423). Honor the flag here.
 	if help, _ := flags.GetBool("help"); help {
 		cmd.Help()
 		os.Exit(0)
