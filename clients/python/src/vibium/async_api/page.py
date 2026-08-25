@@ -610,9 +610,39 @@ class Page:
         })
         return base64.b64decode(result["data"])
 
-    async def pdf(self) -> bytes:
-        """Print the page to PDF. Returns PDF bytes. Only works in headless mode."""
-        result = await self._client.send("vibium:page.pdf", {"context": self._context_id})
+    async def pdf(
+        self,
+        *,
+        landscape: Optional[bool] = None,
+        scale: Optional[float] = None,
+        background: Optional[bool] = None,
+        margin_top: Optional[float] = None,
+        margin_bottom: Optional[float] = None,
+        margin_left: Optional[float] = None,
+        margin_right: Optional[float] = None,
+        page_width: Optional[float] = None,
+        page_height: Optional[float] = None,
+        page_ranges: Optional[List[Union[int, str]]] = None,
+        shrink_to_fit: Optional[bool] = None,
+    ) -> bytes:
+        """Print the page to PDF. Returns PDF bytes. Only works in headless mode.
+
+        Unset options keep the browser's print defaults (portrait, scale 1,
+        1cm margins, no background, letter-size page, all pages). Margins and
+        page size are in cm; page_ranges takes ints and range strings, e.g.
+        [1, "3-5"].
+        """
+        params: Dict[str, Any] = {"context": self._context_id}
+        for key, val in [
+            ("landscape", landscape), ("scale", scale), ("background", background),
+            ("marginTop", margin_top), ("marginBottom", margin_bottom),
+            ("marginLeft", margin_left), ("marginRight", margin_right),
+            ("pageWidth", page_width), ("pageHeight", page_height),
+            ("pageRanges", page_ranges), ("shrinkToFit", shrink_to_fit),
+        ]:
+            if val is not None:
+                params[key] = val
+        result = await self._client.send("vibium:page.pdf", params)
         return base64.b64decode(result["data"])
 
     # --- Evaluation ---

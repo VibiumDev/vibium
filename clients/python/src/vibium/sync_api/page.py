@@ -220,8 +220,11 @@ class Page:
     ) -> bytes:
         return self._loop.run(self._async.screenshot(full_page=full_page, clip=clip))
 
-    def pdf(self) -> bytes:
-        return self._loop.run(self._async.pdf())
+    def pdf(self, **options: Any) -> bytes:
+        """Print the page to PDF. Same keyword options as the async API:
+        landscape, scale, background, margin_top/bottom/left/right,
+        page_width, page_height, page_ranges, shrink_to_fit."""
+        return self._loop.run(self._async.pdf(**options))
 
     # --- Evaluation ---
 
