@@ -211,3 +211,51 @@ describe('CLI: operation preconditions', () => {
     );
   });
 });
+
+describe('CLI: elements taller than the viewport (#340)', () => {
+  // The receivesEvents check used to hit-test at the full bounding-rect
+  // center, which sits below the viewport for any element taller than twice
+  // the viewport height, so the only interactive element on the page was
+  // reported as permanently obscured. 5000px keeps the repro valid at any
+  // reasonable CI viewport size.
+  const tmpFile = path.join(os.tmpdir(), `vibium-tall-${process.pid}.html`);
+  const html =
+    '<html><body style="margin:0">' +
+    '<div style="position:relative;height:5000px;background:#ddd">x' +
+    '<div id="scrim" onclick="document.title=\'OK\'" ' +
+    'style="position:absolute;top:0;left:0;width:100%;height:100%;background:#333;opacity:.3;z-index:12"></div>' +
+    '</div></body></html>';
+  const fileURL = 'file://' + tmpFile;
+
+  test('setup: write tall-overlay fixture', () => {
+    fs.writeFileSync(tmpFile, html);
+  });
+
+  test('is actionable reports receivesEvents for a tall unobscured element', () => {
+    execSync(`${VIBIUM} go "${fileURL}"`, { encoding: 'utf-8', timeout: 30000 });
+    const result = execSync(`${VIBIUM} is actionable "#scrim"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(result, /ReceivesEvents.*true/i, 'tall element must not read as obscured');
+  });
+
+  test('click succeeds on a tall element and lands inside the viewport', () => {
+    execSync(`${VIBIUM} go "${fileURL}"`, { encoding: 'utf-8', timeout: 30000 });
+    const result = execSync(`${VIBIUM} click "#scrim" --timeout 3s`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(result, /Clicked/i, 'click must not time out as obscured');
+
+    const title = execSync(`${VIBIUM} eval "document.title"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.match(title, /OK/, 'click handler must have fired');
+  });
+
+  test('cleanup: remove tall-overlay fixture', () => {
+    fs.rmSync(tmpFile, { force: true });
+  });
+});
