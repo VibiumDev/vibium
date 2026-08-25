@@ -220,8 +220,11 @@ class Page:
     ) -> bytes:
         return self._loop.run(self._async.screenshot(full_page=full_page, clip=clip))
 
-    def pdf(self) -> bytes:
-        return self._loop.run(self._async.pdf())
+    def pdf(self, **options: Any) -> bytes:
+        """Print the page to PDF. Same keyword options as the async API:
+        landscape, scale, background, margin_top/bottom/left/right,
+        page_width, page_height, page_ranges, shrink_to_fit."""
+        return self._loop.run(self._async.pdf(**options))
 
     # --- Evaluation ---
 
@@ -717,7 +720,7 @@ class _SyncCapturedDialog:
 
     def __enter__(self) -> _SyncCapturedDialog:
         self._wait_coro = self._page._loop.run(
-            self._page._async._setup_capture_dialog(self._timeout)
+            self._page._async._setup_capture_dialog(self._timeout, auto_dismiss=True)
         )
         return self
 
@@ -813,10 +816,12 @@ class _SyncCaptureNamespace:
         return _SyncCapturedDownload(self._page, timeout)
 
     def dialog(self, fn: Optional[Callable] = None, timeout: Optional[int] = None) -> Union[Dict[str, Any], _SyncCapturedDialog]:
-        """Wait for a dialog event."""
+        """Wait for a dialog event. The dialog is dismissed as soon as it is
+        captured, so a fn that blocks on it (e.g. a synchronous alert() via
+        evaluate) gets unblocked instead of deadlocking."""
         if fn is not None:
             wait_coro = self._page._loop.run(
-                self._page._async._setup_capture_dialog(timeout)
+                self._page._async._setup_capture_dialog(timeout, auto_dismiss=True)
             )
             fn()
             dialog = self._page._loop.run(wait_coro)

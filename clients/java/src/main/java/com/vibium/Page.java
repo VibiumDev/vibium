@@ -239,7 +239,36 @@ public class Page {
 
     /** Generate a PDF, returns PDF bytes (headless only). */
     public byte[] pdf() {
-        JsonObject result = client.send("vibium:page.pdf", contextParams());
+        return pdf(null);
+    }
+
+    /** Generate a PDF with print options, returns PDF bytes (headless only). */
+    public byte[] pdf(PdfOptions options) {
+        JsonObject params = contextParams();
+        if (options != null) {
+            if (options.landscape() != null) params.addProperty("landscape", options.landscape());
+            if (options.scale() != null) params.addProperty("scale", options.scale());
+            if (options.background() != null) params.addProperty("background", options.background());
+            if (options.marginTop() != null) params.addProperty("marginTop", options.marginTop());
+            if (options.marginBottom() != null) params.addProperty("marginBottom", options.marginBottom());
+            if (options.marginLeft() != null) params.addProperty("marginLeft", options.marginLeft());
+            if (options.marginRight() != null) params.addProperty("marginRight", options.marginRight());
+            if (options.pageWidth() != null) params.addProperty("pageWidth", options.pageWidth());
+            if (options.pageHeight() != null) params.addProperty("pageHeight", options.pageHeight());
+            if (options.shrinkToFit() != null) params.addProperty("shrinkToFit", options.shrinkToFit());
+            if (options.pageRanges() != null && !options.pageRanges().isEmpty()) {
+                JsonArray ranges = new JsonArray();
+                for (Object r : options.pageRanges()) {
+                    if (r instanceof Number) {
+                        ranges.add((Number) r);
+                    } else {
+                        ranges.add(String.valueOf(r));
+                    }
+                }
+                params.add("pageRanges", ranges);
+            }
+        }
+        JsonObject result = client.send("vibium:page.pdf", params);
         String data = result.get("data").getAsString();
         return Base64.getDecoder().decode(data);
     }

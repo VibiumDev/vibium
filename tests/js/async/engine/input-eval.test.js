@@ -189,6 +189,51 @@ describe('Screenshots: options', () => {
     const header = buf.subarray(0, 5).toString('ascii');
     assert.ok(header.startsWith('%PDF'), `PDF should start with %PDF, got: ${header}`);
   });
+
+  // The page dimensions land uncompressed in the PDF's /MediaBox entry:
+  // "/MediaBox [0 0 <width> <height>]" in PDF points.
+  function mediaBox(buf) {
+    const match = buf.toString('latin1').match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    assert.ok(match, 'PDF should contain a parseable /MediaBox');
+    return { width: parseFloat(match[1]), height: parseFloat(match[2]) };
+  }
+
+  test.requires('pdf')('pdf({ landscape: true }) swaps the page orientation (#72)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const portrait = mediaBox(await vibe.pdf());
+    const landscape = mediaBox(await vibe.pdf({ landscape: true }));
+
+    assert.ok(portrait.height > portrait.width, `portrait should be taller than wide, got ${JSON.stringify(portrait)}`);
+    assert.ok(landscape.width > landscape.height, `landscape should be wider than tall, got ${JSON.stringify(landscape)}`);
+  });
+
+  test.requires('pdf')('pdf({ pageWidth, pageHeight }) sets the page size (#72)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    // 10cm x 15cm; MediaBox is in points (1 cm = 28.35pt)
+    const box = mediaBox(await vibe.pdf({ pageWidth: 10, pageHeight: 15 }));
+    assert.ok(Math.abs(box.width - 10 * 28.35) < 2, `width should be ~283pt, got ${box.width}`);
+    assert.ok(Math.abs(box.height - 15 * 28.35) < 2, `height should be ~425pt, got ${box.height}`);
+  });
+
+  test.requires('pdf')('pdf({ pageRanges }) limits the printed pages (#72)', async () => {
+    const vibe = await bro.page();
+    // Three forced pages so ranges have something to cut
+    await vibe.setContent(
+      '<div style="page-break-after:always">one</div>' +
+      '<div style="page-break-after:always">two</div>' +
+      '<div>three</div>'
+    );
+
+    const all = await vibe.pdf();
+    const first = await vibe.pdf({ pageRanges: [1] });
+    const countPages = (buf) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    assert.strictEqual(countPages(all), 3, 'unrestricted print should have 3 pages');
+    assert.strictEqual(countPages(first), 1, 'pageRanges [1] should print 1 page');
+  });
 });
 
 // --- Evaluation ---
