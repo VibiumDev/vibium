@@ -177,6 +177,12 @@ public class Page {
     /**
      * Find all matching elements by CSS selector. Waits up to the timeout
      * for at least one match, then returns an empty list if there is none.
+     *
+     * Each element carries a snapshot of its tag, text, and bounding box
+     * taken at findAll time, readable via {@link Element#info()} with no
+     * further round trips: els.stream().map(e -> e.info().text()). Live
+     * reads like {@link Element#text()} re-resolve the element and fail if
+     * the page has changed since findAll.
      */
     public List<Element> findAll(String selector) {
         return findAll(selector, (FindOptions) null);

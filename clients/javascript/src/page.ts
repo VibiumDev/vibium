@@ -703,6 +703,11 @@ export class Page {
    * Find all elements matching a CSS selector or semantic options. Waits up
    * to the timeout for at least one match, then returns an empty array if
    * there is none. A timeout of 0 checks once without waiting.
+   *
+   * Each element carries a snapshot of its tag, text, and box taken at
+   * findAll time, readable via `el.info` with no further round trips:
+   * els.map(el => el.info.text). Live reads like el.text() re-resolve the
+   * element and fail if the page has changed since findAll.
    */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
