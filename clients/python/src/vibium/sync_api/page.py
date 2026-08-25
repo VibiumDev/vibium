@@ -720,7 +720,7 @@ class _SyncCapturedDialog:
 
     def __enter__(self) -> _SyncCapturedDialog:
         self._wait_coro = self._page._loop.run(
-            self._page._async._setup_capture_dialog(self._timeout)
+            self._page._async._setup_capture_dialog(self._timeout, auto_dismiss=True)
         )
         return self
 
@@ -816,10 +816,12 @@ class _SyncCaptureNamespace:
         return _SyncCapturedDownload(self._page, timeout)
 
     def dialog(self, fn: Optional[Callable] = None, timeout: Optional[int] = None) -> Union[Dict[str, Any], _SyncCapturedDialog]:
-        """Wait for a dialog event."""
+        """Wait for a dialog event. The dialog is dismissed as soon as it is
+        captured, so a fn that blocks on it (e.g. a synchronous alert() via
+        evaluate) gets unblocked instead of deadlocking."""
         if fn is not None:
             wait_coro = self._page._loop.run(
-                self._page._async._setup_capture_dialog(timeout)
+                self._page._async._setup_capture_dialog(timeout, auto_dismiss=True)
             )
             fn()
             dialog = self._page._loop.run(wait_coro)
