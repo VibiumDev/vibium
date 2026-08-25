@@ -56,6 +56,15 @@ on:
 permissions:
   contents: read
 
+# Forward the vibium binary's stderr through the JS and Python clients into
+# the job log. Without it the clients drain stderr into a small in-memory
+# tail that only surfaces on a client-raised error, so a hung test killed by
+# the watchdog shows nothing: the #397 incident on run 32789877533 left the
+# router's slow-delivery diagnostics (#403) unreadable. Costs a few
+# connection lines per healthy test.
+env:
+  VIBIUM_STDERR: 1
+
 jobs:
   chrome:
     runs-on: ubuntu-latest
