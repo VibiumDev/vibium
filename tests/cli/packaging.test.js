@@ -111,3 +111,23 @@ describe('Packaging: postinstall shim replacement (#356)', () => {
     }
   });
 });
+
+describe('Packaging: shim replacement guard (#356)', () => {
+  const { shouldReplaceShim } = require('../../packages/vibium/scripts/link-binary');
+
+  test('replaces only installed copies on POSIX without PnP', () => {
+    assert.strictEqual(shouldReplaceShim('darwin', undefined, '/app/node_modules/vibium'), true);
+    assert.strictEqual(shouldReplaceShim('linux', undefined, '/x/node_modules/vibium'), true);
+  });
+
+  test('never replaces on Windows or under Yarn PnP', () => {
+    assert.strictEqual(shouldReplaceShim('win32', undefined, '/app/node_modules/vibium'), false);
+    assert.strictEqual(shouldReplaceShim('linux', '3.0.0', '/app/node_modules/vibium'), false);
+  });
+
+  test('never replaces a source checkout, whose shim is tracked', () => {
+    // The repo links packages/vibium as a file dependency; npm runs the
+    // symlinked dep's scripts in its real directory, outside node_modules.
+    assert.strictEqual(shouldReplaceShim('darwin', undefined, '/Users/dev/vibium/packages/vibium'), false);
+  });
+});

@@ -7,6 +7,16 @@
 
 const fs = require('fs');
 
+// shouldReplaceShim gates the replacement: POSIX only (npm's Windows cmd
+// shims invoke node explicitly), never under Yarn PnP (no node_modules
+// layout to link into), and only for a copy installed under node_modules.
+// A source checkout runs this same script through the repo's file: link,
+// and npm executes a symlinked dependency's scripts in its real directory,
+// which would overwrite the tracked shim in the working tree.
+function shouldReplaceShim(platform, pnpVersion, packageDir) {
+  return platform !== 'win32' && !pnpVersion && String(packageDir).includes('node_modules');
+}
+
 // linkBinaryOverShim replaces shimPath with binaryPath via an atomic rename,
 // so the bin path always resolves to either the shim or the finished binary.
 // Returns false without touching anything when the binary is absent.
@@ -33,4 +43,4 @@ function linkBinaryOverShim(shimPath, binaryPath) {
   }
 }
 
-module.exports = { linkBinaryOverShim };
+module.exports = { linkBinaryOverShim, shouldReplaceShim };

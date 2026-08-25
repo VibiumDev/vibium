@@ -4,7 +4,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 const os = require('os');
-const { linkBinaryOverShim } = require('./scripts/link-binary');
+const { linkBinaryOverShim, shouldReplaceShim } = require('./scripts/link-binary');
 
 function getVibiumBinPath() {
   const platform = os.platform();
@@ -27,8 +27,9 @@ const vibiumPath = getVibiumBinPath();
 // any real work (#356). npm requires the published bin entry to be a JS
 // file, so the shim ships and gets replaced with the real binary here.
 // The shim must stay a script on Windows (npm's cmd shims invoke node
-// explicitly) and under Yarn PnP (no node_modules layout to link into).
-if (os.platform() !== 'win32' && !process.versions.pnp) {
+// explicitly) and under Yarn PnP (no node_modules layout to link into),
+// and a source checkout must keep its tracked shim (see shouldReplaceShim).
+if (shouldReplaceShim(os.platform(), process.versions.pnp, __dirname)) {
   try {
     linkBinaryOverShim(path.join(__dirname, 'bin', 'cli.js'), vibiumPath);
   } catch (error) {
