@@ -6,6 +6,7 @@ context, dialog handlers, route handlers, console/error collection,
 expect request/response, and full checkpoint.
 """
 
+import re
 import time
 
 import pytest
@@ -113,6 +114,23 @@ def test_pdf(bro, test_server):
     data = vibe.pdf()
     assert isinstance(data, bytes)
     assert data[:2] == b"%P"
+
+
+def _media_box(pdf_bytes):
+    # The page dimensions land uncompressed in "/MediaBox [0 0 <w> <h>]"
+    m = re.search(rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", pdf_bytes)
+    assert m is not None, "PDF should contain a parseable /MediaBox"
+    return float(m.group(1)), float(m.group(2))
+
+
+@pytest.mark.capability("pdf")
+def test_pdf_landscape_option(bro, test_server):
+    vibe = bro.page()
+    vibe.go(test_server)
+    pw, ph = _media_box(vibe.pdf())
+    lw, lh = _media_box(vibe.pdf(landscape=True))
+    assert ph > pw, "portrait should be taller than wide"
+    assert lw > lh, "landscape should be wider than tall"
 
 
 # ===========================================================================

@@ -8,7 +8,7 @@ import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
 import { DialogSync, DialogData } from './dialog';
 import { ElementInfo, SelectorOptions } from '../element';
-import { A11yNode, ScreenshotOptions, FindOptions } from '../page';
+import { A11yNode, ScreenshotOptions, PdfOptions, FindOptions } from '../page';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -292,8 +292,8 @@ export class PageSync {
     return Buffer.from(result.data, 'base64');
   }
 
-  pdf(): Buffer {
-    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId]);
+  pdf(options?: PdfOptions): Buffer {
+    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId, options]);
     return Buffer.from(result.data, 'base64');
   }
 

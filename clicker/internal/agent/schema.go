@@ -818,6 +818,51 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "Output filename for the PDF (e.g., page.pdf)",
 					},
+					"landscape": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Landscape orientation (default: portrait)",
+					},
+					"scale": map[string]interface{}{
+						"type":        "number",
+						"description": "Print scale, 0.1-2 (default: 1)",
+					},
+					"background": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Print background graphics (default: false)",
+					},
+					"marginTop": map[string]interface{}{
+						"type":        "number",
+						"description": "Top margin in cm (default: 1)",
+					},
+					"marginBottom": map[string]interface{}{
+						"type":        "number",
+						"description": "Bottom margin in cm (default: 1)",
+					},
+					"marginLeft": map[string]interface{}{
+						"type":        "number",
+						"description": "Left margin in cm (default: 1)",
+					},
+					"marginRight": map[string]interface{}{
+						"type":        "number",
+						"description": "Right margin in cm (default: 1)",
+					},
+					"pageWidth": map[string]interface{}{
+						"type":        "number",
+						"description": "Page width in cm (default: 21.59)",
+					},
+					"pageHeight": map[string]interface{}{
+						"type":        "number",
+						"description": "Page height in cm (default: 27.94)",
+					},
+					"pageRanges": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": []string{"string", "integer"}},
+						"description": "Pages to print, e.g. [1, \"3-5\"] (default: all)",
+					},
+					"shrinkToFit": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Shrink content to fit the page width (default: true)",
+					},
 				},
 				"additionalProperties": false,
 			},
