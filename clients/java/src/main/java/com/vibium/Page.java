@@ -12,7 +12,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * Represents a browser tab. The primary interface for page automation.
@@ -280,30 +279,19 @@ public class Page {
         return params;
     }
 
-    /** Expose a function to the page context. */
-    public void expose(String name, Function<Object[], Object> fn) {
+    /**
+     * Define window[name] in the page from JS function source, in the current
+     * document and every later one, matching the JS and Python clients:
+     * page.expose("double", "(n) => n * 2"). This replaces a callback-taking
+     * overload that sent no fn, which the server rejected on every call, and
+     * subscribed to an event the server never emits. Host-side callbacks,
+     * where the page calls back into the Java program, are tracked in #298.
+     */
+    public void expose(String name, String fn) {
         JsonObject params = contextParams();
         params.addProperty("name", name);
+        params.addProperty("fn", fn);
         client.send("vibium:page.expose", params);
-
-        // Listen for calls from the page
-        client.onEvent(event -> {
-            String method = event.has("method") ? event.get("method").getAsString() : "";
-            if ("vibium:page.exposedFunction".equals(method)) {
-                JsonObject p = event.getAsJsonObject("params");
-                if (p != null && name.equals(p.has("name") ? p.get("name").getAsString() : "")) {
-                    JsonArray args = p.has("args") ? p.getAsJsonArray("args") : new JsonArray();
-                    Object[] javaArgs = new Object[args.size()];
-                    for (int i = 0; i < args.size(); i++) {
-                        javaArgs[i] = jsonToJava(args.get(i));
-                    }
-                    try {
-                        Object result = fn.apply(javaArgs);
-                        // TODO: send result back if bidirectional exposed functions are supported
-                    } catch (Exception ignored) {}
-                }
-            }
-        });
     }
 
     // ── Waiting ─────────────────────────────────────────────────
