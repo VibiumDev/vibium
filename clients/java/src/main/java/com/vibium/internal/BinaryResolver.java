@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Finds or extracts the vibium binary.
@@ -37,6 +38,7 @@ public final class BinaryResolver {
         // 2. PATH lookup
         String pathResult = findOnPath();
         if (pathResult != null) {
+            warnIfShadowingJar(pathResult);
             return pathResult;
         }
 
@@ -50,6 +52,79 @@ public final class BinaryResolver {
             "vibium binary not found. Install it via npm (npm install vibium), " +
             "set VIBIUM_BIN_PATH, or ensure it's on your PATH."
         );
+    }
+
+    private static volatile boolean shadowChecked = false;
+
+    /**
+     * A PATH install wins over the jar's packaged binary by the documented
+     * resolution order, but the jar version is the only thing a Maven build
+     * controls, and a version mismatch surfaces as protocol errors that do
+     * not point at versions at all. When the versions differ, say which
+     * binary actually runs (#331). Checked once per JVM.
+     */
+    private static void warnIfShadowingJar(String pathBinary) {
+        if (shadowChecked) {
+            return;
+        }
+        shadowChecked = true;
+
+        String jarVersion = readVersion();
+        boolean jarHasBinary = BinaryResolver.class.getClassLoader()
+            .getResource("natives/" + PlatformDetector.binaryName()) != null;
+        if (!jarHasBinary || "unknown".equals(jarVersion)) {
+            return;
+        }
+        String warning = shadowWarning(pathBinary, binaryVersion(pathBinary), jarVersion);
+        if (warning != null) {
+            System.err.println(warning);
+        }
+    }
+
+    /**
+     * The warning for a PATH binary shadowing the jar's packaged one, or null
+     * when the versions match or the PATH binary's version could not be read.
+     * Visible for testing.
+     */
+    static String shadowWarning(String pathBinary, String pathVersion, String jarVersion) {
+        if (pathVersion == null || pathVersion.equals(jarVersion)) {
+            return null;
+        }
+        return "[vibium] Using vibium " + pathVersion + " from PATH (" + pathBinary
+            + "), not the " + jarVersion + " binary packaged in this jar."
+            + " Set VIBIUM_BIN_PATH to pick one explicitly.";
+    }
+
+    /** Version reported by {@code binary --version}, or null when it cannot be read. */
+    private static String binaryVersion(String binary) {
+        try {
+            Process p = new ProcessBuilder(binary, "--version")
+                .redirectErrorStream(true)
+                .start();
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return null;
+            }
+            return parseVersion(new String(readAllBytes(p.getInputStream())).trim());
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    /**
+     * Extracts the version number from {@code --version} output such as
+     * "vibium v26.8.21". Visible for testing.
+     */
+    static String parseVersion(String output) {
+        if (output == null) {
+            return null;
+        }
+        String firstLine = output.split("\\R", 2)[0];
+        String version = firstLine.replaceAll("^[^0-9]*", "");
+        return version.isEmpty() ? null : version;
     }
 
     private static String findOnPath() {
