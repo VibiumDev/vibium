@@ -325,8 +325,7 @@ func (r *Router) handlePageScroll(session *BrowserSession, cmd bidiCommand) {
 			r.sendError(session, cmd.ID, err)
 			return
 		}
-		x = int(info.Box.X + info.Box.Width/2)
-		y = int(info.Box.Y + info.Box.Height/2)
+		x, y = pointerTarget(info)
 	}
 
 	// Map direction to deltas (120 pixels per scroll "notch")
