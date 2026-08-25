@@ -25,6 +25,9 @@ class PdfTest {
     @BeforeAll
     static void setup() {
         browser = Vibium.start(new StartOptions().headless(true));
+        // Firefox keeps the startup tab in the parent process until a
+        // navigation, where script-backed commands are refused.
+        browser.page().go("about:blank");
     }
 
     @AfterAll
