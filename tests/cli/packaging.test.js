@@ -49,3 +49,65 @@ describe('Packaging: npm tarball contents', () => {
     }
   });
 });
+
+describe('Packaging: postinstall shim replacement (#356)', () => {
+  const { linkBinaryOverShim } = require('../../packages/vibium/scripts/link-binary');
+  const { spawnSync } = require('node:child_process');
+
+  function makeFixture() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-link-'));
+    const shim = path.join(dir, 'cli.js');
+    const binary = path.join(dir, 'vibium');
+    fs.writeFileSync(shim, '#!/usr/bin/env node\nconsole.log("shim");\n');
+    // Stands in for the platform binary: prints a marker and exits 0
+    fs.writeFileSync(binary, '#!/bin/sh\necho REAL_BINARY\n');
+    fs.chmodSync(binary, 0o755);
+    return { dir, shim, binary };
+  }
+
+  test('replaces the shim with the binary and the bin path stays runnable', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { dir, shim, binary } = makeFixture();
+    try {
+      assert.strictEqual(linkBinaryOverShim(shim, binary), true);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), fs.readFileSync(binary, 'utf-8'),
+        'shim path must now hold the binary bytes');
+      const run = spawnSync(shim, [], { encoding: 'utf-8' });
+      assert.strictEqual(run.status, 0);
+      assert.match(run.stdout, /REAL_BINARY/, 'running the bin path must run the binary');
+      assert.ok(!fs.existsSync(shim + '.link-tmp'), 'no temp file left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('missing binary leaves the shim untouched', () => {
+    const { dir, shim } = makeFixture();
+    try {
+      const before = fs.readFileSync(shim, 'utf-8');
+      assert.strictEqual(linkBinaryOverShim(shim, path.join(dir, 'nope')), false);
+      assert.strictEqual(linkBinaryOverShim(shim, null), false);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('prefers a hard link so no extra copy is stored', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { dir, shim, binary } = makeFixture();
+    try {
+      linkBinaryOverShim(shim, binary);
+      assert.strictEqual(fs.statSync(shim).ino, fs.statSync(binary).ino,
+        'same filesystem should get a hard link, not a copy');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
