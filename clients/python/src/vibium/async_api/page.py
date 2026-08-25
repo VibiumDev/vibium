@@ -498,8 +498,15 @@ class Page:
                 self._dialog_callbacks.remove(handler)
             raise errors.TimeoutError("Timeout waiting for dialog")
 
-    async def _setup_capture_dialog(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up dialog listener and return a coroutine to await later."""
+    async def _setup_capture_dialog(self, timeout: Optional[int] = None, auto_dismiss: bool = False) -> Any:
+        """Internal: set up dialog listener and return a coroutine to await later.
+
+        auto_dismiss dismisses the dialog the moment it is captured. The sync
+        wrappers use it: they return only the dialog's data, so the caller has
+        no handle to close the dialog with, and a dialog left open blocks the
+        page — including a trigger fn stuck inside evaluate("alert(...)"),
+        which otherwise deadlocks the capture (#146).
+        """
         timeout_ms = timeout or 10000
         future: asyncio.Future = asyncio.get_running_loop().create_future()
 
@@ -507,6 +514,8 @@ class Page:
             self._dialog_callbacks.remove(handler)
             if not future.done():
                 future.set_result(dialog)
+            if auto_dismiss:
+                asyncio.ensure_future(dialog.dismiss())
 
         self._dialog_callbacks.append(handler)
 
