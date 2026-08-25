@@ -12,6 +12,9 @@ type ElementInfo struct {
 	Tag  string  `json:"tag"`
 	Text string  `json:"text"`
 	Box  BoxInfo `json:"box"`
+	// Point is the in-view center computed by the actionability script.
+	// Zero when the element was resolved without actionability checks.
+	Point PointInfo `json:"point"`
 }
 
 type BoxInfo struct {
@@ -19,6 +22,12 @@ type BoxInfo struct {
 	Y      float64 `json:"y"`
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
+}
+
+// PointInfo is a viewport coordinate pair.
+type PointInfo struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // handleVibiumFind handles the vibium:element.find / vibium:page.find command with wait-for-selector.
