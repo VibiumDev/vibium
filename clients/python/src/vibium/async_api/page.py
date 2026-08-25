@@ -504,7 +504,7 @@ class Page:
         auto_dismiss dismisses the dialog the moment it is captured. The sync
         wrappers use it: they return only the dialog's data, so the caller has
         no handle to close the dialog with, and a dialog left open blocks the
-        page — including a trigger fn stuck inside evaluate("alert(...)"),
+        page, including a trigger fn stuck inside evaluate("alert(...)"),
         which otherwise deadlocks the capture (#146).
         """
         timeout_ms = timeout or 10000
