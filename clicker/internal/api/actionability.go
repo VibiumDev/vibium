@@ -12,7 +12,7 @@ type ActionCheck int
 const (
 	CheckVisible        ActionCheck = iota // non-zero bbox, not display:none/visibility:hidden
 	CheckStable                            // bbox unchanged after 50ms delay
-	CheckReceivesEvents                    // elementFromPoint at center hits element or descendant
+	CheckReceivesEvents                    // elementFromPoint at the in-view center hits element or descendant
 	CheckEnabled                           // not [disabled], aria-disabled, or in disabled fieldset
 	CheckEditable                          // enabled + not readonly + valid text input type
 )
@@ -28,12 +28,13 @@ var (
 
 // actionableResult is the JSON structure returned by the combined actionability script.
 type actionableResult struct {
-	Status string  `json:"status"` // "ok", "not_found", "failed"
-	Check  string  `json:"check,omitempty"`
-	Reason string  `json:"reason,omitempty"`
-	Tag    string  `json:"tag,omitempty"`
-	Text   string  `json:"text,omitempty"`
-	Box    BoxInfo `json:"box,omitempty"`
+	Status string    `json:"status"` // "ok", "not_found", "failed"
+	Check  string    `json:"check,omitempty"`
+	Reason string    `json:"reason,omitempty"`
+	Tag    string    `json:"tag,omitempty"`
+	Text   string    `json:"text,omitempty"`
+	Box    BoxInfo   `json:"box,omitempty"`
+	Point  PointInfo `json:"point,omitempty"`
 }
 
 // checksContain returns true if the check set includes the given check.
@@ -102,7 +103,8 @@ func buildCSSActionableScript(ep ElementParams, checkVisible, checkReceivesEvent
 				status:'ok',
 				tag: el.tagName.toLowerCase(),
 				text: (el.innerText || '').trim(),
-				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+				point: { x: px, y: py }
 			});
 		}
 	`
@@ -155,7 +157,8 @@ func buildSemanticActionableScript(ep ElementParams, checkVisible, checkReceives
 				status:'ok',
 				tag: el.tagName.toLowerCase(),
 				text: (el.innerText || '').trim(),
-				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+				box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+				point: { x: px, y: py }
 			});
 		}
 	`
@@ -184,8 +187,24 @@ const EditablePredicateJS = `(!el.disabled && !el.readOnly && el.getAttribute('a
 		: (el.tagName.toLowerCase() === 'textarea' || el.isContentEditable)
 ))`
 
+// InViewCenterJS is a JS statement block, evaluated with `rect` in scope, that
+// declares px/py as the pointer target: the in-view center (the center of the
+// rect clamped to the viewport, per WebDriver). The full-rect center sits
+// off-screen for any element taller or wider than twice the viewport, so
+// hit-testing there reported a false "obscured" and pointer actions landed
+// out of bounds (#340). Falls back to the rect center when the element is
+// entirely outside the viewport, preserving the old failure mode.
+const InViewCenterJS = `
+			let px = rect.x + rect.width/2, py = rect.y + rect.height/2;
+			{
+				const il = Math.max(0, rect.x), it = Math.max(0, rect.y);
+				const ir = Math.min(window.innerWidth, rect.x + rect.width);
+				const ib = Math.min(window.innerHeight, rect.y + rect.height);
+				if (ir > il && ib > it) { px = (il + ir) / 2; py = (it + ib) / 2; }
+			}`
+
 func actionabilityCheckBody() string {
-	return `
+	return InViewCenterJS + `
 			if (chkVisible) {
 				if (rect.width === 0 || rect.height === 0)
 					return JSON.stringify({status:'failed', check:'visible', reason:'zero size'});
@@ -227,13 +246,12 @@ func actionabilityCheckBody() string {
 				}
 			}
 			if (chkEvents) {
-				const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
 				// document.elementFromPoint stops at a shadow host, so an element
 				// inside a shadow root always looked obscured. Descend through
 				// each root at the same point to find what is really on top.
-				let hit = document.elementFromPoint(cx, cy);
+				let hit = document.elementFromPoint(px, py);
 				while (hit && hit.shadowRoot) {
-					const inner = hit.shadowRoot.elementFromPoint(cx, cy);
+					const inner = hit.shadowRoot.elementFromPoint(px, py);
 					if (!inner || inner === hit) break;
 					hit = inner;
 				}
@@ -295,7 +313,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 					result2, err2 := callActionableScript(s, context, script, args)
 					if err2 == nil && result2.Status == "ok" {
 						if result.Box == result2.Box {
-							return &ElementInfo{Tag: result2.Tag, Text: result2.Text, Box: result2.Box}, nil
+							return &ElementInfo{Tag: result2.Tag, Text: result2.Text, Box: result2.Box, Point: result2.Point}, nil
 						}
 						// Not stable — set lastResult to indicate instability and retry
 						lastResult = &actionableResult{
@@ -306,7 +324,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 					}
 					// If second call failed, retry the whole loop
 				} else {
-					return &ElementInfo{Tag: result.Tag, Text: result.Text, Box: result.Box}, nil
+					return &ElementInfo{Tag: result.Tag, Text: result.Text, Box: result.Box, Point: result.Point}, nil
 				}
 			}
 		}

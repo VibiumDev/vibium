@@ -6,6 +6,7 @@ context, dialog handlers, route handlers, console/error collection,
 expect request/response, and full checkpoint.
 """
 
+import re
 import time
 
 import pytest
@@ -113,6 +114,23 @@ def test_pdf(bro, test_server):
     data = vibe.pdf()
     assert isinstance(data, bytes)
     assert data[:2] == b"%P"
+
+
+def _media_box(pdf_bytes):
+    # The page dimensions land uncompressed in "/MediaBox [0 0 <w> <h>]"
+    m = re.search(rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", pdf_bytes)
+    assert m is not None, "PDF should contain a parseable /MediaBox"
+    return float(m.group(1)), float(m.group(2))
+
+
+@pytest.mark.capability("pdf")
+def test_pdf_landscape_option(bro, test_server):
+    vibe = bro.page()
+    vibe.go(test_server)
+    pw, ph = _media_box(vibe.pdf())
+    lw, lh = _media_box(vibe.pdf(landscape=True))
+    assert ph > pw, "portrait should be taller than wide"
+    assert lw > lh, "landscape should be wider than tall"
 
 
 # ===========================================================================
@@ -776,6 +794,37 @@ def test_capture_dialog(bro, test_server):
     assert info.value is not None
     assert info.value["type"] == "alert"
     assert info.value["message"] == "Hello from expect"
+    vibe.close()
+
+
+@pytest.mark.capability("dialogs")
+def test_capture_dialog_fn_blocking_alert(bro, test_server):
+    """A fn that blocks inside evaluate("alert(...)") must not deadlock (#146).
+
+    alert() halts the page until the dialog is handled, so the capture has to
+    dismiss the dialog on arrival for the evaluate call to ever return.
+    """
+    vibe = bro.new_page()
+    vibe.go(test_server)
+    result = vibe.capture.dialog(lambda: vibe.evaluate('alert("blocking fn")'))
+    assert result["type"] == "alert"
+    assert result["message"] == "blocking fn"
+    # The dialog was dismissed, so the page must answer again.
+    assert vibe.evaluate("1 + 1") == 2
+    vibe.close()
+
+
+@pytest.mark.capability("dialogs")
+def test_capture_dialog_cm_blocking_alert(bro, test_server):
+    """Context-manager form of the same deadlock (#146)."""
+    vibe = bro.new_page()
+    vibe.go(test_server)
+    with vibe.capture.dialog() as info:
+        vibe.evaluate('alert("blocking cm")')
+    assert info.value is not None
+    assert info.value["type"] == "alert"
+    assert info.value["message"] == "blocking cm"
+    assert vibe.evaluate("1 + 1") == 2
     vibe.close()
 
 
