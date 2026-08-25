@@ -181,4 +181,39 @@ describe('JS Emulation', () => {
     assert.ok(Math.abs(coords.lat - 51.5074) < 0.001, `latitude should be ~51.5074, got ${coords.lat}`);
     assert.ok(Math.abs(coords.lng - (-0.1278)) < 0.001, `longitude should be ~-0.1278, got ${coords.lng}`);
   });
+
+  const readCoords = `
+    new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        err => reject(new Error('geolocation error: ' + err.message)),
+        { timeout: 5000 }
+      );
+    })
+  `;
+
+  test('setGeolocation() survives a reload (#345)', async () => {
+    const vibe = await bro.page();
+    await vibe.setContent('<html><body></body></html>');
+    await vibe.setGeolocation({ latitude: 40.7128, longitude: -74.006 });
+
+    await vibe.reload();
+
+    const coords = await vibe.evaluate(readCoords);
+    assert.ok(Math.abs(coords.lat - 40.7128) < 0.001, `latitude should be ~40.7128 after reload, got ${coords.lat}`);
+    assert.ok(Math.abs(coords.lng - (-74.006)) < 0.001, `longitude should be ~-74.006 after reload, got ${coords.lng}`);
+  });
+
+  test('setGeolocation() survives a navigation, last call wins', async () => {
+    const vibe = await bro.page();
+    await vibe.setContent('<html><body></body></html>');
+    await vibe.setGeolocation({ latitude: 51.5074, longitude: -0.1278 });
+    await vibe.setGeolocation({ latitude: 35.6762, longitude: 139.6503 });
+
+    await vibe.go('about:blank');
+
+    const coords = await vibe.evaluate(readCoords);
+    assert.ok(Math.abs(coords.lat - 35.6762) < 0.001, `latitude should be ~35.6762 after navigation, got ${coords.lat}`);
+    assert.ok(Math.abs(coords.lng - 139.6503) < 0.001, `longitude should be ~139.6503 after navigation, got ${coords.lng}`);
+  });
 });
