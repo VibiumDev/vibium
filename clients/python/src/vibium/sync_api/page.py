@@ -173,6 +173,13 @@ class Page:
         near: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
+        """Find all matching elements.
+
+        Each element carries a snapshot of its tag, text, and box taken at
+        find_all time, readable via el.info with no further round trips:
+        [el.info.text for el in els]. Live reads like el.text() re-resolve
+        the element and fail if the page has changed since find_all.
+        """
         async_elements = self._loop.run(self._async.find_all(
             selector, role=role, text=text, label=label, placeholder=placeholder,
             alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,

@@ -405,6 +405,18 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
+// staleIndexHint explains a not-found error for an index-addressed element:
+// those come from findAll handles, so "not found" can mean the page changed
+// after findAll rather than a selector that never matched, and the two read
+// identically without the hint (#338).
+func staleIndexHint(err error, ep ElementParams) error {
+	if err == nil || !ep.HasIndex || !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+	return fmt.Errorf("%w (element %d of a findAll result: the page may have changed since findAll; "+
+		"re-run findAll, or read the snapshot the findAll returned)", err, ep.Index)
+}
+
 // ResolveElement finds an element using the given params, polling until found or timeout.
 func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, error) {
 	ep = ep.withDefaultTimeout()
@@ -413,7 +425,7 @@ func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, 
 	if err == nil && info != nil {
 		s.SetLastElementBox(&info.Box)
 	}
-	return info, err
+	return info, staleIndexHint(err, ep)
 }
 
 // ResolveElementRef finds an element and returns its BiDi sharedId.

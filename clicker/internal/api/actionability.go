@@ -337,5 +337,5 @@ func resolveWithActionability(s Session, context string, ep ElementParams, check
 	if err == nil && info != nil {
 		s.SetLastElementBox(&info.Box)
 	}
-	return info, err
+	return info, staleIndexHint(err, ep)
 }
