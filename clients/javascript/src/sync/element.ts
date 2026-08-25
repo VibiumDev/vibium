@@ -86,6 +86,11 @@ export class ElementSync {
     this.bridge.call('element.focus', [this.elementId, options]);
   }
 
+  /** Highlight the element with a brief outline, for visual debugging. */
+  highlight(options?: ActionOptions): void {
+    this.bridge.call('element.highlight', [this.elementId, options]);
+  }
+
   /** Drag this element to a target element. */
   dragTo(target: ElementSync, options?: ActionOptions): void {
     this.bridge.call('element.dragTo', [this.elementId, (target as any).elementId, options]);

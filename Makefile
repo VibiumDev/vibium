@@ -497,11 +497,13 @@ test-firefox-capabilities: build-go install-firefox
 # Browser-free cross-surface API drift check. docs/reference/api.md is the
 # spec: fails on a malformed doc or on a client column claiming a symbol the
 # client does not export. Undocumented extras are reported but do not fail.
-check-api-drift: python-venv
-	@echo "--- API Drift Check (spec + python) ---"
+check-api-drift: python-venv build-js
+	@echo "--- API Drift Check (spec + js + python) ---"
 	cd clicker && go run ./cmd/apidrift validate -spec ../docs/reference/api.md
 	@cd clients/python && . $(VENV_ACTIVATE) && python ../../scripts/apidrift_python.py | \
 		(cd ../../clicker && go run ./cmd/apidrift check -surface python -spec ../docs/reference/api.md -actual -)
+	@node scripts/apidrift_js.js | \
+		(cd clicker && go run ./cmd/apidrift check -surface js -spec ../docs/reference/api.md -actual -)
 
 test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"

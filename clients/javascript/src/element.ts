@@ -170,6 +170,13 @@ export class Element {
     }));
   }
 
+  /** Highlight the element with a brief outline, for visual debugging. */
+  async highlight(options?: ActionOptions): Promise<void> {
+    await this.client.send('vibium:element.highlight', this.commandParams({
+      timeout: options?.timeout,
+    }));
+  }
+
   /** Drag this element to a target element. */
   async dragTo(target: Element, options?: ActionOptions): Promise<void> {
     await this.client.send('vibium:element.dragTo', this.commandParams({

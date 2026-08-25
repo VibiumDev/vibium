@@ -178,3 +178,16 @@ describe('Element Finding', () => {
     assert.strictEqual(count, paragraphs.length, 'Iterator count should match length');
   });
 });
+
+describe('Element highlight', () => {
+  test('highlight() outlines the element (#435 drift find)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    const el = await vibe.find('p');
+    await el.highlight();
+
+    const outline = await vibe.evaluate('document.querySelector("p").style.outline');
+    assert.match(outline, /solid/, `highlight should set an outline, got "${outline}"`);
+  });
+});
