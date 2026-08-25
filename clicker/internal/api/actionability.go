@@ -188,12 +188,12 @@ const EditablePredicateJS = `(!el.disabled && !el.readOnly && el.getAttribute('a
 ))`
 
 // InViewCenterJS is a JS statement block, evaluated with `rect` in scope, that
-// declares px/py as the pointer target: the in-view centre (centre of
-// rect ∩ viewport, per WebDriver). The full-rect centre sits off-screen for
-// any element taller or wider than twice the viewport, so hit-testing there
-// reported a false "obscured" and pointer actions landed out of bounds (#340).
-// Falls back to the rect centre when the element is entirely outside the
-// viewport, preserving the old failure mode.
+// declares px/py as the pointer target: the in-view center (the center of the
+// rect clamped to the viewport, per WebDriver). The full-rect center sits
+// off-screen for any element taller or wider than twice the viewport, so
+// hit-testing there reported a false "obscured" and pointer actions landed
+// out of bounds (#340). Falls back to the rect center when the element is
+// entirely outside the viewport, preserving the old failure mode.
 const InViewCenterJS = `
 			let px = rect.x + rect.width/2, py = rect.y + rect.height/2;
 			{

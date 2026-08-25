@@ -214,7 +214,7 @@ describe('CLI: operation preconditions', () => {
 
 describe('CLI: elements taller than the viewport (#340)', () => {
   // The receivesEvents check used to hit-test at the full bounding-rect
-  // centre, which sits below the viewport for any element taller than twice
+  // center, which sits below the viewport for any element taller than twice
   // the viewport height, so the only interactive element on the page was
   // reported as permanently obscured. 5000px keeps the repro valid at any
   // reasonable CI viewport size.

@@ -587,8 +587,8 @@ func (r *Router) pressKey(session *BrowserSession, context, key string) error {
 // ---------------------------------------------------------------------------
 
 // pointerTarget returns the viewport coordinates for pointer actions on an
-// element: the in-view centre from the actionability script when present,
-// else the bounding-box centre (plain and forced resolutions). The box centre
+// element: the in-view center from the actionability script when present,
+// else the bounding-box center (plain and forced resolutions). The box center
 // sits outside the viewport for elements larger than twice the viewport, and
 // out-of-bounds pointer coordinates are a WebDriver error (#340).
 func pointerTarget(info *ElementInfo) (int, int) {

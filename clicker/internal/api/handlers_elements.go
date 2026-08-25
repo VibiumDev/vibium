@@ -12,7 +12,7 @@ type ElementInfo struct {
 	Tag  string  `json:"tag"`
 	Text string  `json:"text"`
 	Box  BoxInfo `json:"box"`
-	// Point is the in-view centre computed by the actionability script.
+	// Point is the in-view center computed by the actionability script.
 	// Zero when the element was resolved without actionability checks.
 	Point PointInfo `json:"point"`
 }
