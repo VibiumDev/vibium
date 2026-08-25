@@ -23,6 +23,32 @@ export interface ScreenshotOptions {
   clip?: { x: number; y: number; width: number; height: number };
 }
 
+/** Options for pdf(). Unset options keep the browser's print defaults. */
+export interface PdfOptions {
+  /** Landscape orientation (default: portrait). */
+  landscape?: boolean;
+  /** Print scale, 0.1-2 (default: 1). */
+  scale?: number;
+  /** Print background graphics (default: false). */
+  background?: boolean;
+  /** Top margin in cm (default: 1). */
+  marginTop?: number;
+  /** Bottom margin in cm (default: 1). */
+  marginBottom?: number;
+  /** Left margin in cm (default: 1). */
+  marginLeft?: number;
+  /** Right margin in cm (default: 1). */
+  marginRight?: number;
+  /** Page width in cm (default: 21.59). */
+  pageWidth?: number;
+  /** Page height in cm (default: 27.94). */
+  pageHeight?: number;
+  /** Pages to print, e.g. [1, '3-5'] (default: all). */
+  pageRanges?: Array<number | string>;
+  /** Shrink content to fit the page width (default: true). */
+  shrinkToFit?: boolean;
+}
+
 interface VibiumFindResult {
   tag: string;
   text: string;
@@ -533,9 +559,10 @@ export class Page {
   }
 
   /** Print the page to PDF. Returns a PDF buffer. Only works in headless mode. */
-  async pdf(): Promise<Buffer> {
+  async pdf(options?: PdfOptions): Promise<Buffer> {
     const result = await this.client.send<{ data: string }>('vibium:page.pdf', {
       context: this.contextId,
+      ...options,
     });
     return Buffer.from(result.data, 'base64');
   }
@@ -676,6 +703,11 @@ export class Page {
    * Find all elements matching a CSS selector or semantic options. Waits up
    * to the timeout for at least one match, then returns an empty array if
    * there is none. A timeout of 0 checks once without waiting.
+   *
+   * Each element carries a snapshot of its tag, text, and box taken at
+   * findAll time, readable via `el.info` with no further round trips:
+   * els.map(el => el.info.text). Live reads like el.text() re-resolve the
+   * element and fail if the page has changed since findAll.
    */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
