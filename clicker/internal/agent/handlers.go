@@ -3016,7 +3016,9 @@ func (h *Handlers) browserPDF(args map[string]interface{}) (*ToolsCallResult, er
 	if err != nil {
 		return nil, err
 	}
-	base64Data, err := api.PrintToPDF(s, ctx)
+	// args carries the print options under the same keys the wire command
+	// uses; extra keys like filename are ignored by the translation.
+	base64Data, err := api.PrintToPDF(s, ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to print PDF: %w", err)
 	}

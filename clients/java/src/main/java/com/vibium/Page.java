@@ -12,7 +12,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * Represents a browser tab. The primary interface for page automation.
@@ -178,6 +177,12 @@ public class Page {
     /**
      * Find all matching elements by CSS selector. Waits up to the timeout
      * for at least one match, then returns an empty list if there is none.
+     *
+     * Each element carries a snapshot of its tag, text, and bounding box
+     * taken at findAll time, readable via {@link Element#info()} with no
+     * further round trips: els.stream().map(e -> e.info().text()). Live
+     * reads like {@link Element#text()} re-resolve the element and fail if
+     * the page has changed since findAll.
      */
     public List<Element> findAll(String selector) {
         return findAll(selector, (FindOptions) null);
@@ -240,7 +245,36 @@ public class Page {
 
     /** Generate a PDF, returns PDF bytes (headless only). */
     public byte[] pdf() {
-        JsonObject result = client.send("vibium:page.pdf", contextParams());
+        return pdf(null);
+    }
+
+    /** Generate a PDF with print options, returns PDF bytes (headless only). */
+    public byte[] pdf(PdfOptions options) {
+        JsonObject params = contextParams();
+        if (options != null) {
+            if (options.landscape() != null) params.addProperty("landscape", options.landscape());
+            if (options.scale() != null) params.addProperty("scale", options.scale());
+            if (options.background() != null) params.addProperty("background", options.background());
+            if (options.marginTop() != null) params.addProperty("marginTop", options.marginTop());
+            if (options.marginBottom() != null) params.addProperty("marginBottom", options.marginBottom());
+            if (options.marginLeft() != null) params.addProperty("marginLeft", options.marginLeft());
+            if (options.marginRight() != null) params.addProperty("marginRight", options.marginRight());
+            if (options.pageWidth() != null) params.addProperty("pageWidth", options.pageWidth());
+            if (options.pageHeight() != null) params.addProperty("pageHeight", options.pageHeight());
+            if (options.shrinkToFit() != null) params.addProperty("shrinkToFit", options.shrinkToFit());
+            if (options.pageRanges() != null && !options.pageRanges().isEmpty()) {
+                JsonArray ranges = new JsonArray();
+                for (Object r : options.pageRanges()) {
+                    if (r instanceof Number) {
+                        ranges.add((Number) r);
+                    } else {
+                        ranges.add(String.valueOf(r));
+                    }
+                }
+                params.add("pageRanges", ranges);
+            }
+        }
+        JsonObject result = client.send("vibium:page.pdf", params);
         String data = result.get("data").getAsString();
         return Base64.getDecoder().decode(data);
     }
@@ -280,30 +314,19 @@ public class Page {
         return params;
     }
 
-    /** Expose a function to the page context. */
-    public void expose(String name, Function<Object[], Object> fn) {
+    /**
+     * Define window[name] in the page from JS function source, in the current
+     * document and every later one, matching the JS and Python clients:
+     * page.expose("double", "(n) => n * 2"). This replaces a callback-taking
+     * overload that sent no fn, which the server rejected on every call, and
+     * subscribed to an event the server never emits. Host-side callbacks,
+     * where the page calls back into the Java program, are tracked in #298.
+     */
+    public void expose(String name, String fn) {
         JsonObject params = contextParams();
         params.addProperty("name", name);
+        params.addProperty("fn", fn);
         client.send("vibium:page.expose", params);
-
-        // Listen for calls from the page
-        client.onEvent(event -> {
-            String method = event.has("method") ? event.get("method").getAsString() : "";
-            if ("vibium:page.exposedFunction".equals(method)) {
-                JsonObject p = event.getAsJsonObject("params");
-                if (p != null && name.equals(p.has("name") ? p.get("name").getAsString() : "")) {
-                    JsonArray args = p.has("args") ? p.getAsJsonArray("args") : new JsonArray();
-                    Object[] javaArgs = new Object[args.size()];
-                    for (int i = 0; i < args.size(); i++) {
-                        javaArgs[i] = jsonToJava(args.get(i));
-                    }
-                    try {
-                        Object result = fn.apply(javaArgs);
-                        // TODO: send result back if bidirectional exposed functions are supported
-                    } catch (Exception ignored) {}
-                }
-            }
-        });
     }
 
     // ── Waiting ─────────────────────────────────────────────────

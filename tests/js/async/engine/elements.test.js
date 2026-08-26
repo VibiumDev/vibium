@@ -191,3 +191,44 @@ describe('Element highlight', () => {
     assert.match(outline, /solid/, `highlight should set an outline, got "${outline}"`);
   });
 });
+
+describe('Stale findAll handles (#338)', () => {
+  test('the info snapshot reads all matches with no extra round trips', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    const paragraphs = await vibe.findAll('p');
+    const texts = paragraphs.map((el) => el.info.text);
+    assert.strictEqual(texts.length, 3);
+    assert.match(texts[0], /First paragraph/);
+    // The snapshot stays readable even after the elements are gone
+    await vibe.evaluate('document.querySelectorAll("p").forEach(p => p.remove())');
+    assert.match(paragraphs[1].info.text, /Second paragraph/);
+  });
+
+  test('a live read on a vanished handle names findAll, a bad selector does not', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    const paragraphs = await vibe.findAll('p');
+    await vibe.evaluate('document.querySelectorAll("p").forEach(p => p.remove())');
+
+    await assert.rejects(
+      () => paragraphs[2].text(),
+      (err) => {
+        assert.match(err.message, /findAll/, `stale-handle error should name findAll, got: ${err.message}`);
+        assert.match(err.message, /element 2/, `should name which element, got: ${err.message}`);
+        return true;
+      }
+    );
+
+    // A plain bad selector must not get the findAll explanation
+    await assert.rejects(
+      () => vibe.find('#never-existed', { timeout: 500 }).then((el) => el.text()),
+      (err) => {
+        assert.doesNotMatch(err.message, /findAll/, `bad-selector error must stay plain, got: ${err.message}`);
+        return true;
+      }
+    );
+  });
+});

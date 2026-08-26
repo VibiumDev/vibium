@@ -345,8 +345,8 @@ const handlers: Record<string, Handler> = {
   },
 
   'page.pdf': async (args) => {
-    const [pageId] = args as [number];
-    const buffer = await getPage(pageId).pdf();
+    const [pageId, options] = args as [number, unknown];
+    const buffer = await getPage(pageId).pdf(options as any);
     return { data: buffer.toString('base64') };
   },
 
