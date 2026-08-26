@@ -51,6 +51,7 @@
     "dist",
     "bin",
     "postinstall.js",
+    "scripts/link-binary.js",
     "LICENSE",
     "NOTICE"
   ],

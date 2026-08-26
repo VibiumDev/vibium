@@ -140,6 +140,12 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 	log.Debug("found chromedriver", "path", chromedriverPath)
 
+	// Browsers left behind by a killed vibium accumulate until launches
+	// starve (#382); nothing else will ever reap them.
+	if cacheDir, err := paths.GetChromeForTestingDir(); err == nil {
+		process.ReapOrphans(cacheDir)
+	}
+
 	chromePath, err := paths.GetChromeExecutable()
 	if err != nil {
 		return nil, fmt.Errorf("Chrome not found")

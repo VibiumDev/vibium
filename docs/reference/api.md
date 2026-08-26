@@ -36,7 +36,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 17 | Find a single element | `vibium:page.find` | `vibium find <sel>` | `browser_find` | `page.find(sel, opts?)` | `page.find(sel, **opts)` | `page.find(sel, options?)` |
 | 18 | Find all matching elements | `vibium:page.findAll` | `vibium find --all <sel>` | `browser_find_all` | `page.findAll(sel, opts?)` | `page.find_all(sel, **opts)` | `page.findAll(sel, options?)` |
 | 19 | Take a page screenshot | `vibium:page.screenshot` | `vibium screenshot` | `browser_screenshot` | `page.screenshot(opts?)` | `page.screenshot(opts?)` | `page.screenshot(options?)` |
-| 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf()` | `page.pdf()` | `page.pdf()` |
+| 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf(opts?)` | `page.pdf(**opts)` | `page.pdf(options?)` |
 | 21 | Evaluate JavaScript | `vibium:page.eval` | `vibium eval <expr>` | `browser_evaluate` | `page.evaluate(expr)` | `page.evaluate(expr)` | `page.evaluate(expr)` |
 | 22 | Add a script tag | `vibium:page.addScript` | ⬜ | ⬜ | `page.addScript(src)` | `page.add_script(src)` | `page.addScript(src)` |
 | 23 | Add a style tag | `vibium:page.addStyle` | ⬜ | ⬜ | `page.addStyle(src)` | `page.add_style(src)` | `page.addStyle(src)` |
