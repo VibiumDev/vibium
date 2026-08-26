@@ -131,3 +131,49 @@ describe('Packaging: shim replacement guard (#356)', () => {
     assert.strictEqual(shouldReplaceShim('darwin', undefined, '/Users/dev/vibium/packages/vibium'), false);
   });
 });
+
+describe('Packaging: postinstall and bin scripts are self-contained', () => {
+  // The nightly local-smoke on 2026-08-26 failed on every platform because
+  // postinstall.js required scripts/link-binary.js, which the files
+  // allowlist did not ship. Every relative require reachable from the
+  // packaged entry scripts must itself be in the tarball.
+  test('every relative require of packaged scripts ships in the tarball', () => {
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-pack-req-'));
+    const useShell = process.platform === 'win32';
+    const destArg = useShell ? `"${dest}"` : dest;
+    const out = execFileSync(NPM, ['pack', '--json', '--pack-destination', destArg], {
+      cwd: PKG_DIR,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+      shell: useShell,
+    });
+
+    try {
+      const files = new Set(JSON.parse(out)[0].files.map((f) => f.path));
+      // Walk relative requires transitively from the executable entries.
+      const queue = ['postinstall.js', 'bin/cli.js'];
+      const seen = new Set();
+
+      while (queue.length > 0) {
+        const entry = queue.shift();
+        if (seen.has(entry)) continue;
+        seen.add(entry);
+
+        assert.ok(files.has(entry), `tarball must include ${entry}`);
+        if (!entry.endsWith('.js')) continue;
+        const source = fs.readFileSync(path.join(PKG_DIR, entry), 'utf-8');
+        for (const match of source.matchAll(/require\(['"](\.[^'"]+)['"]\)/g)) {
+          let dep = path.posix.join(path.posix.dirname(entry), match[1]);
+          if (!dep.endsWith('.js') && !dep.endsWith('.json')) dep += '.js';
+          assert.ok(
+            files.has(dep),
+            `${entry} requires ${match[1]}, but ${dep} is not in the tarball; add it to the files allowlist`
+          );
+          queue.push(dep);
+        }
+      }
+    } finally {
+      fs.rmSync(dest, { recursive: true, force: true });
+    }
+  });
+});
