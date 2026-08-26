@@ -1223,6 +1223,12 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
+  'element.highlight': async (args) => {
+    const [elementId, options] = args as [number, any];
+    await getElement(elementId).highlight(options);
+    return { success: true };
+  },
+
   'element.dragTo': async (args) => {
     const [elementId, targetId, options] = args as [number, number, any];
     const target = getElement(targetId);

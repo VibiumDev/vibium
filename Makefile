@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -493,6 +493,17 @@ test-engine: test-cli-shared test-js-engine test-python-engine test-java-engine
 
 test-firefox-capabilities: build-go install-firefox
 	@"$(MAKE)" test-engine ENGINE=firefox
+
+# Browser-free cross-surface API drift check. docs/reference/api.md is the
+# spec: fails on a malformed doc or on a client column claiming a symbol the
+# client does not export. Undocumented extras are reported but do not fail.
+check-api-drift: python-venv build-js
+	@echo "--- API Drift Check (spec + js + python) ---"
+	cd clicker && go run ./cmd/apidrift validate -spec ../docs/reference/api.md
+	@cd clients/python && . $(VENV_ACTIVATE) && python ../../scripts/apidrift_python.py | \
+		(cd ../../clicker && go run ./cmd/apidrift check -surface python -spec ../docs/reference/api.md -actual -)
+	@node scripts/apidrift_js.js | \
+		(cd clicker && go run ./cmd/apidrift check -surface js -spec ../docs/reference/api.md -actual -)
 
 test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"

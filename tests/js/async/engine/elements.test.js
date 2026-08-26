@@ -179,6 +179,19 @@ describe('Element Finding', () => {
   });
 });
 
+describe('Element highlight', () => {
+  test('highlight() outlines the element (#435 drift find)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL);
+
+    const el = await vibe.find('p');
+    await el.highlight();
+
+    const outline = await vibe.evaluate('document.querySelector("p").style.outline');
+    assert.match(outline, /solid/, `highlight should set an outline, got "${outline}"`);
+  });
+});
+
 describe('Stale findAll handles (#338)', () => {
   test('the info snapshot reads all matches with no extra round trips', async () => {
     const vibe = await bro.page();

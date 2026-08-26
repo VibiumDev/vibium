@@ -7,12 +7,18 @@ on:
       # Documentation that nothing builds or tests reads. Deliberately NOT
       # docs/tutorials/**: tests/py and tests/js extract code from those and
       # run it, so editing one can break the suite. Also not skills/**, whose
-      # SKILL.md is copied into the binary by build-go.
+      # SKILL.md is copied into the binary by build-go, and not
+      # docs/reference/api.md, which the API drift check parses as its spec.
       - 'docs/explanation/**'
       - 'docs/how-to-guides/**'
       - 'docs/images/**'
       - 'docs/plans/**'
-      - 'docs/reference/**'
+      - 'docs/reference/WebDriver-Bidi-Spec.md'
+      - 'docs/reference/mac-system-requirements.md'
+      - 'docs/reference/recording-format.md'
+      - 'docs/reference/selectors.md'
+      - 'docs/reference/webdriver-bidi-overview.md'
+      - 'docs/reference/webdriver-classic.md'
       - 'docs/specs/**'
       - 'docs/trackers/**'
       - 'docs/updates/**'
@@ -31,12 +37,18 @@ on:
       # Documentation that nothing builds or tests reads. Deliberately NOT
       # docs/tutorials/**: tests/py and tests/js extract code from those and
       # run it, so editing one can break the suite. Also not skills/**, whose
-      # SKILL.md is copied into the binary by build-go.
+      # SKILL.md is copied into the binary by build-go, and not
+      # docs/reference/api.md, which the API drift check parses as its spec.
       - 'docs/explanation/**'
       - 'docs/how-to-guides/**'
       - 'docs/images/**'
       - 'docs/plans/**'
-      - 'docs/reference/**'
+      - 'docs/reference/WebDriver-Bidi-Spec.md'
+      - 'docs/reference/mac-system-requirements.md'
+      - 'docs/reference/recording-format.md'
+      - 'docs/reference/selectors.md'
+      - 'docs/reference/webdriver-bidi-overview.md'
+      - 'docs/reference/webdriver-classic.md'
       - 'docs/specs/**'
       - 'docs/trackers/**'
       - 'docs/updates/**'
@@ -132,6 +144,11 @@ jobs:
 
       - name: Build
         run: make
+
+      # Browser-free: fails when api.md is malformed or a client column
+      # claims a symbol the client does not export.
+      - name: API drift check
+        run: make check-api-drift
 
       # xvfb: the Python suite's headed tests need a display.
       # The NODE_TEST_TIMEOUT override is gone with Node 20: --test-timeout is
