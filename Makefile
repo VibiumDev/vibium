@@ -497,13 +497,18 @@ test-firefox-capabilities: build-go install-firefox
 # Browser-free cross-surface API drift check. docs/reference/api.md is the
 # spec: fails on a malformed doc or on a client column claiming a symbol the
 # client does not export. Undocumented extras are reported but do not fail.
-check-api-drift: python-venv build-js
-	@echo "--- API Drift Check (spec + js + python) ---"
+check-api-drift: python-venv build-js build-go
+	@echo "--- API Drift Check (spec + all surfaces) ---"
 	cd clicker && go run ./cmd/apidrift validate -spec ../docs/reference/api.md
 	@cd clients/python && . $(VENV_ACTIVATE) && python ../../scripts/apidrift_python.py | \
 		(cd ../../clicker && go run ./cmd/apidrift check -surface python -spec ../docs/reference/api.md -actual -)
 	@node scripts/apidrift_js.js | \
 		(cd clicker && go run ./cmd/apidrift check -surface js -spec ../docs/reference/api.md -actual -)
+	@cd clients/java && ./gradlew -q compileJava && cd ../.. && $(PYTHON) scripts/apidrift_java.py | \
+		(cd clicker && go run ./cmd/apidrift check -surface java -spec ../docs/reference/api.md -actual -)
+	@./clicker/bin/vibium$(EXE) commands | \
+		(cd clicker && go run ./cmd/apidrift check -surface cli -spec ../docs/reference/api.md -actual -)
+	@cd clicker && go run ./cmd/apidrift mcp-surface | go run ./cmd/apidrift check -surface mcp -spec ../docs/reference/api.md -actual -
 
 test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"

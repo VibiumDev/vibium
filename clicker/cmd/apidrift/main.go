@@ -17,14 +17,27 @@ import (
 	"io"
 	"os"
 
+	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/apidrift"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fail("usage: apidrift <validate|check> [flags]")
+		fail("usage: apidrift <validate|check|mcp-surface> [flags]")
 	}
 	switch os.Args[1] {
+	case "mcp-surface":
+		// The MCP tool list is a Go literal in internal/agent, so the
+		// extractor is a direct import rather than a script.
+		names := map[string][]string{"": nil}
+		for _, tool := range agent.GetToolSchemas() {
+			names[""] = append(names[""], tool.Name)
+		}
+		out, err := json.Marshal(names)
+		if err != nil {
+			fail(err.Error())
+		}
+		fmt.Println(string(out))
 	case "validate":
 		fs := flag.NewFlagSet("validate", flag.ExitOnError)
 		spec := fs.String("spec", "", "path to api.md")

@@ -135,3 +135,41 @@ func TestCompare(t *testing.T) {
 		t.Errorf("js Unmapped = %v, want route", f.Unmapped)
 	}
 }
+
+func TestSymbolFromFluentAndFlat(t *testing.T) {
+	row := "## X\n" +
+		"| # | Description | Wire Command | CLI | MCP | JS | Python | Java |\n" +
+		"|---|---|---|---|---|---|---|---|\n" +
+		"| 1 | Capture | — | `vibium diff map` | `browser_diff_map` | — | — | `page.capture().response(pat, action)` |\n"
+	rows, problems := Parse(row)
+	if len(problems) != 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	if got := rows[0].Cells["java"].Name; got != "page.capture.response" {
+		t.Errorf("fluent java cell: got %q, want page.capture.response", got)
+	}
+	if got := rows[0].Cells["cli"].Name; got != "diff map" {
+		t.Errorf("cli subcommand path: got %q, want %q", got, "diff map")
+	}
+}
+
+func TestCompareFlatNamespace(t *testing.T) {
+	rows, _ := Parse("## X\n" +
+		"| # | Description | Wire Command | CLI | MCP | JS | Python | Java |\n" +
+		"|---|---|---|---|---|---|---|---|\n" +
+		"| 1 | A | — | `vibium daemon start` | `browser_pdf` | — | — | — |\n" +
+		"| 2 | B | — | `vibium gone` | `browser_gone` | — | — | — |\n")
+
+	f := Compare(rows, "cli", ClientSurface{"": {"daemon start", "extra thing"}})
+	if len(f.Missing) != 1 || !strings.Contains(f.Missing[0], "gone") {
+		t.Errorf("cli Missing = %v, want the gone claim", f.Missing)
+	}
+	if len(f.Extra) != 1 || f.Extra[0] != "extra thing" {
+		t.Errorf("cli Extra = %v, want [extra thing] without a leading dot", f.Extra)
+	}
+
+	f = Compare(rows, "mcp", ClientSurface{"": {"browser_pdf"}})
+	if len(f.Missing) != 1 || !strings.Contains(f.Missing[0], "browser_gone") {
+		t.Errorf("mcp Missing = %v, want browser_gone", f.Missing)
+	}
+}
