@@ -258,7 +258,7 @@ MCP/CLI-only tools with no direct client API equivalent.
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 162 | Map interactive page elements with @refs | — | `vibium map` | `browser_map` | — | — | — |
-| 163 | Diff page state vs last map | — | `vibium diff` | `browser_diff_map` | — | — | — |
+| 163 | Diff page state vs last map | — | `vibium diff map` | `browser_diff_map` | — | — | — |
 | 164 | Count elements matching selector | — | `vibium count <sel>` | `browser_count` | — | — | — |
 | 165 | Wait for text to appear on page | — | `vibium wait text <text>` | `browser_wait_for_text` | — | — | — |
 | 166 | Set the download directory | — | `vibium download dir <path>` | `browser_download_set_dir` | — | — | — |

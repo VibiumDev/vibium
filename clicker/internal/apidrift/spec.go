@@ -175,6 +175,9 @@ func symbolFrom(surface, name string) string {
 		}
 		return strings.Join(words, " ")
 	default: // js, python, java
+		// Java's fluent accessors read page.capture().response(...): the
+		// empty parens are part of the path, not the call being named.
+		name = strings.ReplaceAll(name, "()", "")
 		if i := strings.Index(name, "("); i >= 0 {
 			name = name[:i]
 		}

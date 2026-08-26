@@ -120,6 +120,7 @@ func main() {
 	rootCmd.AddCommand(newCompletionCmd(rootCmd))
 
 	// Register all commands
+	rootCmd.AddCommand(newCommandsCmd(rootCmd))
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newPathsCmd())
 	rootCmd.AddCommand(newIsInstalledCmd())

@@ -36,8 +36,13 @@ func Compare(rows []Row, surface string, actual ClientSurface) Findings {
 			continue
 		}
 		recv, method := Receiver(cell.Name)
+		// Undotted symbols (CLI subcommands, MCP tool names) live under the
+		// extractor's "" key as one flat namespace. A client column's
+		// module-level name has nothing to look up.
 		if recv == "" {
-			continue // not a dotted client symbol, nothing to look up
+			if _, flat := actual[""]; !flat {
+				continue
+			}
 		}
 		members, ok := actual[recv]
 		if !ok {
@@ -49,8 +54,8 @@ func Compare(rows []Row, surface string, actual ClientSurface) Findings {
 		}
 		claimed[recv][method] = true
 		if !contains(members, method) {
-			f.Missing = append(f.Missing, fmt.Sprintf("row %d (%s): %s claims %s, client has no %s.%s",
-				row.Num, row.Desc, surface, cell.Name, recv, method))
+			f.Missing = append(f.Missing, fmt.Sprintf("row %d (%s): %s claims %s, surface has no %s",
+				row.Num, row.Desc, surface, cell.Name, strings.TrimPrefix(recv+"."+method, ".")))
 		}
 	}
 
@@ -59,7 +64,7 @@ func Compare(rows []Row, surface string, actual ClientSurface) Findings {
 			if claimed[recv] != nil && claimed[recv][m] {
 				continue
 			}
-			f.Extra = append(f.Extra, recv+"."+m)
+			f.Extra = append(f.Extra, strings.TrimPrefix(recv+"."+m, "."))
 		}
 	}
 	for recv := range unmapped {
