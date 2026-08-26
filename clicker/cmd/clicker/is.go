@@ -124,8 +124,8 @@ func newIsCmd() *cobra.Command {
 				const visible = rect.width > 0 && rect.height > 0 &&
 					style.visibility !== 'hidden' && style.display !== 'none';
 
-				const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
-				const hit = document.elementFromPoint(cx, cy);
+				` + api.InViewCenterJS + `
+				const hit = document.elementFromPoint(px, py);
 				const receivesEvents = hit && (el === hit || el.contains(hit));
 
 				let enabled = true;

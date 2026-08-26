@@ -173,6 +173,54 @@ describe('CLI: Process Cleanup', () => {
     );
   });
 
+  test('launch reaps orphaned cache-dir browser processes (#382)', async (t) => {
+    // The reaper is ps-based and POSIX-only
+    if (process.platform === 'win32') {
+      t.skip('POSIX-only reap path');
+      return;
+    }
+
+    // A leaked chromedriver looks like: command line under vibium's
+    // chrome-for-testing cache dir, owning vibium process gone. Stand one up
+    // as a decoy script inside the real cache dir, orphaned.
+    const paths = JSON.parse(execSync(`${VIBIUM} paths --json`, { encoding: 'utf-8', timeout: 10000 }));
+    const dir = path.join(paths.result.cacheDir, 'chrome-for-testing', `test-orphan-${process.pid}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const decoy = path.join(dir, 'chromedriver');
+    fs.writeFileSync(decoy, '#!/bin/sh\nsleep 120\n');
+    fs.chmodSync(decoy, 0o755);
+    const pid = Number(
+      spawnSync('sh', ['-c', `"${decoy}" > /dev/null 2>&1 & echo $!`], {
+        encoding: 'utf-8',
+        detached: true,
+      }).stdout.trim()
+    );
+    assert.ok(Number.isInteger(pid) && pid > 0, 'decoy failed to start');
+
+    try {
+      // Any launch triggers the reap; go through the daemon like a user would
+      execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
+      execSync(`${VIBIUM} --headless go ${baseURL}/example`, { encoding: 'utf-8', timeout: 60000 });
+
+      await waitUntil(() => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      }, 'orphaned cache-dir decoy reaped by launch');
+
+      // The launch's own browser must have survived its reap
+      const result = execSync(`${VIBIUM} eval "1+1"`, { encoding: 'utf-8', timeout: 30000 });
+      assert.match(result, /2/, 'freshly launched browser should still answer');
+    } finally {
+      try { process.kill(pid, 'SIGKILL'); } catch {}
+      execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 30000 });
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('shutdown cleanup ignores other tools\' chromedriver processes', async (t) => {
     // Cleanup on Windows kills by executable name, not command line
     if (process.platform === 'win32') {
