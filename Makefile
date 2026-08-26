@@ -269,6 +269,7 @@ mtlshim:
 
 test: build install-browser $(FAST_LAUNCH_DEP)
 	@START_TIME=$$(date +%s); \
+	"$(MAKE)" check-api-drift && \
 	"$(MAKE)" test-go && \
 	"$(MAKE)" test-cli test-cleanup && \
 	"$(MAKE)" test-js-process test-cleanup && \
