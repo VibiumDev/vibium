@@ -68,8 +68,8 @@ export class Element {
     };
   }
 
-  /** Return params that can identify this element for use as a target (e.g. dragTo). */
-  toParams(): Record<string, unknown> {
+  /** Params that identify this element as a target (e.g. dragTo). */
+  private toParams(): Record<string, unknown> {
     return {
       ...this._params,
       selector: this.selector,
