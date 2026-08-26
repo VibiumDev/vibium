@@ -4,7 +4,8 @@
 # required chrome/firefox/test checks "Expected, waiting for status" forever
 # and grey out the merge button. This workflow reports the same check names
 # as immediate successes instead. Keep the paths list below identical to
-# test.yml's paths-ignore list: a path present there but missing here blocks
+# test.yml's paths-ignore list (which names docs/reference files singly so
+# api.md, the drift check's spec, always gets real CI): a path present there but missing here blocks
 # docs-only PRs again; a path present here but missing there double-reports.
 name: Test
 
@@ -16,7 +17,12 @@ on:
       - 'docs/how-to-guides/**'
       - 'docs/images/**'
       - 'docs/plans/**'
-      - 'docs/reference/**'
+      - 'docs/reference/WebDriver-Bidi-Spec.md'
+      - 'docs/reference/mac-system-requirements.md'
+      - 'docs/reference/recording-format.md'
+      - 'docs/reference/selectors.md'
+      - 'docs/reference/webdriver-bidi-overview.md'
+      - 'docs/reference/webdriver-classic.md'
       - 'docs/specs/**'
       - 'docs/trackers/**'
       - 'docs/updates/**'
@@ -32,7 +38,12 @@ on:
       - 'docs/how-to-guides/**'
       - 'docs/images/**'
       - 'docs/plans/**'
-      - 'docs/reference/**'
+      - 'docs/reference/WebDriver-Bidi-Spec.md'
+      - 'docs/reference/mac-system-requirements.md'
+      - 'docs/reference/recording-format.md'
+      - 'docs/reference/selectors.md'
+      - 'docs/reference/webdriver-bidi-overview.md'
+      - 'docs/reference/webdriver-classic.md'
       - 'docs/specs/**'
       - 'docs/trackers/**'
       - 'docs/updates/**'
