@@ -21,6 +21,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 7 | Listen for new page events | *client-side event listener* | — | — | `browser.onPage(cb)` | `browser.on_page(cb)` | `browser.onPage(cb)` |
 | 8 | Listen for popup events | *client-side event listener* | — | — | `browser.onPopup(cb)` | `browser.on_popup(cb)` | `browser.onPopup(cb)` |
 | 9 | Remove all event listeners | *client-side* | — | — | `browser.removeAllListeners(ev?)` | `browser.remove_all_listeners(ev?)` | `browser.removeAllListeners(ev?)` |
+| 187 | Get the default context | *client-side* | — | — | — | — | `browser.context()` |
 
 ## Page
 
@@ -79,6 +80,18 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 60 | Capture dialog (before action) | *client-side* | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
 | 61 | Get buffered console messages | *client-side* | — | — | `page.consoleMessages()` | `page.console_messages()` | `page.consoleMessages()` |
 | 62 | Get buffered page errors | *client-side* | — | — | `page.errors()` | `page.errors()` | `page.errors()` |
+| 170 | Owning browser context | *client-side* | — | — | `page.context` | `page.context` | `page.context()` |
+| 171 | Browsing context id | *client-side* | — | — | `page.id` | `page.id` | `page.id()` |
+| 172 | One-shot capture namespace | *client-side* | — | — | `page.capture` | `page.capture` | `page.capture()` |
+| 173 | Keyboard input for the page | *client-side* | — | — | `page.keyboard` | `page.keyboard` | `page.keyboard()` |
+| 174 | Mouse input for the page | *client-side* | — | — | `page.mouse` | `page.mouse` | `page.mouse()` |
+| 175 | Touch input for the page | *client-side* | — | — | `page.touch` | `page.touch` | `page.touch()` |
+| 176 | Clock control for the page | *client-side* | — | — | `page.clock` | `page.clock` | `page.clock()` |
+| 177 | Deprecated alias for the wait helpers | *client-side* | — | — | `page.waitUntil(fn, opts?)` | `page.wait_until` | — |
+| 178 | Enable console collect mode | *client-side* | — | — | *mode of onConsole('collect')* | *mode of on_console('collect')* | `page.collectConsole()` |
+| 179 | Enable error collect mode | *client-side* | — | — | *mode of onError('collect')* | *mode of on_error('collect')* | `page.collectErrors()` |
+| 180 | Intercept WebSockets (unsupported: throws) | — | — | — | `page.routeWebSocket(pattern, fn)` | — | — |
+| 181 | Alias for evaluate | *client-side* | — | — | — | `page.eval(expr)` | — |
 
 ## Element
 
@@ -107,6 +120,9 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 83 | Get input element value | `vibium:element.value` | `vibium value <sel>` | `browser_get_value` | `el.value()` | `el.value()` | `el.value()` |
 | 84 | Get element attribute | `vibium:element.attr` | `vibium attr <sel> <name>` | `browser_get_attribute` | `el.attr(name)` | `el.attr(name)` | `el.attr(name)` |
 | 85 | Get element bounding box | `vibium:element.bounds` | — | — | `el.bounds()` | `el.bounds()` | `el.bounds()` |
+| 182 | Bounding box (Playwright-compat alias for bounds) | *client-side* | — | — | `el.boundingBox()` | `el.bounding_box()` | `el.boundingBox()` |
+| 183 | Get attribute (alias for attr) | *client-side* | — | — | `el.getAttribute(name)` | `el.get_attribute(name)` | `el.getAttribute(name)` |
+| 184 | Find-time snapshot of tag, text, and box | *captured at find time* | — | — | `el.info` | `el.info` | `el.info()` |
 | 86 | Check if element is visible | `vibium:element.isVisible` | `vibium is visible <sel>` | `browser_is_visible` | `el.isVisible()` | `el.is_visible()` | `el.isVisible()` |
 | 87 | Check if element is hidden | `vibium:element.isHidden` | — | — | `el.isHidden()` | `el.is_hidden()` | `el.isHidden()` |
 | 88 | Check if element is enabled | `vibium:element.isEnabled` | `vibium is enabled <sel>` | `browser_is_enabled` | `el.isEnabled()` | `el.is_enabled()` | `el.isEnabled()` |
@@ -132,6 +148,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 103 | Set storage state | `vibium:context.setStorage` | — | `browser_restore_storage` | `context.setStorage(state)` | `context.set_storage(state)` | `context.setStorage(state)` |
 | 104 | Clear all storage | `vibium:context.clearStorage` | — | — | `context.clearStorage()` | `context.clear_storage()` | `context.clearStorage()` |
 | 105 | Add an init script | `vibium:context.addInitScript` | — | — | `context.addInitScript(script)` | `context.add_init_script(script)` | `context.addInitScript(script)` |
+| 185 | User context id | *client-side* | — | — | `context.id` | `context.id` | `context.id()` |
+| 186 | Recording controls for the context | *client-side* | — | — | `context.recording` | `context.recording` | `context.recording()` |
 
 ## Keyboard
 
@@ -188,7 +206,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 130 | Access intercepted request | — | — | — | `route.request` (property) | *passed via callback args* | `route.request()` |
+| 130 | Access intercepted request | — | — | — | `route.request` (property) | `route.request` (property) | `route.request()` |
 | 131 | Fulfill an intercepted request | `vibium:network.fulfill` | — | — | `route.fulfill(resp?)` | `route.fulfill(status?, headers?, ...)` | `route.fulfill(options?)` |
 | 132 | Continue an intercepted request | `vibium:network.continue` | — | — | `route.continue(overrides?)` | `route.continue_(overrides?)` | `route.doContinue(options?)` |
 | 133 | Abort an intercepted request | `vibium:network.abort` | — | — | `route.abort()` | `route.abort()` | `route.abort()` |
@@ -262,6 +280,30 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 164 | Count elements matching selector | — | `vibium count <sel>` | `browser_count` | — | — | — |
 | 165 | Wait for text to appear on page | — | `vibium wait text <text>` | `browser_wait_for_text` | — | — | — |
 | 166 | Set the download directory | — | `vibium download dir <path>` | `browser_download_set_dir` | — | — | — |
+| 188 | Start the background daemon | — | `vibium daemon start` | — | — | — | — |
+| 189 | Query daemon status | — | `vibium daemon status` | — | — | — | — |
+| 190 | Stop the background daemon | — | `vibium daemon stop` | — | — | — | — |
+| 191 | Print the version | — | `vibium version` | — | — | — | — |
+| 192 | Print browser and cache paths | — | `vibium paths` | — | — | — | — |
+| 193 | Download the browser engine | — | `vibium install` | — | — | — | — |
+| 194 | Check whether the engine is installed | — | `vibium is-installed` | — | — | — | — |
+| 195 | Run the BiDi websocket server | — | `vibium serve` | — | — | — | — |
+| 196 | Run the ndjson stdio transport | — | `vibium pipe` | — | — | — | — |
+| 197 | Run the MCP server | — | `vibium mcp` | — | — | — | — |
+| 198 | Install the agent skill | — | `vibium add-skill` | — | — | — | — |
+| 199 | Restore saved storage state | — | `vibium storage restore <path>` | — | — | — | — |
+| 200 | Print all actionability checks | — | `vibium is actionable <sel>` | — | — | — | — |
+| 201 | Find by ARIA role | — | `vibium find role <val>` | — | — | — | — |
+| 202 | Find by visible text | — | `vibium find text <val>` | — | — | — | — |
+| 203 | Find by label | — | `vibium find label <val>` | — | — | — | — |
+| 204 | Find by placeholder | — | `vibium find placeholder <val>` | — | — | — | — |
+| 205 | Find by alt text | — | `vibium find alt <val>` | — | — | — | — |
+| 206 | Find by title attribute | — | `vibium find title <val>` | — | — | — | — |
+| 207 | Find by test id | — | `vibium find testid <val>` | — | — | — | — |
+| 208 | Find by XPath | — | `vibium find xpath <val>` | — | — | — | — |
+| 209 | Diagnostic: launch the browser directly | — | `vibium launch-test` | — | — | — | — |
+| 210 | Diagnostic: test a websocket endpoint | — | `vibium ws-test <url>` | — | — | — | — |
+| 211 | Diagnostic: test a BiDi endpoint | — | `vibium bidi-test <url>` | — | — | — | — |
 
 ## AI-Native (Planned)
 

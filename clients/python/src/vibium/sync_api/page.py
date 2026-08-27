@@ -78,15 +78,32 @@ class Page:
         self._async = async_page
         self._loop = loop_thread
 
-        self.keyboard = Keyboard(async_page.keyboard, loop_thread)
-        self.mouse = Mouse(async_page.mouse, loop_thread)
-        self.touch = Touch(async_page.touch, loop_thread)
-        self.clock = Clock(async_page.clock, loop_thread)
+        self._keyboard = Keyboard(async_page.keyboard, loop_thread)
+        self._mouse = Mouse(async_page.mouse, loop_thread)
+        self._touch = Touch(async_page.touch, loop_thread)
+        self._clock = Clock(async_page.clock, loop_thread)
 
         # Sync event state
         self._console_messages: List[Dict[str, str]] = []
         self._errors: List[Dict[str, str]] = []
         self._cached_context: Optional[BrowserContextType] = None
+
+
+    @property
+    def keyboard(self) -> Keyboard:
+        return self._keyboard
+
+    @property
+    def mouse(self) -> Mouse:
+        return self._mouse
+
+    @property
+    def touch(self) -> Touch:
+        return self._touch
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     def __repr__(self) -> str:
         try:
