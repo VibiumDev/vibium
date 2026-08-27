@@ -895,6 +895,22 @@ public class Page {
         }
     }
 
+    /** Send a one-shot capture command; the binary matches and waits. */
+    JsonObject sendCapture(String method, String pattern, long timeoutMs) {
+        JsonObject params = contextParams();
+        params.addProperty("pattern", pattern);
+        params.addProperty("timeout", timeoutMs);
+        return client.send(method, params);
+    }
+
+    Request requestFromEvent(JsonObject event) {
+        return new Request(client, event);
+    }
+
+    Response responseFromEvent(JsonObject event) {
+        return new Response(client, event);
+    }
+
     private void handleBlockedRequest(JsonObject params) {
         Request request = new Request(client, params, true);
         String requestId = request.requestId();
@@ -1041,33 +1057,6 @@ public class Page {
     void removeConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.remove(listener); }
     void addErrorListener(Consumer<String> listener) { errorListeners.add(listener); }
     void removeErrorListener(Consumer<String> listener) { errorListeners.remove(listener); }
-
-    static boolean matchPattern(String pattern, String url) {
-        if (pattern == null || pattern.isEmpty()) return true;
-        if (pattern.equals("**") || pattern.equals("**/*")) return true;
-
-        // Convert glob to regex
-        StringBuilder regex = new StringBuilder();
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
-            if (c == '*' && i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
-                regex.append(".*");
-                i++; // skip second *
-                if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '/') {
-                    i++; // skip /
-                }
-            } else if (c == '*') {
-                regex.append("[^/]*");
-            } else if (c == '?' || c == '.' || c == '(' || c == ')' || c == '[' || c == ']'
-                    || c == '{' || c == '}' || c == '^' || c == '$' || c == '|' || c == '\\' || c == '+') {
-                regex.append('\\').append(c);
-            } else {
-                regex.append(c);
-            }
-        }
-
-        return url.matches(".*" + regex.toString() + ".*");
-    }
 
     private static class RouteEntry {
         final String pattern;

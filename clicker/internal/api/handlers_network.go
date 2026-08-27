@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // handlePageRoute handles vibium:page.route — registers a route pattern and
@@ -317,4 +318,56 @@ func convertHeadersToBidi(headers map[string]interface{}) []map[string]interface
 		})
 	}
 	return bidiHeaders
+}
+
+// handlePageCaptureRequest handles vibium:page.captureRequest — blocks until
+// the first request matching the pattern is sent, then returns its event
+// params. Matching and waiting both live here so clients need neither a glob
+// implementation nor one-shot listener machinery (#446).
+func (r *Router) handlePageCaptureRequest(session *BrowserSession, cmd bidiCommand) {
+	r.handleCapture(session, cmd, "network.beforeRequestSent", "request")
+}
+
+// handlePageCaptureResponse handles vibium:page.captureResponse — the
+// response-side twin of handlePageCaptureRequest.
+func (r *Router) handlePageCaptureResponse(session *BrowserSession, cmd bidiCommand) {
+	r.handleCapture(session, cmd, "network.responseCompleted", "response")
+}
+
+func (r *Router) handleCapture(session *BrowserSession, cmd bidiCommand, eventMethod, what string) {
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	pattern, _ := cmd.Params["pattern"].(string)
+	if pattern == "" {
+		r.sendError(session, cmd.ID, fmt.Errorf("pattern is required"))
+		return
+	}
+	timeoutMs := 10000.0
+	if t, ok := cmd.Params["timeout"].(float64); ok && t > 0 {
+		timeoutMs = t
+	}
+
+	id, ch, err := session.captures.register(eventMethod, context, pattern)
+	if err != nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("invalid pattern: %w", err))
+		return
+	}
+
+	select {
+	case params := <-ch:
+		var event interface{}
+		if err := json.Unmarshal(params, &event); err != nil {
+			r.sendError(session, cmd.ID, fmt.Errorf("capture event unparseable: %w", err))
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"event": event})
+	case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
+		session.captures.cancel(id)
+		r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for %s matching %q", what, pattern))
+	case <-session.stopChan:
+		session.captures.cancel(id)
+	}
 }

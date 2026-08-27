@@ -8,7 +8,6 @@ import { ConsoleMessage } from './console';
 import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
-import { matchPattern } from './utils/match';
 import { debug } from './utils/debug';
 
 export interface FindOptions {
@@ -817,45 +816,28 @@ export class Page {
     }
   }
 
-  /** @internal Capture a request matching a URL pattern. */
-  _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Request>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for request matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (request: Request) => {
-        if (matchPattern(pattern, request.url())) {
-          clearTimeout(timer);
-          this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-          resolve(request);
-        }
-      };
-      this.requestCallbacks.push(handler);
+  /**
+   * @internal Capture a request matching a URL pattern. The binary matches
+   * the pattern and waits for the event; this just awaits the command.
+   */
+  async _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureRequest', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Request(result.event, this.client);
   }
 
   /** @internal Capture a response matching a URL pattern. */
-  _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
+  async _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
     this.ensureDataCollector();
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Response>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for response matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (response: Response) => {
-        if (matchPattern(pattern, response.url())) {
-          clearTimeout(timer);
-          this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-          resolve(response);
-        }
-      };
-      this.responseCallbacks.push(handler);
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureResponse', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Response(result.event, this.client);
   }
 
   /** @internal Capture a navigation event. Resolves with the URL. */
