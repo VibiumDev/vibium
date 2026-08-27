@@ -797,19 +797,31 @@ class Page:
     # --- Network Interception ---
 
     async def route(self, pattern: str, handler: Callable[[Route], Any]) -> None:
-        """Intercept network requests matching a URL pattern."""
-        if self._intercept_id is None:
-            result = await self._client.send("vibium:page.route", {"context": self._context_id})
-            self._intercept_id = result["intercept"]
+        """Intercept network requests matching a URL pattern.
+
+        The binary compiles the pattern, owns the intercept lifecycle, and
+        annotates blocked request events with the patterns that matched, so
+        dispatch never interprets the glob client-side.
+        """
+        result = await self._client.send(
+            "vibium:page.route", {"context": self._context_id, "pattern": pattern}
+        )
+        self._intercept_id = result["intercept"]
 
         self._ensure_data_collector()
         self._routes.append({"pattern": pattern, "handler": handler, "interceptId": self._intercept_id})
 
     async def unroute(self, pattern: str) -> None:
         """Remove a previously registered route."""
+        removed = sum(1 for r in self._routes if r["pattern"] == pattern)
         self._routes = [r for r in self._routes if r["pattern"] != pattern]
-        if not self._routes and self._intercept_id:
-            await self._client.send("network.removeIntercept", {"intercept": self._intercept_id})
+        # The binary refcounts pattern registrations and tears the intercept
+        # down when the last one goes.
+        for _ in range(removed):
+            await self._client.send(
+                "vibium:page.unroute", {"context": self._context_id, "pattern": pattern}
+            )
+        if not self._routes:
             self._intercept_id = None
 
     def on_request(self, fn: Callable[[Request], None]) -> None:
@@ -1053,11 +1065,14 @@ class Page:
         request_id = request_data.get("request", "")
 
         if is_blocked and request_id:
-            request_url = request_data.get("url", "")
+            # The binary already matched the URL against every registered
+            # pattern (vibiumMatchedPatterns), so dispatch is a membership
+            # check, not a glob evaluation.
+            matched = params.get("vibiumMatchedPatterns") or []
             req = Request(params, self._client)
 
             for route_entry in self._routes:
-                if _match_pattern(route_entry["pattern"], request_url):
+                if route_entry["pattern"] in matched:
                     route = Route(self._client, request_id, req)
                     try:
                         result = route_entry["handler"](route)

@@ -560,31 +560,37 @@ public class Page {
 
     // ── Network Interception ────────────────────────────────────
 
-    /** Register a route handler for URL pattern matching. */
+    /**
+     * Register a route handler for a URL pattern. The binary compiles the
+     * pattern, owns the intercept lifecycle, and annotates blocked request
+     * events with the patterns that matched, so dispatch never interprets
+     * the glob client-side.
+     */
     public void route(String pattern, Consumer<Route> handler) {
         ensureDataCollector();
-        // Subscribe to network events if this is the first route
-        if (routes.isEmpty()) {
-            JsonObject params = contextParams();
-            client.send("vibium:page.route", params);
-        }
+        JsonObject params = contextParams();
+        params.addProperty("pattern", pattern);
+        client.send("vibium:page.route", params);
 
         routes.add(new RouteEntry(pattern, handler));
     }
 
     /** Remove a route handler. */
     public void unroute(String pattern) {
+        long removed = routes.stream().filter(r -> r.pattern.equals(pattern)).count();
         routes.removeIf(r -> r.pattern.equals(pattern));
 
-        if (routes.isEmpty()) {
+        // The binary refcounts pattern registrations and tears the
+        // intercept down when the last one goes.
+        for (long i = 0; i < removed; i++) {
             try {
                 JsonObject params = contextParams();
                 params.addProperty("pattern", pattern);
-                client.send("network.removeIntercept", params);
+                client.send("vibium:page.unroute", params);
             } catch (Exception ignored) {}
-            if (requestListeners.isEmpty() && responseListeners.isEmpty()) {
-                teardownDataCollector();
-            }
+        }
+        if (routes.isEmpty() && requestListeners.isEmpty() && responseListeners.isEmpty()) {
+            teardownDataCollector();
         }
     }
 
@@ -893,8 +899,18 @@ public class Page {
         Request request = new Request(client, params, true);
         String requestId = request.requestId();
 
+        // The binary already matched the URL against every registered
+        // pattern (vibiumMatchedPatterns), so dispatch is a membership
+        // check, not a glob evaluation.
+        java.util.Set<String> matched = new java.util.HashSet<>();
+        if (params.has("vibiumMatchedPatterns")) {
+            for (JsonElement p : params.getAsJsonArray("vibiumMatchedPatterns")) {
+                matched.add(p.getAsString());
+            }
+        }
+
         for (RouteEntry entry : routes) {
-            if (matchPattern(entry.pattern, request.url())) {
+            if (matched.contains(entry.pattern)) {
                 Route route = new Route(client, contextId, requestId, request);
                 NETWORK_CALLBACKS.execute(() -> {
                     try {

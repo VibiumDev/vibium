@@ -6,57 +6,90 @@ import (
 	"strings"
 )
 
-// handlePageRoute handles vibium:page.route — adds a network intercept for beforeRequestSent.
-// The JS client uses the returned intercept ID to match requests against URL patterns.
+// handlePageRoute handles vibium:page.route — registers a route pattern and
+// ensures one beforeRequestSent intercept serves the context. The engine owns
+// the pattern matching: blocked request events reach clients annotated with
+// vibiumMatchedPatterns (see routeRegistry), so clients dispatch handlers
+// without their own glob implementations.
 func (r *Router) handlePageRoute(session *BrowserSession, cmd bidiCommand) {
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
-	params := map[string]interface{}{
-		"phases":   []string{"beforeRequestSent"},
-		"contexts": []interface{}{context},
+	pattern, _ := cmd.Params["pattern"].(string)
+	if pattern == "" {
+		r.sendError(session, cmd.ID, fmt.Errorf("pattern is required"))
+		return
 	}
 
-	resp, err := r.sendInternalCommand(session, "network.addIntercept", params)
+	interceptID, needIntercept, err := session.routes.add(context, pattern)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, fmt.Errorf("invalid pattern: %w", err))
 		return
 	}
 
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
-		return
+	if needIntercept {
+		resp, err := r.sendInternalCommand(session, "network.addIntercept", map[string]interface{}{
+			"phases":   []string{"beforeRequestSent"},
+			"contexts": []interface{}{context},
+		})
+		if err == nil {
+			if bidiErr := checkBidiError(resp); bidiErr != nil {
+				err = bidiErr
+			}
+		}
+		if err != nil {
+			session.routes.remove(context, pattern)
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		var result struct {
+			Result struct {
+				Intercept string `json:"intercept"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(resp, &result); err != nil {
+			session.routes.remove(context, pattern)
+			r.sendError(session, cmd.ID, fmt.Errorf("failed to parse addIntercept response: %w", err))
+			return
+		}
+		session.routes.setIntercept(context, result.Result.Intercept)
+		interceptID = result.Result.Intercept
 	}
 
-	var result struct {
-		Result struct {
-			Intercept string `json:"intercept"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("failed to parse addIntercept response: %w", err))
-		return
-	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{"intercept": result.Result.Intercept})
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{"intercept": interceptID})
 }
 
-// handlePageUnroute handles vibium:page.unroute — removes a network intercept.
+// handlePageUnroute handles vibium:page.unroute — deregisters a route pattern
+// and tears the context's intercept down once no patterns remain. The older
+// intercept-id form is still accepted for callers that manage their own
+// intercepts.
 func (r *Router) handlePageUnroute(session *BrowserSession, cmd bidiCommand) {
+	pattern, _ := cmd.Params["pattern"].(string)
 	intercept, _ := cmd.Params["intercept"].(string)
+
+	if pattern != "" {
+		context, err := r.resolveContext(session, cmd.Params)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		interceptID, empty := session.routes.remove(context, pattern)
+		if !empty || interceptID == "" {
+			r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+			return
+		}
+		intercept = interceptID
+	}
 	if intercept == "" {
-		r.sendError(session, cmd.ID, fmt.Errorf("intercept is required"))
+		r.sendError(session, cmd.ID, fmt.Errorf("pattern or intercept is required"))
 		return
 	}
 
-	params := map[string]interface{}{
+	resp, err := r.sendInternalCommand(session, "network.removeIntercept", map[string]interface{}{
 		"intercept": intercept,
-	}
-
-	resp, err := r.sendInternalCommand(session, "network.removeIntercept", params)
+	})
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return

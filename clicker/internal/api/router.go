@@ -61,6 +61,7 @@ type BrowserSession struct {
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
 	prompts     *PromptTracker
+	routes      *routeRegistry
 	navigations *NavigationTracker
 
 	// Serializes recording start/stop across their async handlers (the
@@ -211,6 +212,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		abandonedInternal: make(map[int]struct{}),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
+		routes:            newRouteRegistry(),
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
 	}
@@ -975,6 +977,10 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		if r.isWsChannelEvent(session, msg) {
 			continue
 		}
+
+		// Blocked request events carry the matched route patterns, computed
+		// here so clients share one glob dialect (#446).
+		msg = session.routes.annotateBlockedRequest(msg)
 
 		// Forward message to client. A Send that blocks means the client has
 		// stopped reading its pipe: every event after this one queues behind

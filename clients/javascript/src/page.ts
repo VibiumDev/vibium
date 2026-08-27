@@ -741,27 +741,29 @@ export class Page {
    * The handler receives a Route object that can fulfill, continue, or abort the request.
    */
   async route(pattern: string, handler: (route: Route) => void): Promise<void> {
-    // Register the intercept with the Go proxy (only once for the first route)
-    if (this.interceptId === null) {
-      const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
-        context: this.contextId,
-      });
-      this.interceptId = result.intercept;
-    }
+    // The binary compiles the pattern, owns the intercept lifecycle, and
+    // annotates blocked request events with the patterns that matched, so
+    // dispatch below never interprets the glob itself.
+    const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
+      context: this.contextId,
+      pattern,
+    });
+    this.interceptId = result.intercept;
 
     this.ensureDataCollector();
-    this.routes.push({ pattern, handler, interceptId: this.interceptId ?? undefined });
+    this.routes.push({ pattern, handler, interceptId: result.intercept });
   }
 
   /** Remove a previously registered route. If no handler given, removes all routes for the pattern. */
   async unroute(pattern: string): Promise<void> {
+    const removed = this.routes.filter(r => r.pattern === pattern).length;
     this.routes = this.routes.filter(r => r.pattern !== pattern);
-
-    // If no routes left, remove the intercept
-    if (this.routes.length === 0 && this.interceptId) {
-      await this.client.send('network.removeIntercept', {
-        intercept: this.interceptId,
-      });
+    // The binary refcounts pattern registrations and tears the intercept
+    // down when the last one goes.
+    for (let i = 0; i < removed; i++) {
+      await this.client.send('vibium:page.unroute', { context: this.contextId, pattern });
+    }
+    if (this.routes.length === 0) {
       this.interceptId = null;
     }
   }
@@ -1134,12 +1136,14 @@ export class Page {
     const requestId = request?.request as string | undefined;
 
     if (isBlocked && requestId) {
-      // This is an intercepted request — match against routes
-      const requestUrl = (request?.url as string) ?? '';
+      // This is an intercepted request. The binary already matched the URL
+      // against every registered pattern (vibiumMatchedPatterns), so
+      // dispatch is a membership check, not a glob evaluation.
+      const matched = (params.vibiumMatchedPatterns as string[] | undefined) ?? [];
       const req = new Request(params, this.client);
 
       for (const routeEntry of this.routes) {
-        if (matchPattern(routeEntry.pattern, requestUrl)) {
+        if (matched.includes(routeEntry.pattern)) {
           const route = new Route(this.client, requestId, req);
           // Catch errors from async route handlers (fire-and-forget pattern)
           try {
