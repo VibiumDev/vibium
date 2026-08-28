@@ -400,6 +400,32 @@ func SetWindow(s Session, opts SetWindowOpts) error {
 	return checkBidiError(resp)
 }
 
+// ViewportCenter returns the viewport's center point. Pointer actions with a
+// fixed origin break as soon as the viewport is not the size the constant
+// assumed: Firefox rejects out-of-bounds coordinates outright, and on larger
+// viewports a fixed point can land inside whatever scrollable element happens
+// to cover it (#443, #444).
+func ViewportCenter(s Session, context string) (int, int, error) {
+	resp, err := CallScript(s, context,
+		`() => JSON.stringify({ width: window.innerWidth, height: window.innerHeight })`,
+		[]map[string]interface{}{})
+	if err != nil {
+		return 0, 0, err
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return 0, 0, err
+	}
+	var size struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	}
+	if err := json.Unmarshal([]byte(val), &size); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse viewport: %w", err)
+	}
+	return size.Width / 2, size.Height / 2, nil
+}
+
 // geolocationScript returns the JS that overrides navigator.geolocation with
 // the given coordinates. The coordinates are baked into the declaration
 // because addPreloadScript passes no arguments to its function.
