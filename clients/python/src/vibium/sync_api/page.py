@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import shutil
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .._types import A11yNode
 from .element import Element
 from .clock import Clock
-from .screencast import Screencast
 from .route import Route
 
 if TYPE_CHECKING:
@@ -78,16 +78,32 @@ class Page:
         self._async = async_page
         self._loop = loop_thread
 
-        self.keyboard = Keyboard(async_page.keyboard, loop_thread)
-        self.mouse = Mouse(async_page.mouse, loop_thread)
-        self.touch = Touch(async_page.touch, loop_thread)
-        self.clock = Clock(async_page.clock, loop_thread)
-        self.screencast = Screencast(async_page.screencast, loop_thread)
+        self._keyboard = Keyboard(async_page.keyboard, loop_thread)
+        self._mouse = Mouse(async_page.mouse, loop_thread)
+        self._touch = Touch(async_page.touch, loop_thread)
+        self._clock = Clock(async_page.clock, loop_thread)
 
         # Sync event state
         self._console_messages: List[Dict[str, str]] = []
         self._errors: List[Dict[str, str]] = []
         self._cached_context: Optional[BrowserContextType] = None
+
+
+    @property
+    def keyboard(self) -> Keyboard:
+        return self._keyboard
+
+    @property
+    def mouse(self) -> Mouse:
+        return self._mouse
+
+    @property
+    def touch(self) -> Touch:
+        return self._touch
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     def __repr__(self) -> str:
         try:
@@ -174,6 +190,13 @@ class Page:
         near: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
+        """Find all matching elements.
+
+        Each element carries a snapshot of its tag, text, and box taken at
+        find_all time, readable via el.info with no further round trips:
+        [el.info.text for el in els]. Live reads like el.text() re-resolve
+        the element and fail if the page has changed since find_all.
+        """
         async_elements = self._loop.run(self._async.find_all(
             selector, role=role, text=text, label=label, placeholder=placeholder,
             alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
@@ -189,8 +212,25 @@ class Page:
 
     @property
     def wait_until(self) -> _SyncWaitUntilNamespace:
-        """Wait until a condition is met. Callable or use .url() / .loaded() sub-methods."""
+        """Deprecated alias — use wait_for_function / wait_for_url / wait_for_load."""
+        warnings.warn(
+            "wait_until is deprecated; use wait_for_function, wait_for_url, or wait_for_load",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _SyncWaitUntilNamespace(self)
+
+    def wait_for_function(self, fn: str, timeout: Optional[int] = None) -> Any:
+        """Wait until a function returns a truthy value."""
+        return self._loop.run(self._async._wait_for_function(fn, timeout))
+
+    def wait_for_url(self, pattern: str, timeout: Optional[int] = None) -> None:
+        """Wait until the page URL matches a pattern."""
+        self._loop.run(self._async._wait_for_url(pattern, timeout))
+
+    def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
+        """Wait until the page reaches a load state."""
+        self._loop.run(self._async._wait_for_load(state, timeout))
 
     def wait(self, ms: int) -> None:
         self._loop.run(self._async.wait(ms))
@@ -204,8 +244,11 @@ class Page:
     ) -> bytes:
         return self._loop.run(self._async.screenshot(full_page=full_page, clip=clip))
 
-    def pdf(self) -> bytes:
-        return self._loop.run(self._async.pdf())
+    def pdf(self, **options: Any) -> bytes:
+        """Print the page to PDF. Same keyword options as the async API:
+        landscape, scale, background, margin_top/bottom/left/right,
+        page_width, page_height, page_ranges, shrink_to_fit."""
+        return self._loop.run(self._async.pdf(**options))
 
     # --- Evaluation ---
 
@@ -500,11 +543,24 @@ class Page:
         """Listen for WebSocket connections opened by the page.
 
         fn receives a WebSocketInfo object with sync methods: url(), on_message(), on_close(), is_closed().
+
+        Blocks until the engine has acknowledged the monitor install, and
+        raises if it failed, the only place a sync caller can see it (#351).
         """
-        # Must run via loop thread: on_web_socket() uses asyncio.ensure_future()
-        # internally and needs a running event loop.
+        # Must run via loop thread: on_web_socket() schedules the setup
+        # command and needs a running event loop. Awaiting it here cannot
+        # deadlock: the coroutine runs on the loop thread, which stays free
+        # to run the receive loop that resolves it.
         async def _register() -> None:
             self._async.on_web_socket(fn)
+            try:
+                await self._async._when_web_socket_setup()
+            except BaseException:
+                # A raised call must have no effect: unregister so a retry
+                # registers once and re-sends the install.
+                if fn in self._async._ws_callbacks:
+                    self._async._ws_callbacks.remove(fn)
+                raise
         self._loop.run(_register())
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:
@@ -688,7 +744,7 @@ class _SyncCapturedDialog:
 
     def __enter__(self) -> _SyncCapturedDialog:
         self._wait_coro = self._page._loop.run(
-            self._page._async._setup_capture_dialog(self._timeout)
+            self._page._async._setup_capture_dialog(self._timeout, auto_dismiss=True)
         )
         return self
 
@@ -784,10 +840,12 @@ class _SyncCaptureNamespace:
         return _SyncCapturedDownload(self._page, timeout)
 
     def dialog(self, fn: Optional[Callable] = None, timeout: Optional[int] = None) -> Union[Dict[str, Any], _SyncCapturedDialog]:
-        """Wait for a dialog event."""
+        """Wait for a dialog event. The dialog is dismissed as soon as it is
+        captured, so a fn that blocks on it (e.g. a synchronous alert() via
+        evaluate) gets unblocked instead of deadlocking."""
         if fn is not None:
             wait_coro = self._page._loop.run(
-                self._page._async._setup_capture_dialog(timeout)
+                self._page._async._setup_capture_dialog(timeout, auto_dismiss=True)
             )
             fn()
             dialog = self._page._loop.run(wait_coro)

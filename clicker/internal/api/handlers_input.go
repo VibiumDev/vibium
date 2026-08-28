@@ -317,7 +317,7 @@ func (r *Router) handlePageScroll(session *BrowserSession, cmd bidiCommand) {
 	}
 
 	// Determine scroll target coordinates
-	x, y := 0, 0
+	var x, y int
 	if selector, ok := cmd.Params["selector"].(string); ok && selector != "" {
 		// Scroll at element center
 		info, err := r.resolveElement(session, context, ElementParams{Selector: selector})
@@ -325,8 +325,14 @@ func (r *Router) handlePageScroll(session *BrowserSession, cmd bidiCommand) {
 			r.sendError(session, cmd.ID, err)
 			return
 		}
-		x = int(info.Box.X + info.Box.Width/2)
-		y = int(info.Box.Y + info.Box.Height/2)
+		x, y = pointerTarget(info)
+	} else {
+		var err error
+		x, y, err = ViewportCenter(NewAPISession(r, session, context), context)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
 	}
 
 	// Map direction to deltas (120 pixels per scroll "notch")

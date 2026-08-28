@@ -1,0 +1,507 @@
+package api
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type recordingTestClient struct {
+	messages []string
+}
+
+func (c *recordingTestClient) ID() uint64   { return 1 }
+func (c *recordingTestClient) Close() error { return nil }
+func (c *recordingTestClient) Send(msg string) error {
+	c.messages = append(c.messages, msg)
+	return nil
+}
+
+func TestVideoSupportErrorExplainsFirefoxOutputFailure(t *testing.T) {
+	err := videoSupportError(errors.New(
+		`unknown error: NS_ERROR_FAILURE [nsIProperties.get]`,
+	))
+	if !strings.Contains(err.Error(), "could not resolve its screencast output directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// Chrome 152 changed its startScreencast refusal from "unknown command" to
+// this message; both mean the command does not exist and both must rewrite.
+func TestVideoSupportErrorRecognizesChromeNotImplemented(t *testing.T) {
+	err := videoSupportError(errors.New(
+		`unsupported operation: Method browsingContext.startScreencast is not implemented.`,
+	))
+	if !strings.Contains(err.Error(), "vibium install --engine firefox") {
+		t.Fatalf("error should name the install command, got: %v", err)
+	}
+}
+
+func TestVideoSupportErrorNamesTheInstallCommand(t *testing.T) {
+	err := videoSupportError(errors.New(`unknown command: browsingContext.startScreencast`))
+	if !strings.Contains(err.Error(), "vibium install --engine firefox") {
+		t.Fatalf("error should name the install command, got: %v", err)
+	}
+}
+
+// A browser that has the command but refuses an option already names the
+// problem; rewriting would hide it, so the error must pass through unchanged.
+func TestVideoSupportErrorPassesThroughSpecificRefusals(t *testing.T) {
+	orig := errors.New(`invalid argument: The audio track is not supported`)
+	if err := videoSupportError(orig); err != orig {
+		t.Fatalf("videoSupportError() = %v, want the original error unchanged", err)
+	}
+}
+
+func TestRequiredVideoOnRemoteConnectionFailsClearly(t *testing.T) {
+	client := &recordingTestClient{}
+	router := NewRouter("firefox", true, "ws://remote.example/session", nil, nil)
+	router.handleRecordingStart(&BrowserSession{Client: client}, bidiCommand{
+		ID:     7,
+		Params: map[string]interface{}{"video": true},
+	})
+
+	if len(client.messages) != 1 || !strings.Contains(client.messages[0], RemoteVideoMessage) {
+		t.Fatalf("response = %#v, want remote video error", client.messages)
+	}
+}
+
+func TestParseRecordingOptionsVideoShapes(t *testing.T) {
+	tests := []struct {
+		name   string
+		params map[string]interface{}
+		want   VideoOptions
+	}{
+		{name: "omitted", params: map[string]interface{}{}, want: VideoOptions{Mode: VideoAuto}},
+		{name: "true", params: map[string]interface{}{"video": true}, want: VideoOptions{Mode: VideoRequired}},
+		{name: "false", params: map[string]interface{}{"video": false}, want: VideoOptions{Mode: VideoOff}},
+		{
+			name:   "dimensions",
+			params: map[string]interface{}{"video": map[string]interface{}{"width": 1280.0, "height": 720.0, "frameRate": 30.0}},
+			want:   VideoOptions{Mode: VideoRequired, Width: 1280, Height: 720, FrameRate: 30},
+		},
+		{
+			name:   "remote keep",
+			params: map[string]interface{}{"video": map[string]interface{}{"remote": "keep"}},
+			want:   VideoOptions{Mode: VideoRequired, RemoteKeep: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseRecordingOptions(tt.params).Video
+			if got != tt.want {
+				t.Fatalf("Video = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRecordingZipEmbedsVideoTrack(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	webm := []byte{0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4}
+	if err := writeTestFile(engineFile, webm); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Screenshots: true}, nil)
+	rec.SetVideoTrack(&VideoTrack{
+		Context:    "CTX-1",
+		ID:         "sc-1",
+		EnginePath: engineFile,
+		StartedAt:  time.Now().UnixMilli(),
+		Width:      1280,
+		Height:     720,
+	})
+	rec.FinishVideo(engineFile, "")
+
+	data, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readZipEntries(t, data)
+	if !bytes.Equal(entries["video/ctx-1.webm"], webm) {
+		t.Fatalf("video/ctx-1.webm missing or wrong, entries: %v", entryNames(entries))
+	}
+
+	var index struct {
+		Version int `json:"version"`
+		Videos  []struct {
+			File     string  `json:"file"`
+			Context  string  `json:"context"`
+			OffsetMs float64 `json:"offsetMs"`
+			Width    int     `json:"width"`
+			MimeType string  `json:"mimeType"`
+		} `json:"videos"`
+	}
+	if err := json.Unmarshal(entries["video/index.json"], &index); err != nil {
+		t.Fatalf("video/index.json unreadable: %v", err)
+	}
+	if index.Version != 1 || len(index.Videos) != 1 {
+		t.Fatalf("unexpected index: %+v", index)
+	}
+	v := index.Videos[0]
+	if v.File != "video/ctx-1.webm" || v.Context != "ctx-1" || v.Width != 1280 || v.MimeType != "video/webm" {
+		t.Fatalf("unexpected video entry: %+v", v)
+	}
+
+	// Stop() moves the file into the zip: the engine temp must be gone.
+	if fileExists(engineFile) {
+		t.Fatal("engine temp file should be deleted after Stop")
+	}
+}
+
+func TestRecordingZipRecordsVideoErrorWithoutFile(t *testing.T) {
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Screenshots: true}, nil)
+	rec.SetVideoTrack(&VideoTrack{Context: "ctx-2", ID: "sc-2", StartedAt: time.Now().UnixMilli()})
+	rec.FinishVideo("", "screencast write failed: disk full")
+
+	data, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := readZipEntries(t, data)
+	if !strings.Contains(string(entries["video/index.json"]), "disk full") {
+		t.Fatalf("index should record the error, got: %s", entries["video/index.json"])
+	}
+	for name := range entries {
+		if strings.HasSuffix(name, ".webm") {
+			t.Fatalf("no video file should be present, found %s", name)
+		}
+	}
+}
+
+func TestChunkZipCarriesVideoRangeButNoFile(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(engineFile, []byte{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Screenshots: true}, nil)
+	rec.SetVideoTrack(&VideoTrack{
+		Context:    "ctx-3",
+		ID:         "sc-3",
+		EnginePath: engineFile,
+		StartedAt:  time.Now().UnixMilli(),
+	})
+	rec.StartChunk("part2", "", nil)
+
+	data, err := rec.StopChunk()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := readZipEntries(t, data)
+	for name := range entries {
+		if strings.HasSuffix(name, ".webm") {
+			t.Fatalf("chunk artifacts carry no video file, found %s", name)
+		}
+	}
+	if !strings.Contains(string(entries["video/index.json"]), "videoRange") {
+		t.Fatalf("chunk manifest should record videoRange, got: %s", entries["video/index.json"])
+	}
+}
+
+// fakeVideoSession answers startScreencast like a remote engine would.
+type fakeVideoSession struct {
+	started bool
+}
+
+func (f *fakeVideoSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+	if method == "browsingContext.startScreencast" {
+		f.started = true
+		return json.RawMessage(`{"result":{"screencast":"sc-remote","path":"/remote/Downloads/screencast-1.webm"}}`), nil
+	}
+	return json.RawMessage(`{"result":{}}`), nil
+}
+
+func (f *fakeVideoSession) SendBidiCommandWithTimeout(method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	return f.SendBidiCommand(method, params)
+}
+
+func (f *fakeVideoSession) GetContextID() (string, error)  { return "ctx-remote", nil }
+func (f *fakeVideoSession) SetLastElementBox(box *BoxInfo) {}
+func (f *fakeVideoSession) NavTracker() *NavigationTracker { return nil }
+
+func TestRemoteKeepRecordsAndReportsRemotePath(t *testing.T) {
+	rec := NewRecorder()
+	opts := ParseRecordingOptions(map[string]interface{}{
+		"video": map[string]interface{}{"remote": "keep"},
+	})
+	rec.Start(opts, nil)
+
+	sess := &fakeVideoSession{}
+	if err := StartRecordingVideo(sess, rec, opts, true, nil); err != nil {
+		t.Fatalf("remote keep should start the screencast, got: %v", err)
+	}
+	if !sess.started {
+		t.Fatal("startScreencast was never sent")
+	}
+
+	StopRecordingVideo(sess, rec)
+	data, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries := readZipEntries(t, data)
+	for name := range entries {
+		if strings.HasSuffix(name, ".webm") {
+			t.Fatalf("remote-keep zip must not embed a video file, found %s", name)
+		}
+	}
+	if !strings.Contains(string(entries["video/index.json"]), `"remotePath":"/remote/Downloads/screencast-1.webm"`) {
+		t.Fatalf("manifest should carry remotePath, got: %s", entries["video/index.json"])
+	}
+
+	summary := rec.Summary()
+	if len(summary.Videos) != 1 || summary.Videos[0].RemotePath != "/remote/Downloads/screencast-1.webm" {
+		t.Fatalf("summary should carry remotePath, got: %+v", summary.Videos)
+	}
+	sentence := RecordingSavedSentence("record.zip", summary)
+	if !strings.Contains(sentence, "video on remote host: /remote/Downloads/screencast-1.webm") {
+		t.Fatalf("sentence should name the remote path, got: %q", sentence)
+	}
+}
+
+func TestRemoteWithoutKeepStillRefuses(t *testing.T) {
+	rec := NewRecorder()
+	opts := ParseRecordingOptions(map[string]interface{}{"video": true})
+	rec.Start(opts, nil)
+
+	sess := &fakeVideoSession{}
+	err := StartRecordingVideo(sess, rec, opts, true, nil)
+	if err == nil || !strings.Contains(err.Error(), "remote browser connections") {
+		t.Fatalf("required video on remote must refuse, got: %v", err)
+	}
+	if sess.started {
+		t.Fatal("startScreencast must not be sent without remote keep")
+	}
+}
+
+func TestFinalizeOfflineDeliversPartialVideoFromMemory(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	partial := []byte{0x1a, 0x45, 0xdf, 0xa3, 9, 9}
+	if err := writeTestFile(engineFile, partial); err != nil {
+		t.Fatal(err)
+	}
+	outPath := t.TempDir() + "/crash.zip"
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Path: outPath}, nil)
+	rec.SetVideoTrack(&VideoTrack{
+		Context:    "ctx-x",
+		ID:         "sc-x", // still "running" — the browser died mid-recording
+		EnginePath: engineFile,
+		StartedAt:  time.Now().UnixMilli(),
+	})
+
+	FinalizeRecordingOffline(rec)
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("offline finalize should deliver the zip: %v", err)
+	}
+	entries := readZipEntries(t, data)
+	if !bytes.Equal(entries["video/ctx-x.webm"], partial) {
+		t.Fatalf("the live-muxed partial video should embed, entries: %v", entryNames(entries))
+	}
+	if !strings.Contains(string(entries["video/index.json"]), "browser connection lost") {
+		t.Fatalf("manifest should say why the video is cut short: %s", entries["video/index.json"])
+	}
+}
+
+func TestFinalizeOfflineBytesOnlyCleansUp(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(engineFile, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{}, nil) // no declared path — lost on close
+	rec.SetVideoTrack(&VideoTrack{Context: "c", ID: "sc", EnginePath: engineFile, StartedAt: time.Now().UnixMilli()})
+
+	FinalizeRecordingOffline(rec)
+	if fileExists(engineFile) {
+		t.Fatal("bytes-only offline finalize should delete the engine temp")
+	}
+}
+
+func TestRemoveEngineFileLeavesRemoteFilesAlone(t *testing.T) {
+	localFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(localFile, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{}, nil)
+	rec.SetVideoTrack(&VideoTrack{Context: "c", EnginePath: localFile, Remote: true, StartedAt: time.Now().UnixMilli()})
+
+	rec.RemoveEngineFile()
+	if !fileExists(localFile) {
+		t.Fatal("a remote-keep engine path must never be deleted locally")
+	}
+}
+
+func TestSummaryReportsVideoUnavailable(t *testing.T) {
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Screenshots: true}, nil)
+	rec.SetVideoUnavailable("engine says no")
+
+	fields := rec.Summary().ResultFields()
+	if fields["videoUnavailable"] != "engine says no" {
+		t.Fatalf("fields = %v", fields)
+	}
+	if _, ok := fields["videos"]; ok {
+		t.Fatal("videos must be absent when videoUnavailable is set")
+	}
+}
+
+func TestDefaultRecordPathSeedsSanitizedStem(t *testing.T) {
+	stems := []struct{ name, want string }{
+		{"", "record"},
+		{"login", "login"},
+		{"Login Flow #2!", "Login-Flow--2"},
+		{"../secret", "secret"},
+		{"...", "record"},
+	}
+	for _, tt := range stems {
+		if got := sanitizeRecordStem(tt.name); got != tt.want {
+			t.Errorf("sanitizeRecordStem(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+
+	path := DefaultRecordPath("", "login")
+	if !regexp.MustCompile(`^login-\d{8}-\d{6}\.zip$`).MatchString(path) {
+		t.Fatalf("DefaultRecordPath(\"\", \"login\") = %q, want login-<timestamp>.zip", path)
+	}
+
+	dir := t.TempDir()
+	inDir := DefaultRecordPath(dir, "")
+	if filepath.Dir(inDir) != dir || !strings.HasPrefix(filepath.Base(inDir), "record-") {
+		t.Fatalf("DefaultRecordPath(dir, \"\") = %q, want record-<timestamp>.zip inside %q", inDir, dir)
+	}
+}
+
+func TestSavedSentenceShapes(t *testing.T) {
+	withVideo := RecordingSavedSentence("record.zip", RecordingSummary{
+		Steps:  23,
+		Videos: []VideoSummary{{DurationMs: 14200}},
+	})
+	if withVideo != "Saved record.zip (23 steps, 14s video)" {
+		t.Fatalf("sentence = %q", withVideo)
+	}
+
+	unavailable := RecordingSavedSentence("record.zip", RecordingSummary{
+		Steps:            3,
+		VideoUnavailable: "no engine",
+	})
+	if unavailable != "Saved record.zip (3 steps) — video unavailable: no engine" {
+		t.Fatalf("sentence = %q", unavailable)
+	}
+}
+
+func TestRecordingOperationsAreSerialized(t *testing.T) {
+	session := &BrowserSession{}
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondEntered := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		session.recordingMu.Lock()
+		defer session.recordingMu.Unlock()
+		close(firstEntered)
+		<-releaseFirst
+	}()
+	<-firstEntered
+
+	go func() {
+		defer wg.Done()
+		session.recordingMu.Lock()
+		defer session.recordingMu.Unlock()
+		close(secondEntered)
+	}()
+
+	select {
+	case <-secondEntered:
+		t.Fatal("concurrent recording operation entered before the active operation completed")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseFirst)
+	select {
+	case <-secondEntered:
+	case <-time.After(time.Second):
+		t.Fatal("waiting recording operation did not proceed")
+	}
+	wg.Wait()
+}
+
+func TestClosingSessionRejectsQueuedRecordingOperation(t *testing.T) {
+	session := &BrowserSession{}
+	if !session.beginRecordingOperation() {
+		t.Fatal("first operation was unexpectedly rejected")
+	}
+
+	session.mu.Lock()
+	session.closed = true
+	session.mu.Unlock()
+	session.endRecordingOperation()
+
+	if session.beginRecordingOperation() {
+		session.endRecordingOperation()
+		t.Fatal("operation was accepted after session shutdown began")
+	}
+}
+
+func readZipEntries(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("invalid zip: %v", err)
+	}
+	entries := map[string][]byte{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", f.Name, err)
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", f.Name, err)
+		}
+		entries[f.Name] = content
+	}
+	return entries
+}
+
+func writeTestFile(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o644)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func entryNames(entries map[string][]byte) []string {
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	return names
+}

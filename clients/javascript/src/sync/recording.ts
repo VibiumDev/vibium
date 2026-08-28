@@ -1,5 +1,5 @@
 import { SyncBridge } from './bridge';
-import { RecordingStartOptions, RecordingStopOptions } from '../recording';
+import { RecordingResult, RecordingStartOptions, RecordingStopOptions } from '../recording';
 
 export class RecordingSync {
   private bridge: SyncBridge;
@@ -14,18 +14,28 @@ export class RecordingSync {
     this.bridge.call('recording.start', [this.contextId, options]);
   }
 
-  stop(options: RecordingStopOptions = {}): Buffer {
-    const result = this.bridge.call<{ data: string }>('recording.stop', [this.contextId, options]);
-    return Buffer.from(result.data, 'base64');
+  stop(options: RecordingStopOptions = {}): RecordingResult {
+    const { data, ...rest } = this.bridge.call<{ data?: string } & RecordingResult>(
+      'recording.stop', [this.contextId, options]);
+    const result: RecordingResult = { ...rest };
+    if (data) {
+      result.bytes = Buffer.from(data, 'base64');
+    }
+    return result;
   }
 
   startChunk(options: { name?: string; title?: string } = {}): void {
     this.bridge.call('recording.startChunk', [this.contextId, options]);
   }
 
-  stopChunk(options: RecordingStopOptions = {}): Buffer {
-    const result = this.bridge.call<{ data: string }>('recording.stopChunk', [this.contextId, options]);
-    return Buffer.from(result.data, 'base64');
+  stopChunk(options: RecordingStopOptions = {}): RecordingResult {
+    const { data, ...rest } = this.bridge.call<{ data?: string } & RecordingResult>(
+      'recording.stopChunk', [this.contextId, options]);
+    const result: RecordingResult = { ...rest };
+    if (data) {
+      result.bytes = Buffer.from(data, 'base64');
+    }
+    return result;
   }
 
   startGroup(name: string, options: { location?: { file: string; line?: number; column?: number } } = {}): void {

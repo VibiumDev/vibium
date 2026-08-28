@@ -14,6 +14,12 @@ import (
 	"github.com/vibium/clicker/internal/browser"
 )
 
+// installingMarker is printed to stderr right before a browser install starts.
+// All three client libraries (JS, Python, Java) match this exact substring to
+// extend their ready-signal deadline while the download runs — do not reword
+// it without updating the clients.
+const installingMarker = "[pipe] installing browser"
+
 func newPipeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipe",
@@ -75,6 +81,21 @@ func runPipe(connectURL string, connectHeaders http.Header, connectCaps map[stri
 	// Redirect os.Stdout to stderr so any stray fmt.Print / log output
 	// doesn't corrupt the protocol stream.
 	os.Stdout = os.Stderr
+
+	// Ensure the selected engine is installed before the router launches it,
+	// so client libraries don't each orchestrate is-installed/install
+	// themselves (#312). Runs after the redirect above: installer output and
+	// download progress land on stderr, which clients already drain. The
+	// marker line must precede any network call (EngineInstalled only stats
+	// local paths) — clients see it and extend their ready deadline once,
+	// covering the download.
+	if connectURL == "" && !browser.SkipBrowserDownload() && !browser.EngineInstalled(engineName) {
+		fmt.Fprintf(os.Stderr, "%s (%s)\n", installingMarker, engineName)
+		if err := browser.EnsureInstalled(engineName); err != nil {
+			fmt.Fprintf(os.Stderr, "[pipe] Failed to install browser: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions.
 	// A clean shutdown removes a session's own dir, but any hard kill (crash,

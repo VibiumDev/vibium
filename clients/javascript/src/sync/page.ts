@@ -4,12 +4,11 @@ import { SyncBridge } from './bridge';
 import { ElementSync } from './element';
 import { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 import { ClockSync } from './clock';
-import { ScreencastSync } from './screencast';
 import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
 import { DialogSync, DialogData } from './dialog';
 import { ElementInfo, SelectorOptions } from '../element';
-import { A11yNode, ScreenshotOptions, FindOptions } from '../page';
+import { A11yNode, ScreenshotOptions, PdfOptions, FindOptions } from '../page';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -99,7 +98,6 @@ export class PageSync {
   readonly mouse: MouseSync;
   readonly touch: TouchSync;
   readonly clock: ClockSync;
-  readonly screencast: ScreencastSync;
 
   private _nextHandlerId = 0;
   private _routeHandlerIds = new Map<string, string>(); // pattern → handlerId
@@ -118,7 +116,6 @@ export class PageSync {
     this.mouse = new MouseSync(bridge, pageId);
     this.touch = new TouchSync(bridge, pageId);
     this.clock = new ClockSync(bridge, pageId);
-    this.screencast = new ScreencastSync(bridge, pageId);
 
     // Initialize waitUntil namespace
     this.waitUntil = Object.assign(
@@ -257,11 +254,32 @@ export class PageSync {
     };
   }
 
-  /** Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods. */
+  /**
+   * Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods.
+   * @deprecated Use waitForFunction(), waitForURL(), or waitForLoad().
+   */
   readonly waitUntil: ((fn: string, options?: { timeout?: number }) => unknown) & {
+    /** @deprecated Use waitForURL(). */
     url(pattern: string, options?: { timeout?: number }): void;
+    /** @deprecated Use waitForLoad(). */
     loaded(state?: string, options?: { timeout?: number }): void;
   };
+
+  /** Wait until a function returns a truthy value. */
+  waitForFunction(fn: string, options?: { timeout?: number }): unknown {
+    const result = this._bridge.call<{ value: unknown }>('page.waitForFunction', [this._pageId, fn, options]);
+    return result.value;
+  }
+
+  /** Wait until the page URL matches a pattern. */
+  waitForURL(pattern: string, options?: { timeout?: number }): void {
+    this._bridge.call('page.waitForURL', [this._pageId, pattern, options]);
+  }
+
+  /** Wait until the page reaches a load state. */
+  waitForLoad(state?: string, options?: { timeout?: number }): void {
+    this._bridge.call('page.waitForLoad', [this._pageId, state, options]);
+  }
 
   wait(ms: number): void {
     this._bridge.call('page.wait', [this._pageId, ms]);
@@ -274,8 +292,8 @@ export class PageSync {
     return Buffer.from(result.data, 'base64');
   }
 
-  pdf(): Buffer {
-    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId]);
+  pdf(options?: PdfOptions): Buffer {
+    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId, options]);
     return Buffer.from(result.data, 'base64');
   }
 

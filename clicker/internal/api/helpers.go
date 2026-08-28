@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/bidi"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // resolveContext extracts the "context" param or returns the first context from getTree.
@@ -298,8 +301,36 @@ func (r *Router) resolveElement(session *BrowserSession, context string, ep Elem
 // Exported standalone functions — usable from both proxy and MCP handlers.
 // ---------------------------------------------------------------------------
 
+// evalNavigationRetryBudget bounds how long EvalSimpleScript keeps retrying
+// an eval whose realm a navigation tore down. The gap between the old realm
+// dying and the new document's realm existing is milliseconds; the budget
+// only has to outlast a slow document swap, not a page load.
+const evalNavigationRetryBudget = 2 * time.Second
+
+// realmDestroyedByNavigation reports whether a script command failed because
+// a navigation replaced the document under it. Chrome reports the torn-down
+// realm as "Execution context was destroyed"; Firefox aborts the in-flight
+// query ("destroyed before query") or reports the context discarded.
+func realmDestroyedByNavigation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context was destroyed") ||
+		strings.Contains(msg, "destroyed before query") ||
+		strings.Contains(msg, "browsing context discarded")
+}
+
 // EvalSimpleScript runs a no-argument script.callFunction via the Session and
 // returns the string result.
+//
+// A navigation destroys the document's realm the instant it commits, so a
+// command landing in that window fails — exactly one failure per navigation
+// under a tight poll (#335). The browsing context survives the navigation,
+// so the eval is retried against the document that replaces it, bounded by
+// evalNavigationRetryBudget. The capture path handles the same race with
+// captureWithNavigationRetry; script commands do get an answer (an error),
+// so retrying on that answer is enough here.
 func EvalSimpleScript(s Session, context, fn string) (string, error) {
 	params := map[string]interface{}{
 		"functionDeclaration": fn,
@@ -308,13 +339,56 @@ func EvalSimpleScript(s Session, context, fn string) (string, error) {
 		"awaitPromise":        false,
 		"resultOwnership":     "root",
 	}
-
-	resp, err := s.SendBidiCommand("script.callFunction", params)
-	if err != nil {
-		return "", err
+	send := func() (string, error) {
+		resp, err := s.SendBidiCommand("script.callFunction", params)
+		if err != nil {
+			return "", err
+		}
+		return parseScriptResult(resp)
 	}
 
-	return parseScriptResult(resp)
+	out, err := send()
+	deadline := time.Now().Add(evalNavigationRetryBudget)
+	for err != nil && time.Now().Before(deadline) {
+		nav := s.NavTracker()
+		navigating := nav != nil && nav.IsNavigating(context)
+		if !navigating && !realmDestroyedByNavigation(err) {
+			break
+		}
+		// The event naming the navigation can trail the failed command by
+		// ~10ms (#291), so the tracker may not know about it yet: settle
+		// when it does, pause briefly when only the error message says a
+		// navigation happened.
+		if navigating {
+			nav.WaitForSettled(context, time.Until(deadline))
+		} else {
+			time.Sleep(25 * time.Millisecond)
+		}
+		out, err = send()
+	}
+	return out, err
+}
+
+// QueryViewport asks the page for its viewport size. ok is false when the
+// page cannot answer — e.g. Firefox refuses script evaluation on its
+// privileged initial page until the first navigation (#358), so a viewport
+// unknown here may become answerable later in the session.
+func QueryViewport(s Session, context string) (width, height int, ok bool) {
+	result, err := EvalSimpleScript(s, context, "() => window.innerWidth + ',' + window.innerHeight")
+	if err != nil {
+		log.Debug("viewport query failed", "context", context, "error", err)
+		return 0, 0, false
+	}
+	parts := strings.SplitN(result, ",", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(parts[0])
+	h, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 // CallScript runs a script.callFunction with arguments via the Session and
@@ -331,6 +405,18 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
+// staleIndexHint explains a not-found error for an index-addressed element:
+// those come from findAll handles, so "not found" can mean the page changed
+// after findAll rather than a selector that never matched, and the two read
+// identically without the hint (#338).
+func staleIndexHint(err error, ep ElementParams) error {
+	if err == nil || !ep.HasIndex || !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+	return fmt.Errorf("%w (element %d of a findAll result: the page may have changed since findAll; "+
+		"re-run findAll, or read the snapshot the findAll returned)", err, ep.Index)
+}
+
 // ResolveElement finds an element using the given params, polling until found or timeout.
 func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, error) {
 	ep = ep.withDefaultTimeout()
@@ -339,7 +425,7 @@ func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, 
 	if err == nil && info != nil {
 		s.SetLastElementBox(&info.Box)
 	}
-	return info, err
+	return info, staleIndexHint(err, ep)
 }
 
 // ResolveElementRef finds an element and returns its BiDi sharedId.

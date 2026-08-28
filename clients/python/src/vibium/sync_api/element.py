@@ -17,7 +17,11 @@ class Element:
     def __init__(self, async_element: AsyncElement, loop_thread: _EventLoopThread) -> None:
         self._async = async_element
         self._loop = loop_thread
-        self.info = async_element.info
+
+    @property
+    def info(self):
+        """Snapshot of tag, text, and box captured when the element was found."""
+        return self._async.info
 
     def __repr__(self) -> str:
         text = self.info.text

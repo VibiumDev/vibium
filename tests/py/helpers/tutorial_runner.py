@@ -13,8 +13,10 @@ Server blocks:
     starts an HTTP server from these definitions.
 """
 
+import asyncio
 import re
 import textwrap
+import threading
 from pathlib import Path
 
 # tests/py/helpers/ -> project root
@@ -54,6 +56,17 @@ def extract_blocks(md_path):
                     code_lines = []
                 else:
                     is_annotated = False
+                continue
+
+            # A marker binds to the code block immediately after it or not at
+            # all. Any other fenced block (another language, plain ```) must
+            # consume a pending marker: in a doc that mixes languages, a
+            # marker left pending across foreign blocks would attach to the
+            # next python block anywhere in the file.
+            if re.match(r"^```", line):
+                in_code_block = True
+                is_annotated = False
+                pending = None
                 continue
         else:
             if re.match(r"^```\s*$", line):
@@ -165,15 +178,46 @@ def run_sync_block(code, vibe, base_url=None):
     exec(compile(code, "<tutorial>", "exec"), {"vibe": vibe, "base_url": base_url})
 
 
+# Bound for one standalone tutorial block. Generous against slow CI (a
+# healthy block runs in seconds) but far under the 600s phase watchdog: a
+# hung block must fail its own test so pytest still reports, which is what
+# prints the captured vibium stderr. The event-delivery hangs (#397,
+# incidents 9 and 10) died to the phase watchdog instead, taking every
+# captured diagnostic with them.
+TUTORIAL_TIMEOUT = 120
+
+
 async def run_async_standalone(code, base_url=None):
     """Exec a standalone async block that manages its own browser lifecycle."""
     indented = textwrap.indent(code, "    ")
     wrapped = f"async def _run(base_url):\n{indented}\n"
     ns = {}
     exec(compile(wrapped, "<tutorial>", "exec"), ns)
-    await ns["_run"](base_url)
+    try:
+        await asyncio.wait_for(ns["_run"](base_url), timeout=TUTORIAL_TIMEOUT)
+    except asyncio.TimeoutError:
+        # asyncio.TimeoutError is not the builtin TimeoutError before 3.11
+        raise TimeoutError(f"tutorial block still running after {TUTORIAL_TIMEOUT}s") from None
 
 
 def run_sync_standalone(code, base_url=None):
     """Exec a standalone sync block that manages its own browser lifecycle."""
-    exec(compile(code, "<tutorial>", "exec"), {"base_url": base_url})
+    # A hung sync block cannot be interrupted in place, so it runs on a
+    # scrap thread that gets abandoned on timeout; the leaked browser is
+    # cleaned by the suite's process cleanup, and the alternative was the
+    # watchdog killing the whole phase.
+    result = {}
+
+    def _target():
+        try:
+            exec(compile(code, "<tutorial>", "exec"), {"base_url": base_url})
+        except BaseException as e:
+            result["error"] = e
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(TUTORIAL_TIMEOUT)
+    if worker.is_alive():
+        raise TimeoutError(f"tutorial block still running after {TUTORIAL_TIMEOUT}s")
+    if "error" in result:
+        raise result["error"]

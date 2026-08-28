@@ -22,7 +22,7 @@ const (
 
 // VersionInfo represents the Chrome for Testing version information.
 type VersionInfo struct {
-	Version   string              `json:"version"`
+	Version   string                `json:"version"`
 	Downloads map[string][]Download `json:"downloads"`
 }
 
@@ -39,9 +39,9 @@ type LastKnownGoodResponse struct {
 
 // InstallResult contains the paths to installed binaries.
 type InstallResult struct {
-	ChromePath      string
+	ChromePath       string
 	ChromedriverPath string
-	Version         string
+	Version          string
 }
 
 // Install downloads and installs Chrome for Testing and chromedriver.
@@ -175,6 +175,9 @@ func findDownloadURL(downloads []Download, platform string) string {
 }
 
 // downloadAndExtract downloads a zip file and extracts it to the destination.
+// Unlike Firefox (SHA256SUMS, verified in installer_firefox.go), Chrome for
+// Testing publishes no checksums — its downloads JSON carries only platform
+// and url — so there is nothing official to verify the archive against.
 func downloadAndExtract(url, destDir string) error {
 	// Download to temp file
 	resp, err := http.Get(url)
@@ -194,7 +197,8 @@ func downloadAndExtract(url, destDir string) error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		return err
 	}
@@ -202,6 +206,37 @@ func downloadAndExtract(url, destDir string) error {
 
 	// Extract zip
 	return extractZip(tmpPath, destDir)
+}
+
+// progressWriter wraps a download destination and prints coarse progress
+// lines while bytes flow: one line per 10% step when the total is known, one
+// line per 25 MB when the server sends no Content-Length. Progress goes to
+// out (os.Stdout for the install command; pipe mode redirects that to stderr
+// so the protocol stream stays clean and clients see download liveness).
+type progressWriter struct {
+	dst     io.Writer
+	out     io.Writer
+	total   int64 // expected bytes; <= 0 when unknown
+	written int64
+	lastPct int   // last 10%-step printed
+	lastMB  int64 // last 25MB-step printed
+}
+
+const progressStepBytes = 25 << 20
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.dst.Write(b)
+	p.written += int64(n)
+	if p.total > 0 {
+		if pct := int(p.written * 100 / p.total); pct/10 > p.lastPct/10 {
+			p.lastPct = pct
+			fmt.Fprintf(p.out, "  %d%% of %.1f MB\n", pct-pct%10, float64(p.total)/(1<<20))
+		}
+	} else if step := p.written / progressStepBytes; step > p.lastMB {
+		p.lastMB = step
+		fmt.Fprintf(p.out, "  %d MB downloaded\n", step*25)
+	}
+	return n, err
 }
 
 // extractZip extracts a zip file to the destination directory.

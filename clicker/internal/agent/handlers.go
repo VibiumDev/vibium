@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -64,6 +65,18 @@ type Handlers struct {
 	// launchedChannel distinguishes separately installed Firefox channels.
 	// It is empty for Chrome and remote sessions.
 	launchedChannel string
+
+	// launchNotify, when set, is called once at the moment a tool call
+	// commits to launching or connecting a browser, so the caller can warn
+	// its client that the response will take up to the launch bounds. The
+	// daemon sets it per request under the same mutex that serializes
+	// handler calls; it must not be mutated while a call is in flight.
+	launchNotify func()
+}
+
+// SetLaunchNotify installs (or clears, with nil) the launch-start callback.
+func (h *Handlers) SetLaunchNotify(fn func()) {
+	h.launchNotify = fn
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -405,17 +418,8 @@ func (h *Handlers) queryViewport() map[string]interface{} {
 	if context == "" {
 		return nil
 	}
-	result, err := api.EvalSimpleScript(h.newSession(), context, "() => window.innerWidth + ',' + window.innerHeight")
-	if err != nil {
-		return nil
-	}
-	parts := strings.SplitN(result, ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	w, err1 := strconv.Atoi(parts[0])
-	h2, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
+	w, h2, ok := api.QueryViewport(h.newSession(), context)
+	if !ok {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h2}
@@ -628,7 +632,27 @@ func (h *Handlers) Close() {
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
 	h.classicSession = nil
+	recorder := h.recorder
+	h.recorder = nil
 	h.sessionMu.Unlock()
+
+	// An active recording auto-finalizes to its declared path, as if
+	// recording.stop() had been called. That needs the BiDi connection —
+	// probe it first so a dead browser costs a 2s check instead of full
+	// command timeouts, and memory still delivers what it holds (#316).
+	if recorder != nil {
+		sess := api.NewAgentSession(client)
+		alive := client != nil
+		if alive {
+			_, err := sess.SendBidiCommandWithTimeout("browsingContext.getTree", map[string]interface{}{}, 2*time.Second)
+			alive = err == nil
+		}
+		if alive {
+			api.FinalizeRecordingOnClose(sess, recorder)
+		} else {
+			api.FinalizeRecordingOffline(recorder)
+		}
+	}
 
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
 	// when this process created it — an attached session belongs to whoever
@@ -688,6 +712,12 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				Text: "Browser already running",
 			}},
 		}, nil
+	}
+
+	// Past the no-op checks a launch (or remote connect) really starts, and
+	// the caller may be about to wait longer than an ordinary command.
+	if h.launchNotify != nil {
+		h.launchNotify()
 	}
 
 	// Remote browser connect mode
@@ -809,15 +839,13 @@ func (h *Handlers) startPromptTracking() {
 		return
 	}
 
-	client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"browsingContext.userPromptOpened",
-			"browsingContext.userPromptClosed",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.load",
-		},
+	subscribeEvents(client, []string{
+		"browsingContext.userPromptOpened",
+		"browsingContext.userPromptClosed",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
 }
@@ -1717,7 +1745,11 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		x = int(info.Box.X + info.Box.Width/2)
 		y = int(info.Box.Y + info.Box.Height/2)
 	} else {
-		x, y = 400, 300 // Viewport center fallback
+		var err error
+		x, y, err = api.ViewportCenter(s, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find viewport center: %w", err)
+		}
 	}
 
 	// Map direction to deltas (120 pixels per scroll "notch")
@@ -3008,7 +3040,9 @@ func (h *Handlers) browserPDF(args map[string]interface{}) (*ToolsCallResult, er
 	if err != nil {
 		return nil, err
 	}
-	base64Data, err := api.PrintToPDF(s, ctx)
+	// args carries the print options under the same keys the wire command
+	// uses; extra keys like filename are ignored by the translation.
+	base64Data, err := api.PrintToPDF(s, ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to print PDF: %w", err)
 	}
@@ -3720,16 +3754,6 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 		return nil, err
 	}
 
-	if h.launchResult == nil {
-		return &ToolsCallResult{
-			Content: []Content{{
-				Type: "text",
-				Text: "Not supported for remote browsers",
-			}},
-			IsError: true,
-		}, nil
-	}
-
 	state, _ := args["state"].(string)
 	width, hasWidth := argFloat(args, "width")
 	height, hasHeight := argFloat(args, "height")
@@ -3754,7 +3778,7 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 		opts.Y = &yv
 	}
 
-	if err := api.SetWindow(h.launchResult.Port, h.launchResult.SessionID, opts); err != nil {
+	if err := api.SetWindow(h.newSession(), opts); err != nil {
 		return nil, err
 	}
 
@@ -4003,6 +4027,35 @@ func (h *Handlers) browserUpload(args map[string]interface{}) (*ToolsCallResult,
 	}, nil
 }
 
+// recordDefaultDir picks where a pathless recording lands: the server's
+// working directory when it is a real, writable place (hosts like Claude
+// Code launch the MCP server in the project directory), else
+// ~/Documents/Vibium — because an MCP caller may have no working directory
+// to reason about, the same reasoning that gives screenshots
+// ~/Pictures/Vibium (#119).
+func recordDefaultDir() string {
+	if cwd, err := os.Getwd(); err == nil && cwd != "/" && dirWritable(cwd) {
+		return cwd
+	}
+	if dir, err := paths.GetRecordDir(); err == nil {
+		if os.MkdirAll(dir, 0o755) == nil {
+			return dir
+		}
+	}
+	return ""
+}
+
+// dirWritable reports whether the process can create files in dir.
+func dirWritable(dir string) bool {
+	probe, err := os.CreateTemp(dir, ".vibium-write-probe-*")
+	if err != nil {
+		return false
+	}
+	probe.Close()
+	os.Remove(probe.Name())
+	return true
+}
+
 // browserRecordStart starts recording.
 func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -4013,41 +4066,91 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		return nil, fmt.Errorf("already recording — stop it first")
 	}
 
+	// Fold the MCP surface's flat video_* properties into the wire's nested
+	// video param. Dimensions imply video on unless video: false says
+	// otherwise.
+	video := map[string]interface{}{}
+	for flat, key := range map[string]string{
+		"video_width": "width", "video_height": "height", "video_frame_rate": "frameRate",
+	} {
+		if v, ok := args[flat].(float64); ok {
+			video[key] = v
+		}
+	}
+	if r, ok := args["video_remote"].(string); ok && r != "" {
+		video["remote"] = r
+	}
+	if len(video) > 0 {
+		if b, ok := args["video"].(bool); !ok || b {
+			args["video"] = video
+		}
+	}
+
 	opts := api.ParseRecordingOptions(args)
 	if opts.Name == "" {
 		opts.Name = "record"
 	}
 	name := opts.Name
+	// The MCP surface always delivers to a file; the declared path is where
+	// an auto-finalized recording lands if the session closes mid-recording.
+	// The default is timestamped so a rerun never clobbers the previous run.
+	if opts.Path == "" {
+		opts.Path = api.DefaultRecordPath(recordDefaultDir(), opts.Name)
+	}
+	if abs, err := filepath.Abs(opts.Path); err == nil {
+		opts.Path = abs
+	}
 
-	h.recorder = api.NewRecorder()
+	// Required video on a remote connection can never deliver into the
+	// zip; fail before touching the browser — unless the caller opted
+	// into leaving the file on the remote host.
+	remote := h.connectURL != ""
+	if remote && opts.Video.Mode == api.VideoRequired && !opts.Video.RemoteKeep {
+		return nil, errors.New(api.RemoteVideoMessage)
+	}
+
+	recorder := api.NewRecorder()
 	viewport := h.queryViewport()
-	h.recorder.Start(opts, viewport)
+	recorder.Start(opts, viewport)
+
+	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+		return nil, err
+	}
+	h.recorder = recorder
 
 	// Subscribe to events and feed them to the recorder
-	h.client.SendCommand("session.subscribe", map[string]interface{}{
-		"events": []string{
-			"network.beforeRequestSent",
-			"network.responseCompleted",
-			"network.fetchError",
-			"log.entryAdded",
-			"browsingContext.userPromptOpened",
-			"browsingContext.downloadWillBegin",
-			"browsingContext.load",
-			"browsingContext.navigationStarted",
-			"browsingContext.navigationFailed",
-			"browsingContext.navigationAborted",
-			"browsingContext.fragmentNavigated",
-			"browsingContext.historyUpdated",
-		},
+	subscribeEvents(h.client, []string{
+		"network.beforeRequestSent",
+		"network.responseCompleted",
+		"network.fetchError",
+		"log.entryAdded",
+		"browsingContext.userPromptOpened",
+		"browsingContext.downloadWillBegin",
+		"browsingContext.load",
+		"browsingContext.navigationStarted",
+		"browsingContext.navigationFailed",
+		"browsingContext.navigationAborted",
+		"browsingContext.fragmentNavigated",
+		"browsingContext.historyUpdated",
 	})
 	h.recordDropBase = h.client.DroppedEvents()
 	// handleBidiEvent already forwards to the recorder; replacing the handler
 	// here would silently turn off prompt tracking for the recording's duration.
 
+	// Keep the start line compact: the full engine reason reaches the
+	// caller in the stop result's videoUnavailable.
+	videoState := "off"
+	if h.recorder.ActiveVideo() != nil {
+		videoState = "on"
+	} else if h.recorder.VideoUnavailable() != "" {
+		videoState = "unavailable"
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording %q started (screenshots: %v, snapshots: %v)", name, opts.Screenshots, opts.Snapshots),
+			Text: fmt.Sprintf("Recording %q started (video: %s, screenshots: %v, snapshots: %v), saving to %s",
+				name, videoState, opts.Screenshots, opts.Snapshots, opts.Path),
 		}},
 	}, nil
 }
@@ -4067,9 +4170,17 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
 
+	// Finalize the video first so Stop() can move the engine's file into
+	// the zip. A dead screencast is recorded in the manifest, not an error.
+	api.StopRecordingVideo(h.newSession(), h.recorder)
+
+	// Path precedence: stop.path > start.path.
 	path, _ := args["path"].(string)
 	if path == "" {
-		path = "record.zip"
+		path = h.recorder.Options().Path
+	}
+	if path == "" {
+		path = api.DefaultRecordPath(recordDefaultDir(), h.recorder.Options().Name)
 	}
 
 	zipData, err := h.recorder.Stop()
@@ -4077,6 +4188,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		h.recorder = nil
 		return nil, fmt.Errorf("failed to stop recording: %w", err)
 	}
+	summary := h.recorder.Summary()
 
 	if err := api.WriteRecordToFile(zipData, path); err != nil {
 		h.recorder = nil
@@ -4088,7 +4200,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording saved to %s", path),
+			Text: api.RecordingSavedSentence(path, summary),
 		}},
 	}, nil
 }

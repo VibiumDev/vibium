@@ -6,6 +6,7 @@ All routes match the JS sync-test-server.js so tests are equivalent.
 import json
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
 
 
 HOME_HTML = """<html><head><title>Test App</title></head><body>
@@ -268,13 +269,33 @@ class VibiumTestHandler(BaseHTTPRequestHandler):
             self.wfile.write(SET_COOKIE_HTML.encode())
             return
 
+        # ?name= gives a test its own filename. Repeating one name within a
+        # browser session makes Firefox report the deduplicated name
+        # ("test(1).txt") in downloadWillBegin, so name-asserting tests must
+        # not share a filename.
         if path == "/download-file":
+            query = parse_qs(urlparse(self.path).query)
+            name = query.get("name", ["test.txt"])[0]
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Disposition", 'attachment; filename="test.txt"')
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
             self.end_headers()
             self.wfile.write(b"download content")
             return
+
+        if path == "/download":
+            query = parse_qs(urlparse(self.path).query)
+            if "name" in query:
+                name = query["name"][0]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(
+                    f"""<html><head><title>Download</title></head><body>
+  <a href="/download-file?name={name}" id="download-link" download="{name}">Download</a>
+</body></html>""".encode()
+                )
+                return
 
         html = HTML_ROUTES.get(path, HOME_HTML)
         self.send_response(200)

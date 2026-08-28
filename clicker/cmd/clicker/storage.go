@@ -12,6 +12,9 @@ func newStorageCmd() *cobra.Command {
 	storageCmd := &cobra.Command{
 		Use:   "storage",
 		Short: "Export or restore browser state (cookies, localStorage, sessionStorage)",
+		// Unlike other subcommand parents, running this bare does real work
+		// (prints the state); the annotation keeps it in `vibium commands`.
+		Annotations: map[string]string{"standalone": "true"},
 		Example: `  vibium storage
   # Print state as JSON
 

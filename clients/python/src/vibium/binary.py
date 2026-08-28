@@ -6,7 +6,6 @@ import importlib.util
 import os
 import platform
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -23,26 +22,53 @@ _STREAM_LIMIT = 256 * 1024 * 1024  # 256 MiB
 # so a stuck launch could hang far past it; this bounds the whole attempt.
 _READY_TIMEOUT = 60
 
+# Ready budget once vibium reports it is downloading the browser (first run).
+# Matches the 5-minute install budget the old client-side installer had. The
+# deadline is extended once, not per read, so a hang still fails in bounded
+# time.
+_INSTALL_READY_TIMEOUT = 300
 
-async def _drain_stderr(process) -> None:
-    """Continuously read the subprocess's stderr so the pipe never fills.
+# Printed by `vibium pipe` on stderr right before it downloads the browser.
+# Must match the installingMarker constant in the binary's pipe.go.
+_INSTALLING_MARKER = b"[pipe] installing browser"
+
+# Bytes of trailing stderr kept for error messages.
+_STDERR_TAIL_LIMIT = 8192
+
+
+class _StderrWatcher:
+    """Drains the subprocess's stderr from spawn time.
 
     An unread stderr pipe blocks vibium once the OS buffer (~64 KiB) fills.
-    Forward diagnostics to our stderr when VIBIUM_STDERR is set.
+    Keeps a bounded tail for error messages, sets ``installing`` when vibium
+    reports it is downloading the browser, and forwards diagnostics to our
+    stderr when VIBIUM_STDERR is set.
     """
-    if not process.stderr:
-        return
-    forward = bool(os.environ.get("VIBIUM_STDERR"))
-    try:
-        while True:
-            chunk = await process.stderr.read(65536)
-            if not chunk:
-                return
-            if forward:
-                sys.stderr.write(chunk.decode(errors="replace"))
-                sys.stderr.flush()
-    except (asyncio.CancelledError, OSError):
-        pass
+
+    def __init__(self, process):
+        self.tail = b""
+        self.installing = asyncio.Event()
+        self._stderr = process.stderr
+        self.task = asyncio.create_task(self._drain()) if process.stderr else None
+
+    async def _drain(self) -> None:
+        forward = bool(os.environ.get("VIBIUM_STDERR"))
+        try:
+            while True:
+                chunk = await self._stderr.read(65536)
+                if not chunk:
+                    return
+                if forward:
+                    sys.stderr.write(chunk.decode(errors="replace"))
+                    sys.stderr.flush()
+                self.tail = (self.tail + chunk)[-_STDERR_TAIL_LIMIT:]
+                if not self.installing.is_set() and _INSTALLING_MARKER in self.tail:
+                    self.installing.set()
+        except (asyncio.CancelledError, OSError):
+            pass
+
+    def tail_text(self) -> str:
+        return self.tail.decode(errors="replace")
 
 
 def get_platform_package_name() -> str:
@@ -142,47 +168,6 @@ def find_vibium_bin() -> str:
     )
 
 
-def ensure_browser_installed(
-    vibium_path: str,
-    engine: Optional[str] = None,
-    channel: Optional[str] = None,
-) -> None:
-    """Ensure the selected browser is installed.
-
-    Runs 'vibium install' if the browser is not found.
-    """
-    engine_args = ["--engine", engine] if engine else []
-    if channel:
-        engine_args.extend(["--firefox-channel", channel])
-    name = engine or "Chrome for Testing"
-
-    try:
-        result = subprocess.run(
-            [vibium_path, "is-installed", *engine_args],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return  # Already installed
-
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-        pass
-
-    # Browser not found, run install
-    print(f"Downloading {name}...", flush=True)
-    try:
-        subprocess.run(
-            [vibium_path, "install", *engine_args],
-            check=True,
-            timeout=300,  # 5 minute timeout for download
-        )
-        print(f"{name} installed successfully.", flush=True)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to install {name}: {e}")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"{name} installation timed out")
-
-
 class VibiumProcess:
     """Manages a vibium subprocess communicating via stdin/stdout pipes."""
 
@@ -217,18 +202,12 @@ class VibiumProcess:
             A VibiumProcess instance with stdin/stdout streams ready.
         """
         binary = executable_path or find_vibium_bin()
-        selected_engine = engine or os.environ.get("VIBIUM_ENGINE")
-        selected_channel = channel or os.environ.get("VIBIUM_FIREFOX_CHANNEL")
-
-        # Ensure the browser is installed (auto-download if needed) — skip for remote connections
-        if not connect_url:
-            ensure_browser_installed(binary, selected_engine, selected_channel)
 
         args = [binary, "pipe"]
         if engine:
             args.extend(["--engine", engine])
         if channel:
-            args.extend(["--firefox-channel", channel])
+            args.extend(["--channel", channel])
         if headless:
             args.append("--headless")
         if connect_url:
@@ -262,25 +241,52 @@ class VibiumProcess:
                 limit=_STREAM_LIMIT,
             )
 
+            # Drain stderr from spawn time: vibium prints its install marker
+            # and download progress there before the ready signal, and the
+            # pipe would otherwise fill and block vibium.
+            watcher = _StderrWatcher(process)
+
             # Events (e.g. browsingContext.contextCreated) may arrive first.
             # Bound the whole wait with a wall-clock deadline, not just per-read:
             # vibium forwards pre-ready events, so a per-read timeout can be
             # reset indefinitely by dribbled output while `ready` never arrives.
             pre_ready_lines = []
-            deadline = asyncio.get_running_loop().time() + _READY_TIMEOUT
+            now = asyncio.get_running_loop().time
+            deadline = now() + _READY_TIMEOUT
+            extended = False
+            read_task = None
             try:
                 while True:
-                    remaining = deadline - asyncio.get_running_loop().time()
+                    # First run: vibium is downloading the browser, which can
+                    # legitimately take minutes. Extend the deadline once —
+                    # still a hard bound, not a per-read reset.
+                    if not extended and watcher.installing.is_set():
+                        deadline = now() + _INSTALL_READY_TIMEOUT
+                        extended = True
+                    remaining = deadline - now()
                     if remaining <= 0:
                         raise asyncio.TimeoutError
-                    line_bytes = await asyncio.wait_for(
-                        process.stdout.readline(),  # type: ignore[union-attr]
-                        timeout=remaining,
-                    )
+                    if read_task is None:
+                        read_task = asyncio.ensure_future(
+                            process.stdout.readline()  # type: ignore[union-attr]
+                        )
+                    # asyncio.wait (unlike wait_for) leaves the read task
+                    # running on timeout, so no partial line is lost. The cap
+                    # keeps marker-driven deadline extension prompt.
+                    done, _ = await asyncio.wait({read_task}, timeout=min(remaining, 0.5))
+                    if not done:
+                        continue
+                    line_bytes = read_task.result()
+                    read_task = None
                     if not line_bytes:
-                        # EOF — process died
-                        stderr_bytes = await process.stderr.read() if process.stderr else b""  # type: ignore[union-attr]
-                        raise BrowserCrashedError(f"Vibium failed to start: {stderr_bytes.decode(errors='replace')}")
+                        # EOF — process died. Let the stderr drain finish so
+                        # the tail holds the failure message.
+                        if watcher.task:
+                            try:
+                                await asyncio.wait_for(asyncio.shield(watcher.task), 1.0)
+                            except asyncio.TimeoutError:
+                                pass
+                        raise BrowserCrashedError(f"Vibium failed to start: {watcher.tail_text()}")
                     line = line_bytes.decode().strip()
                     if not line:
                         continue
@@ -293,6 +299,10 @@ class VibiumProcess:
                     # Buffer pre-ready events for later replay
                     pre_ready_lines.append(line)
             except (asyncio.TimeoutError, BrowserCrashedError) as err:
+                if read_task is not None:
+                    read_task.cancel()
+                if watcher.task:
+                    watcher.task.cancel()
                 try:
                     process.kill()
                 except ProcessLookupError:
@@ -308,9 +318,8 @@ class VibiumProcess:
 
             instance = cls(process)
             instance._pre_ready_lines = pre_ready_lines
-            # Always drain stderr: an unread pipe blocks vibium once the OS
-            # buffer fills. Forward diagnostics when VIBIUM_STDERR is set.
-            instance._stderr_task = asyncio.create_task(_drain_stderr(process))
+            # The watcher keeps draining stderr for the process's lifetime.
+            instance._stderr_task = watcher.task
             return instance
 
         # Unreachable: the final attempt either returns or raises above.

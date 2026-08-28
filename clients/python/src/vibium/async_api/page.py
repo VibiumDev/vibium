@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import fnmatch
+import logging
 import re
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .. import errors
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
-from .screencast import Screencast
 from .route import Route
 from .network import Request, Response
 from .dialog import Dialog
@@ -24,14 +24,7 @@ if TYPE_CHECKING:
     from ..client import BiDiClient
     from .context import BrowserContext as BrowserContextType
 
-
-def _match_pattern(pattern: str, url: str) -> bool:
-    """Match a URL against a glob-like pattern."""
-    if pattern == "**":
-        return True
-    if "*" in pattern:
-        return fnmatch.fnmatch(url, pattern)
-    return pattern in url
+logger = logging.getLogger("vibium")
 
 
 class Keyboard:
@@ -104,7 +97,6 @@ class Page:
         self.mouse = Mouse(client, context_id)
         self.touch = Touch(client, context_id)
         self.clock = Clock(client, context_id)
-        self.screencast = Screencast(client, context_id)
 
         # Event state
         self._routes: List[Dict[str, Any]] = []
@@ -118,6 +110,7 @@ class Page:
         self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
+        self._ws_setup: Optional[asyncio.Future] = None
         self._intercept_id: Optional[str] = None
         self._data_collector_id: Optional[str] = None
 
@@ -226,7 +219,11 @@ class Page:
         near: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all elements matching a selector or semantic options."""
+        """Find all elements matching a selector or semantic options.
+
+        Waits up to the timeout for at least one match, then returns an empty
+        list if there is none. A timeout of 0 checks once without waiting.
+        """
         params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
         if selector is not None:
             params["selector"] = selector
@@ -257,8 +254,25 @@ class Page:
 
     @property
     def wait_until(self) -> _WaitUntilNamespace:
-        """Wait until a condition is met. Callable or use .url() / .loaded() sub-methods."""
+        """Deprecated alias — use wait_for_function / wait_for_url / wait_for_load."""
+        warnings.warn(
+            "wait_until is deprecated; use wait_for_function, wait_for_url, or wait_for_load",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _WaitUntilNamespace(self)
+
+    async def wait_for_function(self, fn: str, timeout: Optional[int] = None) -> Any:
+        """Wait until a function returns a truthy value."""
+        return await self._wait_for_function(fn, timeout)
+
+    async def wait_for_url(self, pattern: str, timeout: Optional[int] = None) -> None:
+        """Wait until the page URL matches a pattern."""
+        await self._wait_for_url(pattern, timeout)
+
+    async def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
+        """Wait until the page reaches a load state."""
+        await self._wait_for_load(state, timeout)
 
     async def wait(self, ms: int) -> None:
         """Wait for a fixed amount of time (milliseconds)."""
@@ -284,95 +298,32 @@ class Page:
         return result["value"]
 
     async def _capture_response(self, pattern: str, timeout: Optional[int] = None) -> Response:
-        """Internal: wait for a response matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        """Internal: wait for a response matching a URL pattern.
 
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
+        The binary matches the pattern and waits for the event; this just
+        awaits the command.
+        """
         self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._response_callbacks:
-                self._response_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureResponse", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Response(result["event"], self._client)
 
     async def _setup_capture_response(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up response listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
-        self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        async def _wait() -> Response:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._response_callbacks:
-                    self._response_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
-
-        return _wait()
+        """Internal: start a response capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_response(pattern, timeout))
 
     async def _capture_request(self, pattern: str, timeout: Optional[int] = None) -> Request:
         """Internal: wait for a request matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
         self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._request_callbacks:
-                self._request_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureRequest", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Request(result["event"], self._client)
 
     async def _setup_capture_request(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up request listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
-        self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        async def _wait() -> Request:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._request_callbacks:
-                    self._request_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
-
-        return _wait()
-
+        """Internal: start a request capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_request(pattern, timeout))
     async def _capture_navigation(self, timeout: Optional[int] = None) -> str:
         """Internal: wait for a navigation event. Resolves with URL."""
         timeout_ms = timeout or 10000
@@ -474,8 +425,15 @@ class Page:
                 self._dialog_callbacks.remove(handler)
             raise errors.TimeoutError("Timeout waiting for dialog")
 
-    async def _setup_capture_dialog(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up dialog listener and return a coroutine to await later."""
+    async def _setup_capture_dialog(self, timeout: Optional[int] = None, auto_dismiss: bool = False) -> Any:
+        """Internal: set up dialog listener and return a coroutine to await later.
+
+        auto_dismiss dismisses the dialog the moment it is captured. The sync
+        wrappers use it: they return only the dialog's data, so the caller has
+        no handle to close the dialog with, and a dialog left open blocks the
+        page, including a trigger fn stuck inside evaluate("alert(...)"),
+        which otherwise deadlocks the capture (#146).
+        """
         timeout_ms = timeout or 10000
         future: asyncio.Future = asyncio.get_running_loop().create_future()
 
@@ -483,6 +441,8 @@ class Page:
             self._dialog_callbacks.remove(handler)
             if not future.done():
                 future.set_result(dialog)
+            if auto_dismiss:
+                asyncio.ensure_future(dialog.dismiss())
 
         self._dialog_callbacks.append(handler)
 
@@ -577,9 +537,39 @@ class Page:
         })
         return base64.b64decode(result["data"])
 
-    async def pdf(self) -> bytes:
-        """Print the page to PDF. Returns PDF bytes. Only works in headless mode."""
-        result = await self._client.send("vibium:page.pdf", {"context": self._context_id})
+    async def pdf(
+        self,
+        *,
+        landscape: Optional[bool] = None,
+        scale: Optional[float] = None,
+        background: Optional[bool] = None,
+        margin_top: Optional[float] = None,
+        margin_bottom: Optional[float] = None,
+        margin_left: Optional[float] = None,
+        margin_right: Optional[float] = None,
+        page_width: Optional[float] = None,
+        page_height: Optional[float] = None,
+        page_ranges: Optional[List[Union[int, str]]] = None,
+        shrink_to_fit: Optional[bool] = None,
+    ) -> bytes:
+        """Print the page to PDF. Returns PDF bytes. Only works in headless mode.
+
+        Unset options keep the browser's print defaults (portrait, scale 1,
+        1cm margins, no background, letter-size page, all pages). Margins and
+        page size are in cm; page_ranges takes ints and range strings, e.g.
+        [1, "3-5"].
+        """
+        params: Dict[str, Any] = {"context": self._context_id}
+        for key, val in [
+            ("landscape", landscape), ("scale", scale), ("background", background),
+            ("marginTop", margin_top), ("marginBottom", margin_bottom),
+            ("marginLeft", margin_left), ("marginRight", margin_right),
+            ("pageWidth", page_width), ("pageHeight", page_height),
+            ("pageRanges", page_ranges), ("shrinkToFit", shrink_to_fit),
+        ]:
+            if val is not None:
+                params[key] = val
+        result = await self._client.send("vibium:page.pdf", params)
         return base64.b64decode(result["data"])
 
     # --- Evaluation ---
@@ -734,19 +724,31 @@ class Page:
     # --- Network Interception ---
 
     async def route(self, pattern: str, handler: Callable[[Route], Any]) -> None:
-        """Intercept network requests matching a URL pattern."""
-        if self._intercept_id is None:
-            result = await self._client.send("vibium:page.route", {"context": self._context_id})
-            self._intercept_id = result["intercept"]
+        """Intercept network requests matching a URL pattern.
+
+        The binary compiles the pattern, owns the intercept lifecycle, and
+        annotates blocked request events with the patterns that matched, so
+        dispatch never interprets the glob client-side.
+        """
+        result = await self._client.send(
+            "vibium:page.route", {"context": self._context_id, "pattern": pattern}
+        )
+        self._intercept_id = result["intercept"]
 
         self._ensure_data_collector()
         self._routes.append({"pattern": pattern, "handler": handler, "interceptId": self._intercept_id})
 
     async def unroute(self, pattern: str) -> None:
         """Remove a previously registered route."""
+        removed = sum(1 for r in self._routes if r["pattern"] == pattern)
         self._routes = [r for r in self._routes if r["pattern"] != pattern]
-        if not self._routes and self._intercept_id:
-            await self._client.send("network.removeIntercept", {"intercept": self._intercept_id})
+        # The binary refcounts pattern registrations and tears the intercept
+        # down when the last one goes.
+        for _ in range(removed):
+            await self._client.send(
+                "vibium:page.unroute", {"context": self._context_id, "pattern": pattern}
+            )
+        if not self._routes:
             self._intercept_id = None
 
     def on_request(self, fn: Callable[[Request], None]) -> None:
@@ -777,14 +779,51 @@ class Page:
         })
 
     def on_web_socket(self, fn: Callable[[WebSocketInfo], None]) -> None:
-        """Listen for WebSocket connections opened by the page."""
-        is_first = len(self._ws_callbacks) == 0
+        """Listen for WebSocket connections opened by the page.
+
+        Monitoring is installed in the engine before the next command on this
+        connection is sent, so a socket opened by the very next call cannot be
+        missed (#351).
+        """
         self._ws_callbacks.append(fn)
-        if is_first:
-            import asyncio
-            asyncio.ensure_future(
-                self._client.send("vibium:page.onWebSocket", {"context": self._context_id})
+        # Keyed on the setup state, not the callback count: after a failed
+        # install the callbacks are still registered, and the next
+        # registration must retry the install or they can never fire.
+        if self._ws_setup is None:
+            setup = self._client.send_setup(
+                "vibium:page.onWebSocket", {"context": self._context_id}
             )
+            self._ws_setup = setup
+
+            def _reset(finished: asyncio.Future) -> None:
+                if finished.cancelled():
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                elif finished.exception() is not None:
+                    # Reset so a later listener retries; sockets are
+                    # unmonitored until then. Guarded: a retry made in the
+                    # meantime owns the state.
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                    logger.debug(
+                        "page.on_web_socket setup failed: %s", finished.exception()
+                    )
+
+            setup.add_done_callback(_reset)
+
+    async def _when_web_socket_setup(self) -> None:
+        """Wait until this page's WebSocket monitor is installed.
+
+        Raises if the install failed. The sync wrapper awaits this so its
+        blocking on_web_socket() reports a failure the async caller cannot
+        see.
+        """
+        # Captured before awaiting: a failed install resets _ws_setup to
+        # None, and the raise must come from the setup this caller
+        # registered under.
+        setup = self._ws_setup
+        if setup is not None:
+            await setup
 
 
     # --- Dialog Handling ---
@@ -866,19 +905,28 @@ class Page:
         if self._data_collector_id is not None:
             return
         self._data_collector_id = "pending"
-        import asyncio
 
-        async def _setup() -> None:
-            try:
-                result = await self._client.send(
-                    "network.addDataCollector",
-                    {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
-                )
-                self._data_collector_id = result["collector"]
-            except Exception:
+        # send_setup, not ensure_future(send): the collector must exist before
+        # the request whose body a route/on_response handler is about to read
+        # (#351).
+        task = self._client.send_setup(
+            "network.addDataCollector",
+            {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
+        )
+
+        def _store(finished: Any) -> None:
+            if finished.cancelled() or finished.exception() is not None:
+                # Reset so a later listener retries; bodies are unavailable
+                # until then.
                 self._data_collector_id = None
+                if not finished.cancelled():
+                    logger.debug(
+                        "page._ensure_data_collector failed: %s", finished.exception()
+                    )
+                return
+            self._data_collector_id = (finished.result() or {}).get("collector")
 
-        asyncio.ensure_future(_setup())
+        task.add_done_callback(_store)
 
     def _teardown_data_collector(self) -> None:
         cid = self._data_collector_id
@@ -944,11 +992,14 @@ class Page:
         request_id = request_data.get("request", "")
 
         if is_blocked and request_id:
-            request_url = request_data.get("url", "")
+            # The binary already matched the URL against every registered
+            # pattern (vibiumMatchedPatterns), so dispatch is a membership
+            # check, not a glob evaluation.
+            matched = params.get("vibiumMatchedPatterns") or []
             req = Request(params, self._client)
 
             for route_entry in self._routes:
-                if _match_pattern(route_entry["pattern"], request_url):
+                if route_entry["pattern"] in matched:
                     route = Route(self._client, request_id, req)
                     try:
                         result = route_entry["handler"](route)

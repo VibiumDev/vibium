@@ -145,7 +145,7 @@ describe('Daemon CLI: Recording', () => {
     const zipPath = tmpPath('valid-zip.zip');
     const result = clickerJSON(`record stop -o "${zipPath}"`);
     assert.strictEqual(result.ok, true, 'record stop should succeed');
-    assert.ok(result.result.includes('Recording saved'), 'Should confirm save');
+    assert.ok(result.result.includes('Saved'), 'Should confirm save');
 
     // Verify file
     assert.ok(fs.existsSync(zipPath), 'Zip file should exist');

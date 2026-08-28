@@ -825,7 +825,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
 
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('Recording saved'),
+      response.result.content[0].text.includes('Saved'),
       'Should confirm save'
     );
 

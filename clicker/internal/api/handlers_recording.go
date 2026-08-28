@@ -3,9 +3,8 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
@@ -16,9 +15,38 @@ import (
 const screenshotTimeout = 5 * time.Second
 
 // handleRecordingStart handles vibium:recording.start — starts recording.
-// Options: name, screenshots, snapshots, sources, title.
+// Options: name, screenshots, snapshots, sources, title, video, path.
 func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) {
+	if !session.beginRecordingOperation() {
+		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
+		return
+	}
+	defer session.endRecordingOperation()
+
+	session.mu.Lock()
+	existing := session.recorder
+	lastContext := session.lastContext
+	session.mu.Unlock()
+	if existing != nil && existing.IsRecording() {
+		r.sendError(session, cmd.ID, fmt.Errorf("recording is already running — stop it first"))
+		return
+	}
+	if existing != nil {
+		// A leftover recorder is a stopped recording whose delivery failed.
+		// Starting a new recording supersedes it; delete its engine temp
+		// file so it does not leak.
+		existing.RemoveEngineFile()
+	}
+
 	opts := ParseRecordingOptions(cmd.Params)
+
+	// Required video on a remote connection can never deliver into the zip;
+	// fail before touching the browser — unless the caller opted into
+	// leaving the file on the remote host.
+	if r.connectURL != "" && opts.Video.Mode == VideoRequired && !opts.Video.RemoteKeep {
+		r.sendError(session, cmd.ID, errors.New(RemoteVideoMessage))
+		return
+	}
 
 	// Best-effort viewport query
 	viewport := r.queryViewport(session)
@@ -26,6 +54,15 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// Create and start the recorder
 	recorder := NewRecorder()
 	recorder.Start(opts, viewport)
+
+	// The video films the browsing context active now and does not follow
+	// focus. Fail-fast (video: true on an engine that can't deliver) means
+	// the recording does not start at all.
+	sess := NewAPISession(r, session, lastContext)
+	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
 
 	session.mu.Lock()
 	session.recorder = recorder
@@ -37,11 +74,17 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 }
 
 // handleRecordingStop handles vibium:recording.stop — stops recording and returns recording data.
-// Options: path (file path to save zip).
+// Options: path (overrides the path declared at start).
 func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 	// Wait for any in-flight dispatch() to finish so its after-event is recorded.
 	session.dispatchMu.Lock()
 	defer session.dispatchMu.Unlock()
+
+	if !session.beginRecordingOperation() {
+		r.sendError(session, cmd.ID, fmt.Errorf("browser session is closing"))
+		return
+	}
+	defer session.endRecordingOperation()
 
 	session.mu.Lock()
 	recorder := session.recorder
@@ -52,29 +95,40 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
+	// Finalize the video first so Stop() can move the engine's file into the
+	// zip. A dead screencast is recorded in the manifest, not an error here.
+	StopRecordingVideo(NewAPISession(r, session, ""), recorder)
+
 	// Stop recording and get zip data
 	zipData, err := recorder.Stop()
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+	summary := recorder.Summary()
 
 	// Clear the recorder from the session
 	session.mu.Lock()
 	session.recorder = nil
 	session.mu.Unlock()
 
-	// Write to file or return base64
-	if path, ok := cmd.Params["path"].(string); ok && path != "" {
+	// Path precedence: stop.path > start.path; neither = bytes-only.
+	path := recorder.Options().Path
+	if p, ok := cmd.Params["path"].(string); ok && p != "" {
+		path = p
+	}
+
+	result := summary.ResultFields()
+	if path != "" {
 		if err := WriteRecordToFile(zipData, path); err != nil {
 			r.sendError(session, cmd.ID, fmt.Errorf("failed to write recording: %w", err))
 			return
 		}
-		r.sendSuccess(session, cmd.ID, map[string]interface{}{"path": path})
+		result["path"] = path
 	} else {
-		encoded := base64.StdEncoding.EncodeToString(zipData)
-		r.sendSuccess(session, cmd.ID, map[string]interface{}{"data": encoded})
+		result["data"] = base64.StdEncoding.EncodeToString(zipData)
 	}
+	r.sendSuccess(session, cmd.ID, result)
 }
 
 // handleRecordingStartChunk handles vibium:recording.startChunk — starts a new recording chunk.
@@ -424,17 +478,8 @@ func (r *Router) queryViewport(session *BrowserSession) map[string]interface{} {
 	if err != nil {
 		return nil
 	}
-	result, err := r.evalSimpleScript(session, context, "() => window.innerWidth + ',' + window.innerHeight")
-	if err != nil {
-		return nil
-	}
-	parts := strings.SplitN(result, ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	w, err1 := strconv.Atoi(parts[0])
-	h, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
+	w, h, ok := QueryViewport(NewAPISession(r, session, context), context)
+	if !ok {
 		return nil
 	}
 	return map[string]interface{}{"width": w, "height": h}

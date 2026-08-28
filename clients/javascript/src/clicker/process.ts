@@ -2,6 +2,22 @@ import { spawn, execFileSync, ChildProcess } from 'child_process';
 import { getVibiumBinPath } from './binary';
 import { TimeoutError, BrowserCrashedError } from '../utils/errors';
 
+/** How long to wait for the vibium ready signal on a normal launch. */
+const READY_TIMEOUT_MS = 60_000;
+/**
+ * Ready budget once vibium reports it is downloading the browser (first
+ * run). Matches the 5-minute install budget the old client-side installer
+ * had.
+ */
+const INSTALL_READY_TIMEOUT_MS = 300_000;
+/**
+ * Printed by `vibium pipe` on stderr right before it downloads the browser.
+ * Must match the installingMarker constant in the binary's pipe.go.
+ */
+const INSTALLING_MARKER = '[pipe] installing browser';
+/** Bytes of trailing stderr kept for error messages. */
+const STDERR_TAIL_LIMIT = 8192;
+
 export interface VibiumProcessOptions {
   engine?: 'chrome' | 'firefox';
   channel?: string;
@@ -34,19 +50,13 @@ export class VibiumProcess {
 
   static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
     const binaryPath = options.executablePath || getVibiumBinPath();
-    const selectedEngine = options.engine || process.env.VIBIUM_ENGINE as 'chrome' | 'firefox' | undefined;
-    const selectedChannel = options.channel || process.env.VIBIUM_FIREFOX_CHANNEL;
-
-    if (!options.connectURL) {
-      ensureBrowserInstalled(binaryPath, selectedEngine, selectedChannel);
-    }
 
     const args = ['pipe'];
     if (options.engine) {
       args.push('--engine', options.engine);
     }
     if (options.channel) {
-      args.push('--firefox-channel', options.channel);
+      args.push('--channel', options.channel);
     }
     if (options.headless === true) {
       args.push('--headless');
@@ -77,9 +87,20 @@ export class VibiumProcess {
       });
 
       // Always drain stderr: an unread pipe blocks vibium once the OS buffer
-      // fills. Forward diagnostics to our stderr when VIBIUM_STDERR is set.
+      // fills. Keep a bounded tail for error messages, and watch for the
+      // install marker so the ready deadline can be extended while vibium
+      // downloads the browser. Forward diagnostics to our stderr when
+      // VIBIUM_STDERR is set.
+      let stderrTail = '';
+      let onInstallMarker: (() => void) | null = null;
       proc.stderr?.on('data', (chunk: Buffer) => {
         if (process.env.VIBIUM_STDERR) process.stderr.write(chunk);
+        stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
+        if (onInstallMarker && stderrTail.includes(INSTALLING_MARKER)) {
+          const fire = onInstallMarker;
+          onInstallMarker = null;
+          fire();
+        }
       });
 
       // If the ready-wait throws — timeout, the caller's await being interrupted
@@ -101,12 +122,24 @@ export class VibiumProcess {
           let buffer = '';
           let resolved = false;
 
-          const timeout = setTimeout(() => {
+          let timeoutMs = READY_TIMEOUT_MS;
+          const onReadyTimeout = () => {
             if (!resolved) {
               resolved = true;
-              reject(new TimeoutError('vibium', 60000, 'waiting for vibium ready signal'));
+              reject(new TimeoutError('vibium', timeoutMs, 'waiting for vibium ready signal'));
             }
-          }, 60000);
+          };
+          let timeout = setTimeout(onReadyTimeout, timeoutMs);
+
+          // First run: vibium is downloading the browser, which can
+          // legitimately take minutes. Extend the deadline once — this is not
+          // a per-read reset, so a hang still fails within the budget.
+          onInstallMarker = () => {
+            if (resolved) return;
+            clearTimeout(timeout);
+            timeoutMs = INSTALL_READY_TIMEOUT_MS;
+            timeout = setTimeout(onReadyTimeout, timeoutMs);
+          };
 
           const handleData = (data: Buffer) => {
             buffer += data.toString();
@@ -150,7 +183,10 @@ export class VibiumProcess {
             if (!resolved) {
               resolved = true;
               clearTimeout(timeout);
-              reject(new BrowserCrashedError(code ?? 1, buffer));
+              // Include the stderr tail: vibium reports startup and install
+              // failures there, and exit-before-ready is exactly that case.
+              const detail = [buffer.trim(), stderrTail.trim()].filter(Boolean).join('\n');
+              reject(new BrowserCrashedError(code ?? 1, detail));
             }
           });
         });
@@ -234,36 +270,4 @@ export class VibiumProcess {
       }
     });
   }
-}
-
-export function ensureBrowserInstalled(
-  binaryPath: string,
-  engine?: 'chrome' | 'firefox',
-  channel?: string,
-): void {
-  const skip = process.env.VIBIUM_SKIP_BROWSER_DOWNLOAD;
-  if (skip === '1' || skip?.toLowerCase() === 'true') return;
-
-  const engineArgs: string[] = [];
-  if (engine) engineArgs.push('--engine', engine);
-  if (channel) engineArgs.push('--firefox-channel', channel);
-
-  try {
-    execFileSync(binaryPath, ['is-installed', ...engineArgs], { stdio: 'ignore' });
-    return;
-  } catch {
-    // A non-zero status means the selected browser is absent. The install
-    // command below produces the actionable error if the check failed for a
-    // different reason.
-  }
-
-  const browserName = engine || 'Chrome for Testing';
-  process.stdout.write(`Downloading ${browserName}...\n`);
-  try {
-    execFileSync(binaryPath, ['install', ...engineArgs], { stdio: 'inherit' });
-  } catch (error) {
-    const detail = error instanceof Error ? `: ${error.message}` : '';
-    throw new Error(`Failed to install ${browserName}${detail}`);
-  }
-  process.stdout.write(`${browserName} installed successfully.\n`);
 }

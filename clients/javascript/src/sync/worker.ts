@@ -3,6 +3,7 @@ import { browser, Browser } from '../browser';
 import { Page } from '../page';
 import { BrowserContext } from '../context';
 import { Element, SelectorOptions } from '../element';
+import { WebSocketInfo } from '../websocket';
 
 interface WorkerData {
   signal: Int32Array;
@@ -344,8 +345,8 @@ const handlers: Record<string, Handler> = {
   },
 
   'page.pdf': async (args) => {
-    const [pageId] = args as [number];
-    const buffer = await getPage(pageId).pdf();
+    const [pageId, options] = args as [number, unknown];
+    const buffer = await getPage(pageId).pdf(options as any);
     return { data: buffer.toString('base64') };
   },
 
@@ -398,19 +399,19 @@ const handlers: Record<string, Handler> = {
 
   'page.waitForURL': async (args) => {
     const [pageId, pattern, options] = args as [number, string, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.url(pattern, options);
+    await getPage(pageId).waitForURL(pattern, options);
     return { success: true };
   },
 
   'page.waitForLoad': async (args) => {
     const [pageId, state, options] = args as [number, string | undefined, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.loaded(state, options);
+    await getPage(pageId).waitForLoad(state, options);
     return { success: true };
   },
 
   'page.waitForFunction': async (args) => {
     const [pageId, fn, options] = args as [number, string, { timeout?: number } | undefined];
-    const value = await getPage(pageId).waitUntil(fn, options);
+    const value = await getPage(pageId).waitForFunction(fn, options);
     return { value };
   },
 
@@ -875,7 +876,7 @@ const handlers: Record<string, Handler> = {
     const page = getPage(pageId);
     onWebSocketHandlerIds.set(pageId, handlerId);
     let nextWsId = 0;
-    page.onWebSocket((ws) => {
+    const callback = (ws: WebSocketInfo) => {
       const hid = onWebSocketHandlerIds.get(pageId);
       if (!hid) return;
       const wsId = nextWsId++;
@@ -901,7 +902,19 @@ const handlers: Record<string, Handler> = {
           data: { type: 'close', wsId, code, reason },
         });
       });
-    });
+    };
+    page.onWebSocket(callback);
+    // The sync caller has no promise to await, so hold the blocking bridge
+    // call until the engine has acknowledged the install, and let a failed
+    // install raise here, the only place a sync caller can see it (#351).
+    // A raised call must have no effect, so unregister before rethrowing;
+    // a retry then registers once and re-sends the install.
+    try {
+      await page._whenWebSocketSetup();
+    } catch (err) {
+      page._removeWebSocketCallback(callback);
+      throw err;
+    }
     return { success: true };
   },
 
@@ -977,22 +990,6 @@ const handlers: Record<string, Handler> = {
   },
 
   // ========================
-  // Screencast commands (page-scoped)
-  // ========================
-
-  'screencast.start': async (args) => {
-    const [pageId, options] = args as [number, any];
-    await getPage(pageId).screencast.start(options);
-    return { success: true };
-  },
-
-  'screencast.stop': async (args) => {
-    const [pageId, options] = args as [number, any];
-    const buffer = await getPage(pageId).screencast.stop(options);
-    return { data: buffer.toString('base64') };
-  },
-
-  // ========================
   // Recording commands (context-scoped)
   // ========================
 
@@ -1004,8 +1001,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stop': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stop(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stop(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startChunk': async (args) => {
@@ -1016,8 +1013,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stopChunk': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stopChunk(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stopChunk(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startGroup': async (args) => {
@@ -1223,6 +1220,12 @@ const handlers: Record<string, Handler> = {
   'element.focus': async (args) => {
     const [elementId, options] = args as [number, any];
     await getElement(elementId).focus(options);
+    return { success: true };
+  },
+
+  'element.highlight': async (args) => {
+    const [elementId, options] = args as [number, any];
+    await getElement(elementId).highlight(options);
     return { success: true };
   },
 

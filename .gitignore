@@ -81,6 +81,7 @@ scripts/package-lock.json
 clients/java/build/
 clients/java/.gradle/
 clients/java/src/main/resources/natives/
+clients/java/src/main/resources/vibium-version.txt
 vibium-bundle.zip
 
 # Python
@@ -102,3 +103,6 @@ packages/python/*/src/*/bin/vibium.exe
 !/LICENSE
 !/NOTICE
 *.swp
+
+# Per-process capability counts collected during a test run
+tests/.capability-summary/

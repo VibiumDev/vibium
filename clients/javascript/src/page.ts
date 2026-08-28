@@ -8,8 +8,6 @@ import { ConsoleMessage } from './console';
 import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
-import { Screencast } from './screencast';
-import { matchPattern } from './utils/match';
 import { debug } from './utils/debug';
 
 export interface FindOptions {
@@ -22,6 +20,32 @@ export interface ScreenshotOptions {
   fullPage?: boolean;
   /** Capture a specific region of the page. */
   clip?: { x: number; y: number; width: number; height: number };
+}
+
+/** Options for pdf(). Unset options keep the browser's print defaults. */
+export interface PdfOptions {
+  /** Landscape orientation (default: portrait). */
+  landscape?: boolean;
+  /** Print scale, 0.1-2 (default: 1). */
+  scale?: number;
+  /** Print background graphics (default: false). */
+  background?: boolean;
+  /** Top margin in cm (default: 1). */
+  marginTop?: number;
+  /** Bottom margin in cm (default: 1). */
+  marginBottom?: number;
+  /** Left margin in cm (default: 1). */
+  marginLeft?: number;
+  /** Right margin in cm (default: 1). */
+  marginRight?: number;
+  /** Page width in cm (default: 21.59). */
+  pageWidth?: number;
+  /** Page height in cm (default: 27.94). */
+  pageHeight?: number;
+  /** Pages to print, e.g. [1, '3-5'] (default: all). */
+  pageRanges?: Array<number | string>;
+  /** Shrink content to fit the page width (default: true). */
+  shrinkToFit?: boolean;
 }
 
 interface VibiumFindResult {
@@ -191,8 +215,6 @@ export class Page {
   readonly touch: Touch;
   /** Page-level clock control for faking timers and Date. */
   readonly clock: Clock;
-  /** Native browser video recording (Firefox 154+; Chrome pending). */
-  readonly screencast: Screencast;
 
   // Network interception state
   private routes: { pattern: string; handler: (route: Route) => void; interceptId?: string }[] = [];
@@ -206,6 +228,7 @@ export class Page {
   private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
+  private wsSetup: Promise<unknown> | null = null;
   private eventHandler: ((event: BiDiEvent) => void) | null = null;
   private interceptId: string | null = null;
   private dataCollectorId: string | null = null;
@@ -222,7 +245,6 @@ export class Page {
     this.mouse = new Mouse(client, contextId);
     this.touch = new Touch(client, contextId);
     this.clock = new Clock(client, contextId);
-    this.screencast = new Screencast(client, contextId);
 
     // Initialize capture namespace
     const self = this;
@@ -536,9 +558,10 @@ export class Page {
   }
 
   /** Print the page to PDF. Returns a PDF buffer. Only works in headless mode. */
-  async pdf(): Promise<Buffer> {
+  async pdf(options?: PdfOptions): Promise<Buffer> {
     const result = await this.client.send<{ data: string }>('vibium:page.pdf', {
       context: this.contextId,
+      ...options,
     });
     return Buffer.from(result.data, 'base64');
   }
@@ -599,13 +622,31 @@ export class Page {
     event(name: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<unknown>;
   };
 
-  /** Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods. */
+  /**
+   * Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods.
+   * @deprecated Use waitForFunction(), waitForURL(), or waitForLoad().
+   */
   readonly waitUntil: ((fn: string, options?: { timeout?: number }) => Promise<unknown>) & {
-    /** Wait until the page URL matches a pattern. */
+    /** @deprecated Use waitForURL(). */
     url(pattern: string, options?: { timeout?: number }): Promise<void>;
-    /** Wait until the page reaches a load state. */
+    /** @deprecated Use waitForLoad(). */
     loaded(state?: string, options?: { timeout?: number }): Promise<void>;
   };
+
+  /** Wait until a function returns a truthy value. */
+  async waitForFunction(fn: string, options?: { timeout?: number }): Promise<unknown> {
+    return this._waitForFunction(fn, options);
+  }
+
+  /** Wait until the page URL matches a pattern. */
+  async waitForURL(pattern: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForURL(pattern, options);
+  }
+
+  /** Wait until the page reaches a load state. */
+  async waitForLoad(state?: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForLoad(state, options);
+  }
 
   /** Wait for a fixed amount of time (milliseconds). Discouraged but useful for debugging. */
   async wait(ms: number): Promise<void> {
@@ -657,7 +698,16 @@ export class Page {
     return fluent(promise);
   }
 
-  /** Find all elements matching a CSS selector or semantic options. Waits for at least one. */
+  /**
+   * Find all elements matching a CSS selector or semantic options. Waits up
+   * to the timeout for at least one match, then returns an empty array if
+   * there is none. A timeout of 0 checks once without waiting.
+   *
+   * Each element carries a snapshot of its tag, text, and box taken at
+   * findAll time, readable via `el.info` with no further round trips:
+   * els.map(el => el.info.text). Live reads like el.text() re-resolve the
+   * element and fail if the page has changed since findAll.
+   */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.contextId,
@@ -690,27 +740,29 @@ export class Page {
    * The handler receives a Route object that can fulfill, continue, or abort the request.
    */
   async route(pattern: string, handler: (route: Route) => void): Promise<void> {
-    // Register the intercept with the Go proxy (only once for the first route)
-    if (this.interceptId === null) {
-      const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
-        context: this.contextId,
-      });
-      this.interceptId = result.intercept;
-    }
+    // The binary compiles the pattern, owns the intercept lifecycle, and
+    // annotates blocked request events with the patterns that matched, so
+    // dispatch below never interprets the glob itself.
+    const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
+      context: this.contextId,
+      pattern,
+    });
+    this.interceptId = result.intercept;
 
     this.ensureDataCollector();
-    this.routes.push({ pattern, handler, interceptId: this.interceptId ?? undefined });
+    this.routes.push({ pattern, handler, interceptId: result.intercept });
   }
 
   /** Remove a previously registered route. If no handler given, removes all routes for the pattern. */
   async unroute(pattern: string): Promise<void> {
+    const removed = this.routes.filter(r => r.pattern === pattern).length;
     this.routes = this.routes.filter(r => r.pattern !== pattern);
-
-    // If no routes left, remove the intercept
-    if (this.routes.length === 0 && this.interceptId) {
-      await this.client.send('network.removeIntercept', {
-        intercept: this.interceptId,
-      });
+    // The binary refcounts pattern registrations and tears the intercept
+    // down when the last one goes.
+    for (let i = 0; i < removed; i++) {
+      await this.client.send('vibium:page.unroute', { context: this.contextId, pattern });
+    }
+    if (this.routes.length === 0) {
       this.interceptId = null;
     }
   }
@@ -764,45 +816,28 @@ export class Page {
     }
   }
 
-  /** @internal Capture a request matching a URL pattern. */
-  _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Request>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for request matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (request: Request) => {
-        if (matchPattern(pattern, request.url())) {
-          clearTimeout(timer);
-          this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-          resolve(request);
-        }
-      };
-      this.requestCallbacks.push(handler);
+  /**
+   * @internal Capture a request matching a URL pattern. The binary matches
+   * the pattern and waits for the event; this just awaits the command.
+   */
+  async _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureRequest', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Request(result.event, this.client);
   }
 
   /** @internal Capture a response matching a URL pattern. */
-  _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
+  async _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
     this.ensureDataCollector();
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Response>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for response matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (response: Response) => {
-        if (matchPattern(pattern, response.url())) {
-          clearTimeout(timer);
-          this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-          resolve(response);
-        }
-      };
-      this.responseCallbacks.push(handler);
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureResponse', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Response(result.event, this.client);
   }
 
   /** @internal Capture a navigation event. Resolves with the URL. */
@@ -946,13 +981,49 @@ export class Page {
     throw new Error('Not implemented: BiDi does not support WebSocket interception');
   }
 
-  /** Listen for WebSocket connections opened by the page. */
+  /**
+   * Listen for WebSocket connections opened by the page.
+   *
+   * Monitoring is installed in the engine before the next command on this
+   * connection is sent, so a socket opened by the very next call cannot be
+   * missed (#351).
+   */
   onWebSocket(fn: (ws: WebSocketInfo) => void): void {
-    const isFirst = this.wsCallbacks.length === 0;
     this.wsCallbacks.push(fn);
-    if (isFirst) {
-      this.client.send('vibium:page.onWebSocket', { context: this.contextId }).catch(() => {});
+    // Keyed on the setup state, not the callback count: after a failed
+    // install the callbacks are still registered, and the next registration
+    // must retry the install or they can never fire.
+    if (this.wsSetup === null) {
+      const setup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
+      this.wsSetup = setup;
+      setup.catch(err => {
+        // Reset so a later listener retries; sockets are unmonitored until
+        // then. Guarded: a retry made in the meantime owns the state.
+        if (this.wsSetup === setup) this.wsSetup = null;
+        debug('page.onWebSocket setup failed', { error: String(err) });
+      });
     }
+  }
+
+  /**
+   * @internal Resolve when this page's WebSocket monitor is installed,
+   * rejecting if the install failed. The sync wrapper awaits it so its
+   * blocking onWebSocket() reports a failure the async caller cannot see.
+   */
+  async _whenWebSocketSetup(): Promise<void> {
+    // Captured before awaiting: a failed install resets wsSetup to null, and
+    // the raise must come from the setup this caller registered under.
+    const setup = this.wsSetup;
+    if (setup) await setup;
+  }
+
+  /**
+   * @internal Remove one registered WebSocket callback. The sync wrapper
+   * unregisters on a failed install so its raised call has no effect.
+   */
+  _removeWebSocketCallback(fn: (ws: WebSocketInfo) => void): void {
+    const i = this.wsCallbacks.indexOf(fn);
+    if (i !== -1) this.wsCallbacks.splice(i, 1);
   }
 
   // --- Dialog Handling ---
@@ -1017,13 +1088,17 @@ export class Page {
   private ensureDataCollector(): void {
     if (this.dataCollectorId !== null) return;
     this.dataCollectorId = 'pending';
-    this.client.send<{ collector: string }>(
+    // sendSetup, not send: the collector must exist before the request whose
+    // body a route/onResponse handler is about to read (#351).
+    this.client.sendSetup<{ collector: string }>(
       'network.addDataCollector',
       { dataTypes: ['request', 'response'], maxEncodedDataSize: 10 * 1024 * 1024 }
     ).then(result => {
       this.dataCollectorId = result.collector;
-    }).catch(() => {
+    }).catch(err => {
+      // Reset so a later listener retries; bodies are unavailable until then.
       this.dataCollectorId = null;
+      debug('page.ensureDataCollector failed', { error: String(err) });
     });
   }
 
@@ -1043,12 +1118,14 @@ export class Page {
     const requestId = request?.request as string | undefined;
 
     if (isBlocked && requestId) {
-      // This is an intercepted request — match against routes
-      const requestUrl = (request?.url as string) ?? '';
+      // This is an intercepted request. The binary already matched the URL
+      // against every registered pattern (vibiumMatchedPatterns), so
+      // dispatch is a membership check, not a glob evaluation.
+      const matched = (params.vibiumMatchedPatterns as string[] | undefined) ?? [];
       const req = new Request(params, this.client);
 
       for (const routeEntry of this.routes) {
-        if (matchPattern(routeEntry.pattern, requestUrl)) {
+        if (matched.includes(routeEntry.pattern)) {
           const route = new Route(this.client, requestId, req);
           // Catch errors from async route handlers (fire-and-forget pattern)
           try {

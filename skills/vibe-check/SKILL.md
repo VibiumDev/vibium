@@ -5,7 +5,7 @@ description: Browser automation for AI agents. Use when the user needs to naviga
 
 # Vibium Browser Automation — CLI Reference
 
-The `vibium` CLI automates Chrome via the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
+The `vibium` CLI automates Chrome (and Firefox, via `--engine firefox`) from the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
 
 ```
 vibium go <url> && vibium map && vibium click @e1 && vibium map
@@ -141,8 +141,26 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium upload "<selector>" <files...>` — set files on input[type=file]
 
 ### Recording
-- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`)
-- `vibium record stop` — stop recording and save ZIP (`-o path`)
+- `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path` — defaults to a timestamped `record-<date>.zip`, so reruns never overwrite)
+- `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path; the output names the saved file)
+
+Recordings can include a video track of the session (Firefox 154+, local
+browsers). By default video is recorded when the engine supports it and
+skipped otherwise — the stop result says which. Pass `--video` to require
+it (fails with an explanatory error on Chrome), `--video=false` to disable,
+and `--video-size 1280x720` / `--video-fps 30` to override the viewport
+defaults. The video lands inside the recording ZIP next to the trace
+(`video/<context>.webm`); it films the page that was active at start and
+does not follow tab switches. Remote browser connections record every
+track except video; `--video-remote keep` records anyway and leaves the
+file on the remote host (the stop output names its path there).
+
+```
+vibium record start --video -o run.zip
+# ... actions ...
+vibium record stop
+# Saved run.zip (23 steps, 14s video)
+```
 
 ### Cookies
 - `vibium cookies` — list all cookies
@@ -172,6 +190,7 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium daemon start` — start background browser
 - `vibium daemon status` — check if running
 - `vibium daemon stop` — stop daemon
+- `vibium --session <name> <command>` — run against an isolated daemon and browser
 
 ## Common Patterns
 
@@ -260,6 +279,18 @@ vibium map
 vibium stop
 ```
 
+### Concurrent sessions (isolated browsers)
+```sh
+# Two scripts on one host, each with its own daemon and browser
+export VIBIUM_SESSION=checkout-tests
+vibium go https://example.com/checkout
+vibium daemon stop
+
+# Or per command, to drive two browsers from one script
+vibium --session buyer go https://shop.example.com
+vibium --session seller go https://shop.example.com/admin
+```
+
 ### Multi-page workflow
 ```sh
 vibium page new https://docs.example.com
@@ -337,9 +368,12 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 
 | Flag | Description |
 |------|-------------|
+| `--engine <name>` | Browser engine: `chrome` (default) or `firefox` (env: `VIBIUM_ENGINE`) |
+| `--channel <ch>` | Engine release channel: `release` (default) or `beta` — Firefox only (env: `VIBIUM_ENGINE_CHANNEL`) |
 | `--headless` | Hide browser window |
 | `--json` | Output as JSON |
 | `-v, --verbose` | Debug logging |
+| `--session <name>` | Isolated daemon + browser for concurrent use (env: `VIBIUM_SESSION`) |
 
 ## Tips
 
@@ -357,3 +391,4 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 - `vibium check`/`vibium uncheck` are idempotent — safe to call without checking state first
 - Screenshots save to the current directory by default (`-o` to change)
 - Use `vibium storage` / `vibium storage restore` to persist auth across sessions
+- Without `--session`, all commands on a host share one daemon and one browser — set `VIBIUM_SESSION` when running concurrently

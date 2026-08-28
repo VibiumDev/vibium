@@ -31,7 +31,11 @@ public class Response {
         this.url = resp.has("url") ? resp.get("url").getAsString() : "";
         this.status = resp.has("status") ? resp.get("status").getAsInt()
             : (resp.has("statusCode") ? resp.get("statusCode").getAsInt() : 0);
-        this.requestId = params.has("requestId") ? params.get("requestId").getAsString() : "";
+        JsonObject req = params.has("request") && params.get("request").isJsonObject()
+            ? params.getAsJsonObject("request")
+            : params;
+        this.requestId = req.has("request") ? req.get("request").getAsString()
+            : (params.has("requestId") ? params.get("requestId").getAsString() : "");
         this.headers = parseHeaders(resp);
     }
 
@@ -51,12 +55,14 @@ public class Response {
     public String body() {
         try {
             JsonObject params = new JsonObject();
-            params.addProperty("requestId", requestId);
+            params.addProperty("dataType", "response");
+            params.addProperty("request", requestId);
             JsonObject result = client.send("network.getData", params);
-            if (result.has("data")) {
-                String data = result.get("data").getAsString();
-                // Check if it's base64 encoded
-                if (result.has("encoding") && "base64".equals(result.get("encoding").getAsString())) {
+            if (result.has("bytes") && result.get("bytes").isJsonObject()) {
+                JsonObject bytes = result.getAsJsonObject("bytes");
+                if (!bytes.has("value")) return null;
+                String data = bytes.get("value").getAsString();
+                if (bytes.has("type") && "base64".equals(bytes.get("type").getAsString())) {
                     return new String(Base64.getDecoder().decode(data), "UTF-8");
                 }
                 return data;

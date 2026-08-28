@@ -7,7 +7,7 @@
  *   vibium install --engine firefox
  *
  * CI sets VIBIUM_REQUIRE_FIREFOX, which turns every skip into a failure:
- * the green check must prove Firefox and screencast actually ran.
+ * the green check must prove Firefox and video recording actually ran.
  */
 
 const { test, describe, before, after } = require('node:test');
@@ -43,18 +43,88 @@ function skipOrFail(t, reason) {
 }
 
 // Firefox gains BiDi screencast in 154; self-skip on older builds so the
-// recording tests activate on their own once the release channel catches up.
-async function startScreencastOrSkip(t, vibe) {
+// video tests activate on their own once the release channel catches up.
+async function startVideoRecordingOrSkip(t, vibe, options) {
   try {
-    await vibe.screencast.start();
+    await vibe.context.recording.start({ video: true, ...options });
     return true;
   } catch (err) {
     if (/not supported/.test(err.message)) {
-      skipOrFail(t, 'this Firefox does not support screencast yet');
+      skipOrFail(t, 'this Firefox does not support video recording yet');
       return false;
     }
     throw err;
   }
+}
+
+// Minimal EBML scan for the video track's PixelWidth/PixelHeight — an
+// independent oracle for what the encoder actually produced, so the test
+// does not trust the daemon's own reporting.
+function webmPixelDimensions(buf) {
+  const DESCEND = new Set([0x18538067, 0x1654ae6b, 0xae, 0xe0]); // Segment, Tracks, TrackEntry, Video
+  const CLUSTER = 0x1f43b675;
+  let pw = 0;
+  let ph = 0;
+
+  function leadingZeros(byte) {
+    for (let i = 7; i >= 0; i--) if (byte & (1 << i)) return 7 - i;
+    return 8;
+  }
+
+  function walk(start, end) {
+    let pos = start;
+    while (pos < end && !(pw && ph)) {
+      const idLen = leadingZeros(buf[pos]) + 1;
+      if (idLen > 4 || pos + idLen > end) return;
+      let id = 0;
+      for (let i = 0; i < idLen; i++) id = id * 256 + buf[pos + i];
+      pos += idLen;
+
+      const sizeLen = leadingZeros(buf[pos]) + 1;
+      if (sizeLen > 8 || pos + sizeLen > end) return;
+      let size = buf[pos] & (0xff >> sizeLen);
+      let unknown = size === 0xff >> sizeLen;
+      for (let i = 1; i < sizeLen; i++) {
+        size = size * 256 + buf[pos + i];
+        if (buf[pos + i] !== 0xff) unknown = false;
+      }
+      pos += sizeLen;
+
+      if (id === CLUSTER) return;
+      if (DESCEND.has(id)) {
+        if (unknown || pos + size > end) {
+          walk(pos, end);
+          return;
+        }
+        walk(pos, pos + size);
+        pos += size;
+        continue;
+      }
+      if (unknown || pos + size > end) return;
+      if (id === 0xb0 || id === 0xba) {
+        let v = 0;
+        for (let i = 0; i < size; i++) v = v * 256 + buf[pos + i];
+        if (id === 0xb0 && !pw) pw = v;
+        if (id === 0xba && !ph) ph = v;
+      }
+      pos += size;
+    }
+  }
+
+  walk(0, Math.min(buf.length, 64 * 1024));
+  return { width: pw, height: ph };
+}
+
+// Unzip a recording buffer and return { extractedDir, cleanup }.
+function unzipRecording(zipBuffer) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-rec-'));
+  const zipPath = path.join(tmpDir, 'record.zip');
+  fs.writeFileSync(zipPath, zipBuffer);
+  execFileSync('unzip', ['-o', zipPath, '-d', path.join(tmpDir, 'extracted')], { stdio: 'pipe' });
+  return {
+    extractedDir: path.join(tmpDir, 'extracted'),
+    cleanup: () => fs.rmSync(tmpDir, { recursive: true, force: true }),
+  };
 }
 
 before(async () => {
@@ -92,77 +162,96 @@ describe('JS Firefox', () => {
     }
   });
 
-  test('screencast records video natively', async (t) => {
+  test('recording captures a native video track', async (t) => {
     if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
 
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-out-'));
+    const zipPath = path.join(outDir, 'run.zip');
     const bro = await browser.start({ engine: 'firefox', headless: true });
     try {
       const vibe = await bro.page();
       await vibe.go(baseURL);
 
-      if (!(await startScreencastOrSkip(t, vibe))) return;
+      if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
 
       const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
       await link.click();
       await vibe.find('#login', { timeout: 10000 });
 
-      const video = await vibe.screencast.stop();
-      assert.ok(video.length > 1000, 'Video should have real content');
-      // WebM/Matroska EBML magic
-      assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
-        'Video should be a WebM file');
+      const result = await vibe.context.recording.stop();
+      assert.strictEqual(result.path, zipPath, 'Result should carry the delivery path');
+      assert.ok(fs.existsSync(zipPath), 'Recording should land at the declared path');
+      assert.strictEqual(result.videos.length, 1, 'Result should report the video track');
+      assert.ok(result.videos[0].durationMs > 0, 'Video should have a duration');
+      assert.ok(!result.videos[0].error, 'Video should have no error');
+
+      const { extractedDir, cleanup } = unzipRecording(fs.readFileSync(zipPath));
+      try {
+        const videoDir = path.join(extractedDir, 'video');
+        const videos = fs.readdirSync(videoDir).filter((f) => f.endsWith('.webm'));
+        assert.strictEqual(videos.length, 1, 'Zip should contain one video track');
+        const video = fs.readFileSync(path.join(videoDir, videos[0]));
+        assert.ok(video.length > 1000, 'Video should have real content');
+        // WebM/Matroska EBML magic
+        assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
+          'Video should be a WebM file');
+
+        const index = JSON.parse(fs.readFileSync(path.join(videoDir, 'index.json'), 'utf-8'));
+        assert.strictEqual(index.videos.length, 1, 'Manifest should list the video');
+        assert.strictEqual(index.videos[0].file, `video/${videos[0]}`, 'Manifest should name the file');
+        assert.strictEqual(index.videos[0].mimeType, 'video/webm');
+        assert.ok(index.videos[0].offsetMs >= 0, 'Manifest should carry the start offset');
+      } finally {
+        cleanup();
+      }
     } finally {
       await bro.stop();
+      fs.rmSync(outDir, { recursive: true, force: true });
     }
   });
 
-  test('screencast stop can be retried after a failed delivery', async (t) => {
+  // #358: recording.start before the first navigation reported 0x0 video
+  // dimensions — Firefox refuses the viewport script on its privileged
+  // initial page, and the failure was silently swallowed.
+  test('video dimensions are reported when recording starts before navigation', async (t) => {
     if (!haveFirefox) return skipOrFail(t, 'Firefox not installed');
 
-    // A destination under a regular file is unwritable on every platform,
-    // without needing permission tricks.
-    const blocker = path.join(os.tmpdir(), `vibium-test-blocker-${process.pid}`);
-    fs.writeFileSync(blocker, 'not a directory');
-    const badDest = path.join(blocker, 'sub', 'video.webm');
-
-    const bro = await browser.start({ engine: 'firefox', headless: true });
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-firefox-dims-'));
+    const zipPath = path.join(outDir, 'run.zip');
+    const bro = await firefox.start({ headless: true });
     try {
       const vibe = await bro.page();
+      await vibe.setViewport({ width: 1280, height: 720 });
+
+      // Start on the fresh pre-navigation page, like the issue repro.
+      if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
+
       await vibe.go(baseURL);
+      const result = await vibe.context.recording.stop();
 
-      if (!(await startScreencastOrSkip(t, vibe))) return;
+      assert.strictEqual(result.videos.length, 1, 'Result should report the video track');
+      const video = result.videos[0];
+      assert.ok(video.width > 0, `Video width should be reported, got ${video.width}`);
+      assert.ok(video.height > 0, `Video height should be reported, got ${video.height}`);
 
-      await vibe.find('a[href="/login"]', { timeout: 5000 });
+      const { extractedDir, cleanup } = unzipRecording(fs.readFileSync(zipPath));
+      try {
+        const index = JSON.parse(fs.readFileSync(path.join(extractedDir, 'video', 'index.json'), 'utf-8'));
+        assert.strictEqual(index.videos[0].width, video.width, 'Manifest width should match the stop result');
+        assert.strictEqual(index.videos[0].height, video.height, 'Manifest height should match the stop result');
 
-      await assert.rejects(
-        () => vibe.screencast.stop({ path: badDest }),
-        (err) => /failed to save screencast/.test(err.message),
-        'Delivering to an unwritable path should fail'
-      );
-
-      // The recording must survive the failed delivery: a retried stop()
-      // without a path returns the video inline.
-      const video = await vibe.screencast.stop();
-      assert.deepStrictEqual([...video.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3],
-        'Retried stop should still deliver the WebM');
+        // The reported dimensions must describe the encoded stream, not the
+        // viewport the recording was asked for (#358).
+        const webm = fs.readFileSync(path.join(extractedDir, index.videos[0].file));
+        const encoded = webmPixelDimensions(webm);
+        assert.strictEqual(video.width, encoded.width, 'Reported width should match the encoded stream');
+        assert.strictEqual(video.height, encoded.height, 'Reported height should match the encoded stream');
+      } finally {
+        cleanup();
+      }
     } finally {
       await bro.stop();
-      fs.rmSync(blocker, { force: true });
-    }
-  });
-
-  test('screencast on chrome fails with an actionable error', async () => {
-    const bro = await browser.start({ headless: true });
-    try {
-      const vibe = await bro.page();
-      await vibe.go(baseURL);
-      await assert.rejects(
-        () => vibe.screencast.start(),
-        (err) => /not supported by this browser/.test(err.message),
-        'Chrome should explain screencast is unsupported and suggest firefox'
-      );
-    } finally {
-      await bro.stop();
+      fs.rmSync(outDir, { recursive: true, force: true });
     }
   });
 
@@ -177,19 +266,37 @@ describe('JS Firefox', () => {
     );
   });
 
-  test('--firefox-channel selects a separate install', (t) => {
+  test('--channel rejects an unknown channel at the CLI', (t) => {
     const bin = process.env.VIBIUM_BIN_PATH;
     if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
 
-    // Channels live in separate cache directories, so a channel that was
-    // never installed must report not-installed (exit 1) — even on machines
-    // where another channel is present. Purely a local directory check.
+    // Validated up front so a typo names the real problem instead of
+    // surfacing later as "Firefox not found" from the launcher (#314).
     assert.throws(
       () => execFileSync(bin,
-        ['is-installed', '--engine', 'firefox', '--firefox-channel', 'no-such-channel'],
-        { stdio: 'ignore' }),
-      (err) => err.status === 1,
-      'A never-installed channel should report not-installed'
+        ['is-installed', '--engine', 'firefox', '--channel', 'no-such-channel'],
+        { stdio: 'pipe' }),
+      (err) => /unsupported channel/.test(err.stderr.toString()),
+      'An unknown channel should be rejected by CLI validation'
     );
+  });
+
+  test('--channel accepts the valid channels', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    // is-installed may exit 0 or 1 depending on what this machine has in
+    // its cache; the only wrong outcome is the validation error.
+    for (const channel of ['release', 'beta']) {
+      let stderr = '';
+      try {
+        execFileSync(bin, ['is-installed', '--engine', 'firefox', '--channel', channel],
+          { stdio: 'pipe' });
+      } catch (err) {
+        stderr = err.stderr.toString();
+      }
+      assert.ok(!/unsupported channel/.test(stderr),
+        `Channel "${channel}" should pass CLI validation`);
+    }
   });
 });

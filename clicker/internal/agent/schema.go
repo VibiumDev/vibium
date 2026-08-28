@@ -371,7 +371,7 @@ func GetToolSchemas() []Tool {
 					},
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for element to scroll to (optional, defaults to viewport center)",
+						"description": "CSS selector for the element to scroll within (optional; without it the page scrolls at the viewport center)",
 					},
 				},
 				"additionalProperties": false,
@@ -817,6 +817,51 @@ func GetToolSchemas() []Tool {
 					"filename": map[string]interface{}{
 						"type":        "string",
 						"description": "Output filename for the PDF (e.g., page.pdf)",
+					},
+					"landscape": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Landscape orientation (default: portrait)",
+					},
+					"scale": map[string]interface{}{
+						"type":        "number",
+						"description": "Print scale, 0.1-2 (default: 1)",
+					},
+					"background": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Print background graphics (default: false)",
+					},
+					"marginTop": map[string]interface{}{
+						"type":        "number",
+						"description": "Top margin in cm (default: 1)",
+					},
+					"marginBottom": map[string]interface{}{
+						"type":        "number",
+						"description": "Bottom margin in cm (default: 1)",
+					},
+					"marginLeft": map[string]interface{}{
+						"type":        "number",
+						"description": "Left margin in cm (default: 1)",
+					},
+					"marginRight": map[string]interface{}{
+						"type":        "number",
+						"description": "Right margin in cm (default: 1)",
+					},
+					"pageWidth": map[string]interface{}{
+						"type":        "number",
+						"description": "Page width in cm (default: 21.59)",
+					},
+					"pageHeight": map[string]interface{}{
+						"type":        "number",
+						"description": "Page height in cm (default: 27.94)",
+					},
+					"pageRanges": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": []string{"string", "integer"}},
+						"description": "Pages to print, e.g. [1, \"3-5\"] (default: all)",
+					},
+					"shrinkToFit": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Shrink content to fit the page width (default: true)",
 					},
 				},
 				"additionalProperties": false,
@@ -1341,7 +1386,7 @@ func GetToolSchemas() []Tool {
 				"properties": map[string]interface{}{
 					"name": map[string]interface{}{
 						"type":        "string",
-						"description": "Name for the recording (default: \"record\")",
+						"description": "Name for the recording (default: \"record\"; also seeds the default filename stem)",
 					},
 					"title": map[string]interface{}{
 						"type":        "string",
@@ -1378,19 +1423,44 @@ func GetToolSchemas() []Tool {
 						"description": "JPEG quality 0.0-1.0 (default: 0.5, ignored for png)",
 						"default":     0.5,
 					},
+					"video": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Omit to record video when the engine supports it (Firefox 154+). Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
+					},
+					"video_width": map[string]interface{}{
+						"type":        "number",
+						"description": "Video width in pixels (defaults to the viewport)",
+					},
+					"video_height": map[string]interface{}{
+						"type":        "number",
+						"description": "Video height in pixels (defaults to the viewport)",
+					},
+					"video_frame_rate": map[string]interface{}{
+						"type":        "number",
+						"description": "Video frame rate (engine default if omitted)",
+					},
+					"video_remote": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"keep"},
+						"description": "On a remote browser connection, \"keep\" records anyway and leaves the video on the remote host; the stop result reports its remote path. Retrieval and cleanup are the caller's.",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Where the recording ZIP lands at stop (default: a timestamped record-<timestamp>.zip in the server's working directory, or ~/Documents/Vibium when that isn't writable)",
+					},
 				},
 				"additionalProperties": false,
 			},
 		},
 		{
 			Name:        "browser_record_stop",
-			Description: "Stop recording and save to a Playwright-compatible trace ZIP file",
+			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "Output file path (default: record.zip)",
+						"description": "Output file path (overrides the path declared at start; default: record.zip)",
 					},
 				},
 				"additionalProperties": false,

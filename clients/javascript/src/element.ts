@@ -68,8 +68,8 @@ export class Element {
     };
   }
 
-  /** Return params that can identify this element for use as a target (e.g. dragTo). */
-  toParams(): Record<string, unknown> {
+  /** Params that identify this element as a target (e.g. dragTo). */
+  private toParams(): Record<string, unknown> {
     return {
       ...this._params,
       selector: this.selector,
@@ -166,6 +166,13 @@ export class Element {
   /** Focus the element. */
   async focus(options?: ActionOptions): Promise<void> {
     await this.client.send('vibium:element.focus', this.commandParams({
+      timeout: options?.timeout,
+    }));
+  }
+
+  /** Highlight the element with a brief outline, for visual debugging. */
+  async highlight(options?: ActionOptions): Promise<void> {
+    await this.client.send('vibium:element.highlight', this.commandParams({
       timeout: options?.timeout,
     }));
   }
