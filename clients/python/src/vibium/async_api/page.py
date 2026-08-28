@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import fnmatch
 import logging
 import re
 import warnings
@@ -26,15 +25,6 @@ if TYPE_CHECKING:
     from .context import BrowserContext as BrowserContextType
 
 logger = logging.getLogger("vibium")
-
-
-def _match_pattern(pattern: str, url: str) -> bool:
-    """Match a URL against a glob-like pattern."""
-    if pattern == "**":
-        return True
-    if "*" in pattern:
-        return fnmatch.fnmatch(url, pattern)
-    return pattern in url
 
 
 class Keyboard:
@@ -308,95 +298,32 @@ class Page:
         return result["value"]
 
     async def _capture_response(self, pattern: str, timeout: Optional[int] = None) -> Response:
-        """Internal: wait for a response matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        """Internal: wait for a response matching a URL pattern.
 
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
+        The binary matches the pattern and waits for the event; this just
+        awaits the command.
+        """
         self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._response_callbacks:
-                self._response_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureResponse", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Response(result["event"], self._client)
 
     async def _setup_capture_response(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up response listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
-        self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        async def _wait() -> Response:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._response_callbacks:
-                    self._response_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
-
-        return _wait()
+        """Internal: start a response capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_response(pattern, timeout))
 
     async def _capture_request(self, pattern: str, timeout: Optional[int] = None) -> Request:
         """Internal: wait for a request matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
         self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._request_callbacks:
-                self._request_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureRequest", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Request(result["event"], self._client)
 
     async def _setup_capture_request(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up request listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
-        self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        async def _wait() -> Request:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._request_callbacks:
-                    self._request_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
-
-        return _wait()
-
+        """Internal: start a request capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_request(pattern, timeout))
     async def _capture_navigation(self, timeout: Optional[int] = None) -> str:
         """Internal: wait for a navigation event. Resolves with URL."""
         timeout_ms = timeout or 10000
@@ -797,19 +724,31 @@ class Page:
     # --- Network Interception ---
 
     async def route(self, pattern: str, handler: Callable[[Route], Any]) -> None:
-        """Intercept network requests matching a URL pattern."""
-        if self._intercept_id is None:
-            result = await self._client.send("vibium:page.route", {"context": self._context_id})
-            self._intercept_id = result["intercept"]
+        """Intercept network requests matching a URL pattern.
+
+        The binary compiles the pattern, owns the intercept lifecycle, and
+        annotates blocked request events with the patterns that matched, so
+        dispatch never interprets the glob client-side.
+        """
+        result = await self._client.send(
+            "vibium:page.route", {"context": self._context_id, "pattern": pattern}
+        )
+        self._intercept_id = result["intercept"]
 
         self._ensure_data_collector()
         self._routes.append({"pattern": pattern, "handler": handler, "interceptId": self._intercept_id})
 
     async def unroute(self, pattern: str) -> None:
         """Remove a previously registered route."""
+        removed = sum(1 for r in self._routes if r["pattern"] == pattern)
         self._routes = [r for r in self._routes if r["pattern"] != pattern]
-        if not self._routes and self._intercept_id:
-            await self._client.send("network.removeIntercept", {"intercept": self._intercept_id})
+        # The binary refcounts pattern registrations and tears the intercept
+        # down when the last one goes.
+        for _ in range(removed):
+            await self._client.send(
+                "vibium:page.unroute", {"context": self._context_id, "pattern": pattern}
+            )
+        if not self._routes:
             self._intercept_id = None
 
     def on_request(self, fn: Callable[[Request], None]) -> None:
@@ -1053,11 +992,14 @@ class Page:
         request_id = request_data.get("request", "")
 
         if is_blocked and request_id:
-            request_url = request_data.get("url", "")
+            # The binary already matched the URL against every registered
+            # pattern (vibiumMatchedPatterns), so dispatch is a membership
+            # check, not a glob evaluation.
+            matched = params.get("vibiumMatchedPatterns") or []
             req = Request(params, self._client)
 
             for route_entry in self._routes:
-                if _match_pattern(route_entry["pattern"], request_url):
+                if route_entry["pattern"] in matched:
                     route = Route(self._client, request_id, req)
                     try:
                         result = route_entry["handler"](route)
