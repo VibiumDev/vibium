@@ -325,46 +325,23 @@ class Page:
     async def _setup_capture_request(self, pattern: str, timeout: Optional[int] = None) -> Any:
         """Internal: start a request capture now, return a task to await later."""
         return asyncio.get_running_loop().create_task(self._capture_request(pattern, timeout))
+    async def _capture_event_params(self, kind: str, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Internal: one-shot capture, waited out in the engine
+        (vibium:page.captureEvent), so no client keeps its own listener and
+        timeout machinery (#446). Returns the raw event params."""
+        result = await self._client.send("vibium:page.captureEvent", {
+            "context": self._context_id, "kind": kind, "timeout": timeout or 10000,
+        })
+        return result["event"]
+
     async def _capture_navigation(self, timeout: Optional[int] = None) -> str:
         """Internal: wait for a navigation event. Resolves with URL."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(url: str) -> None:
-            self._navigation_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(url)
-
-        self._navigation_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._navigation_callbacks:
-                self._navigation_callbacks.remove(handler)
-            raise errors.TimeoutError("Timeout waiting for navigation")
+        params = await self._capture_event_params("navigation", timeout)
+        return params.get("url", "")
 
     async def _setup_capture_navigation(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up navigation listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(url: str) -> None:
-            self._navigation_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(url)
-
-        self._navigation_callbacks.append(handler)
-
-        async def _wait() -> str:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._navigation_callbacks:
-                    self._navigation_callbacks.remove(handler)
-                raise errors.TimeoutError("Timeout waiting for navigation")
-
-        return _wait()
+        """Internal: start a navigation capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_navigation(timeout))
 
     async def _capture_download(self, timeout: Optional[int] = None) -> Download:
         """Internal: wait for a download event."""
@@ -429,132 +406,55 @@ class Page:
         self._client.send_setup("vibium:dialog.setPolicy", params)
 
     async def _capture_dialog(self, timeout: Optional[int] = None) -> Dialog:
-        """Internal: wait for a dialog event. Callback presence keeps the engine from auto-dismissing."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(dialog: Dialog) -> None:
-            self._dialog_callbacks.remove(handler)
-            self._sync_dialog_policy()
-            if not future.done():
-                future.set_result(dialog)
-
-        self._dialog_callbacks.append(handler)
-        self._sync_dialog_policy()
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._dialog_callbacks:
-                self._dialog_callbacks.remove(handler)
-                self._sync_dialog_policy()
-            raise errors.TimeoutError("Timeout waiting for dialog")
+        """Internal: wait for a dialog event. The pending engine capture keeps
+        the dialog from being auto-dismissed."""
+        params = await self._capture_event_params("dialog", timeout)
+        return Dialog(self._client, self._context_id, params)
 
     async def _setup_capture_dialog(self, timeout: Optional[int] = None, auto_dismiss: bool = False) -> Any:
-        """Internal: set up dialog listener and return a coroutine to await later.
+        """Internal: start a dialog capture now, return a task to await later.
 
-        auto_dismiss dismisses the dialog the moment it is captured. The sync
-        wrappers use it: they return only the dialog's data, so the caller has
-        no handle to close the dialog with, and a dialog left open blocks the
-        page, including a trigger fn stuck inside evaluate("alert(...)"),
-        which otherwise deadlocks the capture (#146).
+        auto_dismiss dismisses the dialog the moment it is captured, not when
+        the task is awaited. The sync wrappers use it: they return only the
+        dialog's data, so the caller has no handle to close the dialog with,
+        and a dialog left open blocks the page, including a trigger fn stuck
+        inside evaluate("alert(...)"), which otherwise deadlocks the capture
+        (#146).
         """
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        task = asyncio.get_running_loop().create_task(self._capture_dialog(timeout))
+        if auto_dismiss:
+            def _dismiss(finished: Any) -> None:
+                if not finished.cancelled() and finished.exception() is None:
+                    asyncio.ensure_future(finished.result().dismiss())
+            task.add_done_callback(_dismiss)
+        return task
 
-        def handler(dialog: Dialog) -> None:
-            self._dialog_callbacks.remove(handler)
-            self._sync_dialog_policy()
-            if not future.done():
-                future.set_result(dialog)
-            if auto_dismiss:
-                asyncio.ensure_future(dialog.dismiss())
-
-        self._dialog_callbacks.append(handler)
-        self._sync_dialog_policy()
-
-        async def _wait() -> Dialog:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._dialog_callbacks:
-                    self._dialog_callbacks.remove(handler)
-                    self._sync_dialog_policy()
-                raise errors.TimeoutError("Timeout waiting for dialog")
-
-        return _wait()
+    _CAPTURE_EVENT_NAMES = ("request", "response", "download", "navigation", "dialog", "console", "error")
 
     async def _capture_event(self, name: str, timeout: Optional[int] = None) -> Any:
         """Internal: wait for a named event."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        callback_list = self._get_callback_list(name)
-        if callback_list is None:
-            raise ValueError(f"Unknown event name: '{name}'")
-
-        def handler(data: Any) -> None:
-            callback_list.remove(handler)
-            self._sync_dialog_policy()
-            if not future.done():
-                future.set_result(data)
-
-        if name in ("request", "response"):
-            self._ensure_data_collector()
-        callback_list.append(handler)
-        self._sync_dialog_policy()
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in callback_list:
-                callback_list.remove(handler)
-                self._sync_dialog_policy()
-            raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
+        if name == "request":
+            return await self._capture_request("**", timeout)
+        if name == "response":
+            return await self._capture_response("**", timeout)
+        if name == "download":
+            return await self._capture_download(timeout)
+        if name == "navigation":
+            return await self._capture_navigation(timeout)
+        if name == "dialog":
+            return await self._capture_dialog(timeout)
+        if name == "console":
+            return ConsoleMessage(await self._capture_event_params("console", timeout))
+        if name == "error":
+            params = await self._capture_event_params("error", timeout)
+            return Exception(params.get("text", "Unknown error"))
+        raise ValueError(f"Unknown event name: '{name}'")
 
     async def _setup_capture_event(self, name: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up event listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        callback_list = self._get_callback_list(name)
-        if callback_list is None:
+        """Internal: start an event capture now, return a task to await later."""
+        if name not in self._CAPTURE_EVENT_NAMES:
             raise ValueError(f"Unknown event name: '{name}'")
-
-        def handler(data: Any) -> None:
-            callback_list.remove(handler)
-            self._sync_dialog_policy()
-            if not future.done():
-                future.set_result(data)
-
-        if name in ("request", "response"):
-            self._ensure_data_collector()
-        callback_list.append(handler)
-        self._sync_dialog_policy()
-
-        async def _wait() -> Any:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in callback_list:
-                    callback_list.remove(handler)
-                    self._sync_dialog_policy()
-                raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
-
-        return _wait()
-
-    def _get_callback_list(self, name: str) -> Optional[List[Callable]]:
-        """Map event name to callback list."""
-        mapping = {
-            "request": self._request_callbacks,
-            "response": self._response_callbacks,
-            "dialog": self._dialog_callbacks,
-            "download": self._download_callbacks,
-            "navigation": self._navigation_callbacks,
-            "console": self._console_callbacks,
-            "error": self._error_callbacks,
-        }
-        return mapping.get(name)
+        return asyncio.get_running_loop().create_task(self._capture_event(name, timeout))
 
     # --- Screenshots & PDF ---
 
