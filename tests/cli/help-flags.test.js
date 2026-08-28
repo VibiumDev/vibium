@@ -86,3 +86,13 @@ describe('CLI: help flags on DisableFlagParsing commands', () => {
     assert.match(result.stderr, /unknown flag: --bogusflag/);
   });
 });
+
+describe('CLI: scroll help names its full surface (#445)', () => {
+  test('all four directions and the real --selector meaning are in the help', () => {
+    const result = spawnSync(VIBIUM, ['scroll', '--help'], { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(result.status, 0);
+    assert.match(result.stdout, /\[up\|down\|left\|right\]/, 'usage line should name the direction set');
+    assert.match(result.stdout, /scroll within/, '--selector should say it scrolls within the element');
+    assert.doesNotMatch(result.stdout, /element to scroll to\b/, 'the old scroll-to wording pointed at into-view');
+  });
+});
