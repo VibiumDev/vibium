@@ -204,6 +204,25 @@ describe('JS Emulation', () => {
     assert.ok(Math.abs(coords.lng - (-74.006)) < 0.001, `longitude should be ~-74.006 after reload, got ${coords.lng}`);
   });
 
+  // --- scroll targeting (#443, #444) ---
+
+  // First client-level coverage of .scroll(): the wire path used to aim the
+  // wheel at (0, 0) when no selector was given.
+  test('scroll() without a selector scrolls the document on a small viewport', async () => {
+    const vibe = await bro.page();
+    await vibe.setContent('<body style="margin:0;height:4000px">tall</body>');
+    await vibe.setViewport({ width: 375, height: 812 });
+    await vibe.scroll('down');
+
+    const deadline = Date.now() + 5000;
+    let y = 0;
+    while (Date.now() < deadline) {
+      y = Number(await vibe.evaluate('window.scrollY'));
+      if (y > 0) break;
+    }
+    assert.ok(y > 0, `document should have scrolled, scrollY=${y}`);
+  });
+
   test('setGeolocation() survives a navigation, last call wins', async () => {
     const vibe = await bro.page();
     await vibe.setContent('<html><body></body></html>');
