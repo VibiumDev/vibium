@@ -61,6 +61,8 @@ type BrowserSession struct {
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
 	prompts     *PromptTracker
+	routes      *routeRegistry
+	captures    *captureRegistry
 	navigations *NavigationTracker
 
 	// Serializes recording start/stop across their async handlers (the
@@ -211,6 +213,8 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		abandonedInternal: make(map[int]struct{}),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
+		routes:            newRouteRegistry(),
+		captures:          newCaptureRegistry(),
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
 	}
@@ -301,6 +305,9 @@ func handlerCapturesBefore(method string) bool {
 func unblocksAnotherCommand(method string) bool {
 	switch method {
 	case "vibium:dialog.accept", "vibium:dialog.dismiss":
+		return true
+	// Captures block until traffic another command produces arrives.
+	case "vibium:page.captureRequest", "vibium:page.captureResponse":
 		return true
 	}
 	return false
@@ -727,6 +734,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.unroute":
 		r.dispatch(session, cmd, r.handlePageUnroute)
 		return
+	case "vibium:page.captureRequest":
+		r.dispatch(session, cmd, r.handlePageCaptureRequest)
+		return
+	case "vibium:page.captureResponse":
+		r.dispatch(session, cmd, r.handlePageCaptureResponse)
+		return
 	case "vibium:network.continue":
 		go r.handleNetworkContinue(session, cmd)
 		return
@@ -975,6 +988,11 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		if r.isWsChannelEvent(session, msg) {
 			continue
 		}
+
+		// Blocked request events carry the matched route patterns, computed
+		// here so clients share one glob dialect (#446).
+		msg = session.routes.annotateBlockedRequest(msg)
+		session.captures.offer(msg)
 
 		// Forward message to client. A Send that blocks means the client has
 		// stopped reading its pipe: every event after this one queues behind
