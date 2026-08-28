@@ -52,11 +52,15 @@ class BiDiClient:
         # setup is surfaced by whoever owns that registration, not injected
         # into an unrelated command.
         self._pending_setups: Set[asyncio.Future] = set()
+        # The loop the receiver runs on, so registration commands issued from
+        # another thread (the sync API's caller thread) can be scheduled here.
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     @classmethod
     async def connect(cls, process: VibiumProcess) -> BiDiClient:
         """Create a BiDiClient from a VibiumProcess with pipe streams."""
         client = cls(process)
+        client._loop = asyncio.get_running_loop()
         client._receiver_task = asyncio.create_task(client._receive_loop())
         # Replay any events that arrived before the ready signal
         if hasattr(process, "_pre_ready_lines"):
@@ -151,6 +155,23 @@ class BiDiClient:
 
         task.add_done_callback(_done)
         return task
+
+    def send_setup_threadsafe(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = 60,
+    ) -> None:
+        """send_setup scheduled from a thread that is not the loop's.
+
+        The sync API registers event handlers on its caller thread. The setup
+        task must be created on the client's loop, and before any command that
+        caller submits next — call_soon_threadsafe and
+        run_coroutine_threadsafe share one FIFO, so issue order holds.
+        """
+        if self._loop is None:
+            raise errors.ConnectionError("Client is not connected")
+        self._loop.call_soon_threadsafe(lambda: self.send_setup(method, params, timeout))
 
     async def _send(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 60) -> Any:
         """Write a command and wait for its response, bypassing the setup gate."""

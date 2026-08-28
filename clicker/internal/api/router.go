@@ -60,10 +60,16 @@ type BrowserSession struct {
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
-	prompts     *PromptTracker
-	routes      *routeRegistry
-	captures    *captureRegistry
-	navigations *NavigationTracker
+	prompts *PromptTracker
+	// dialogManual holds the contexts vibium:dialog.setPolicy has marked
+	// "manual" because a client page has its own dialog handlers. A prompt in
+	// any other context is dismissed by the router as it opens, so no client
+	// implements that default itself (#446). Entries for destroyed contexts
+	// are inert: context ids are never reused.
+	dialogManual map[string]struct{}
+	routes       *routeRegistry
+	captures     *captureRegistry
+	navigations  *NavigationTracker
 
 	// Serializes recording start/stop across their async handlers (the
 	// video screencast negotiation spans several browser commands).
@@ -213,6 +219,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		abandonedInternal: make(map[int]struct{}),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
+		dialogManual:      make(map[string]struct{}),
 		routes:            newRouteRegistry(),
 		captures:          newCaptureRegistry(),
 		exposedPreloadIDs: make(map[string]string),
@@ -760,6 +767,14 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:dialog.dismiss":
 		r.dispatch(session, cmd, r.handleDialogDismiss)
 		return
+	case "vibium:dialog.setPolicy":
+		// Inline, not dispatched: ordering relative to the client's next
+		// command is the guarantee this policy exists to provide. A client
+		// registers a handler, flips the policy, then sends the command that
+		// triggers the dialog; handled in message order, the dialog can never
+		// open under the old policy.
+		r.handleDialogSetPolicy(session, cmd)
+		return
 
 	// WebSocket monitoring
 	case "vibium:page.onWebSocket":
@@ -975,6 +990,12 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
 		session.navigations.Observe([]byte(msg))
+
+		// A prompt no client handler has claimed is dismissed here, so every
+		// client shares one default instead of implementing it (#446).
+		if ctx := session.autoDismissContext(msg); ctx != "" {
+			go r.dismissUnhandledPrompt(session, ctx)
+		}
 
 		// Record event for recording (non-blocking)
 		session.mu.Lock()

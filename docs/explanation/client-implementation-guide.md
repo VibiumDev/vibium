@@ -325,6 +325,10 @@ Events (`onDialog`, `onRequest`, etc.) are received as WebSocket messages with n
 2. If `type` is `"success"` or `"error"` → match to pending request by `id`
 3. If `method` is present (event) → dispatch to registered listeners
 
+### Dialog Policy
+
+The engine dismisses every dialog itself while no dialog handler is registered — clients do not implement that default. The policy is per browsing context: when a page's first dialog handler (or one-shot capture) registers, send `vibium:dialog.setPolicy` with `{"context": <the page's context>, "policy": "manual"}`; when its last one deregisters, send the same with `"policy": "dismiss"`. Issue the command through the same ordered channel as regular commands and ahead of any command that could trigger a dialog (the engine handles it in message order), so a dialog can never open under the policy the page just left.
+
 ---
 
 ## Reserved Keyword Handling
