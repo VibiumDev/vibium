@@ -1725,7 +1725,11 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		x = int(info.Box.X + info.Box.Width/2)
 		y = int(info.Box.Y + info.Box.Height/2)
 	} else {
-		x, y = 400, 300 // Viewport center fallback
+		var err error
+		x, y, err = api.ViewportCenter(s, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find viewport center: %w", err)
+		}
 	}
 
 	// Map direction to deltas (120 pixels per scroll "notch")

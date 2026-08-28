@@ -217,3 +217,17 @@ describe('JS Emulation', () => {
     assert.ok(Math.abs(coords.lng - 139.6503) < 0.001, `longitude should be ~139.6503 after navigation, got ${coords.lng}`);
   });
 });
+
+describe('Page scroll targeting (#443, #444)', () => {
+  // First client-level coverage of .scroll(): the wire path used to aim the
+  // wheel at (0, 0) when no selector was given.
+  test('scroll() without a selector scrolls the document on a small viewport', async () => {
+    const vibe = await bro.page();
+    await vibe.setContent('<body style="margin:0;height:4000px">tall</body>');
+    await vibe.setViewport({ width: 375, height: 812 });
+    await vibe.scroll('down');
+
+    const y = await vibe.evaluate('window.scrollY');
+    assert.ok(Number(y) > 0, `document should have scrolled, scrollY=${y}`);
+  });
+});
