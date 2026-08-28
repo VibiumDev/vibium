@@ -72,8 +72,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 52 | Listen for downloads | *client-side event listener* | — | — | `page.onDownload(fn)` | `page.on_download(fn)` | `page.onDownload(fn)` |
 | 53 | Subscribe to WebSocket events | `vibium:page.onWebSocket` | — | — | `page.onWebSocket(fn)` | `page.on_web_socket(fn)` | `page.onWebSocket(fn)` |
 | 54 | Remove all event listeners | *client-side* | — | — | `page.removeAllListeners(ev?)` | `page.remove_all_listeners(ev?)` | `page.removeAllListeners(ev?)` |
-| 55 | Capture response (before action) | *client-side* | — | — | `page.capture.response(pat, fn?)` | `page.capture.response(pat, fn?)` | `page.capture().response(pat, action)` |
-| 56 | Capture request (before action) | *client-side* | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
+| 55 | Capture response (before action) | `vibium:page.captureResponse` | — | — | `page.capture.response(pat, fn?)` | `page.capture.response(pat, fn?)` | `page.capture().response(pat, action)` |
+| 56 | Capture request (before action) | `vibium:page.captureRequest` | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
 | 57 | Capture navigation (before action) | *client-side* | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
 | 58 | Capture event (before action) | *client-side* | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
 | 59 | Capture download (before action) | *client-side* | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |

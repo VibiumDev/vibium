@@ -36,13 +36,14 @@ public final class Capture {
         return request(pattern, action, null);
     }
 
+    /**
+     * The binary matches the pattern and waits for the event
+     * (vibium:page.captureRequest); this starts that command, runs the
+     * action while it is in flight, and awaits the result.
+     */
     public Request request(String pattern, Runnable action, WaitOptions options) {
-        return await(
-            handler -> page.addRequestListener(handler),
-            handler -> page.removeRequestListener(handler),
-            request -> Page.matchPattern(pattern, request.url()),
-            action,
-            options,
+        return awaitWire("vibium:page.captureRequest", pattern, action, options,
+            event -> page.requestFromEvent(event),
             "request matching '" + pattern + "'");
     }
 
@@ -51,13 +52,33 @@ public final class Capture {
     }
 
     public Response response(String pattern, Runnable action, WaitOptions options) {
-        return await(
-            handler -> page.addResponseListener(handler),
-            handler -> page.removeResponseListener(handler),
-            response -> Page.matchPattern(pattern, response.url()),
-            action,
-            options,
+        return awaitWire("vibium:page.captureResponse", pattern, action, options,
+            event -> page.responseFromEvent(event),
             "response matching '" + pattern + "'");
+    }
+
+    private <T> T awaitWire(String method, String pattern, Runnable action, WaitOptions options,
+                            java.util.function.Function<com.google.gson.JsonObject, T> build, String what) {
+        long timeoutMs = options != null && options.timeout() != null ? options.timeout() : DEFAULT_TIMEOUT_MS;
+        CompletableFuture<com.google.gson.JsonObject> pending = CompletableFuture.supplyAsync(
+            () -> page.sendCapture(method, pattern, timeoutMs), ACTIONS);
+        action.run();
+        try {
+            // The binary enforces timeoutMs; the slack only covers transport.
+            com.google.gson.JsonObject result = pending.get(timeoutMs + 5_000, TimeUnit.MILLISECONDS);
+            return build.apply(result.getAsJsonObject("event"));
+        } catch (TimeoutException e) {
+            pending.cancel(true);
+            throw new VibiumTimeoutException("Timeout waiting for " + what);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof VibiumException) {
+                throw (VibiumException) e.getCause();
+            }
+            throw new VibiumTimeoutException("Timeout waiting for " + what);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new VibiumTimeoutException("Interrupted waiting for " + what);
+        }
     }
 
     public String navigation(Runnable action) {
