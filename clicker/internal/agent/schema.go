@@ -371,7 +371,7 @@ func GetToolSchemas() []Tool {
 					},
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for element to scroll to (optional, defaults to viewport center)",
+						"description": "CSS selector for the element to scroll within (optional; without it the page scrolls at the viewport center)",
 					},
 				},
 				"additionalProperties": false,
