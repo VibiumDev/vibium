@@ -327,7 +327,11 @@ Events (`onDialog`, `onRequest`, etc.) are received as WebSocket messages with n
 
 ### Dialog Policy
 
-The engine dismisses every dialog itself while no dialog handler is registered — clients do not implement that default. The policy is per browsing context: when a page's first dialog handler (or one-shot capture) registers, send `vibium:dialog.setPolicy` with `{"context": <the page's context>, "policy": "manual"}`; when its last one deregisters, send the same with `"policy": "dismiss"`. Issue the command through the same ordered channel as regular commands and ahead of any command that could trigger a dialog (the engine handles it in message order), so a dialog can never open under the policy the page just left.
+The engine dismisses every dialog itself while no dialog handler is registered — clients do not implement that default. The policy is per browsing context: when a page's first dialog handler registers, send `vibium:dialog.setPolicy` with `{"context": <the page's context>, "policy": "manual"}`; when its last one deregisters, send the same with `"policy": "dismiss"`. Issue the command through the same ordered channel as regular commands and ahead of any command that could trigger a dialog (the engine handles it in message order), so a dialog can never open under the policy the page just left. One-shot captures need no policy flip: a pending `vibium:page.captureEvent` with kind `dialog` holds off the auto-dismiss default by itself.
+
+### One-Shot Captures
+
+`capture.request` / `capture.response` send `vibium:page.captureRequest` / `vibium:page.captureResponse` with `{context, pattern, timeout}`; `capture.navigation`, `capture.dialog`, and `capture.event("console" | "error")` send `vibium:page.captureEvent` with `{context, kind, timeout}`. The engine registers the capture in client message order, waits for the first matching event, and answers with its raw params (`{"event": {...}}`) — clients keep no listener or timeout machinery, they build the language object from the returned params. Start the capture command on the wire before running the trigger action, and run the action so that its blocking cannot block the capture's return (a trigger stuck inside `evaluate("alert(...)")` resolves only after the captured dialog is handled). `capture.download` stays a local listener for now: the captured Download must be the same object the `downloadEnd` event completes.
 
 ---
 

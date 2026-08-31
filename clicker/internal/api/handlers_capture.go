@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // handlePageScreenshot handles vibium:page.screenshot — captures a page screenshot.
@@ -139,6 +140,49 @@ func (r *Router) handlePagePDF(session *BrowserSession, cmd bidiCommand) {
 	}
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"data": printResult.Result.Data})
+}
+
+// handlePageCaptureEvent handles vibium:page.captureEvent — a one-shot wait
+// for the next matching event (kind: navigation, dialog, console, error)
+// that returns the event's params. The router runs this inline on the
+// client message order, so the capture is registered before any later command
+// can trigger its event; only the wait itself runs on a goroutine. For dialog
+// captures the inline registration is also what parks the auto-dismiss
+// default before the dialog can open.
+func (r *Router) handlePageCaptureEvent(session *BrowserSession, cmd bidiCommand) {
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	kind, _ := cmd.Params["kind"].(string)
+	capture, err := captureEventKind(kind, context)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	timeoutMs := 10000.0
+	if t, ok := cmd.Params["timeout"].(float64); ok && t > 0 {
+		timeoutMs = t
+	}
+	id, ch := session.captures.add(capture)
+
+	go func() {
+		select {
+		case params := <-ch:
+			var event interface{}
+			if err := json.Unmarshal(params, &event); err != nil {
+				r.sendError(session, cmd.ID, fmt.Errorf("capture event unparseable: %w", err))
+				return
+			}
+			r.sendSuccess(session, cmd.ID, map[string]interface{}{"event": event})
+		case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
+			session.captures.cancel(id)
+			r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for %s", kind))
+		case <-session.stopChan:
+			session.captures.cancel(id)
+		}
+	}()
 }
 
 // ---------------------------------------------------------------------------

@@ -924,15 +924,30 @@ public class Page {
     }
 
     /** Send a one-shot capture command; the binary matches and waits. */
-    JsonObject sendCapture(String method, String pattern, long timeoutMs) {
+    java.util.concurrent.CompletableFuture<JsonObject> sendCapture(String method, String pattern, long timeoutMs) {
         JsonObject params = contextParams();
         params.addProperty("pattern", pattern);
         params.addProperty("timeout", timeoutMs);
-        return client.send(method, params);
+        return client.sendAsync(method, params);
+    }
+
+    java.util.concurrent.CompletableFuture<JsonObject> sendCaptureEvent(String kind, long timeoutMs) {
+        JsonObject params = contextParams();
+        params.addProperty("kind", kind);
+        params.addProperty("timeout", timeoutMs);
+        return client.sendAsync("vibium:page.captureEvent", params);
     }
 
     Request requestFromEvent(JsonObject event) {
         return new Request(client, event);
+    }
+
+    Dialog dialogFromEvent(JsonObject event) {
+        return new Dialog(client, event);
+    }
+
+    ConsoleMessage consoleFromEvent(JsonObject event) {
+        return new ConsoleMessage(event);
     }
 
     Response responseFromEvent(JsonObject event) {

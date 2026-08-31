@@ -14,7 +14,10 @@ Server blocks:
 """
 
 import asyncio
+import os
 import re
+import signal
+import subprocess
 import textwrap
 import threading
 from pathlib import Path
@@ -187,15 +190,58 @@ def run_sync_block(code, vibe, base_url=None):
 TUTORIAL_TIMEOUT = 120
 
 
+def _vibium_children():
+    """PIDs of vibium processes whose parent is this test process.
+
+    Name-anchored and parent-filtered on purpose: substring matching would
+    also hit unrelated processes (a user name containing "vibium" puts the
+    word in every process's environment path), and parallel pytest workers
+    own their own children.
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-eo", "pid=,ppid=,comm="],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    me = str(os.getpid())
+    pids = set()
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[1] == me and os.path.basename(parts[2]) == "vibium":
+            pids.add(int(parts[0]))
+    return pids
+
+
+def _kill_leaked_vibium(before):
+    """Terminate vibium children a timed-out block left behind.
+
+    An abandoned block's session keeps pytest's pipes open, so even a
+    correctly bounded failure blocked the run's exit until the phase
+    watchdog killed it, discarding the report (#397 incident 12). vibium
+    shuts its browser down on SIGTERM.
+    """
+    for pid in _vibium_children() - before:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+
 async def run_async_standalone(code, base_url=None):
     """Exec a standalone async block that manages its own browser lifecycle."""
     indented = textwrap.indent(code, "    ")
     wrapped = f"async def _run(base_url):\n{indented}\n"
     ns = {}
     exec(compile(wrapped, "<tutorial>", "exec"), ns)
+    before = _vibium_children()
     try:
         await asyncio.wait_for(ns["_run"](base_url), timeout=TUTORIAL_TIMEOUT)
     except asyncio.TimeoutError:
+        # The cancelled task's cleanup is exactly what is wedged in a #397
+        # hang, so it cannot be trusted to close its own session.
+        _kill_leaked_vibium(before)
         # asyncio.TimeoutError is not the builtin TimeoutError before 3.11
         raise TimeoutError(f"tutorial block still running after {TUTORIAL_TIMEOUT}s") from None
 
@@ -203,9 +249,8 @@ async def run_async_standalone(code, base_url=None):
 def run_sync_standalone(code, base_url=None):
     """Exec a standalone sync block that manages its own browser lifecycle."""
     # A hung sync block cannot be interrupted in place, so it runs on a
-    # scrap thread that gets abandoned on timeout; the leaked browser is
-    # cleaned by the suite's process cleanup, and the alternative was the
-    # watchdog killing the whole phase.
+    # scrap thread that gets abandoned on timeout; its session is killed
+    # here, and the alternative was the watchdog killing the whole phase.
     result = {}
 
     def _target():
@@ -214,10 +259,12 @@ def run_sync_standalone(code, base_url=None):
         except BaseException as e:
             result["error"] = e
 
+    before = _vibium_children()
     worker = threading.Thread(target=_target, daemon=True)
     worker.start()
     worker.join(TUTORIAL_TIMEOUT)
     if worker.is_alive():
+        _kill_leaked_vibium(before)
         raise TimeoutError(f"tutorial block still running after {TUTORIAL_TIMEOUT}s")
     if "error" in result:
         raise result["error"]
