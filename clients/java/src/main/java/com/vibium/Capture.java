@@ -12,10 +12,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * One-shot event capture helpers. Each method registers its listener before
- * starting the action, then removes that listener on every exit path.
+ * One-shot event capture helpers. The binary owns the matching and the wait
+ * (vibium:page.captureRequest/captureResponse/captureEvent); each method
+ * starts that command, runs the action while it is in flight, and awaits the
+ * result. Downloads still capture through a local listener, because the
+ * captured Download must be the same object the downloadEnd event completes.
  */
 public final class Capture {
 
@@ -36,13 +40,10 @@ public final class Capture {
         return request(pattern, action, null);
     }
 
-    /**
-     * The binary matches the pattern and waits for the event
-     * (vibium:page.captureRequest); this starts that command, runs the
-     * action while it is in flight, and awaits the result.
-     */
     public Request request(String pattern, Runnable action, WaitOptions options) {
-        return awaitWire("vibium:page.captureRequest", pattern, action, options,
+        long timeoutMs = timeout(options);
+        return awaitWire(() -> page.sendCapture("vibium:page.captureRequest", pattern, timeoutMs),
+            timeoutMs, action,
             event -> page.requestFromEvent(event),
             "request matching '" + pattern + "'");
     }
@@ -52,33 +53,11 @@ public final class Capture {
     }
 
     public Response response(String pattern, Runnable action, WaitOptions options) {
-        return awaitWire("vibium:page.captureResponse", pattern, action, options,
+        long timeoutMs = timeout(options);
+        return awaitWire(() -> page.sendCapture("vibium:page.captureResponse", pattern, timeoutMs),
+            timeoutMs, action,
             event -> page.responseFromEvent(event),
             "response matching '" + pattern + "'");
-    }
-
-    private <T> T awaitWire(String method, String pattern, Runnable action, WaitOptions options,
-                            java.util.function.Function<com.google.gson.JsonObject, T> build, String what) {
-        long timeoutMs = options != null && options.timeout() != null ? options.timeout() : DEFAULT_TIMEOUT_MS;
-        CompletableFuture<com.google.gson.JsonObject> pending = CompletableFuture.supplyAsync(
-            () -> page.sendCapture(method, pattern, timeoutMs), ACTIONS);
-        action.run();
-        try {
-            // The binary enforces timeoutMs; the slack only covers transport.
-            com.google.gson.JsonObject result = pending.get(timeoutMs + 5_000, TimeUnit.MILLISECONDS);
-            return build.apply(result.getAsJsonObject("event"));
-        } catch (TimeoutException e) {
-            pending.cancel(true);
-            throw new VibiumTimeoutException("Timeout waiting for " + what);
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof VibiumException) {
-                throw (VibiumException) e.getCause();
-            }
-            throw new VibiumTimeoutException("Timeout waiting for " + what);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new VibiumTimeoutException("Interrupted waiting for " + what);
-        }
     }
 
     public String navigation(Runnable action) {
@@ -86,28 +65,10 @@ public final class Capture {
     }
 
     public String navigation(Runnable action, WaitOptions options) {
-        // page.go() returns once navigation completes, but its event is
-        // delivered asynchronously and can land after this capture registers
-        // its handler and actionStarted flips -- that guard only rejects
-        // events seen before the action begins. Matching any navigation then
-        // completes on the stale event and returns the previous URL. Wait for
-        // a move away from where the page is now instead.
-        //
-        // The trade-off: a navigation to the URL the page is already on is not
-        // captured. Returning the wrong URL is the worse failure.
-        String from;
-        try {
-            from = page.url();
-        } catch (RuntimeException ignored) {
-            from = null;
-        }
-        String previous = from;
-        return await(
-            handler -> page.addNavigationListener(handler),
-            handler -> page.removeNavigationListener(handler),
-            value -> previous == null || !previous.equals(value),
-            action,
-            options,
+        long timeoutMs = timeout(options);
+        return awaitWire(() -> page.sendCaptureEvent("navigation", timeoutMs),
+            timeoutMs, action,
+            event -> event.has("url") ? event.get("url").getAsString() : "",
             "navigation");
     }
 
@@ -119,7 +80,6 @@ public final class Capture {
         return await(
             handler -> page.addDownloadListener(handler),
             handler -> page.removeDownloadListener(handler),
-            value -> true,
             action,
             options,
             "download");
@@ -130,12 +90,10 @@ public final class Capture {
     }
 
     public Dialog dialog(Runnable action, WaitOptions options) {
-        return await(
-            handler -> page.addDialogListener(handler),
-            handler -> page.removeDialogListener(handler),
-            value -> true,
-            action,
-            options,
+        long timeoutMs = timeout(options);
+        return awaitWire(() -> page.sendCaptureEvent("dialog", timeoutMs),
+            timeoutMs, action,
+            event -> page.dialogFromEvent(event),
             "dialog");
     }
 
@@ -146,41 +104,72 @@ public final class Capture {
     public Object event(String name, Runnable action, WaitOptions options) {
         switch (name) {
             case "request":
-                return awaitAny(page::addRequestListener, page::removeRequestListener,
-                    action, options, name);
+                return request("**", action, options);
             case "response":
-                return awaitAny(page::addResponseListener, page::removeResponseListener,
-                    action, options, name);
+                return response("**", action, options);
             case "navigation":
-                return awaitAny(page::addNavigationListener, page::removeNavigationListener,
-                    action, options, name);
+                return navigation(action, options);
             case "download":
-                return awaitAny(page::addDownloadListener, page::removeDownloadListener,
-                    action, options, name);
+                return download(action, options);
             case "dialog":
-                return awaitAny(page::addDialogListener, page::removeDialogListener,
-                    action, options, name);
-            case "console":
-                return awaitAny(page::addConsoleListener, page::removeConsoleListener,
-                    action, options, name);
-            case "error":
-                return awaitAny(page::addErrorListener, page::removeErrorListener,
-                    action, options, name);
+                return dialog(action, options);
+            case "console": {
+                long timeoutMs = timeout(options);
+                return awaitWire(() -> page.sendCaptureEvent("console", timeoutMs),
+                    timeoutMs, action,
+                    event -> page.consoleFromEvent(event),
+                    "event 'console'");
+            }
+            case "error": {
+                long timeoutMs = timeout(options);
+                return awaitWire(() -> page.sendCaptureEvent("error", timeoutMs),
+                    timeoutMs, action,
+                    event -> event.has("text") ? event.get("text").getAsString() : "",
+                    "event 'error'");
+            }
             default:
                 throw new IllegalArgumentException("Unknown event name: '" + name + "'");
         }
     }
 
-    private <T> T awaitAny(Consumer<Consumer<T>> register,
-                           Consumer<Consumer<T>> unregister,
-                           Runnable action, WaitOptions options, String name) {
-        return await(register, unregister, value -> true, action, options,
-            "event '" + name + "'");
+    private <T> T awaitWire(Supplier<CompletableFuture<com.google.gson.JsonObject>> start, long timeoutMs,
+                            Runnable action,
+                            java.util.function.Function<com.google.gson.JsonObject, T> build, String what) {
+        if (action == null) {
+            throw new IllegalArgumentException("capture action must not be null");
+        }
+        // The capture command is written on this thread before the action can
+        // send anything, so the engine registers the capture first, in
+        // message order.
+        CompletableFuture<com.google.gson.JsonObject> pending = start.get();
+        // The action runs on the executor: a trigger that blocks until the
+        // captured thing is handled — an eval stuck inside the alert it
+        // opened (#146) — must not block the capture's return.
+        CompletableFuture<Void> actionFuture = CompletableFuture.runAsync(action::run, ACTIONS);
+        actionFuture.whenComplete((ignored, error) -> {
+            if (error != null) pending.completeExceptionally(unwrap(error));
+        });
+        try {
+            // The binary enforces timeoutMs; the slack only covers transport.
+            com.google.gson.JsonObject result = pending.get(timeoutMs + 5_000, TimeUnit.MILLISECONDS);
+            return build.apply(result.getAsJsonObject("event"));
+        } catch (TimeoutException e) {
+            pending.cancel(true);
+            throw new VibiumTimeoutException("Timeout waiting for " + what);
+        } catch (ExecutionException e) {
+            Throwable cause = unwrap(e.getCause());
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            throw new VibiumException("Capture action failed: " + cause.getMessage(), cause);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new VibiumTimeoutException("Interrupted waiting for " + what);
+        }
     }
 
     private <T> T await(Consumer<Consumer<T>> register,
                         Consumer<Consumer<T>> unregister,
-                        java.util.function.Predicate<T> matches,
                         Runnable action, WaitOptions options, String description) {
         if (action == null) {
             throw new IllegalArgumentException("capture action must not be null");
@@ -189,7 +178,7 @@ public final class Capture {
         CompletableFuture<T> captured = new CompletableFuture<>();
         AtomicBoolean actionStarted = new AtomicBoolean();
         Consumer<T> handler = value -> {
-            if (actionStarted.get() && matches.test(value)) {
+            if (actionStarted.get()) {
                 captured.complete(value);
             }
         };

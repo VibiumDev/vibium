@@ -842,22 +842,24 @@ export class Page {
     return new Response(result.event, this.client);
   }
 
-  /** @internal Capture a navigation event. Resolves with the URL. */
-  _captureNavigation(options?: { timeout?: number }): Promise<string> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for navigation`));
-      }, timeout);
-
-      const handler = (url: string) => {
-        clearTimeout(timer);
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        resolve(url);
-      };
-      this.navigationCallbacks.push(handler);
+  /**
+   * @internal One-shot capture, waited out in the engine
+   * (vibium:page.captureEvent), so no client keeps its own listener and
+   * timeout machinery (#446). Returns the raw event params.
+   */
+  private async captureEventParams(kind: string, options?: { timeout?: number }): Promise<Record<string, unknown>> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureEvent', {
+      context: this.contextId,
+      kind,
+      timeout: options?.timeout ?? 10000,
     });
+    return result.event;
+  }
+
+  /** @internal Capture a navigation event. Resolves with the URL. */
+  async _captureNavigation(options?: { timeout?: number }): Promise<string> {
+    const params = await this.captureEventParams('navigation', options);
+    return (params.url as string) ?? '';
   }
 
   /** @internal Capture a download event. */
@@ -878,85 +880,34 @@ export class Page {
     });
   }
 
-  /** @internal Capture a dialog event. The registered callback keeps the engine from auto-dismissing. */
-  _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Dialog>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.removeDialogCallback(handler);
-        reject(new Error(`Timeout waiting for dialog`));
-      }, timeout);
-
-      const handler = (dialog: Dialog) => {
-        clearTimeout(timer);
-        this.removeDialogCallback(handler);
-        resolve(dialog);
-      };
-      this.addDialogCallback(handler);
-    });
+  /** @internal Capture a dialog event. The pending engine capture keeps the dialog from being auto-dismissed. */
+  async _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
+    const params = await this.captureEventParams('dialog', options);
+    return new Dialog(this.client, this.contextId, params);
   }
 
-  /** @internal Capture a named event. Maps event name to the appropriate callback array. */
-  _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout waiting for event '${name}'`));
-      }, timeout);
-
-      let cleanup: () => void;
-
-      switch (name) {
-        case 'request': {
-          const handler = (req: Request) => { clearTimeout(timer); cleanup(); resolve(req); };
-          this.requestCallbacks.push(handler);
-          cleanup = () => { this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'response': {
-          const handler = (resp: Response) => { clearTimeout(timer); cleanup(); resolve(resp); };
-          this.responseCallbacks.push(handler);
-          cleanup = () => { this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'dialog': {
-          const handler = (dialog: Dialog) => { clearTimeout(timer); cleanup(); resolve(dialog); };
-          this.addDialogCallback(handler);
-          cleanup = () => { this.removeDialogCallback(handler); };
-          break;
-        }
-        case 'download': {
-          const handler = (download: Download) => { clearTimeout(timer); cleanup(); resolve(download); };
-          this.downloadCallbacks.push(handler);
-          cleanup = () => { this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'navigation': {
-          const handler = (url: string) => { clearTimeout(timer); cleanup(); resolve(url); };
-          this.navigationCallbacks.push(handler);
-          cleanup = () => { this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'console': {
-          const handler = (msg: ConsoleMessage) => { clearTimeout(timer); cleanup(); resolve(msg); };
-          this.consoleCallbacks.push(handler);
-          cleanup = () => { this.consoleCallbacks = this.consoleCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'error': {
-          const handler = (err: Error) => { clearTimeout(timer); cleanup(); resolve(err); };
-          this.errorCallbacks.push(handler);
-          cleanup = () => { this.errorCallbacks = this.errorCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        default:
-          clearTimeout(timer);
-          reject(new Error(`Unknown event name: '${name}'`));
+  /** @internal Capture a named event. */
+  async _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
+    switch (name) {
+      case 'request':
+        return this._captureRequest('**', options);
+      case 'response':
+        return this._captureResponse('**', options);
+      case 'download':
+        return this._captureDownload(options);
+      case 'navigation':
+        return this._captureNavigation(options);
+      case 'dialog':
+        return this._captureDialog(options);
+      case 'console':
+        return new ConsoleMessage(await this.captureEventParams('console', options));
+      case 'error': {
+        const params = await this.captureEventParams('error', options);
+        return new Error((params.text as string) ?? 'Unknown error');
       }
-    });
+      default:
+        throw new Error(`Unknown event name: '${name}'`);
+    }
   }
 
   /** Set extra HTTP headers for all requests in this page. */

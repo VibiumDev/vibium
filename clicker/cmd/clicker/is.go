@@ -111,7 +111,9 @@ func newIsCmd() *cobra.Command {
 				selector = args[1]
 			}
 
-			fmt.Printf("\nChecking actionability for selector: %s\n", selector)
+			if !jsonOutput {
+				fmt.Printf("\nChecking actionability for selector: %s\n", selector)
+			}
 
 			// Evaluate actionability script
 			script := `(() => {
@@ -173,7 +175,7 @@ func newIsCmd() *cobra.Command {
 				ReceivesEvents bool   `json:"receivesEvents"`
 				Enabled        bool   `json:"enabled"`
 				Editable       bool   `json:"editable"`
-				Error          string `json:"error"`
+				Error          string `json:"error,omitempty"`
 			}
 			if err := json.Unmarshal([]byte(resultText), &actionResult); err != nil {
 				printError(fmt.Errorf("failed to parse actionability result: %w", err))
@@ -181,6 +183,13 @@ func newIsCmd() *cobra.Command {
 			}
 			if actionResult.Error != "" {
 				printError(fmt.Errorf("%s", actionResult.Error))
+				return
+			}
+
+			// The five booleans are the result; a string would lose them.
+			// Struct-valued like paths --json (#392).
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: actionResult})
 				return
 			}
 
