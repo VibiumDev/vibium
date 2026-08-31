@@ -103,6 +103,7 @@ class Page:
         self._request_callbacks: List[Callable] = []
         self._response_callbacks: List[Callable] = []
         self._dialog_callbacks: List[Callable] = []
+        self._dialog_policy_manual = False
         self._console_callbacks: List[Callable] = []
         self._error_callbacks: List[Callable] = []
         self._download_callbacks: List[Callable] = []
@@ -406,23 +407,47 @@ class Page:
 
         return _wait()
 
+    def _sync_dialog_policy(self) -> None:
+        """Tell the engine whether dialogs are handled here.
+
+        Without a handler the engine dismisses each dialog itself (#446).
+        send_setup, so the policy is acknowledged before any later command
+        can trigger a dialog.
+        """
+        manual = bool(self._dialog_callbacks)
+        if manual == self._dialog_policy_manual:
+            return
+        self._dialog_policy_manual = manual
+        params = {"context": self._context_id, "policy": "manual" if manual else "dismiss"}
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # The sync API registers handlers from its caller thread; the
+            # policy command has to be scheduled onto the client's loop.
+            self._client.send_setup_threadsafe("vibium:dialog.setPolicy", params)
+            return
+        self._client.send_setup("vibium:dialog.setPolicy", params)
+
     async def _capture_dialog(self, timeout: Optional[int] = None) -> Dialog:
-        """Internal: wait for a dialog event. Callback presence prevents auto-dismiss."""
+        """Internal: wait for a dialog event. Callback presence keeps the engine from auto-dismissing."""
         timeout_ms = timeout or 10000
         future: asyncio.Future = asyncio.get_running_loop().create_future()
 
         def handler(dialog: Dialog) -> None:
             self._dialog_callbacks.remove(handler)
+            self._sync_dialog_policy()
             if not future.done():
                 future.set_result(dialog)
 
         self._dialog_callbacks.append(handler)
+        self._sync_dialog_policy()
 
         try:
             return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
         except asyncio.TimeoutError:
             if handler in self._dialog_callbacks:
                 self._dialog_callbacks.remove(handler)
+                self._sync_dialog_policy()
             raise errors.TimeoutError("Timeout waiting for dialog")
 
     async def _setup_capture_dialog(self, timeout: Optional[int] = None, auto_dismiss: bool = False) -> Any:
@@ -439,12 +464,14 @@ class Page:
 
         def handler(dialog: Dialog) -> None:
             self._dialog_callbacks.remove(handler)
+            self._sync_dialog_policy()
             if not future.done():
                 future.set_result(dialog)
             if auto_dismiss:
                 asyncio.ensure_future(dialog.dismiss())
 
         self._dialog_callbacks.append(handler)
+        self._sync_dialog_policy()
 
         async def _wait() -> Dialog:
             try:
@@ -452,6 +479,7 @@ class Page:
             except asyncio.TimeoutError:
                 if handler in self._dialog_callbacks:
                     self._dialog_callbacks.remove(handler)
+                    self._sync_dialog_policy()
                 raise errors.TimeoutError("Timeout waiting for dialog")
 
         return _wait()
@@ -467,18 +495,21 @@ class Page:
 
         def handler(data: Any) -> None:
             callback_list.remove(handler)
+            self._sync_dialog_policy()
             if not future.done():
                 future.set_result(data)
 
         if name in ("request", "response"):
             self._ensure_data_collector()
         callback_list.append(handler)
+        self._sync_dialog_policy()
 
         try:
             return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
         except asyncio.TimeoutError:
             if handler in callback_list:
                 callback_list.remove(handler)
+                self._sync_dialog_policy()
             raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
 
     async def _setup_capture_event(self, name: str, timeout: Optional[int] = None) -> Any:
@@ -492,12 +523,14 @@ class Page:
 
         def handler(data: Any) -> None:
             callback_list.remove(handler)
+            self._sync_dialog_policy()
             if not future.done():
                 future.set_result(data)
 
         if name in ("request", "response"):
             self._ensure_data_collector()
         callback_list.append(handler)
+        self._sync_dialog_policy()
 
         async def _wait() -> Any:
             try:
@@ -505,6 +538,7 @@ class Page:
             except asyncio.TimeoutError:
                 if handler in callback_list:
                     callback_list.remove(handler)
+                    self._sync_dialog_policy()
                 raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
 
         return _wait()
@@ -830,6 +864,7 @@ class Page:
 
     def on_dialog(self, handler: Callable[[Dialog], Any]) -> None:
         self._dialog_callbacks.append(handler)
+        self._sync_dialog_policy()
 
     def on_console(self, handler: Union[Callable[[ConsoleMessage], None], str]) -> None:
         """Register a handler for console messages, or pass 'collect' to buffer them."""
@@ -884,6 +919,7 @@ class Page:
             self._response_callbacks.clear()
         if not event or event == "dialog":
             self._dialog_callbacks.clear()
+            self._sync_dialog_policy()
         if not event or event == "console":
             self._console_callbacks.clear()
             self._console_buffer = None
@@ -1026,21 +1062,18 @@ class Page:
             cb(resp)
 
     def _handle_user_prompt_opened(self, params: Dict[str, Any]) -> None:
+        # With no handler registered the engine dismisses the dialog itself
+        # (#446), so there is nothing to do here but deliver.
         dialog = Dialog(self._client, self._context_id, params)
 
-        if self._dialog_callbacks:
-            for cb in self._dialog_callbacks:
-                try:
-                    result = cb(dialog)
-                    if hasattr(result, "__await__"):
-                        import asyncio
-                        asyncio.ensure_future(result)
-                except Exception:
-                    pass
-        else:
-            # Auto-dismiss if no handler registered
-            import asyncio
-            asyncio.ensure_future(dialog.dismiss())
+        for cb in list(self._dialog_callbacks):
+            try:
+                result = cb(dialog)
+                if hasattr(result, "__await__"):
+                    import asyncio
+                    asyncio.ensure_future(result)
+            except Exception:
+                pass
 
     def _handle_log_entry_added(self, params: Dict[str, Any]) -> None:
         entry_type = params.get("type", "")

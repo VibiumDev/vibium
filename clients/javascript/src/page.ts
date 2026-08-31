@@ -221,6 +221,7 @@ export class Page {
   private requestCallbacks: ((request: Request) => void)[] = [];
   private responseCallbacks: ((response: Response) => void)[] = [];
   private dialogCallbacks: ((dialog: Dialog) => void)[] = [];
+  private dialogPolicyManual = false;
   private consoleCallbacks: ((msg: ConsoleMessage) => void)[] = [];
   private errorCallbacks: ((error: Error) => void)[] = [];
   private downloadCallbacks: ((download: Download) => void)[] = [];
@@ -792,6 +793,7 @@ export class Page {
     }
     if (!event || event === 'dialog') {
       this.dialogCallbacks = [];
+      this.syncDialogPolicy();
     }
     if (!event || event === 'console') {
       this.consoleCallbacks = [];
@@ -876,21 +878,21 @@ export class Page {
     });
   }
 
-  /** @internal Capture a dialog event. The registered callback prevents auto-dismiss. */
+  /** @internal Capture a dialog event. The registered callback keeps the engine from auto-dismissing. */
   _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
     const timeout = options?.timeout ?? 10000;
     return new Promise<Dialog>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+        this.removeDialogCallback(handler);
         reject(new Error(`Timeout waiting for dialog`));
       }, timeout);
 
       const handler = (dialog: Dialog) => {
         clearTimeout(timer);
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+        this.removeDialogCallback(handler);
         resolve(dialog);
       };
-      this.dialogCallbacks.push(handler);
+      this.addDialogCallback(handler);
     });
   }
 
@@ -922,8 +924,8 @@ export class Page {
         }
         case 'dialog': {
           const handler = (dialog: Dialog) => { clearTimeout(timer); cleanup(); resolve(dialog); };
-          this.dialogCallbacks.push(handler);
-          cleanup = () => { this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler); };
+          this.addDialogCallback(handler);
+          cleanup = () => { this.removeDialogCallback(handler); };
           break;
         }
         case 'download': {
@@ -1033,7 +1035,33 @@ export class Page {
    * If no handler is registered, dialogs are automatically dismissed.
    */
   onDialog(handler: (dialog: Dialog) => void): void {
+    this.addDialogCallback(handler);
+  }
+
+  /**
+   * The engine dismisses dialogs itself while no handler is registered
+   * (#446); handlers flip it to manual so the dialog stays open for them.
+   * sendSetup, so the policy is acknowledged before any later command can
+   * trigger a dialog.
+   */
+  private syncDialogPolicy(): void {
+    const manual = this.dialogCallbacks.length > 0;
+    if (manual === this.dialogPolicyManual) return;
+    this.dialogPolicyManual = manual;
+    this.client.sendSetup('vibium:dialog.setPolicy', {
+      context: this.contextId,
+      policy: manual ? 'manual' : 'dismiss',
+    }).catch(() => {});
+  }
+
+  private addDialogCallback(handler: (dialog: Dialog) => void): void {
     this.dialogCallbacks.push(handler);
+    this.syncDialogPolicy();
+  }
+
+  private removeDialogCallback(handler: (dialog: Dialog) => void): void {
+    this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+    this.syncDialogPolicy();
   }
 
   /** Register a handler for console messages, or pass 'collect' to buffer them for consoleMessages(). */
@@ -1157,21 +1185,18 @@ export class Page {
   }
 
   private handleUserPromptOpened(params: Record<string, unknown>): void {
+    // With no handler registered the engine dismisses the dialog itself
+    // (#446), so there is nothing to do here but deliver.
     const dialog = new Dialog(this.client, this.contextId, params);
 
-    if (this.dialogCallbacks.length > 0) {
-      for (const cb of this.dialogCallbacks) {
-        // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
-        try {
-          const result = cb(dialog) as unknown;
-          if (result && typeof (result as Promise<void>).catch === 'function') {
-            (result as Promise<void>).catch(() => {});
-          }
-        } catch (_) { /* ignore sync errors from handler */ }
-      }
-    } else {
-      // Auto-dismiss if no handler registered (matches Playwright behavior)
-      dialog.dismiss().catch(() => {});
+    for (const cb of this.dialogCallbacks) {
+      // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
+      try {
+        const result = cb(dialog) as unknown;
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch (_) { /* ignore sync errors from handler */ }
     }
   }
 
