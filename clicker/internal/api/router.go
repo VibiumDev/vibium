@@ -58,6 +58,14 @@ type BrowserSession struct {
 
 	activeContext string // last context foregrounded for pointer input; "" = unknown
 
+	// First-exchange instrumentation (#397): a session whose first command
+	// is never answered looks identical in the logs to one that never
+	// received a command at all. One line when the first command arrives and
+	// one when the first response leaves name the wedged side.
+	connectedAt   time.Time
+	firstCommand  int32 // atomic; 1 = first client command logged
+	firstResponse int32 // atomic; 1 = first response to the client logged
+
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
 	prompts *PromptTracker
@@ -214,6 +222,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		BidiConn:          bidiConn,
 		Client:            client,
 		ownsRemote:        ownsRemoteSession,
+		connectedAt:       time.Now(),
 		stopChan:          make(chan struct{}),
 		internalCmds:      make(map[int]chan json.RawMessage),
 		abandonedInternal: make(map[int]struct{}),
@@ -439,6 +448,14 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 			fmt.Fprintf(os.Stderr, "[router] Failed to send to browser for client %d: %v\n", client.ID(), err)
 		}
 		return
+	}
+
+	// A #397 incident starts as "the client hung": this line proves the
+	// command reached the router, and its missing counterpart (the first
+	// response line) then points at the browser side.
+	if atomic.CompareAndSwapInt32(&session.firstCommand, 0, 1) {
+		fmt.Fprintf(os.Stderr, "[router] first command from client %d: %s (%.1fs after connect)\n",
+			client.ID(), cmd.Method, time.Since(session.connectedAt).Seconds())
 	}
 
 	// Handle vibium: extension commands (per WebDriver BiDi spec for extensions)
@@ -878,8 +895,18 @@ func (r *Router) getContext(session *BrowserSession) (string, error) {
 	return result.Result.Contexts[0].Context, nil
 }
 
+// noteFirstResponse logs the first response this session sends its client,
+// whoever produced it — a vibium: handler or a forwarded browser reply (#397).
+func (s *BrowserSession) noteFirstResponse() {
+	if atomic.CompareAndSwapInt32(&s.firstResponse, 0, 1) {
+		fmt.Fprintf(os.Stderr, "[router] first response to client %d (%.1fs after connect)\n",
+			s.Client.ID(), time.Since(s.connectedAt).Seconds())
+	}
+}
+
 // sendSuccess sends a successful response to the client.
 func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}) {
+	session.noteFirstResponse()
 	resp := bidiResponse{ID: id, Type: "success", Result: result}
 	data, _ := json.Marshal(resp)
 	session.Client.Send(string(data))
@@ -887,6 +914,7 @@ func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}
 
 // sendError sends an error response to the client (follows WebDriver BiDi spec).
 func (r *Router) sendError(session *BrowserSession, id int, err error) {
+	session.noteFirstResponse()
 	resp := bidiResponse{
 		ID:      id,
 		Type:    "error",
@@ -975,6 +1003,9 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			if abandoned {
 				continue
 			}
+
+			// A browser reply about to be forwarded answers a client command.
+			session.noteFirstResponse()
 		}
 
 		// Track page URL from load/navigation events (zero extra BiDi round-trips)
