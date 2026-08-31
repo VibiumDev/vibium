@@ -95,7 +95,6 @@ with LLM agents like Claude Code.
 				}
 
 				connectURL, connectHeaders := connectFromEnv()
-				headless, _ := cmd.Flags().GetBool("headless")
 
 				server := agent.NewServer(version, agent.ServerOptions{
 					ScreenshotDir:  screenshotDir,
@@ -123,6 +122,7 @@ with LLM agents like Claude Code.
 		},
 	}
 	cmd.Flags().String("screenshot-dir", "", "Directory for saving screenshots (default: ~/Pictures/Vibium, use \"\" to disable)")
-	cmd.Flags().Bool("headless", false, "Launch browsers in headless mode (no visible window)")
+	// --headless is the root's persistent flag; a local declaration here
+	// shadowed it out of Global Flags with a divergent description (#452).
 	return cmd
 }
