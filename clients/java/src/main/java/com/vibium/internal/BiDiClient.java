@@ -75,36 +75,10 @@ public class BiDiClient {
      * Send a command and wait for the response with a custom timeout.
      */
     public JsonObject send(String method, JsonObject params, long timeoutMs) {
-        if (closed) {
-            throw new VibiumConnectionException("BiDi client is closed");
-        }
         StackTraceElement[] callerStack = captureCallerStack();
 
         int id = nextId.getAndIncrement();
-        CompletableFuture<JsonObject> future = new CompletableFuture<>();
-        pendingRequests.put(id, future);
-
-        // Build command
-        JsonObject command = new JsonObject();
-        command.addProperty("id", id);
-        command.addProperty("method", method);
-        if (params != null) {
-            command.add("params", params);
-        } else {
-            command.add("params", new JsonObject());
-        }
-
-        // Write to stdin
-        try {
-            synchronized (stdin) {
-                stdin.write(GSON.toJson(command));
-                stdin.newLine();
-                stdin.flush();
-            }
-        } catch (IOException e) {
-            pendingRequests.remove(id);
-            throw new VibiumConnectionException("Failed to send command: " + e.getMessage(), e);
-        }
+        CompletableFuture<JsonObject> future = writeCommand(id, method, params);
 
         // Wait for response
         try {
@@ -125,6 +99,49 @@ public class BiDiClient {
             Thread.currentThread().interrupt();
             throw new VibiumException("Interrupted while waiting for response to " + method);
         }
+    }
+
+    /**
+     * Write a command now and return the pending response as a future.
+     *
+     * The write happens on the caller's thread, so any command sent after
+     * this returns is ordered behind it on the wire. Captures depend on that:
+     * the engine must register the capture before the action that triggers
+     * its event can be processed (#446). No client-side timeout is armed; the
+     * engine answers every capture, with an error once its own timeout
+     * passes.
+     */
+    public CompletableFuture<JsonObject> sendAsync(String method, JsonObject params) {
+        return writeCommand(nextId.getAndIncrement(), method, params);
+    }
+
+    private CompletableFuture<JsonObject> writeCommand(int id, String method, JsonObject params) {
+        if (closed) {
+            throw new VibiumConnectionException("BiDi client is closed");
+        }
+        CompletableFuture<JsonObject> future = new CompletableFuture<>();
+        pendingRequests.put(id, future);
+
+        JsonObject command = new JsonObject();
+        command.addProperty("id", id);
+        command.addProperty("method", method);
+        if (params != null) {
+            command.add("params", params);
+        } else {
+            command.add("params", new JsonObject());
+        }
+
+        try {
+            synchronized (stdin) {
+                stdin.write(GSON.toJson(command));
+                stdin.newLine();
+                stdin.flush();
+            }
+        } catch (IOException e) {
+            pendingRequests.remove(id);
+            throw new VibiumConnectionException("Failed to send command: " + e.getMessage(), e);
+        }
+        return future;
     }
 
     static StackTraceElement[] captureCallerStack() {
