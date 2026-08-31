@@ -53,6 +53,21 @@ describe('CLI: Actionability', () => {
       'Should timeout or report not found'
     );
   });
+
+  test('is actionable honors --json', () => {
+    // The five booleans are the whole result, so under --json they must
+    // come back machine-readable, like the is visible/enabled/checked
+    // siblings (#451).
+    const out = execSync(`${VIBIUM} is actionable ${baseURL}/example "a" --json`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const env = JSON.parse(out.trim()); // throws on the unfixed binary
+    assert.strictEqual(env.ok, true, 'envelope should report ok');
+    for (const key of ['visible', 'stable', 'receivesEvents', 'enabled', 'editable']) {
+      assert.strictEqual(typeof env.result[key], 'boolean', `result.${key} should be a boolean`);
+    }
+  });
 });
 
 describe('CLI: --timeout flag formats', () => {
