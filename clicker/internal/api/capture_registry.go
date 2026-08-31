@@ -106,6 +106,16 @@ func captureEventKind(kind, context string) (*pendingCapture, error) {
 			}
 			return json.Unmarshal(raw, &params) == nil && params.Context == context && params.URL != ""
 		}}, nil
+	case "download":
+		return &pendingCapture{match: func(method string, raw json.RawMessage) bool {
+			if method != "browsingContext.downloadWillBegin" {
+				return false
+			}
+			var params struct {
+				Context string `json:"context"`
+			}
+			return json.Unmarshal(raw, &params) == nil && params.Context == context
+		}}, nil
 	case "dialog":
 		return &pendingCapture{
 			promptContext: context,
@@ -137,10 +147,7 @@ func captureEventKind(kind, context string) (*pendingCapture, error) {
 			return json.Unmarshal(raw, &params) == nil && params.Type == wantType && params.Source.Context == context
 		}}, nil
 	default:
-		// Downloads are absent deliberately: a captured download must be the
-		// same object the client completes on downloadEnd, so download capture
-		// moves into the engine together with that bookkeeping.
-		return nil, fmt.Errorf("unknown capture kind %q (want navigation, dialog, console, or error)", kind)
+		return nil, fmt.Errorf("unknown capture kind %q (want navigation, download, dialog, console, or error)", kind)
 	}
 }
 

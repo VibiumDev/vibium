@@ -226,7 +226,6 @@ export class Page {
   private errorCallbacks: ((error: Error) => void)[] = [];
   private downloadCallbacks: ((download: Download) => void)[] = [];
   private navigationCallbacks: ((url: string) => void)[] = [];
-  private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
   private wsSetup: Promise<unknown> | null = null;
@@ -307,8 +306,6 @@ export class Page {
         this.handleUserPromptOpened(params);
       } else if (event.method === 'browsingContext.downloadWillBegin') {
         this.handleDownloadWillBegin(params);
-      } else if (event.method === 'browsingContext.downloadEnd') {
-        this.handleDownloadCompleted(params);
       } else if (event.method === 'log.entryAdded') {
         // log.entryAdded uses source.context, not params.context
         const source = params.source as { context?: string } | undefined;
@@ -863,21 +860,9 @@ export class Page {
   }
 
   /** @internal Capture a download event. */
-  _captureDownload(options?: { timeout?: number }): Promise<Download> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Download>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for download`));
-      }, timeout);
-
-      const handler = (download: Download) => {
-        clearTimeout(timer);
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        resolve(download);
-      };
-      this.downloadCallbacks.push(handler);
-    });
+  async _captureDownload(options?: { timeout?: number }): Promise<Download> {
+    const params = await this.captureEventParams('download', options);
+    return new Download(this.client, params);
   }
 
   /** @internal Capture a dialog event. The pending engine capture keeps the dialog from being auto-dismissed. */
@@ -1169,29 +1154,11 @@ export class Page {
   }
 
   private handleDownloadWillBegin(params: Record<string, unknown>): void {
-    const url = (params.url as string) ?? '';
-    const suggestedFilename = (params.suggestedFilename as string) ?? '';
-    const navigation = (params.navigation as string) ?? '';
-
-    const download = new Download(this.client, url, suggestedFilename);
-    if (navigation) {
-      this.pendingDownloads.set(navigation, download);
-    }
-
+    // Completion is awaited in the engine by navigation id (#446), so
+    // there is no client-side pending map to feed on downloadEnd.
+    const download = new Download(this.client, params);
     for (const cb of this.downloadCallbacks) {
       cb(download);
-    }
-  }
-
-  private handleDownloadCompleted(params: Record<string, unknown>): void {
-    const navigation = (params.navigation as string) ?? '';
-    const status = (params.status as string) ?? 'complete';
-    const filepath = (params.filepath as string) ?? null;
-
-    const download = this.pendingDownloads.get(navigation);
-    if (download) {
-      download._complete(status, filepath);
-      this.pendingDownloads.delete(navigation);
     }
   }
 

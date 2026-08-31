@@ -76,7 +76,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 56 | Capture request (before action) | `vibium:page.captureRequest` | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
 | 57 | Capture navigation (before action) | `vibium:page.captureEvent` | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
 | 58 | Capture event (before action) | `vibium:page.captureEvent` | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
-| 59 | Capture download (before action) | *client-side* | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |
+| 59 | Capture download (before action) | `vibium:page.captureEvent` | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |
 | 60 | Capture dialog (before action) | `vibium:page.captureEvent` | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
 | 61 | Get buffered console messages | *client-side* | — | — | `page.consoleMessages()` | `page.console_messages()` | `page.consoleMessages()` |
 | 62 | Get buffered page errors | *client-side* | — | — | `page.errors()` | `page.errors()` | `page.errors()` |
@@ -228,7 +228,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 139 | Save a download to path | `vibium:download.saveAs` | ⬜ | ⬜ | `download.saveAs(path)` | `download.save_as(path)` | `download.saveAs(path)` |
 | 140 | Get download URL | *from event data* | — | — | `download.url()` | `download.url()` | `download.url()` |
 | 141 | Get download filename | *from event data* | — | — | `download.suggestedFilename()` | `download.suggested_filename()` | `download.suggestedFilename()` |
-| 142 | Get download path | *from event data* | — | — | `download.path()` | `download.path()` | `download.path()` |
+| 142 | Get download path | `vibium:download.await` | — | — | `download.path()` | `download.path()` | `download.path()` |
 
 ## Request
 

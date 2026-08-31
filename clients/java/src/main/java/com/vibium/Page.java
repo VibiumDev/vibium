@@ -59,8 +59,6 @@ public class Page {
     private final Object dataCollectorLock = new Object();
     private String dataCollectorId;
 
-    // Active downloads keyed by navigation ID
-    private final Map<String, Download> activeDownloads = Collections.synchronizedMap(new HashMap<>());
 
     // Event handler reference for cleanup
     private final Consumer<JsonObject> eventHandler;
@@ -888,9 +886,6 @@ public class Page {
             case "browsingContext.downloadWillBegin":
                 handleDownloadStarted(params);
                 break;
-            case "browsingContext.downloadEnd":
-                handleDownloadCompleted(params);
-                break;
             case "vibium:ws.created":
                 handleWebSocketCreated(params);
                 break;
@@ -944,6 +939,10 @@ public class Page {
 
     Dialog dialogFromEvent(JsonObject event) {
         return new Dialog(client, event);
+    }
+
+    Download downloadFromEvent(JsonObject event) {
+        return new Download(client, event);
     }
 
     ConsoleMessage consoleFromEvent(JsonObject event) {
@@ -1026,24 +1025,12 @@ public class Page {
     }
 
     private void handleDownloadStarted(JsonObject params) {
+        // Completion is awaited in the engine by navigation id (#446), so
+        // there is no client-side pending map to feed on downloadEnd.
         if (downloadListeners.isEmpty()) return;
         Download download = new Download(client, params);
-        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
-        if (!navId.isEmpty()) {
-            activeDownloads.put(navId, download);
-        }
         for (Consumer<Download> listener : downloadListeners) {
             try { listener.accept(download); } catch (Exception ignored) {}
-        }
-    }
-
-    private void handleDownloadCompleted(JsonObject params) {
-        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
-        Download download = activeDownloads.remove(navId);
-        if (download != null) {
-            String status = params.has("status") ? params.get("status").getAsString() : "complete";
-            String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
-            download.complete(status, path);
         }
     }
 

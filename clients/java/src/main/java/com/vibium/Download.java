@@ -4,9 +4,6 @@ import com.google.gson.JsonObject;
 import com.vibium.errors.VibiumException;
 import com.vibium.internal.BiDiClient;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-
 /**
  * File download handle.
  */
@@ -17,7 +14,7 @@ public class Download {
     private final BiDiClient client;
     private final String url;
     private final String suggestedFilename;
-    private final CompletableFuture<String> pathFuture = new CompletableFuture<>();
+    private final String navigation;
 
     Download(BiDiClient client, JsonObject params) {
         this.client = client;
@@ -25,6 +22,7 @@ public class Download {
         this.suggestedFilename = params.has("suggestedFilename")
             ? params.get("suggestedFilename").getAsString()
             : (params.has("filename") ? params.get("filename").getAsString() : "");
+        this.navigation = params.has("navigation") ? params.get("navigation").getAsString() : "";
     }
 
     /** Get the download URL. */
@@ -45,23 +43,27 @@ public class Download {
         client.send("vibium:download.saveAs", params);
     }
 
-    /** Get the temp file path (waits for download to complete). */
+    /**
+     * Get the temp file path (waits for download to complete).
+     *
+     * Completion is awaited in the engine (vibium:download.await), which
+     * tracks every download by its navigation id, so this client keeps no
+     * pending-downloads map. Finished downloads answer immediately, so
+     * asking repeatedly is fine.
+     */
     public String path() {
+        JsonObject params = new JsonObject();
+        params.addProperty("navigation", navigation);
+        params.addProperty("timeout", DOWNLOAD_TIMEOUT_MS);
         try {
-            return pathFuture.get(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            JsonObject result = client.send("vibium:download.await", params, DOWNLOAD_TIMEOUT_MS + 10_000);
+            if (!result.has("status") || !"complete".equals(result.get("status").getAsString())) {
+                return null;
+            }
+            String filepath = result.has("filepath") ? result.get("filepath").getAsString() : "";
+            return filepath.isEmpty() ? null : filepath;
         } catch (Exception e) {
             return null;
-        }
-    }
-
-    /**
-     * Called internally when the download completes.
-     */
-    void complete(String status, String filePath) {
-        if (filePath != null) {
-            pathFuture.complete(filePath);
-        } else {
-            pathFuture.complete(null);
         }
     }
 

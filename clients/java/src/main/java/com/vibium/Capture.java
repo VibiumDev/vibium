@@ -10,16 +10,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
  * One-shot event capture helpers. The binary owns the matching and the wait
  * (vibium:page.captureRequest/captureResponse/captureEvent); each method
  * starts that command, runs the action while it is in flight, and awaits the
- * result. Downloads still capture through a local listener, because the
- * captured Download must be the same object the downloadEnd event completes.
+ * result.
  */
 public final class Capture {
 
@@ -77,11 +74,10 @@ public final class Capture {
     }
 
     public Download download(Runnable action, WaitOptions options) {
-        return await(
-            handler -> page.addDownloadListener(handler),
-            handler -> page.removeDownloadListener(handler),
-            action,
-            options,
+        long timeoutMs = timeout(options);
+        return awaitWire(() -> page.sendCaptureEvent("download", timeoutMs),
+            timeoutMs, action,
+            event -> page.downloadFromEvent(event),
             "download");
     }
 
@@ -165,57 +161,6 @@ public final class Capture {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new VibiumTimeoutException("Interrupted waiting for " + what);
-        }
-    }
-
-    private <T> T await(Consumer<Consumer<T>> register,
-                        Consumer<Consumer<T>> unregister,
-                        Runnable action, WaitOptions options, String description) {
-        if (action == null) {
-            throw new IllegalArgumentException("capture action must not be null");
-        }
-
-        CompletableFuture<T> captured = new CompletableFuture<>();
-        AtomicBoolean actionStarted = new AtomicBoolean();
-        Consumer<T> handler = value -> {
-            if (actionStarted.get()) {
-                captured.complete(value);
-            }
-        };
-
-        register.accept(handler);
-        CompletableFuture<Void> actionFuture;
-        try {
-            actionFuture = CompletableFuture.runAsync(() -> {
-                actionStarted.set(true);
-                action.run();
-            }, ACTIONS);
-        } catch (RuntimeException error) {
-            unregister.accept(handler);
-            throw error;
-        }
-
-        // A normal action completion does not end capture: the event can arrive
-        // after the action returns. A failure before the event does end it.
-        actionFuture.whenComplete((ignored, error) -> {
-            if (error != null) captured.completeExceptionally(unwrap(error));
-        });
-
-        try {
-            return captured.get(timeout(options), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException error) {
-            actionFuture.cancel(true);
-            throw new VibiumTimeoutException("Timeout waiting for " + description);
-        } catch (ExecutionException error) {
-            Throwable cause = unwrap(error.getCause());
-            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
-            throw new VibiumException("Capture action failed: " + cause.getMessage(), cause);
-        } catch (InterruptedException error) {
-            actionFuture.cancel(true);
-            Thread.currentThread().interrupt();
-            throw new VibiumException("Interrupted while waiting for " + description, error);
-        } finally {
-            unregister.accept(handler);
         }
     }
 
