@@ -108,7 +108,6 @@ class Page:
         self._error_callbacks: List[Callable] = []
         self._download_callbacks: List[Callable] = []
         self._navigation_callbacks: List[Callable] = []
-        self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
         self._ws_setup: Optional[asyncio.Future] = None
@@ -345,44 +344,12 @@ class Page:
 
     async def _capture_download(self, timeout: Optional[int] = None) -> Download:
         """Internal: wait for a download event."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(download: Download) -> None:
-            self._download_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(download)
-
-        self._download_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._download_callbacks:
-                self._download_callbacks.remove(handler)
-            raise errors.TimeoutError("Timeout waiting for download")
+        params = await self._capture_event_params("download", timeout)
+        return Download(self._client, params)
 
     async def _setup_capture_download(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up download listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(download: Download) -> None:
-            self._download_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(download)
-
-        self._download_callbacks.append(handler)
-
-        async def _wait() -> Download:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._download_callbacks:
-                    self._download_callbacks.remove(handler)
-                raise errors.TimeoutError("Timeout waiting for download")
-
-        return _wait()
+        """Internal: start a download capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_download(timeout))
 
     def _sync_dialog_policy(self) -> None:
         """Tell the engine whether dialogs are handled here.
@@ -901,8 +868,6 @@ class Page:
             self._handle_user_prompt_opened(params)
         elif method == "browsingContext.downloadWillBegin":
             self._handle_download_will_begin(params)
-        elif method == "browsingContext.downloadEnd":
-            self._handle_download_completed(params)
         elif method == "log.entryAdded":
             self._handle_log_entry_added(params)
         elif method == "browsingContext.load":
@@ -988,25 +953,11 @@ class Page:
                 cb(error)
 
     def _handle_download_will_begin(self, params: Dict[str, Any]) -> None:
-        url = params.get("url", "")
-        filename = params.get("suggestedFilename", "")
-        navigation = params.get("navigation", "")
-
-        download = Download(self._client, url, filename)
-        if navigation:
-            self._pending_downloads[navigation] = download
-
+        # Completion is awaited in the engine by navigation id (#446), so
+        # there is no client-side pending map to feed on downloadEnd.
+        download = Download(self._client, params)
         for cb in self._download_callbacks:
             cb(download)
-
-    def _handle_download_completed(self, params: Dict[str, Any]) -> None:
-        navigation = params.get("navigation", "")
-        status = params.get("status", "complete")
-        filepath = params.get("filepath")
-
-        download = self._pending_downloads.pop(navigation, None)
-        if download:
-            download._complete(status, filepath)
 
     def _handle_ws_created(self, params: Dict[str, Any]) -> None:
         ws_id = params.get("id", 0)

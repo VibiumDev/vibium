@@ -78,6 +78,7 @@ type BrowserSession struct {
 	routes       *routeRegistry
 	captures     *captureRegistry
 	navigations  *NavigationTracker
+	downloads    *downloadRegistry
 
 	// Serializes recording start/stop across their async handlers (the
 	// video screencast negotiation spans several browser commands).
@@ -233,6 +234,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		captures:          newCaptureRegistry(),
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
+		downloads:         newDownloadRegistry(),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -324,6 +326,9 @@ func unblocksAnotherCommand(method string) bool {
 		return true
 	// Captures block until traffic another command produces arrives.
 	case "vibium:page.captureRequest", "vibium:page.captureResponse":
+		return true
+	// A download await blocks until the browser finishes writing the file.
+	case "vibium:download.await":
 		return true
 	}
 	return false
@@ -804,6 +809,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 
 	// Download & file commands
+	case "vibium:download.await":
+		r.dispatch(session, cmd, r.handleDownloadAwait)
+		return
 	case "vibium:download.saveAs":
 		r.dispatch(session, cmd, r.handleDownloadSaveAs)
 		return
@@ -1026,6 +1034,10 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
 		session.navigations.Observe([]byte(msg))
+		// Track downloads before the forward: a client can only learn a
+		// navigation id from the willBegin event, so by the time it can send
+		// download.await the registry has the entry.
+		session.downloads.Observe(msg)
 
 		// A prompt no client handler has claimed is dismissed here, so every
 		// client shares one default instead of implementing it (#446). A

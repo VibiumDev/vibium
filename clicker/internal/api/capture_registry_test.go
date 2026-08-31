@@ -111,6 +111,16 @@ func TestCaptureEventKinds(t *testing.T) {
 		}
 	})
 
+	t.Run("download matches downloadWillBegin for its context", func(t *testing.T) {
+		got := deliver(t, "download", "ctx1",
+			[]string{`{"method":"browsingContext.downloadWillBegin","params":{"context":"ctx2","url":"https://x.test/f.zip"}}`},
+			[]string{`{"method":"browsingContext.downloadWillBegin","params":{"context":"ctx1","url":"https://x.test/f.zip","suggestedFilename":"f.zip","navigation":"nav-9"}}`},
+		)
+		if !strings.Contains(got, "nav-9") {
+			t.Fatalf("params = %s", got)
+		}
+	})
+
 	t.Run("dialog matches userPromptOpened for its context", func(t *testing.T) {
 		got := deliver(t, "dialog", "ctx1",
 			[]string{`{"method":"browsingContext.userPromptOpened","params":{"context":"ctx2","type":"alert"}}`},

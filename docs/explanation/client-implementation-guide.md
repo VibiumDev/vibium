@@ -331,7 +331,11 @@ The engine dismisses every dialog itself while no dialog handler is registered �
 
 ### One-Shot Captures
 
-`capture.request` / `capture.response` send `vibium:page.captureRequest` / `vibium:page.captureResponse` with `{context, pattern, timeout}`; `capture.navigation`, `capture.dialog`, and `capture.event("console" | "error")` send `vibium:page.captureEvent` with `{context, kind, timeout}`. The engine registers the capture in client message order, waits for the first matching event, and answers with its raw params (`{"event": {...}}`) — clients keep no listener or timeout machinery, they build the language object from the returned params. Start the capture command on the wire before running the trigger action, and run the action so that its blocking cannot block the capture's return (a trigger stuck inside `evaluate("alert(...)")` resolves only after the captured dialog is handled). `capture.download` stays a local listener for now: the captured Download must be the same object the `downloadEnd` event completes.
+`capture.request` / `capture.response` send `vibium:page.captureRequest` / `vibium:page.captureResponse` with `{context, pattern, timeout}`; `capture.navigation`, `capture.download`, `capture.dialog`, and `capture.event("console" | "error")` send `vibium:page.captureEvent` with `{context, kind, timeout}`. The engine registers the capture in client message order, waits for the first matching event, and answers with its raw params (`{"event": {...}}`) — clients keep no listener or timeout machinery, they build the language object from the returned params. Start the capture command on the wire before running the trigger action, and run the action so that its blocking cannot block the capture's return (a trigger stuck inside `evaluate("alert(...)")` resolves only after the captured dialog is handled).
+
+### Downloads
+
+The engine tracks every download by its navigation id and saves the file to a session temp dir. A Download object holds the `downloadWillBegin` params (url, suggested filename, navigation id) and nothing else; `path()` and `saveAs()` send `vibium:download.await` with `{navigation, timeout}` and get `{status, filepath}` back once the download ends. The engine answers already-finished downloads immediately, so the accessors can be called repeatedly and in any order. No client watches `downloadEnd` or keeps a pending-downloads map.
 
 ---
 
