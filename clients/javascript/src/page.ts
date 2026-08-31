@@ -221,6 +221,7 @@ export class Page {
   private requestCallbacks: ((request: Request) => void)[] = [];
   private responseCallbacks: ((response: Response) => void)[] = [];
   private dialogCallbacks: ((dialog: Dialog) => void)[] = [];
+  private dialogPolicyManual = false;
   private consoleCallbacks: ((msg: ConsoleMessage) => void)[] = [];
   private errorCallbacks: ((error: Error) => void)[] = [];
   private downloadCallbacks: ((download: Download) => void)[] = [];
@@ -792,6 +793,7 @@ export class Page {
     }
     if (!event || event === 'dialog') {
       this.dialogCallbacks = [];
+      this.syncDialogPolicy();
     }
     if (!event || event === 'console') {
       this.consoleCallbacks = [];
@@ -840,22 +842,24 @@ export class Page {
     return new Response(result.event, this.client);
   }
 
-  /** @internal Capture a navigation event. Resolves with the URL. */
-  _captureNavigation(options?: { timeout?: number }): Promise<string> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for navigation`));
-      }, timeout);
-
-      const handler = (url: string) => {
-        clearTimeout(timer);
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        resolve(url);
-      };
-      this.navigationCallbacks.push(handler);
+  /**
+   * @internal One-shot capture, waited out in the engine
+   * (vibium:page.captureEvent), so no client keeps its own listener and
+   * timeout machinery (#446). Returns the raw event params.
+   */
+  private async captureEventParams(kind: string, options?: { timeout?: number }): Promise<Record<string, unknown>> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureEvent', {
+      context: this.contextId,
+      kind,
+      timeout: options?.timeout ?? 10000,
     });
+    return result.event;
+  }
+
+  /** @internal Capture a navigation event. Resolves with the URL. */
+  async _captureNavigation(options?: { timeout?: number }): Promise<string> {
+    const params = await this.captureEventParams('navigation', options);
+    return (params.url as string) ?? '';
   }
 
   /** @internal Capture a download event. */
@@ -876,85 +880,34 @@ export class Page {
     });
   }
 
-  /** @internal Capture a dialog event. The registered callback prevents auto-dismiss. */
-  _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Dialog>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for dialog`));
-      }, timeout);
-
-      const handler = (dialog: Dialog) => {
-        clearTimeout(timer);
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        resolve(dialog);
-      };
-      this.dialogCallbacks.push(handler);
-    });
+  /** @internal Capture a dialog event. The pending engine capture keeps the dialog from being auto-dismissed. */
+  async _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
+    const params = await this.captureEventParams('dialog', options);
+    return new Dialog(this.client, this.contextId, params);
   }
 
-  /** @internal Capture a named event. Maps event name to the appropriate callback array. */
-  _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout waiting for event '${name}'`));
-      }, timeout);
-
-      let cleanup: () => void;
-
-      switch (name) {
-        case 'request': {
-          const handler = (req: Request) => { clearTimeout(timer); cleanup(); resolve(req); };
-          this.requestCallbacks.push(handler);
-          cleanup = () => { this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'response': {
-          const handler = (resp: Response) => { clearTimeout(timer); cleanup(); resolve(resp); };
-          this.responseCallbacks.push(handler);
-          cleanup = () => { this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'dialog': {
-          const handler = (dialog: Dialog) => { clearTimeout(timer); cleanup(); resolve(dialog); };
-          this.dialogCallbacks.push(handler);
-          cleanup = () => { this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'download': {
-          const handler = (download: Download) => { clearTimeout(timer); cleanup(); resolve(download); };
-          this.downloadCallbacks.push(handler);
-          cleanup = () => { this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'navigation': {
-          const handler = (url: string) => { clearTimeout(timer); cleanup(); resolve(url); };
-          this.navigationCallbacks.push(handler);
-          cleanup = () => { this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'console': {
-          const handler = (msg: ConsoleMessage) => { clearTimeout(timer); cleanup(); resolve(msg); };
-          this.consoleCallbacks.push(handler);
-          cleanup = () => { this.consoleCallbacks = this.consoleCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'error': {
-          const handler = (err: Error) => { clearTimeout(timer); cleanup(); resolve(err); };
-          this.errorCallbacks.push(handler);
-          cleanup = () => { this.errorCallbacks = this.errorCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        default:
-          clearTimeout(timer);
-          reject(new Error(`Unknown event name: '${name}'`));
+  /** @internal Capture a named event. */
+  async _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
+    switch (name) {
+      case 'request':
+        return this._captureRequest('**', options);
+      case 'response':
+        return this._captureResponse('**', options);
+      case 'download':
+        return this._captureDownload(options);
+      case 'navigation':
+        return this._captureNavigation(options);
+      case 'dialog':
+        return this._captureDialog(options);
+      case 'console':
+        return new ConsoleMessage(await this.captureEventParams('console', options));
+      case 'error': {
+        const params = await this.captureEventParams('error', options);
+        return new Error((params.text as string) ?? 'Unknown error');
       }
-    });
+      default:
+        throw new Error(`Unknown event name: '${name}'`);
+    }
   }
 
   /** Set extra HTTP headers for all requests in this page. */
@@ -1033,7 +986,33 @@ export class Page {
    * If no handler is registered, dialogs are automatically dismissed.
    */
   onDialog(handler: (dialog: Dialog) => void): void {
+    this.addDialogCallback(handler);
+  }
+
+  /**
+   * The engine dismisses dialogs itself while no handler is registered
+   * (#446); handlers flip it to manual so the dialog stays open for them.
+   * sendSetup, so the policy is acknowledged before any later command can
+   * trigger a dialog.
+   */
+  private syncDialogPolicy(): void {
+    const manual = this.dialogCallbacks.length > 0;
+    if (manual === this.dialogPolicyManual) return;
+    this.dialogPolicyManual = manual;
+    this.client.sendSetup('vibium:dialog.setPolicy', {
+      context: this.contextId,
+      policy: manual ? 'manual' : 'dismiss',
+    }).catch(() => {});
+  }
+
+  private addDialogCallback(handler: (dialog: Dialog) => void): void {
     this.dialogCallbacks.push(handler);
+    this.syncDialogPolicy();
+  }
+
+  private removeDialogCallback(handler: (dialog: Dialog) => void): void {
+    this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+    this.syncDialogPolicy();
   }
 
   /** Register a handler for console messages, or pass 'collect' to buffer them for consoleMessages(). */
@@ -1157,21 +1136,18 @@ export class Page {
   }
 
   private handleUserPromptOpened(params: Record<string, unknown>): void {
+    // With no handler registered the engine dismisses the dialog itself
+    // (#446), so there is nothing to do here but deliver.
     const dialog = new Dialog(this.client, this.contextId, params);
 
-    if (this.dialogCallbacks.length > 0) {
-      for (const cb of this.dialogCallbacks) {
-        // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
-        try {
-          const result = cb(dialog) as unknown;
-          if (result && typeof (result as Promise<void>).catch === 'function') {
-            (result as Promise<void>).catch(() => {});
-          }
-        } catch (_) { /* ignore sync errors from handler */ }
-      }
-    } else {
-      // Auto-dismiss if no handler registered (matches Playwright behavior)
-      dialog.dismiss().catch(() => {});
+    for (const cb of this.dialogCallbacks) {
+      // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
+      try {
+        const result = cb(dialog) as unknown;
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch (_) { /* ignore sync errors from handler */ }
     }
   }
 

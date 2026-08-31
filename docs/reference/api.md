@@ -74,10 +74,10 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 54 | Remove all event listeners | *client-side* | — | — | `page.removeAllListeners(ev?)` | `page.remove_all_listeners(ev?)` | `page.removeAllListeners(ev?)` |
 | 55 | Capture response (before action) | `vibium:page.captureResponse` | — | — | `page.capture.response(pat, fn?)` | `page.capture.response(pat, fn?)` | `page.capture().response(pat, action)` |
 | 56 | Capture request (before action) | `vibium:page.captureRequest` | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
-| 57 | Capture navigation (before action) | *client-side* | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
-| 58 | Capture event (before action) | *client-side* | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
+| 57 | Capture navigation (before action) | `vibium:page.captureEvent` | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
+| 58 | Capture event (before action) | `vibium:page.captureEvent` | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
 | 59 | Capture download (before action) | *client-side* | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |
-| 60 | Capture dialog (before action) | *client-side* | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
+| 60 | Capture dialog (before action) | `vibium:page.captureEvent` | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
 | 61 | Get buffered console messages | *client-side* | — | — | `page.consoleMessages()` | `page.console_messages()` | `page.consoleMessages()` |
 | 62 | Get buffered page errors | *client-side* | — | — | `page.errors()` | `page.errors()` | `page.errors()` |
 | 170 | Owning browser context | *client-side* | — | — | `page.context` | `page.context` | `page.context()` |

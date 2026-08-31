@@ -40,6 +40,7 @@ public class Page {
     private final CopyOnWriteArrayList<Consumer<Request>> requestListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Response>> responseListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Dialog>> dialogListeners = new CopyOnWriteArrayList<>();
+    private boolean dialogPolicyManual = false;
     private final CopyOnWriteArrayList<Consumer<ConsoleMessage>> consoleListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<String>> errorListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Download>> downloadListeners = new CopyOnWriteArrayList<>();
@@ -610,7 +611,33 @@ public class Page {
 
     /** Listen for dialogs. */
     public void onDialog(Consumer<Dialog> callback) {
-        dialogListeners.add(callback);
+        addDialogListener(callback);
+    }
+
+    /**
+     * Tell the engine whether dialogs are handled here. Without a listener the
+     * engine dismisses each dialog itself (#446); listeners flip it to manual
+     * so the dialog stays open for them. client.send blocks until the policy
+     * is acknowledged, so a dialog triggered by a later command cannot open
+     * under the old policy.
+     */
+    private synchronized void syncDialogPolicy() {
+        boolean manual = !dialogListeners.isEmpty();
+        if (manual == dialogPolicyManual) return;
+        dialogPolicyManual = manual;
+        JsonObject params = new JsonObject();
+        params.addProperty("context", contextId);
+        params.addProperty("policy", manual ? "manual" : "dismiss");
+        if (manual) {
+            client.send("vibium:dialog.setPolicy", params);
+        } else {
+            try {
+                client.send("vibium:dialog.setPolicy", params);
+            } catch (Exception ignored) {
+                // The reset is best-effort; a failure here means the
+                // connection is going away with the session.
+            }
+        }
     }
 
     /** Listen for console messages. */
@@ -677,6 +704,7 @@ public class Page {
             requestListeners.clear();
             responseListeners.clear();
             dialogListeners.clear();
+            syncDialogPolicy();
             consoleListeners.clear();
             errorListeners.clear();
             downloadListeners.clear();
@@ -688,7 +716,7 @@ public class Page {
         switch (event) {
             case "request": requestListeners.clear(); break;
             case "response": responseListeners.clear(); break;
-            case "dialog": dialogListeners.clear(); break;
+            case "dialog": dialogListeners.clear(); syncDialogPolicy(); break;
             case "console": consoleListeners.clear(); break;
             case "error": errorListeners.clear(); break;
             case "download": downloadListeners.clear(); break;
@@ -896,15 +924,30 @@ public class Page {
     }
 
     /** Send a one-shot capture command; the binary matches and waits. */
-    JsonObject sendCapture(String method, String pattern, long timeoutMs) {
+    java.util.concurrent.CompletableFuture<JsonObject> sendCapture(String method, String pattern, long timeoutMs) {
         JsonObject params = contextParams();
         params.addProperty("pattern", pattern);
         params.addProperty("timeout", timeoutMs);
-        return client.send(method, params);
+        return client.sendAsync(method, params);
+    }
+
+    java.util.concurrent.CompletableFuture<JsonObject> sendCaptureEvent(String kind, long timeoutMs) {
+        JsonObject params = contextParams();
+        params.addProperty("kind", kind);
+        params.addProperty("timeout", timeoutMs);
+        return client.sendAsync("vibium:page.captureEvent", params);
     }
 
     Request requestFromEvent(JsonObject event) {
         return new Request(client, event);
+    }
+
+    Dialog dialogFromEvent(JsonObject event) {
+        return new Dialog(client, event);
+    }
+
+    ConsoleMessage consoleFromEvent(JsonObject event) {
+        return new ConsoleMessage(event);
     }
 
     Response responseFromEvent(JsonObject event) {
@@ -958,12 +1001,9 @@ public class Page {
     }
 
     private void handleDialogEvent(JsonObject params) {
+        // With no listener registered the engine dismisses the dialog itself
+        // (#446), so there is nothing to do here but deliver.
         Dialog dialog = new Dialog(client, params);
-        if (dialogListeners.isEmpty()) {
-            // Auto-dismiss if no handler
-            try { dialog.dismiss(); } catch (Exception ignored) {}
-            return;
-        }
         for (Consumer<Dialog> listener : dialogListeners) {
             try { listener.accept(dialog); } catch (Exception ignored) {}
         }
@@ -1051,8 +1091,15 @@ public class Page {
     void removeNavigationListener(Consumer<String> listener) { navigationListeners.remove(listener); }
     void addDownloadListener(Consumer<Download> listener) { downloadListeners.add(listener); }
     void removeDownloadListener(Consumer<Download> listener) { downloadListeners.remove(listener); }
-    void addDialogListener(Consumer<Dialog> listener) { dialogListeners.add(listener); }
-    void removeDialogListener(Consumer<Dialog> listener) { dialogListeners.remove(listener); }
+    void addDialogListener(Consumer<Dialog> listener) {
+        dialogListeners.add(listener);
+        syncDialogPolicy();
+    }
+
+    void removeDialogListener(Consumer<Dialog> listener) {
+        dialogListeners.remove(listener);
+        syncDialogPolicy();
+    }
     void addConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.add(listener); }
     void removeConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.remove(listener); }
     void addErrorListener(Consumer<String> listener) { errorListeners.add(listener); }
