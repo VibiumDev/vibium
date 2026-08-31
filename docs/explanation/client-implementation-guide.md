@@ -390,6 +390,8 @@ The JS client provides some aliases for Playwright compatibility and discoverabi
 
 8. **Logic lives in the binary, clients stay thin.** The default implementation of any method is: send the wire command, return the result. Auto-waiting, actionability, selector semantics, dialog handling, geolocation persistence — all of it runs inside the vibium binary so that every client gets identical behavior for free and none of it is written once per language. Client-side logic is reserved for what genuinely cannot live in the binary: the transport, language-idiomatic types, and delivering events to user callbacks. If a port finds itself implementing behavior, stop and move that behavior into the binary first. This is what keeps N clients maintainable and is enforced socially in review; the API drift checker keeps the surfaces aligned, this rule keeps the semantics aligned.
 
+   One deliberate carve-out: the collect buffers behind `consoleMessages()` and `errors()` stay in the client. They only accumulate events the engine already delivers, which falls under delivering events to user callbacks, and their accessors are synchronous by design — an engine-side buffer would force both onto the wire and turn them async in every async client. A port implements them as an array a collector callback appends to, nothing more.
+
 ---
 
 ## Binary Discovery
