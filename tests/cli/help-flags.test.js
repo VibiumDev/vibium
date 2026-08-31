@@ -87,6 +87,52 @@ describe('CLI: help flags on DisableFlagParsing commands', () => {
   });
 });
 
+describe('CLI: mcp inherits the root --headless flag (#452)', () => {
+  // A section is everything from its header to the next blank line, so the
+  // assertions cannot pass on a flag rendered in the other section.
+  function flagSection(helpText, flag) {
+    for (const header of ['Flags:', 'Global Flags:']) {
+      const start = helpText.indexOf(header);
+      if (start === -1) continue;
+      const body = helpText.slice(start + header.length).split('\n\n')[0];
+      if (body.includes(flag)) return header;
+    }
+    return null;
+  }
+
+  test('--headless renders under Global Flags with the shared description', () => {
+    const result = spawnSync(VIBIUM, ['mcp', '--help'], { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(result.status, 0);
+    assert.strictEqual(
+      flagSection(result.stdout, '--headless'),
+      'Global Flags:',
+      'mcp used to redeclare --headless locally, shadowing the root flag'
+    );
+    assert.match(result.stdout, /Hide browser window \(visible by default\)/, 'the root description should render');
+    assert.doesNotMatch(result.stdout, /Launch browsers in headless mode/, 'the divergent local description must be gone');
+  });
+
+  test('--headless renders where every other command puts it', () => {
+    const click = spawnSync(VIBIUM, ['click', '--help'], { encoding: 'utf-8', timeout: 30000 });
+    const mcp = spawnSync(VIBIUM, ['mcp', '--help'], { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(flagSection(click.stdout, '--headless'), 'Global Flags:');
+    assert.strictEqual(flagSection(mcp.stdout, '--headless'), flagSection(click.stdout, '--headless'));
+  });
+
+  test('mcp --headless still parses', () => {
+    // Guards the opposite regression: deleting the local flag must not drop
+    // the option. Bad flags fail fast with a usage error before any server
+    // starts; a flag cobra accepts leaves the server waiting on stdin, so
+    // closed stdin plus a parse check keeps this browser-free.
+    const result = spawnSync(VIBIUM, ['mcp', '--headless'], {
+      encoding: 'utf-8',
+      timeout: 30000,
+      input: '',
+    });
+    assert.doesNotMatch(result.stderr || '', /unknown flag/, '--headless must still be accepted');
+  });
+});
+
 describe('CLI: scroll help names its full surface (#445)', () => {
   test('all four directions and the real --selector meaning are in the help', () => {
     const result = spawnSync(VIBIUM, ['scroll', '--help'], { encoding: 'utf-8', timeout: 30000 });
