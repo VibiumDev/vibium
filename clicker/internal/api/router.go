@@ -747,6 +747,11 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.captureResponse":
 		r.dispatch(session, cmd, r.handlePageCaptureResponse)
 		return
+	case "vibium:page.captureEvent":
+		// Inline, not dispatched: registration must land before the client's
+		// next command, which may be the trigger for the captured event.
+		r.handlePageCaptureEvent(session, cmd)
+		return
 	case "vibium:network.continue":
 		go r.handleNetworkContinue(session, cmd)
 		return
@@ -992,8 +997,10 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		session.navigations.Observe([]byte(msg))
 
 		// A prompt no client handler has claimed is dismissed here, so every
-		// client shares one default instead of implementing it (#446).
-		if ctx := session.autoDismissContext(msg); ctx != "" {
+		// client shares one default instead of implementing it (#446). A
+		// pending dialog capture claims the prompt the same way a handler
+		// does: the capturer decides how it closes.
+		if ctx := session.autoDismissContext(msg); ctx != "" && !session.captures.wantsPrompt(ctx) {
 			go r.dismissUnhandledPrompt(session, ctx)
 		}
 
