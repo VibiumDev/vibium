@@ -187,6 +187,33 @@ describe('Sync API: Evaluation', () => {
   });
 });
 
+describe('Sync API: Exposed functions', () => {
+
+  test('expose() with a host function returns its value to the page', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    vibe.expose('syncAdd', (a, b) => a + b);
+    assert.strictEqual(vibe.evaluate('window.syncAdd(2, 3)'), 5);
+  });
+
+  test('a throwing host function rejects the page promise with its message', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    vibe.expose('syncExplode', () => { throw new Error('no fuel'); });
+    assert.strictEqual(
+      vibe.evaluate('window.syncExplode().catch((e) => e.message)'),
+      'no fuel'
+    );
+  });
+
+  test('expose() with a string still injects JS source', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    vibe.expose('syncDouble', '(n) => n * 2');
+    assert.strictEqual(vibe.evaluate('window.syncDouble(21)'), 42);
+  });
+});
+
 describe('Sync API: Element finding', () => {
 
   test('find() locates element by CSS selector', () => {

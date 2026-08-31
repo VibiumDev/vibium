@@ -741,6 +741,20 @@ const handlers: Record<string, Handler> = {
 
   // --- Page events (simplified for sync) ---
 
+  'page.exposeWithCallback': async (args) => {
+    const [pageId, name, handlerId] = args as [number, string, string];
+    const page = getPage(pageId);
+    await page.expose(name, async (...fnArgs: unknown[]) => {
+      const outcome = await invokeMainThread(handlerId, fnArgs) as
+        { ok: boolean; value?: unknown; error?: string } | null;
+      if (!outcome || outcome.ok !== true) {
+        throw new Error(outcome?.error ?? `${name} handler failed`);
+      }
+      return outcome.value;
+    });
+    return { success: true };
+  },
+
   'page.onDialog': async (args) => {
     const [pageId, action] = args as [number, 'accept' | 'dismiss'];
     const page = getPage(pageId);
