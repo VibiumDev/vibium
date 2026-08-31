@@ -66,6 +66,62 @@ interface VibiumFindAllResult {
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
+// Exposed host functions are connection-scoped, not Page-instance-scoped:
+// browser.page() hands out a fresh Page object for the same context, and
+// every instance sees every event. One registry and one dispatcher per
+// client means one execution and one reply per call, whichever instance
+// registered the function.
+const exposeRegistries = new WeakMap<BiDiClient, Map<string, (...args: unknown[]) => unknown>>();
+
+function exposeRegistry(client: BiDiClient): Map<string, (...args: unknown[]) => unknown> {
+  let registry = exposeRegistries.get(client);
+  if (!registry) {
+    const fns = new Map<string, (...args: unknown[]) => unknown>();
+    registry = fns;
+    exposeRegistries.set(client, fns);
+    client.onEvent((event) => {
+      if (event.method !== 'vibium:expose.call') return;
+      handleExposeCall(client, fns, event.params as Record<string, unknown>);
+    });
+  }
+  return registry;
+}
+
+async function handleExposeCall(
+  client: BiDiClient,
+  fns: Map<string, (...args: unknown[]) => unknown>,
+  params: Record<string, unknown>,
+): Promise<void> {
+  const name = params.name as string;
+  const seq = params.seq as number;
+  const context = params.context as string;
+  const realm = params.realm as string | undefined;
+
+  // Every outcome answers: an unanswered call leaves the page's promise
+  // parked forever. The reply carries the calling realm back, so the engine
+  // delivers into the document that made the call, not whatever the context
+  // shows after a navigation.
+  const reply = (body: { result?: unknown; error?: string }) => {
+    client.send('vibium:expose.result', { context, realm, seq, ...body }).catch(() => {});
+  };
+
+  const fn = fns.get(name);
+  if (!fn) {
+    reply({ error: `${name} is not exposed` });
+    return;
+  }
+
+  try {
+    const result = await fn(...((params.args as unknown[]) ?? []));
+    // Results cross as JSON; catching the serialization failure here turns
+    // it into a page-side rejection instead of a forever-pending promise.
+    JSON.stringify(result);
+    reply({ result: result === undefined ? null : result });
+  } catch (e) {
+    reply({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 /** Page-level keyboard input. */
 export class Keyboard {
   private client: BiDiClient;
@@ -593,8 +649,27 @@ export class Page {
     });
   }
 
-  /** Expose a function on window. The function body is injected as a string. */
-  async expose(name: string, fn: string): Promise<void> {
+  /**
+   * Expose a function on window.
+   *
+   * Pass a function to expose a host callback: the page calls
+   * window[name](...args), this function runs here, and its return value
+   * resolves the page's promise. Arguments and results cross as JSON.
+   * Pass a string to inject it as JS source instead, defining window[name]
+   * inside the page.
+   *
+   * Either form survives navigation, and re-exposing a name replaces it.
+   */
+  async expose(name: string, fn: string | ((...args: unknown[]) => unknown)): Promise<void> {
+    if (typeof fn === 'function') {
+      exposeRegistry(this.client).set(name, fn);
+      await this.client.send('vibium:page.exposeFunction', {
+        context: this.contextId,
+        name,
+      });
+      return;
+    }
+    exposeRegistries.get(this.client)?.delete(name);
     await this.client.send('vibium:page.expose', {
       context: this.contextId,
       name,

@@ -41,7 +41,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 21 | Evaluate JavaScript | `vibium:page.eval` | `vibium eval <expr>` | `browser_evaluate` | `page.evaluate(expr)` | `page.evaluate(expr)` | `page.evaluate(expr)` |
 | 22 | Add a script tag | `vibium:page.addScript` | ⬜ | ⬜ | `page.addScript(src)` | `page.add_script(src)` | `page.addScript(src)` |
 | 23 | Add a style tag | `vibium:page.addStyle` | ⬜ | ⬜ | `page.addStyle(src)` | `page.add_style(src)` | `page.addStyle(src)` |
-| 24 | Expose a function to the page | `vibium:page.expose` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` | `page.expose(name, fn)` |
+| 24 | Expose a function to the page | `vibium:page.expose` / `vibium:page.exposeFunction` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` | `page.expose(name, fn)` |
 | 25 | Wait for a duration | `vibium:page.wait` | `vibium sleep <ms>` | `browser_sleep` | `page.wait(ms)` | `page.wait(ms)` | `page.sleep(ms)` |
 | 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | — | — | `page.waitFor(sel, options?)` |
 | 27 | Wait for JS function to return truthy | `vibium:page.waitForFunction` | `vibium wait fn <expr>` | `browser_wait_for_fn` | `page.waitForFunction(fn, opts?)` | `page.wait_for_function(fn, **opts)` | `page.waitForFunction(fn, options?)` |
