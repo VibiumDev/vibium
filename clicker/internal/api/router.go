@@ -330,6 +330,10 @@ func unblocksAnotherCommand(method string) bool {
 	// A download await blocks until the browser finishes writing the file.
 	case "vibium:download.await":
 		return true
+	// The command it unblocks is an evaluate stuck awaiting the exposed
+	// function this result settles.
+	case "vibium:expose.result":
+		return true
 	}
 	return false
 }
@@ -619,6 +623,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	case "vibium:page.expose":
 		r.dispatch(session, cmd, r.handlePageExpose)
+		return
+	case "vibium:page.exposeFunction":
+		r.dispatch(session, cmd, r.handlePageExposeFunction)
+		return
+	case "vibium:expose.result":
+		r.dispatch(session, cmd, r.handleExposeResult)
 		return
 
 	// Page-level waiting commands
@@ -1064,6 +1074,11 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 
 		// Check for WebSocket channel events (intercept, don't forward raw script.message)
 		if r.isWsChannelEvent(session, msg) {
+			continue
+		}
+
+		// Expose channel messages become vibium:expose.call events (#298).
+		if r.isExposeChannelEvent(session, msg) {
 			continue
 		}
 
