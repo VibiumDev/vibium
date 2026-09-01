@@ -763,11 +763,18 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.unroute":
 		r.dispatch(session, cmd, r.handlePageUnroute)
 		return
+	// Network captures register inline, in client message order, so the
+	// capture exists before the client's next command can trigger its
+	// traffic; only the wait runs on the dispatch goroutine.
 	case "vibium:page.captureRequest":
-		r.dispatch(session, cmd, r.handlePageCaptureRequest)
+		if wait := r.registerNetworkCapture(session, cmd, "network.beforeRequestSent", "request"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
 		return
 	case "vibium:page.captureResponse":
-		r.dispatch(session, cmd, r.handlePageCaptureResponse)
+		if wait := r.registerNetworkCapture(session, cmd, "network.responseCompleted", "response"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
 		return
 	case "vibium:page.captureEvent":
 		// Inline, not dispatched: registration must land before the client's
