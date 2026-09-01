@@ -184,3 +184,28 @@ func TestDialogCaptureClaimsPrompt(t *testing.T) {
 		t.Fatal("only dialog captures claim prompts")
 	}
 }
+
+// The registration half of a network capture runs inline on the client
+// message order: registered on the dispatch goroutine instead, the capture
+// can lose the race against the very next client command triggering its
+// traffic.
+func TestNetworkCaptureRegistersBeforeNextMessage(t *testing.T) {
+	router := &Router{}
+	client := &recordingTransport{}
+	session := &BrowserSession{
+		Client:   client,
+		stopChan: make(chan struct{}),
+		prompts:  NewPromptTracker(),
+		captures: newCaptureRegistry(),
+	}
+	router.sessions.Store(client.ID(), session)
+
+	router.OnClientMessage(client, `{"id":4,"method":"vibium:page.captureRequest","params":{"context":"ctx-1","pattern":"**","timeout":100}}`)
+
+	session.captures.mu.Lock()
+	pending := len(session.captures.pending)
+	session.captures.mu.Unlock()
+	if pending != 1 {
+		t.Fatalf("the capture must be registered when OnClientMessage returns, have %d pending", pending)
+	}
+}
