@@ -333,6 +333,12 @@ The engine dismisses every dialog itself while no dialog handler is registered �
 
 `capture.request` / `capture.response` send `vibium:page.captureRequest` / `vibium:page.captureResponse` with `{context, pattern, timeout}`; `capture.navigation`, `capture.download`, `capture.dialog`, and `capture.event("console" | "error")` send `vibium:page.captureEvent` with `{context, kind, timeout}`. The engine registers the capture in client message order, waits for the first matching event, and answers with its raw params (`{"event": {...}}`) — clients keep no listener or timeout machinery, they build the language object from the returned params. Start the capture command on the wire before running the trigger action, and run the action so that its blocking cannot block the capture's return (a trigger stuck inside `evaluate("alert(...)")` resolves only after the captured dialog is handled).
 
+### Exposed Functions
+
+`page.expose(name, fn)` with a host function sends `vibium:page.exposeFunction {context, name}`. The engine installs a preload that defines `window[name]` as a promise-returning stub: each call parks its promise under a sequence number and posts `{name, seq, args}` through a script channel. The engine forwards that as a `vibium:expose.call {name, seq, args, context, realm}` event. The client looks the name up in its per-page function map, runs the host function, and sends `vibium:expose.result {context, realm, seq, result | error}`; the engine then settles the parked promise inside the calling realm. Always reply, whatever the outcome — an unanswered call leaves the page's promise pending forever — and reply with an error for a name the page calls that this page never exposed. Arguments and results cross as JSON.
+
+The string form (`vibium:page.expose`) keeps its old meaning: the string is JS source that defines `window[name]` inside the page, with no host round trip.
+
 ### Downloads
 
 The engine tracks every download by its navigation id and saves the file to a session temp dir. A Download object holds the `downloadWillBegin` params (url, suggested filename, navigation id) and nothing else; `path()` and `saveAs()` send `vibium:download.await` with `{navigation, timeout}` and get `{status, filepath}` back once the download ends. The engine answers already-finished downloads immediately, so the accessors can be called repeatedly and in any order. No client watches `downloadEnd` or keeps a pending-downloads map.

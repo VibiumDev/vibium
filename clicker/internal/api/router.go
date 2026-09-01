@@ -330,6 +330,10 @@ func unblocksAnotherCommand(method string) bool {
 	// A download await blocks until the browser finishes writing the file.
 	case "vibium:download.await":
 		return true
+	// The command it unblocks is an evaluate stuck awaiting the exposed
+	// function this result settles.
+	case "vibium:expose.result":
+		return true
 	}
 	return false
 }
@@ -620,6 +624,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.expose":
 		r.dispatch(session, cmd, r.handlePageExpose)
 		return
+	case "vibium:page.exposeFunction":
+		r.dispatch(session, cmd, r.handlePageExposeFunction)
+		return
+	case "vibium:expose.result":
+		r.dispatch(session, cmd, r.handleExposeResult)
+		return
 
 	// Page-level waiting commands
 	case "vibium:page.waitFor":
@@ -763,11 +773,18 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.unroute":
 		r.dispatch(session, cmd, r.handlePageUnroute)
 		return
+	// Network captures register inline, in client message order, so the
+	// capture exists before the client's next command can trigger its
+	// traffic; only the wait runs on the dispatch goroutine.
 	case "vibium:page.captureRequest":
-		r.dispatch(session, cmd, r.handlePageCaptureRequest)
+		if wait := r.registerNetworkCapture(session, cmd, "network.beforeRequestSent", "request"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
 		return
 	case "vibium:page.captureResponse":
-		r.dispatch(session, cmd, r.handlePageCaptureResponse)
+		if wait := r.registerNetworkCapture(session, cmd, "network.responseCompleted", "response"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
 		return
 	case "vibium:page.captureEvent":
 		// Inline, not dispatched: registration must land before the client's
@@ -1057,6 +1074,11 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 
 		// Check for WebSocket channel events (intercept, don't forward raw script.message)
 		if r.isWsChannelEvent(session, msg) {
+			continue
+		}
+
+		// Expose channel messages become vibium:expose.call events (#298).
+		if r.isExposeChannelEvent(session, msg) {
 			continue
 		}
 
