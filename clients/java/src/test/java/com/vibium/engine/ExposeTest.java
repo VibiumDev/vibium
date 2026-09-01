@@ -9,8 +9,9 @@ import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * page.expose defines a named JS function in the page, matching the JS and
- * Python clients. The previous Java signature was non-functional (#298).
+ * page.expose in both forms (#298): a string defines window[name] from JS
+ * source inside the page; a callback exposes a host function whose return
+ * value comes back to the page through vibium:expose.call/result.
  */
 @RequiresCapability("core")
 class ExposeTest {
@@ -52,5 +53,36 @@ class ExposeTest {
         page.reload();
 
         assertEquals("marked", page.evaluate("window.vibiumMark()"));
+    }
+
+    @Test
+    void hostFunctionRunsAndReturnsItsValue() {
+        page.setContent("<p>x</p>");
+        page.expose("vibiumAdd", (args) ->
+            ((Number) args[0]).doubleValue() + ((Number) args[1]).doubleValue());
+
+        Object result = page.evaluate("window.vibiumAdd(2, 3)");
+        assertEquals(5.0, ((Number) result).doubleValue());
+    }
+
+    @Test
+    void hostFunctionErrorRejectsThePagePromise() {
+        page.setContent("<p>x</p>");
+        page.expose("vibiumExplode", (args) -> {
+            throw new IllegalStateException("no fuel");
+        });
+
+        Object message = page.evaluate("window.vibiumExplode().catch((e) => e.message)");
+        assertEquals("no fuel", message);
+    }
+
+    @Test
+    void hostFunctionSurvivesNavigationAndReExposureReplaces() {
+        page.setContent("<p>x</p>");
+        page.expose("vibiumAnswer", (args) -> "first");
+        page.expose("vibiumAnswer", (args) -> "second");
+        page.reload();
+
+        assertEquals("second", page.evaluate("window.vibiumAnswer()"));
     }
 }

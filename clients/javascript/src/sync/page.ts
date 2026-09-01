@@ -312,7 +312,22 @@ export class PageSync {
     this._bridge.call('page.addStyle', [this._pageId, source]);
   }
 
-  expose(name: string, fn: string): void {
+  expose(name: string, fn: string | ((...args: unknown[]) => unknown)): void {
+    if (typeof fn === 'function') {
+      const handlerId = `expose_${this._pageId}_${name}`;
+      // The bridge swallows handler exceptions, so the outcome travels in an
+      // envelope the worker unwraps: a thrown host error must reject the
+      // page's promise, not resolve it with null.
+      this._bridge.registerHandler(handlerId, (args: unknown) => {
+        try {
+          return { ok: true, value: fn(...(args as unknown[])) };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      });
+      this._bridge.call('page.exposeWithCallback', [this._pageId, name, handlerId]);
+      return;
+    }
     this._bridge.call('page.expose', [this._pageId, name, fn]);
   }
 

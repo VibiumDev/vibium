@@ -8,10 +8,12 @@ import com.vibium.internal.BiDiClient;
 import com.vibium.types.*;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Represents a browser tab. The primary interface for page automation.
@@ -24,6 +26,70 @@ public class Page {
         thread.setDaemon(true);
         return thread;
     });
+    private static final ExecutorService HOST_FUNCTIONS = Executors.newCachedThreadPool(r -> {
+        Thread thread = new Thread(r, "vibium-exposed-function");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    // Exposed host functions are connection-scoped, not Page-instance-scoped:
+    // browser.page() hands out a fresh Page for the same context, and every
+    // instance sees every event. One registry and one dispatcher per client
+    // means one execution and one reply per call, whichever instance
+    // registered the function. Weak keys: a registry dies with its client.
+    private static final Map<BiDiClient, Map<String, Function<Object[], Object>>> EXPOSE_REGISTRIES =
+        Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static Map<String, Function<Object[], Object>> exposeRegistry(BiDiClient client) {
+        synchronized (EXPOSE_REGISTRIES) {
+            Map<String, Function<Object[], Object>> registry = EXPOSE_REGISTRIES.get(client);
+            if (registry == null) {
+                Map<String, Function<Object[], Object>> fns = new ConcurrentHashMap<>();
+                EXPOSE_REGISTRIES.put(client, fns);
+                client.onEvent(event -> {
+                    if (event.has("method") && "vibium:expose.call".equals(event.get("method").getAsString())) {
+                        handleExposeCall(client, fns, event.getAsJsonObject("params"));
+                    }
+                });
+                registry = fns;
+            }
+            return registry;
+        }
+    }
+
+    private static void handleExposeCall(BiDiClient client, Map<String, Function<Object[], Object>> fns, JsonObject params) {
+        String name = params.has("name") ? params.get("name").getAsString() : "";
+        JsonElement seq = params.get("seq");
+        String context = params.has("context") ? params.get("context").getAsString() : "";
+        String realm = params.has("realm") ? params.get("realm").getAsString() : "";
+
+        // Off the event thread: that executor is single-threaded, so a slow
+        // host function would stall every later event. Every outcome answers,
+        // because an unanswered call leaves the page's promise parked
+        // forever; the reply carries the calling realm back so the engine
+        // delivers into the document that made the call.
+        HOST_FUNCTIONS.execute(() -> {
+            JsonObject reply = new JsonObject();
+            reply.addProperty("context", context);
+            reply.addProperty("realm", realm);
+            reply.add("seq", seq);
+
+            Function<Object[], Object> fn = fns.get(name);
+            if (fn == null) {
+                reply.addProperty("error", name + " is not exposed");
+            } else {
+                try {
+                    JsonElement rawArgs = params.has("args") ? params.get("args") : new JsonArray();
+                    Object[] args = GSON.fromJson(rawArgs, Object[].class);
+                    Object result = fn.apply(args != null ? args : new Object[0]);
+                    reply.add("result", GSON.toJsonTree(result));
+                } catch (Exception e) {
+                    reply.addProperty("error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                }
+            }
+            client.sendAsync("vibium:expose.result", reply);
+        });
+    }
 
     private final BiDiClient client;
     private final String contextId;
@@ -316,16 +382,30 @@ public class Page {
     /**
      * Define window[name] in the page from JS function source, in the current
      * document and every later one, matching the JS and Python clients:
-     * page.expose("double", "(n) => n * 2"). This replaces a callback-taking
-     * overload that sent no fn, which the server rejected on every call, and
-     * subscribed to an event the server never emits. Host-side callbacks,
-     * where the page calls back into the Java program, are tracked in #298.
+     * page.expose("double", "(n) => n * 2").
      */
     public void expose(String name, String fn) {
+        Map<String, Function<Object[], Object>> registry = EXPOSE_REGISTRIES.get(client);
+        if (registry != null) {
+            registry.remove(name);
+        }
         JsonObject params = contextParams();
         params.addProperty("name", name);
         params.addProperty("fn", fn);
         client.send("vibium:page.expose", params);
+    }
+
+    /**
+     * Expose a host function on window. The page calls window[name](args),
+     * the callback runs in this program, and its return value resolves the
+     * page's promise. Arguments and results cross as JSON. Either form of
+     * expose survives navigation, and re-exposing a name replaces it.
+     */
+    public void expose(String name, Function<Object[], Object> callback) {
+        exposeRegistry(client).put(name, callback);
+        JsonObject params = contextParams();
+        params.addProperty("name", name);
+        client.send("vibium:page.exposeFunction", params);
     }
 
     // ── Waiting ─────────────────────────────────────────────────

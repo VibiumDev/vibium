@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import re
 import warnings
+import weakref
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .. import errors
@@ -23,6 +25,65 @@ from .websocket_info import WebSocketInfo
 if TYPE_CHECKING:
     from ..client import BiDiClient
     from .context import BrowserContext as BrowserContextType
+
+
+# Exposed host functions are connection-scoped, not Page-instance-scoped:
+# browser.page() hands out a fresh Page object for the same context, and
+# every instance sees every event. One registry and one dispatcher per
+# client means one execution and one reply per call, whichever instance
+# registered the function. Weak keys: a registry dies with its client.
+_expose_registries: "weakref.WeakKeyDictionary[Any, Dict[str, Callable[..., Any]]]" = weakref.WeakKeyDictionary()
+
+
+def _expose_registry(client: Any) -> Dict[str, Callable[..., Any]]:
+    registry = _expose_registries.get(client)
+    if registry is None:
+        fns: Dict[str, Callable[..., Any]] = {}
+        registry = fns
+        _expose_registries[client] = fns
+
+        def _on_event(event: Dict[str, Any]) -> None:
+            if event.get("method") == "vibium:expose.call":
+                _handle_expose_call(client, fns, event.get("params") or {})
+
+        client.on_event(_on_event)
+    return registry
+
+
+def _handle_expose_call(client: Any, fns: Dict[str, Callable[..., Any]], params: Dict[str, Any]) -> None:
+    name = params.get("name", "")
+    seq = params.get("seq")
+    context = params.get("context", "")
+    realm = params.get("realm", "")
+
+    # Every outcome answers: an unanswered call leaves the page's promise
+    # parked forever. The reply carries the calling realm back, so the engine
+    # delivers into the document that made the call, not whatever the context
+    # shows after a navigation.
+    def reply(body: Dict[str, Any]) -> None:
+        asyncio.ensure_future(client.send("vibium:expose.result", {
+            "context": context, "realm": realm, "seq": seq, **body,
+        }))
+
+    fn = fns.get(name)
+    if fn is None:
+        reply({"error": f"{name} is not exposed"})
+        return
+
+    async def _run() -> None:
+        try:
+            result = fn(*params.get("args", []))
+            if hasattr(result, "__await__"):
+                result = await result
+            # Results cross as JSON; catching the serialization failure here
+            # turns it into a page-side rejection instead of a
+            # forever-pending promise.
+            json.dumps(result)
+            reply({"result": result})
+        except Exception as e:
+            reply({"error": str(e) or type(e).__name__})
+
+    asyncio.ensure_future(_run())
 
 logger = logging.getLogger("vibium")
 
@@ -506,8 +567,26 @@ class Page:
             params["content"] = source
         await self._client.send("vibium:page.addStyle", params)
 
-    async def expose(self, name: str, fn: str) -> None:
-        """Expose a function on window."""
+    async def expose(self, name: str, fn: Union[str, Callable[..., Any]]) -> None:
+        """Expose a function on window.
+
+        Pass a callable to expose a host callback: the page calls
+        window[name](*args), the callable runs here, and its return value
+        resolves the page's promise. Arguments and results cross as JSON.
+        Pass a string to inject it as JS source instead, defining
+        window[name] inside the page.
+
+        Either form survives navigation, and re-exposing a name replaces it.
+        """
+        if callable(fn):
+            _expose_registry(self._client)[name] = fn
+            await self._client.send("vibium:page.exposeFunction", {
+                "context": self._context_id, "name": name,
+            })
+            return
+        registry = _expose_registries.get(self._client)
+        if registry is not None:
+            registry.pop(name, None)
         await self._client.send("vibium:page.expose", {
             "context": self._context_id, "name": name, "fn": fn,
         })

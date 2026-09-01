@@ -266,7 +266,17 @@ class Page:
     def add_style(self, source: str) -> None:
         self._loop.run(self._async.add_style(source))
 
-    def expose(self, name: str, fn: str) -> None:
+    def expose(self, name: str, fn: Union[str, Callable[..., Any]]) -> None:
+        if callable(fn):
+            async def _host(*args: Any) -> Any:
+                # The user's function is synchronous and may block or call
+                # back into this sync API; either would wedge the event loop
+                # delivering the call, so it runs on a worker thread.
+                import asyncio
+                return await asyncio.get_running_loop().run_in_executor(None, lambda: fn(*args))
+
+            self._loop.run(self._async.expose(name, _host))
+            return
         self._loop.run(self._async.expose(name, fn))
 
     # --- Emulation ---
