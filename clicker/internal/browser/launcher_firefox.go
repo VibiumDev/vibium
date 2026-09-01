@@ -91,10 +91,19 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		"--profile", profileDir,
 		"--no-remote",
+		// Firefox 155 gates privileged BiDi commands (browsingContext.activate
+		// behind page.bringToFront, for one) on this flag; older versions
+		// accept it and change nothing.
+		"--remote-allow-system-access",
 	}
 	if opts.Headless {
 		args = append(args, "--headless")
 	}
+	// Open on about:blank instead of Firefox's chrome-privileged blanktab.
+	// The startup tab otherwise lives in the parent process until a
+	// navigation, where script-backed commands are refused and, on Firefox
+	// 155, browsingContext.activate is rejected as privileged scope.
+	args = append(args, "about:blank")
 
 	cmd := exec.Command(firefoxPath, args...)
 	if xdgConfigHome != "" {
