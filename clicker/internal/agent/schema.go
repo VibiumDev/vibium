@@ -1,8 +1,29 @@
 package agent
 
+// noPageParam lists the tools that are not scoped to a page: session
+// lifecycle, page management, recording control, and plain waits. Every
+// other tool accepts an optional page argument (added in GetToolSchemas)
+// that pins the call to one browsing context (#383).
+var noPageParam = map[string]bool{
+	"browser_start":              true,
+	"browser_stop":               true,
+	"browser_new_page":           true,
+	"browser_list_pages":         true,
+	"browser_switch_page":        true,
+	"browser_close_page":         true,
+	"browser_sleep":              true,
+	"browser_record_start":       true,
+	"browser_record_stop":        true,
+	"browser_record_start_group": true,
+	"browser_record_stop_group":  true,
+	"browser_record_start_chunk": true,
+	"browser_record_stop_chunk":  true,
+	"browser_download_set_dir":   true,
+}
+
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
-	return []Tool{
+	tools := []Tool{
 		{
 			Name:        "browser_start",
 			Description: "Start a browser session",
@@ -1564,4 +1585,22 @@ func GetToolSchemas() []Tool {
 			},
 		},
 	}
+
+	// One definition of the page argument for every page-scoped tool, added
+	// here instead of once per literal so a new tool cannot forget it.
+	for i := range tools {
+		if noPageParam[tools[i].Name] {
+			continue
+		}
+		props, ok := tools[i].InputSchema["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		props["page"] = map[string]interface{}{
+			"type": "string",
+			"description": "Page id (from browser_new_page or browser_list_pages) that pins this call to that page instead of the globally current one. " +
+				"Concurrent callers sharing this server should create their own page and pass its id on every call.",
+		}
+	}
+	return tools
 }

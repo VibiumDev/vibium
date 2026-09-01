@@ -43,6 +43,13 @@ type Handlers struct {
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
 	activeContext  string       // last page context switched to or created
+	// pageOverride pins the current call to one browsing context: callers
+	// multiplexed over a single connection (concurrent MCP subagents) pass a
+	// page id so their commands stop landing on whatever page is globally
+	// current (#383). Set and cleared by Call; both transports serialize
+	// Call (the daemon under its router mutex, MCP by its stdio loop), so a
+	// per-call field is safe here, like lastElementBox above.
+	pageOverride string
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
@@ -89,11 +96,20 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 	}
 }
 
+// currentContext is the browsing context this call targets: the pinned page
+// when the caller passed one, the ambient current page otherwise.
+func (h *Handlers) currentContext() string {
+	if h.pageOverride != "" {
+		return h.pageOverride
+	}
+	return h.activeContext
+}
+
 // newSession creates an AgentSession that writes element box info back to
 // h.lastElementBox so Call() can include it in RecordActionEnd.
 func (h *Handlers) newSession() *api.AgentSession {
 	s := api.NewAgentSession(h.client)
-	s.Context = h.activeContext
+	s.Context = h.currentContext()
 	s.Prompts = h.prompts
 	s.Navigations = h.navigations
 	s.OnBoxSet = func(box *api.BoxInfo) {
@@ -108,6 +124,17 @@ func (h *Handlers) newSession() *api.AgentSession {
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	log.Debug("tool call", "name", name, "args", args)
+
+	// A page argument pins this call to one browsing context. Validate it
+	// against the live tree so a stale id fails loudly here instead of the
+	// call silently acting on whatever page is current (#383).
+	if page, ok := args["page"].(string); ok && page != "" {
+		if err := h.checkPageOpen(page); err != nil {
+			return nil, err
+		}
+		h.pageOverride = page
+		defer func() { h.pageOverride = "" }()
+	}
 
 	// Inject a synthetic find trace event before selector-based actions
 	// so CLI recordings match the JS client's find→action pairs.
@@ -393,8 +420,30 @@ func (h *Handlers) recordFindStep(selector string) {
 	h.recorder.RecordActionEnd(callId, "", endTime, box)
 }
 
-// getContext returns the first browsing context from the browser tree, or "".
+// checkPageOpen verifies a caller-supplied page id names a live top-level
+// browsing context.
+func (h *Handlers) checkPageOpen(page string) error {
+	if h.client == nil {
+		return fmt.Errorf("page %q: browser is not running", page)
+	}
+	tree, err := h.client.GetTree()
+	if err != nil {
+		return fmt.Errorf("page %q: %w", page, err)
+	}
+	for _, c := range tree.Contexts {
+		if c.Context == page {
+			return nil
+		}
+	}
+	return fmt.Errorf("page %q not found; it may have been closed (browser_list_pages shows open pages)", page)
+}
+
+// getContext returns the pinned page when the caller passed one, else the
+// first browsing context from the browser tree, or "".
 func (h *Handlers) getContext() string {
+	if h.pageOverride != "" {
+		return h.pageOverride
+	}
 	if h.client == nil {
 		return ""
 	}
@@ -986,7 +1035,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			}
 			return JSON.stringify({count: count});
 		}`
-		if _, err := h.client.CallFunction(h.activeContext, annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
+		if _, err := h.client.CallFunction(h.currentContext(), annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
 			return nil, fmt.Errorf("failed to annotate: %w", err)
 		}
 	}
@@ -1007,7 +1056,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			document.querySelectorAll('.__vibium_annotation').forEach(el => el.remove());
 			return 'cleaned';
 		}`
-		h.client.CallFunction(h.activeContext, cleanupScript, nil)
+		h.client.CallFunction(h.currentContext(), cleanupScript, nil)
 	}
 
 	// If filename provided, save to file (only if screenshotDir is configured)
@@ -1388,7 +1437,7 @@ func (h *Handlers) browserEvaluate(args map[string]interface{}) (*ToolsCallResul
 		return nil, fmt.Errorf("expression is required")
 	}
 
-	result, err := h.client.Evaluate(h.activeContext, expression)
+	result, err := h.client.Evaluate(h.currentContext(), expression)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate: %w", err)
 	}
@@ -1457,9 +1506,10 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	}
 	h.activeContext = contextID
 
-	msg := "New page opened"
+	// The id lets a caller pin later calls to this page (#383).
+	msg := fmt.Sprintf("New page opened (page: %s)", contextID)
 	if url != "" {
-		msg = fmt.Sprintf("New page opened and navigated to %s", url)
+		msg = fmt.Sprintf("New page opened and navigated to %s (page: %s)", url, contextID)
 	}
 
 	return &ToolsCallResult{
@@ -1484,7 +1534,7 @@ func (h *Handlers) browserListPages(args map[string]interface{}) (*ToolsCallResu
 
 	var text string
 	for i, page := range pages {
-		text += fmt.Sprintf("[%d] %s\n", i, page.URL)
+		text += fmt.Sprintf("[%d] %s (page: %s)\n", i, page.URL, page.Context)
 	}
 	if text == "" {
 		text = "No pages open"
@@ -1857,7 +1907,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		}
 		return JSON.stringify(results);
 	}`
-	result, err := h.client.CallFunction(h.activeContext, findAllScript, []interface{}{selector, limit})
+	result, err := h.client.CallFunction(h.currentContext(), findAllScript, []interface{}{selector, limit})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find elements: %w", err)
 	}
@@ -2254,7 +2304,7 @@ func pollCallFunction(h *Handlers, script string, args []interface{}, timeout ti
 	interval := 100 * time.Millisecond
 
 	for {
-		result, err := h.client.CallFunction(h.activeContext, script, args)
+		result, err := h.client.CallFunction(h.currentContext(), script, args)
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {
@@ -2919,7 +2969,7 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	if sel, ok := args["selector"].(string); ok && sel != "" {
 		scopeSelector = sel
 	}
-	result, err := h.client.CallFunction(h.activeContext, mapScript(), []interface{}{scopeSelector})
+	result, err := h.client.CallFunction(h.currentContext(), mapScript(), []interface{}{scopeSelector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to map elements: %w", err)
 	}
@@ -3080,7 +3130,7 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 		return 'highlighted';
 	}`
 
-	result, err := h.client.CallFunction(h.activeContext, script, []interface{}{selector})
+	result, err := h.client.CallFunction(h.currentContext(), script, []interface{}{selector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to highlight: %w", err)
 	}
@@ -4304,7 +4354,7 @@ func (h *Handlers) browserStorageState(args map[string]interface{}) (*ToolsCallR
 		})()
 	})`
 
-	storageResult, err := h.client.Evaluate(h.activeContext, script)
+	storageResult, err := h.client.Evaluate(h.currentContext(), script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage: %w", err)
 	}
@@ -4391,7 +4441,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 			}
 			return 'ok';
 		})()`, string(storageJSON))
-		if _, err := h.client.Evaluate(h.activeContext, script); err != nil {
+		if _, err := h.client.Evaluate(h.currentContext(), script); err != nil {
 			return nil, fmt.Errorf("failed to restore storage: %w", err)
 		}
 	}
