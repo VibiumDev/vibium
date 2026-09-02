@@ -16,6 +16,11 @@ def sync_ws_echo_server():
     loop = asyncio.new_event_loop()
     server = None
     port = None
+    error = None
+    # An Event instead of polling a variable: the old poll fell through
+    # silently after its timeout (or when the thread died on an exception)
+    # and yielded ws://127.0.0.1:None (#468).
+    ready = threading.Event()
 
     async def _start():
         nonlocal server, port
@@ -24,27 +29,43 @@ def sync_ws_echo_server():
             async for message in websocket:
                 await websocket.send(message)
 
-        srv = await websockets.serve(echo, "127.0.0.1", 0)
-        port = srv.sockets[0].getsockname()[1]
-        server = srv
-        await srv.wait_closed()
+        server = await websockets.serve(echo, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
 
     def _run():
-        loop.run_until_complete(_start())
+        nonlocal error
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_start())
+            ready.set()
+            loop.run_forever()
+        except Exception as exc:
+            error = exc
+            ready.set()
+        finally:
+            loop.close()
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
 
-    # Wait for server to start
-    for _ in range(50):
-        if port is not None:
-            break
-        import time
-        time.sleep(0.1)
+    if not ready.wait(30):
+        pytest.fail("WebSocket echo server did not start within 30s")
+    if error is not None:
+        pytest.fail(f"WebSocket echo server failed to start: {error!r}")
 
     yield f"ws://127.0.0.1:{port}"
-    if server:
+
+    async def _stop():
         server.close()
+        # Without this, connection handlers still pending when the loop
+        # stops surface later as "coroutine ignored GeneratorExit" noise.
+        await server.wait_closed()
+
+    # The loop belongs to the server thread; closing from here raced it
+    # and left "Event loop is closed" noise in teardown.
+    asyncio.run_coroutine_threadsafe(_stop(), loop).result(timeout=10)
+    loop.call_soon_threadsafe(loop.stop)
+    t.join(timeout=10)
 
 
 def test_fires(sync_browser, test_server, sync_ws_echo_server):
