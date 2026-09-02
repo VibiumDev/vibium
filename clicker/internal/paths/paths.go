@@ -70,6 +70,33 @@ func GetChromeForTestingDir() (string, error) {
 	return filepath.Join(cacheDir, "chrome-for-testing"), nil
 }
 
+// ChromeChannel returns the Chrome release channel to install and run.
+// Defaults to "stable"; override with VIBIUM_ENGINE_CHANNEL (e.g. "beta").
+// The same variable steers the Firefox channel, so an engine-agnostic
+// "beta" selects each engine's beta.
+func ChromeChannel() string {
+	if c := os.Getenv("VIBIUM_ENGINE_CHANNEL"); c != "" {
+		return c
+	}
+	return "stable"
+}
+
+// GetChromeChannelDir returns the directory holding the channel's version
+// dirs. Stable keeps the historical chrome-for-testing root so existing
+// caches stay valid; other channels nest one level deeper, which also keeps
+// a beta's higher version number from shadowing stable under the
+// newest-first resolution below.
+func GetChromeChannelDir() (string, error) {
+	cftDir, err := GetChromeForTestingDir()
+	if err != nil {
+		return "", err
+	}
+	if ch := ChromeChannel(); ch != "stable" {
+		return filepath.Join(cftDir, ch), nil
+	}
+	return cftDir, nil
+}
+
 // resolveVersionDir returns the newest cached version directory containing BOTH
 // Chrome and chromedriver.
 //
@@ -79,10 +106,25 @@ func GetChromeForTestingDir() (string, error) {
 // failure surfaced later as chromedriver's "only supports Chrome version N"
 // (#265). Newest-first also replaces os.ReadDir's lexical order, under which
 // "99.0" sorts above "100.0".
+//
+// VIBIUM_ENGINE_VERSION pins the choice: the pinned version must also be
+// what launches, or newest-cached would silently run a different Chrome
+// than the pin installed.
 func resolveVersionDir() (string, error) {
-	cftDir, err := GetChromeForTestingDir()
+	cftDir, err := GetChromeChannelDir()
 	if err != nil {
 		return "", err
+	}
+
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+		dir := filepath.Join(cftDir, v)
+		if _, err := os.Stat(getChromePathInVersion(dir)); err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			return "", err
+		}
+		return dir, nil
 	}
 
 	entries, err := os.ReadDir(cftDir)

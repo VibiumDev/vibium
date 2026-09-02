@@ -299,4 +299,47 @@ describe('JS Firefox', () => {
         `Channel "${channel}" should pass CLI validation`);
     }
   });
+
+  test('--channel accepts the Chrome channels for chrome (#470)', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    for (const channel of ['stable', 'beta', 'dev', 'canary']) {
+      let stderr = '';
+      try {
+        execFileSync(bin, ['is-installed', '--engine', 'chrome', '--channel', channel],
+          { stdio: 'pipe' });
+      } catch (err) {
+        stderr = err.stderr.toString();
+      }
+      assert.ok(!/unsupported channel|not supported for engine/.test(stderr),
+        `Chrome channel "${channel}" should pass CLI validation`);
+    }
+
+    // Firefox's channel names stay Firefox's: release is not a Chrome channel.
+    assert.throws(
+      () => execFileSync(bin,
+        ['is-installed', '--engine', 'chrome', '--channel', 'release'],
+        { stdio: 'pipe' }),
+      (err) => /unsupported channel/.test(err.stderr.toString()),
+      'Channel "release" should be rejected for chrome'
+    );
+  });
+
+  test('VIBIUM_ENGINE_VERSION passes CLI validation for chrome (#470)', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    let stderr = '';
+    try {
+      execFileSync(bin, ['is-installed', '--engine', 'chrome'], {
+        stdio: 'pipe',
+        env: { ...process.env, VIBIUM_ENGINE_VERSION: '140.0.7000.10' },
+      });
+    } catch (err) {
+      stderr = err.stderr.toString();
+    }
+    assert.ok(!/not supported for engine/.test(stderr),
+      'A version pin should pass CLI validation for chrome');
+  });
 });

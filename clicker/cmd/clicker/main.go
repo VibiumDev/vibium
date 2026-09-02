@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/log"
@@ -35,7 +37,7 @@ var (
 	jsonOutput     bool
 	session        string
 	engineName     string
-	firefoxChannel string
+	engineChannel string
 	headlessSet    bool
 	engineSet      bool
 	channelSet     bool
@@ -73,29 +75,30 @@ func main() {
 			if engineName != "chrome" && engineName != "firefox" {
 				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
 			}
-			if firefoxChannel != "" && firefoxChannel != "release" && firefoxChannel != "beta" {
-				return fmt.Errorf("unsupported channel %q (supported: release, beta)", firefoxChannel)
-			}
-			// VIBIUM_ENGINE_CHANNEL, VIBIUM_ENGINE_PATH, and VIBIUM_ENGINE_VERSION are
-			// engine-neutral names but only Firefox implements them. Say so
-			// rather than accepting the setting and ignoring it.
-			if engineName != "firefox" {
-				for _, unsupported := range []struct{ name, value string }{
-					{"--channel/VIBIUM_ENGINE_CHANNEL", firefoxChannel},
-					{"VIBIUM_ENGINE_PATH", os.Getenv("VIBIUM_ENGINE_PATH")},
-					{"VIBIUM_ENGINE_VERSION", os.Getenv("VIBIUM_ENGINE_VERSION")},
-				} {
-					if unsupported.value != "" {
-						return fmt.Errorf("%s is not supported for engine %q (firefox only)", unsupported.name, engineName)
-					}
+			// Channels differ per engine: Mozilla's are release/beta, Chrome
+			// for Testing's are stable/beta/dev/canary.
+			if engineChannel != "" {
+				valid := map[string][]string{
+					"firefox": {"release", "beta"},
+					"chrome":  {"stable", "beta", "dev", "canary"},
+				}[engineName]
+				if !slices.Contains(valid, engineChannel) {
+					return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
+						engineChannel, engineName, strings.Join(valid, ", "))
 				}
+			}
+			// VIBIUM_ENGINE_PATH is an engine-neutral name but only Firefox
+			// implements it. Say so rather than accepting the setting and
+			// ignoring it.
+			if engineName != "firefox" && os.Getenv("VIBIUM_ENGINE_PATH") != "" {
+				return fmt.Errorf("VIBIUM_ENGINE_PATH is not supported for engine %q (firefox only)", engineName)
 			}
 			// Bridge the flag to the env var, like --session: the paths
 			// package resolves the channel from the environment at both
 			// install and launch time, and a daemon child process spawned
 			// later inherits it.
-			if firefoxChannel != "" {
-				if err := os.Setenv("VIBIUM_ENGINE_CHANNEL", firefoxChannel); err != nil {
+			if engineChannel != "" {
+				if err := os.Setenv("VIBIUM_ENGINE_CHANNEL", engineChannel); err != nil {
 					return err
 				}
 			}
@@ -109,7 +112,7 @@ func main() {
 	// Add global flags for browser commands
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
-	rootCmd.PersistentFlags().StringVar(&firefoxChannel, "channel", os.Getenv("VIBIUM_ENGINE_CHANNEL"), "Engine release channel to install and run: release (default) or beta; Firefox only for now (env: VIBIUM_ENGINE_CHANNEL)")
+	rootCmd.PersistentFlags().StringVar(&engineChannel, "channel", os.Getenv("VIBIUM_ENGINE_CHANNEL"), "Engine release channel to install and run (env: VIBIUM_ENGINE_CHANNEL); firefox: release (default) or beta; chrome: stable (default), beta, dev, or canary")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")
