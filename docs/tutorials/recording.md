@@ -305,15 +305,64 @@ The default format is JPEG at 0.5 quality. Lowering `quality` produces smaller f
 
 ## Video
 
-On engines that support it (Firefox 154+, local browsers), the recording can include a video track — the browser encodes the viewport to WebM and the file lands inside the zip next to the trace:
+On engines that support it (Firefox 154+, local browsers), a recording includes
+a video track automatically — the browser encodes the viewport to WebM and the
+file lands inside the zip next to the trace. You do not have to ask for it:
 
 ```javascript
-await ctx.recording.start({ video: true })
+await ctx.recording.start()
 // ...
-await ctx.recording.stop()   // the zip now contains video/<context>.webm
+await ctx.recording.stop()   // on Firefox the zip contains video/<context>.webm
 ```
 
-With `video` omitted, video is recorded whenever the engine supports it and skipped otherwise. `video: true` requires it — `start()` fails with an explanatory error on Chrome. `video: false` turns it off. Dimensions default to the viewport (`video: { width, height, frameRate }` to override). Remote browser connections (`--connect`) record every track except video — the stop result says why. For remote hosts you control, `video: { remote: 'keep' }` records anyway and leaves the file there; see the [Record Video](../how-to-guides/record-video.md) guide.
+The `video` option has three settings:
+
+- **omitted** — record video where the engine supports it, and carry on without
+  it where it doesn't. The stop result reports `videoUnavailable` with the
+  engine's reason.
+- **`true`** — video is mandatory. `start()` fails with an explanatory error
+  rather than producing a recording that silently lacks it.
+- **`false`** — no video track.
+
+Video is sized to the viewport and captured at the engine's default frame rate.
+To change either, pass an object instead of a boolean. Every field is optional:
+
+```javascript
+await ctx.recording.start({ video: { height: 480 } })        // scale down
+await ctx.recording.start({ video: { frameRate: 10 } })      // smaller file
+await ctx.recording.start({ video: { height: 480, frameRate: 10 } })
+```
+
+In Python the fields are snake_case:
+
+```python
+vibe.context.recording.start(video={"height": 480, "frame_rate": 10})
+```
+
+Java uses flat setters. `videoSize` takes both dimensions, so pick a pair on the
+viewport's aspect ratio rather than a single side:
+
+```java
+vibe.context().recording().start(new RecordingOptions().videoFrameRate(10));
+vibe.context().recording().start(new RecordingOptions().videoSize(854, 480));
+```
+
+Two things to know about the size. **An object counts as asking for video**, the
+same as `video: true` — you named specific output, so a recording that silently
+skipped it would be a surprise. And **the size is a request**: the engine keeps
+the viewport's aspect ratio and derives the other side, so `{ height: 480 }` on a
+16:9 viewport encodes 854×480, and asking for 640×480 there gets you 640×360. The
+stop result reports what was actually encoded:
+
+```javascript
+const result = await ctx.recording.stop()
+result.videos   // [{ context, durationMs, width: 854, height: 480 }]
+```
+
+Remote browser connections (`--connect`) record every track except video, and
+the stop result says why; for a remote host you control,
+`video: { remote: 'keep' }` records anyway and leaves the file there. See the
+[Record Video](../how-to-guides/record-video.md) guide.
 
 Engine requirements, Firefox channel setup, and the zip layout are covered in [Record Video](../how-to-guides/record-video.md).
 
