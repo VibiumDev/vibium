@@ -63,7 +63,7 @@ func requestedLaunchOptions() map[string]interface{} {
 		args["engine"] = engineName
 	}
 	if channelSet {
-		channel := firefoxChannel
+		channel := engineChannel
 		if channel == "" {
 			channel = paths.FirefoxChannel()
 		}

@@ -369,7 +369,7 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 | Flag | Description |
 |------|-------------|
 | `--engine <name>` | Browser engine: `chrome` (default) or `firefox` (env: `VIBIUM_ENGINE`) |
-| `--channel <ch>` | Engine release channel: `release` (default) or `beta` — Firefox only (env: `VIBIUM_ENGINE_CHANNEL`) |
+| `--channel <ch>` | Engine release channel — Firefox: `release` (default) or `beta`; Chrome: `stable` (default), `beta`, `dev`, or `canary` (env: `VIBIUM_ENGINE_CHANNEL`) |
 | `--headless` | Hide browser window |
 | `--json` | Output as JSON |
 | `-v, --verbose` | Debug logging |

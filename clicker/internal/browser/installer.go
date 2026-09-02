@@ -68,16 +68,20 @@ func Install() (*InstallResult, error) {
 
 	platform := paths.GetPlatformString()
 
-	// Fetch latest stable version info
-	versionInfo, err := fetchLatestStableVersion()
+	versionInfo, err := resolveChromeVersionInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch version info: %w", err)
 	}
 
-	fmt.Printf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
+	channel := paths.ChromeChannel()
+	if channel == "stable" {
+		fmt.Printf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
+	} else {
+		fmt.Printf("Installing Chrome for Testing v%s (%s channel)...\n", versionInfo.Version, channel)
+	}
 
 	// Create version directory
-	cftDir, err := paths.GetChromeForTestingDir()
+	cftDir, err := paths.GetChromeChannelDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -139,8 +143,33 @@ func Install() (*InstallResult, error) {
 	}, nil
 }
 
-// fetchLatestStableVersion fetches the latest stable Chrome for Testing version.
-func fetchLatestStableVersion() (*VersionInfo, error) {
+// chromeChannelKeys maps VIBIUM_ENGINE_CHANNEL values to the channel names
+// used in the Chrome for Testing JSON.
+var chromeChannelKeys = map[string]string{
+	"stable": "Stable",
+	"beta":   "Beta",
+	"dev":    "Dev",
+	"canary": "Canary",
+}
+
+// resolveChromeVersionInfo returns the version to install:
+// VIBIUM_ENGINE_VERSION when set, otherwise the channel's current version.
+// Unlike Firefox there is no offline path for a pin: Chrome for Testing
+// download URLs come from its versions JSON, not a constructible pattern.
+func resolveChromeVersionInfo() (*VersionInfo, error) {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+		return fetchVersionInfoFor(v)
+	}
+	return fetchChannelVersion(paths.ChromeChannel())
+}
+
+// fetchChannelVersion fetches the channel's current Chrome for Testing version.
+func fetchChannelVersion(channel string) (*VersionInfo, error) {
+	key, ok := chromeChannelKeys[channel]
+	if !ok {
+		return nil, fmt.Errorf("unknown Chrome channel %q (supported: stable, beta, dev, canary)", channel)
+	}
+
 	resp, err := http.Get(lastKnownGoodURL)
 	if err != nil {
 		return nil, err
@@ -156,12 +185,49 @@ func fetchLatestStableVersion() (*VersionInfo, error) {
 		return nil, err
 	}
 
-	stable, ok := data.Channels["Stable"]
+	info, ok := data.Channels[key]
 	if !ok {
-		return nil, fmt.Errorf("no Stable channel found")
+		return nil, fmt.Errorf("no %s channel found", key)
 	}
 
-	return &stable, nil
+	return &info, nil
+}
+
+// fetchVersionInfoFor returns download info for an exact version from the
+// known-good-versions list.
+func fetchVersionInfoFor(version string) (*VersionInfo, error) {
+	resp, err := http.Get(knownGoodVersionsURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Versions []VersionInfo `json:"versions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	info := findVersionInfo(data.Versions, version)
+	if info == nil {
+		return nil, fmt.Errorf("version %q not found in Chrome for Testing known good versions", version)
+	}
+	return info, nil
+}
+
+// findVersionInfo returns the entry matching version exactly, or nil.
+func findVersionInfo(versions []VersionInfo, version string) *VersionInfo {
+	for i := range versions {
+		if versions[i].Version == version {
+			return &versions[i]
+		}
+	}
+	return nil
 }
 
 // findDownloadURL finds the download URL for the given platform.
@@ -320,6 +386,10 @@ func extractVersionFromPath(path string) string {
 	parts := strings.Split(path, string(os.PathSeparator))
 	for i, part := range parts {
 		if part == "chrome-for-testing" && i+1 < len(parts) {
+			// Non-stable channels nest their version dirs one level deeper.
+			if ch := paths.ChromeChannel(); ch != "stable" && parts[i+1] == ch && i+2 < len(parts) {
+				return parts[i+2]
+			}
 			return parts[i+1]
 		}
 	}
