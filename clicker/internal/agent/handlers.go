@@ -36,8 +36,8 @@ type Handlers struct {
 	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header       // headers for remote WebSocket connection
 	ownsRemote     bool              // remote session was created here, so Close() ends it
-	refMap         map[string]string // @e1 -> CSS selector
-	lastMap        string            // last map output (for diff)
+	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
+	lastMaps       map[string]string            // context -> last map output (for diff)
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
@@ -458,6 +458,34 @@ func (h *Handlers) getContext() string {
 		return ""
 	}
 	return tree.Contexts[0].Context
+}
+
+// refKey is the browsing context whose element refs and map snapshot this
+// call reads and writes. Refs are scoped per page so concurrent callers
+// pinned to different pages cannot resolve each other's selectors (#383).
+// An ambient call with no tracked page resolves to the real current
+// context, so refs minted before any explicit page switch are still found
+// after switching back to that page.
+func (h *Handlers) refKey() string {
+	if ctx := h.currentContext(); ctx != "" {
+		return ctx
+	}
+	if h.client == nil {
+		return ""
+	}
+	tree, err := h.client.GetTree()
+	if err != nil || len(tree.Contexts) == 0 {
+		return ""
+	}
+	return tree.Contexts[0].Context
+}
+
+// setRefs replaces the ref table for one page.
+func (h *Handlers) setRefs(key string, refs map[string]string) {
+	if h.refMaps == nil {
+		h.refMaps = make(map[string]map[string]string)
+	}
+	h.refMaps[key] = refs
 }
 
 // queryViewport queries the browser for the current viewport size.
@@ -1008,11 +1036,12 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("failed to map for annotation: %w", err)
 		}
 
-		// Build ordered list of selectors from refMap (@e1, @e2, ...)
-		selectors := make([]string, 0, len(h.refMap))
-		for i := 1; i <= len(h.refMap); i++ {
+		// Build ordered list of selectors from this page's refs (@e1, @e2, ...)
+		refs := h.refMaps[h.refKey()]
+		selectors := make([]string, 0, len(refs))
+		for i := 1; i <= len(refs); i++ {
 			ref := fmt.Sprintf("@e%d", i)
-			if sel, ok := h.refMap[ref]; ok {
+			if sel, ok := refs[ref]; ok {
 				selectors = append(selectors, sel)
 			}
 		}
@@ -1163,9 +1192,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 			return nil, fmt.Errorf("failed to parse find result: %w", err)
 		}
 
-		// Store ref in refMap
-		h.refMap = make(map[string]string)
-		h.refMap["@e1"] = found.Selector
+		// Store ref in this page's ref table
+		h.setRefs(h.refKey(), map[string]string{"@e1": found.Selector})
 
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -1204,9 +1232,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
 	}
 
-	// Store ref in refMap
-	h.refMap = make(map[string]string)
-	h.refMap["@e1"] = selector
+	// Store ref in this page's ref table
+	h.setRefs(h.refKey(), map[string]string{"@e1": selector})
 
 	labelStr := fmt.Sprintf("%v", labelResult)
 	return &ToolsCallResult{
@@ -1993,13 +2020,14 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	// Build ref map and output
-	h.refMap = make(map[string]string)
+	refs := make(map[string]string)
 	var lines []string
 	for i, el := range elements {
 		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
+		refs[ref] = el.Selector
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
+	h.setRefs(h.refKey(), refs)
 
 	text := strings.Join(lines, "\n")
 	if text == "" {
@@ -2897,8 +2925,8 @@ func (h *Handlers) discardSession() {
 	h.client = nil
 	h.conn = nil
 	h.prompts = nil
-	h.refMap = nil
-	h.lastMap = ""
+	h.refMaps = nil
+	h.lastMaps = nil
 	h.activeContext = ""
 	h.ownedUserContexts = nil
 }
@@ -2922,10 +2950,12 @@ func (h *Handlers) resolveRefsInArgs(args map[string]interface{}) map[string]int
 	return cp
 }
 
-// resolveSelector resolves @ref selectors to CSS selectors from the refMap.
+// resolveSelector resolves @ref selectors to CSS selectors from this
+// page's ref table, so a pinned caller cannot pick up selectors another
+// caller's map minted on a different page (#383).
 func (h *Handlers) resolveSelector(selector string) string {
 	if strings.HasPrefix(selector, "@e") {
-		if resolved, ok := h.refMap[selector]; ok {
+		if resolved, ok := h.refMaps[h.refKey()][selector]; ok {
 			return resolved
 		}
 	}
@@ -3058,19 +3088,24 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	}
 
 	// Build ref map and output
-	h.refMap = make(map[string]string)
+	refs := make(map[string]string)
 	var lines []string
 	for i, el := range elements {
 		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
+		refs[ref] = el.Selector
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
+	key := h.refKey()
+	h.setRefs(key, refs)
 
 	output := strings.Join(lines, "\n")
 	if output == "" {
 		output = "No interactive elements found"
 	}
-	h.lastMap = output
+	if h.lastMaps == nil {
+		h.lastMaps = make(map[string]string)
+	}
+	h.lastMaps[key] = output
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -3080,19 +3115,20 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	}, nil
 }
 
-// browserDiffMap compares current page state vs last map.
+// browserDiffMap compares current page state vs this page's last map.
 func (h *Handlers) browserDiffMap(args map[string]interface{}) (*ToolsCallResult, error) {
-	if h.lastMap == "" {
+	key := h.refKey()
+	if h.lastMaps[key] == "" {
 		return nil, fmt.Errorf("no previous map to diff against — run browser_map first")
 	}
 
 	// Get current map
-	prevMap := h.lastMap
+	prevMap := h.lastMaps[key]
 	_, err := h.browserMap(args)
 	if err != nil {
 		return nil, err
 	}
-	currentMap := h.lastMap
+	currentMap := h.lastMaps[key]
 
 	// Simple line-based diff
 	prevLines := strings.Split(prevMap, "\n")
