@@ -177,8 +177,9 @@ vibium record stop
 ### Pages
 - `vibium pages` — list open pages
 - `vibium page new [url]` — open new page
+- `vibium page new --isolated [url]` — open page with its own cookies/storage
 - `vibium page switch <index|url>` — switch page
-- `vibium page close [index]` — close page
+- `vibium page close [index|page id]` — close page
 
 ### Debug
 - `vibium highlight "<selector>"` — highlight element visually (3 seconds)
@@ -289,6 +290,14 @@ vibium daemon stop
 # Or per command, to drive two browsers from one script
 vibium --session buyer go https://shop.example.com
 vibium --session seller go https://shop.example.com/admin
+```
+
+### Isolated pages (one browser, separate cookies/storage)
+```sh
+# Lighter than a session: two logins in one browser, no second launch
+vibium page new --isolated https://shop.example.com   # prints (page: <id>)
+vibium page new --isolated https://shop.example.com
+vibium page close <id>   # also removes the page's isolated context
 ```
 
 ### Multi-page workflow

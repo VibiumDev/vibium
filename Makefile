@@ -399,7 +399,7 @@ test-js-engine: build-go
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
 	@echo "--- MCP Server Tests ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js tests/mcp/page-pinning.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js tests/mcp/page-pinning.test.js tests/mcp/page-isolation.test.js
 
 # Run daemon tests (sequential - daemon lifecycle)
 test-daemon: build-go

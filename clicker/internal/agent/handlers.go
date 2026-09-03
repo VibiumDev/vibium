@@ -51,6 +51,12 @@ type Handlers struct {
 	// per-call field is safe here, like lastElementBox above.
 	pageOverride string
 
+	// ownedUserContexts holds the user contexts created for isolated pages
+	// (#383), so closing the last page of one also removes the context and
+	// its storage partition. Only mutated inside serialized Call paths, like
+	// pageOverride above.
+	ownedUserContexts map[string]bool
+
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
 	prompts     *api.PromptTracker
@@ -674,6 +680,7 @@ func (h *Handlers) Close() {
 	ownsRemote := h.ownsRemote
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
+	h.ownedUserContexts = nil
 	recorder := h.recorder
 	h.recorder = nil
 	h.sessionMu.Unlock()
@@ -1494,11 +1501,31 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	url, _ := args["url"].(string)
+	isolated, _ := args["isolated"].(bool)
 
 	s := h.newSession()
-	contextID, err := api.NewPage(s, url)
+	userContext := ""
+	if isolated {
+		uc, err := api.NewUserContext(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create isolated context: %w", err)
+		}
+		userContext = uc
+	}
+	contextID, err := api.NewPageInContext(s, url, userContext)
 	if err != nil {
+		if userContext != "" {
+			if rmErr := api.RemoveUserContext(s, userContext); rmErr != nil {
+				log.Warn("failed to remove isolated context after page creation failed", "userContext", userContext, "error", rmErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+	if userContext != "" {
+		if h.ownedUserContexts == nil {
+			h.ownedUserContexts = make(map[string]bool)
+		}
+		h.ownedUserContexts[userContext] = true
 	}
 	// Activate and track the new page so subsequent commands target it
 	if err := api.SwitchPage(s, contextID); err != nil {
@@ -1507,9 +1534,13 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	h.activeContext = contextID
 
 	// The id lets a caller pin later calls to this page (#383).
-	msg := fmt.Sprintf("New page opened (page: %s)", contextID)
+	kind := "page"
+	if isolated {
+		kind = "isolated page"
+	}
+	msg := fmt.Sprintf("New %s opened (page: %s)", kind, contextID)
 	if url != "" {
-		msg = fmt.Sprintf("New page opened and navigated to %s (page: %s)", url, contextID)
+		msg = fmt.Sprintf("New %s opened and navigated to %s (page: %s)", kind, url, contextID)
 	}
 
 	return &ToolsCallResult{
@@ -1534,7 +1565,11 @@ func (h *Handlers) browserListPages(args map[string]interface{}) (*ToolsCallResu
 
 	var text string
 	for i, page := range pages {
-		text += fmt.Sprintf("[%d] %s (page: %s)\n", i, page.URL, page.Context)
+		isolated := ""
+		if h.ownedUserContexts[page.UserContext] {
+			isolated = " [isolated]"
+		}
+		text += fmt.Sprintf("[%d] %s (page: %s)%s\n", i, page.URL, page.Context, isolated)
 	}
 	if text == "" {
 		text = "No pages open"
@@ -1597,7 +1632,7 @@ func (h *Handlers) browserSwitchPage(args map[string]interface{}) (*ToolsCallRes
 	}, nil
 }
 
-// browserClosePage closes a page by index (default: current page).
+// browserClosePage closes a page by id or index (default: current page).
 func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
@@ -1613,27 +1648,36 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 		return nil, fmt.Errorf("no pages open")
 	}
 
-	idx := -1
-	if i, ok := argFloat(args, "index"); ok {
-		idx = int(i)
-	} else if h.activeContext != "" {
-		// No index given — default to the active page
-		for i, page := range pages {
-			if page.Context == h.activeContext {
-				idx = i
-				break
+	var closedContext, label string
+	if page, ok := args["page"].(string); ok && page != "" {
+		// Already validated as live by Call, like any page argument.
+		closedContext = page
+		label = page
+	} else {
+		idx := -1
+		if i, ok := argFloat(args, "index"); ok {
+			idx = int(i)
+		} else if h.activeContext != "" {
+			// No index given — default to the active page
+			for i, page := range pages {
+				if page.Context == h.activeContext {
+					idx = i
+					break
+				}
 			}
 		}
-	}
-	if idx < 0 {
-		idx = 0 // fall back to first page
+		if idx < 0 {
+			idx = 0 // fall back to first page
+		}
+
+		if idx >= len(pages) {
+			return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
+		}
+
+		closedContext = pages[idx].Context
+		label = strconv.Itoa(idx)
 	}
 
-	if idx < 0 || idx >= len(pages) {
-		return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
-	}
-
-	closedContext := pages[idx].Context
 	if err := api.ClosePage(s, closedContext); err != nil {
 		return nil, err
 	}
@@ -1641,10 +1685,38 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 		h.activeContext = ""
 	}
 
+	// Closing the last page of an isolated context removes the context too,
+	// so its storage partition does not outlive its pages.
+	note := ""
+	closedUserContext := ""
+	for _, page := range pages {
+		if page.Context == closedContext {
+			closedUserContext = page.UserContext
+			break
+		}
+	}
+	if h.ownedUserContexts[closedUserContext] {
+		lastInContext := true
+		for _, page := range pages {
+			if page.UserContext == closedUserContext && page.Context != closedContext {
+				lastInContext = false
+				break
+			}
+		}
+		if lastInContext {
+			if err := api.RemoveUserContext(s, closedUserContext); err != nil {
+				log.Warn("failed to remove isolated context", "userContext", closedUserContext, "error", err)
+			} else {
+				delete(h.ownedUserContexts, closedUserContext)
+				note = " and its isolated context"
+			}
+		}
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Closed page %d", idx),
+			Text: fmt.Sprintf("Closed page %s%s", label, note),
 		}},
 	}, nil
 }
@@ -2828,6 +2900,7 @@ func (h *Handlers) discardSession() {
 	h.refMap = nil
 	h.lastMap = ""
 	h.activeContext = ""
+	h.ownedUserContexts = nil
 }
 
 // resolveRefsInArgs returns a copy of args with any @ref selector resolved

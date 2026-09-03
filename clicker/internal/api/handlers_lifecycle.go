@@ -239,8 +239,17 @@ type PageInfo struct {
 
 // NewPage creates a new page and returns its context ID.
 func NewPage(s Session, url string) (string, error) {
+	return NewPageInContext(s, url, "")
+}
+
+// NewPageInContext creates a new page inside the given user context; an empty
+// userContext means the browser default.
+func NewPageInContext(s Session, url, userContext string) (string, error) {
 	params := map[string]interface{}{
 		"type": "tab",
+	}
+	if userContext != "" {
+		params["userContext"] = userContext
 	}
 	resp, err := s.SendBidiCommand("browsingContext.create", params)
 	if err != nil {
@@ -256,6 +265,32 @@ func NewPage(s Session, url string) (string, error) {
 		}
 	}
 	return context, nil
+}
+
+// NewUserContext creates a user context (isolated cookies/storage) and
+// returns its id.
+func NewUserContext(s Session) (string, error) {
+	resp, err := s.SendBidiCommand("browser.createUserContext", map[string]interface{}{})
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Result struct {
+			UserContext string `json:"userContext"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("failed to parse createUserContext response: %w", err)
+	}
+	return result.Result.UserContext, nil
+}
+
+// RemoveUserContext closes a user context along with any pages still in it.
+func RemoveUserContext(s Session, userContext string) error {
+	_, err := s.SendBidiCommand("browser.removeUserContext", map[string]interface{}{
+		"userContext": userContext,
+	})
+	return err
 }
 
 // ListPages returns all browsing contexts (pages).
