@@ -1,8 +1,9 @@
-# Alert-only early warning for browser beta releases (#469). Runs the full
-# Firefox suite against the current beta so breakage like Firefox 155
-# (#464) is found during the beta window, not on release day. Kept out of
-# test.yml on purpose: nothing here may ever gate a PR or a release, or
-# the reflex under pressure is to pin the beta away and lose the signal.
+# Alert-only early warning for browser beta releases (#469, #470). Runs
+# the Firefox suite against the current Firefox beta and the Chrome suite
+# against the current Chrome Beta so breakage like Firefox 155 (#464) is
+# found during the beta window, not on release day. Kept out of test.yml
+# on purpose: nothing here may ever gate a PR or a release, or the reflex
+# under pressure is to pin the beta away and lose the signal.
 name: Beta Watch
 
 on:
@@ -97,32 +98,116 @@ jobs:
         if: always()
         run: make double-tap
 
+  chrome-beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VIBIUM_ENGINE_CHANNEL: beta
+      # Forward the binary's stderr into the job log, as test.yml does, so
+      # a wedged beta run leaves readable diagnostics.
+      VIBIUM_STDERR: 1
+    outputs:
+      version: ${{ steps.beta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve current Chrome Beta version
+        id: beta
+        run: |
+          version=$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json \
+            | jq -r '.channels.Beta.version')
+          test -n "$version"
+          test "$version" != "null"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Current Chrome Beta: $version"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: |
+            clients/python/pyproject.toml
+            packages/python/vibium_linux_x64/pyproject.toml
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      # Ubuntu 24.04 restricts unprivileged user namespaces, which breaks
+      # Chrome's sandbox (HTTP 500 on session creation).
+      - name: Configure kernel for Chrome sandbox
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+      # Keyed on the beta version itself: a new beta means a fresh install,
+      # the same beta reuses yesterday's download. Betas cache under their
+      # own channel dir, so this never touches the stable install.
+      - name: Cache Chrome Beta
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/vibium/chrome-for-testing/beta
+          key: ${{ runner.os }}-chrome-beta-${{ steps.beta.outputs.version }}
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
+
+      - name: Build
+        run: make
+
+      # The same suite test.yml's chrome job runs, against the beta. The
+      # Firefox portions self-skip: no Firefox is installed here.
+      - name: Test against Chrome Beta
+        run: xvfb-run --auto-servernum make test SUITE_PARALLEL=4
+
+      - name: Clean up zombie processes
+        if: always()
+        run: make double-tap
+
   notify:
     if: always()
-    needs: [firefox-beta]
+    needs: [firefox-beta, chrome-beta]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       issues: write
     steps:
-      - name: Open, update, or resolve the beta breakage issue
+      - name: Open, update, or resolve the beta breakage issues
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          RESULT: ${{ needs.firefox-beta.result }}
-          VERSION: ${{ needs.firefox-beta.outputs.version }}
+          FIREFOX_RESULT: ${{ needs.firefox-beta.result }}
+          FIREFOX_VERSION: ${{ needs.firefox-beta.outputs.version }}
+          CHROME_RESULT: ${{ needs.chrome-beta.result }}
+          CHROME_VERSION: ${{ needs.chrome-beta.outputs.version }}
         with:
           script: |
             // Issues are titled per engine and version ("Firefox 156.0b3
             // (beta) breaks the suite") so the next beta opens a fresh
-            // issue instead of burying new breakage in an old thread.
-            // When the chrome leg lands (#470) its titles start with
-            // "Chrome" and this prefix keeps the engines' issues apart.
-            const failed = process.env.RESULT !== 'success';
-            const version = process.env.VERSION;
-            const prefix = 'Firefox ';
-            const title = version
-              ? `Firefox ${version} (beta) breaks the suite`
-              : 'Firefox beta watch failed before the suite ran';
+            // issue instead of burying new breakage in an old thread, and
+            // the engine prefix keeps a Chrome failure from hiding a
+            // Firefox one: each engine only ever touches its own issues.
+            const engines = [
+              { name: 'Firefox', result: process.env.FIREFOX_RESULT, version: process.env.FIREFOX_VERSION },
+              { name: 'Chrome', result: process.env.CHROME_RESULT, version: process.env.CHROME_VERSION },
+            ];
             try {
               await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'beta-watch' });
             } catch {
@@ -133,17 +218,24 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'beta-watch', per_page: 100,
             });
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            if (failed) {
-              const marker = open.find(issue => issue.title === title);
-              const body = `Firefox beta ${version || '(version unresolved)'} failed the suite.\n\n${run}`;
-              if (marker) await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: marker.number, body });
-              else await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo,
-                title, body, labels: ['beta-watch'] });
-            } else {
-              for (const issue of open.filter(i => i.title.startsWith(prefix))) {
-                await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo,
-                  issue_number: issue.number, body: `Green again on beta ${version} in ${run}.` });
-                await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo,
-                  issue_number: issue.number, state: 'closed' });
+            for (const engine of engines) {
+              const failed = engine.result !== 'success';
+              const version = engine.version;
+              const title = version
+                ? `${engine.name} ${version} (beta) breaks the suite`
+                : `${engine.name} beta watch failed before the suite ran`;
+              if (failed) {
+                const marker = open.find(issue => issue.title === title);
+                const body = `${engine.name} beta ${version || '(version unresolved)'} failed the suite.\n\n${run}`;
+                if (marker) await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: marker.number, body });
+                else await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo,
+                  title, body, labels: ['beta-watch'] });
+              } else {
+                for (const issue of open.filter(i => i.title.startsWith(`${engine.name} `))) {
+                  await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo,
+                    issue_number: issue.number, body: `Green again on beta ${version} in ${run}.` });
+                  await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo,
+                    issue_number: issue.number, state: 'closed' });
+                }
               }
             }
