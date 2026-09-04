@@ -85,6 +85,23 @@ describe('CLI: ws-test scheme hint', () => {
       assert.match(out, /ws:\/\/localhost:59999/, `should suggest the ws:// form, got: ${out.slice(0, 200)}`);
     }
   });
+
+  // The hint echoes the URL back, and a cloud provider hub URL carries an
+  // access key in its userinfo field (#101).
+  test('does not echo a credential from the URL back (#101)', () => {
+    try {
+      execSync(`${VIBIUM} ws-test "http://user:supersecretkey@localhost:59999"`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+        stdio: 'pipe',
+      });
+      assert.fail('should reject an http:// URL');
+    } catch (err) {
+      const out = err.stdout + err.stderr;
+      assert.doesNotMatch(out, /supersecretkey/, `credential leaked into output: ${out.slice(0, 300)}`);
+      assert.match(out, /redacted/, `should show the credential as redacted, got: ${out.slice(0, 300)}`);
+    }
+  });
 });
 
 describe('CLI: shell completion', () => {

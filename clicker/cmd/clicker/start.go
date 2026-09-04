@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -21,7 +22,11 @@ With a URL argument, connects to a remote BiDi WebSocket endpoint.
 If no URL is given, checks VIBIUM_CONNECT_URL env var before falling
 back to a local browser launch.
 
-Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
+Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.
+
+http:// and https:// URLs are rewritten to ws:// and wss://, and credentials
+in the URL (https://user:key@host) are sent as an Authorization: Basic header,
+so a cloud provider's hub URL works as documented.`,
 		Example: `  vibium start
   # Start with a local browser
 
@@ -130,11 +135,13 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				// Take the daemon down before reporting: it cannot reach the
 				// endpoint either, so leaving it up only defers the failure.
 				shutdownDaemonAndWait()
-				printError(fmt.Errorf("failed to connect to %s: %w", connectURL, err))
+				printError(fmt.Errorf("failed to connect to %s: %w", bidi.RedactEndpoint(connectURL), err))
 				return
 			}
 
-			msg := fmt.Sprintf("Connected to %s (daemon pid %d)", connectURL, child.Process.Pid)
+			// Redacted: a provider hub URL can carry an access key in its
+			// userinfo field, and this line is printed to the user (#101).
+			msg := fmt.Sprintf("Connected to %s (daemon pid %d)", bidi.RedactEndpoint(connectURL), child.Process.Pid)
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: true, Result: msg})
 				return

@@ -162,7 +162,9 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 
 	if r.connectURL != "" {
 		// Remote mode: connect to an existing BiDi endpoint and create a session
-		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), r.connectURL)
+		// Redacted: a provider hub URL can carry an access key in its
+		// userinfo field, and clients drain this stream to the user (#101).
+		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), bidi.RedactEndpoint(r.connectURL))
 
 		// Handshake without a bidi.Client: this router reads the connection
 		// itself in routeBrowserToClient, so no client reader may own it.
@@ -176,6 +178,8 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 			}
 		}
 		if err != nil {
+			// Safe to print verbatim: ConnectWithHeaders redacts the URL it
+			// puts in its error, and the session handshake carries no URL.
 			fmt.Fprintf(os.Stderr, "[router] Failed to connect to remote browser for client %d: %v\n", client.ID(), err)
 			client.Send(fmt.Sprintf(`{"error":{"code":-32000,"message":"Failed to connect to remote browser: %s"}}`, err.Error()))
 			client.Close()

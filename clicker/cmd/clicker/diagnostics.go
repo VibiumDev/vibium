@@ -181,12 +181,18 @@ func newWSTestCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			url := args[0]
+			// Named rather than normalized: this command exists to test a
+			// raw WebSocket URL, so say what the URL should be instead of
+			// quietly testing a different one. Redacted because the hint
+			// echoes the URL back, and a hub URL can carry an access key in
+			// its userinfo field (#101).
 			if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-				ws := strings.Replace(strings.Replace(url, "https://", "wss://", 1), "http://", "ws://", 1)
-				fmt.Fprintf(os.Stderr, "Error: %s is not a WebSocket URL. Try: %s\n", url, ws)
+				safe := bidi.RedactEndpoint(url)
+				ws := strings.Replace(strings.Replace(safe, "https://", "wss://", 1), "http://", "ws://", 1)
+				fmt.Fprintf(os.Stderr, "Error: %s is not a WebSocket URL. Try: %s\n", safe, ws)
 				os.Exit(1)
 			}
-			fmt.Printf("Connecting to %s...\n", url)
+			fmt.Printf("Connecting to %s...\n", bidi.RedactEndpoint(url))
 
 			conn, err := bidi.Connect(url)
 			if err != nil {
