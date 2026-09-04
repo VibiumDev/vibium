@@ -777,7 +777,9 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
+				// Redacted: a provider hub URL can carry an access key in
+				// its userinfo field, and this goes back to the agent (#101).
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, bidi.RedactEndpoint(h.connectURL), session.ID),
 			}},
 		}, nil
 	}

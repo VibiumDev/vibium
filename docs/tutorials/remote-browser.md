@@ -57,6 +57,8 @@ vibium stop
 
 Both endpoint shapes work: a browser-level URL like `ws://host:9515/session` (vibium creates the session) and a URL for a session that already exists, such as a chromedriver `webSocketUrl` or a Selenium Grid `ws://host:4444/session/<id>/se/bidi` (vibium attaches to it).
 
+`http://` and `https://` URLs are accepted too and rewritten to `ws://` / `wss://`, so a hub URL copied from a cloud provider's docs works as-is.
+
 ### MCP Server
 
 The MCP server reads the same env vars, so AI agents can use a remote browser:
@@ -198,13 +200,39 @@ bro = browser.start("wss://cloud.example.com/bidi", headers={
 })
 ```
 
+### Credentials in the URL
+
+Providers that document a hub URL with the credentials embedded — BrowserStack's
+`https://username:accesskey@hub-cloud.browserstack.com`, for example — work
+without any extra setup. Vibium moves the credentials out of the URL (a
+WebSocket URL may not carry them) into an `Authorization: Basic` header:
+
+```javascript
+const bro = await browser.start('https://username:accesskey@hub-cloud.browserstack.com')
+```
+
+```python
+bro = browser.start("https://username:accesskey@hub-cloud.browserstack.com")
+```
+
+```bash
+vibium start "https://username:accesskey@hub-cloud.browserstack.com"
+```
+
+An explicit header wins over a credential in the URL, so `VIBIUM_CONNECT_API_KEY`
+and `--connect-header` still override it. Credentials are replaced with
+`redacted` wherever vibium prints the endpoint.
+
+Prefer a header or `VIBIUM_CONNECT_API_KEY` where you can — a URL is easier to
+leak into shell history and CI logs than an env var.
+
 ---
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `VIBIUM_CONNECT_URL` | Remote BiDi WebSocket endpoint (e.g. `ws://host:9515/session`) |
+| `VIBIUM_CONNECT_URL` | Remote BiDi endpoint (e.g. `ws://host:9515/session`); `http://` and `https://` are rewritten to `ws://` / `wss://` |
 | `VIBIUM_CONNECT_API_KEY` | Sent as `Authorization: Bearer <key>` |
 
 These work everywhere — CLI commands, daemon auto-start, and the MCP server.

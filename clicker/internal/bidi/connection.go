@@ -37,15 +37,40 @@ func Connect(url string) (*Connection, error) {
 
 // ConnectWithHeaders establishes a WebSocket connection with optional HTTP headers.
 // Headers are sent during the WebSocket handshake (useful for authentication tokens).
-func ConnectWithHeaders(url string, headers http.Header) (*Connection, error) {
+//
+// The URL goes through NormalizeEndpoint first, so an http:// or https:// hub
+// URL and credentials in its userinfo field both work (#101).
+func ConnectWithHeaders(rawURL string, headers http.Header) (*Connection, error) {
+	endpoint, urlHeaders, err := NormalizeEndpoint(rawURL)
+	if err != nil {
+		return nil, &errs.ConnectionError{URL: RedactEndpoint(rawURL), Cause: err}
+	}
+
+	// Credentials in the URL only fill a gap: an explicit header from
+	// VIBIUM_CONNECT_API_KEY or --connect-header is a deliberate choice and
+	// wins. Clone rather than mutate — the router reuses one header map for
+	// every client it connects.
+	if len(urlHeaders) > 0 {
+		merged := headers.Clone()
+		if merged == nil {
+			merged = make(http.Header)
+		}
+		for key, vals := range urlHeaders {
+			if merged.Get(key) == "" {
+				merged[key] = vals
+			}
+		}
+		headers = merged
+	}
+
 	dialer := websocket.Dialer{
 		ReadBufferSize:   maxMessageSize,
 		WriteBufferSize:  maxMessageSize,
 		HandshakeTimeout: 30 * time.Second,
 	}
-	conn, _, err := dialer.Dial(url, headers)
+	conn, _, err := dialer.Dial(endpoint, headers)
 	if err != nil {
-		return nil, &errs.ConnectionError{URL: url, Cause: err}
+		return nil, &errs.ConnectionError{URL: RedactEndpoint(endpoint), Cause: err}
 	}
 
 	// Set read limit to handle large messages (e.g., screenshots from high-res displays)
