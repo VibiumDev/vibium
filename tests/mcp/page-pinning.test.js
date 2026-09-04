@@ -144,4 +144,40 @@ describe('MCP: page pinning', () => {
     const listing = text(await client.tool('browser_list_pages', {}));
     assert.match(listing, /\(page: /, 'every row should carry the page id');
   });
+
+  // Element refs (@e1, ...) used to live in one table shared by every page,
+  // so one caller's map replaced another's selectors and a pinned click
+  // could faithfully target its own page with a selector minted on a
+  // different one. Refs are now scoped per page.
+  test('a map on one page does not replace another page\'s refs', async () => {
+    // #two exists on both pages, so the old shared table resolved A's @e1
+    // to B's selector and still found an element — silently the wrong one.
+    const pageA = pageIdFrom(await client.tool('browser_new_page', {
+      url: 'data:text/html,<button id="one">alpha</button><button id="two">beta</button>',
+    }));
+    const pageB = pageIdFrom(await client.tool('browser_new_page', {
+      url: 'data:text/html,<button id="two">gamma</button>',
+    }));
+
+    await client.tool('browser_map', { page: pageA });
+    await client.tool('browser_map', { page: pageB });
+
+    const seen = text(await client.tool('browser_get_text', { page: pageA, selector: '@e1' }));
+    assert.strictEqual(seen, 'alpha', "page A's @e1 must still be its own first element");
+  });
+
+  test('browser_diff compares against the same page\'s previous map', async () => {
+    const pageA = pageIdFrom(await client.tool('browser_new_page', {
+      url: 'data:text/html,<button>stable</button>',
+    }));
+    const pageB = pageIdFrom(await client.tool('browser_new_page', {
+      url: 'data:text/html,<button>other</button>',
+    }));
+
+    await client.tool('browser_map', { page: pageA });
+    await client.tool('browser_map', { page: pageB });
+
+    const diff = text(await client.tool('browser_diff_map', { page: pageA }));
+    assert.strictEqual(diff, 'No changes detected', "an unchanged page must not diff against another page's map");
+  });
 });

@@ -10,7 +10,6 @@ var noPageParam = map[string]bool{
 	"browser_new_page":           true,
 	"browser_list_pages":         true,
 	"browser_switch_page":        true,
-	"browser_close_page":         true,
 	"browser_sleep":              true,
 	"browser_record_start":       true,
 	"browser_record_stop":        true,
@@ -283,6 +282,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "URL to navigate to in the new page (optional)",
 					},
+					"isolated": map[string]interface{}{
+						"type": "boolean",
+						"description": "Open the page in its own isolated context with separate cookies and storage (default: false). " +
+							"Concurrent callers sharing this server should open an isolated page and pass its id as the page argument on every call.",
+					},
 				},
 				"additionalProperties": false,
 			},
@@ -316,13 +320,13 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_close_page",
-			Description: "Close a browser page by index (default: current page)",
+			Description: "Close a browser page by id or index (default: current page)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"index": map[string]interface{}{
 						"type":        "number",
-						"description": "Page index to close (default: 0, the current page)",
+						"description": "Page index to close (default: 0, the current page); ignored when a page id is given",
 						"default":     0,
 					},
 				},

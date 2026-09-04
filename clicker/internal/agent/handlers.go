@@ -36,8 +36,8 @@ type Handlers struct {
 	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header       // headers for remote WebSocket connection
 	ownsRemote     bool              // remote session was created here, so Close() ends it
-	refMap         map[string]string // @e1 -> CSS selector
-	lastMap        string            // last map output (for diff)
+	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
+	lastMaps       map[string]string            // context -> last map output (for diff)
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
@@ -50,6 +50,12 @@ type Handlers struct {
 	// Call (the daemon under its router mutex, MCP by its stdio loop), so a
 	// per-call field is safe here, like lastElementBox above.
 	pageOverride string
+
+	// ownedUserContexts holds the user contexts created for isolated pages
+	// (#383), so closing the last page of one also removes the context and
+	// its storage partition. Only mutated inside serialized Call paths, like
+	// pageOverride above.
+	ownedUserContexts map[string]bool
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
@@ -454,6 +460,34 @@ func (h *Handlers) getContext() string {
 	return tree.Contexts[0].Context
 }
 
+// refKey is the browsing context whose element refs and map snapshot this
+// call reads and writes. Refs are scoped per page so concurrent callers
+// pinned to different pages cannot resolve each other's selectors (#383).
+// An ambient call with no tracked page resolves to the real current
+// context, so refs minted before any explicit page switch are still found
+// after switching back to that page.
+func (h *Handlers) refKey() string {
+	if ctx := h.currentContext(); ctx != "" {
+		return ctx
+	}
+	if h.client == nil {
+		return ""
+	}
+	tree, err := h.client.GetTree()
+	if err != nil || len(tree.Contexts) == 0 {
+		return ""
+	}
+	return tree.Contexts[0].Context
+}
+
+// setRefs replaces the ref table for one page.
+func (h *Handlers) setRefs(key string, refs map[string]string) {
+	if h.refMaps == nil {
+		h.refMaps = make(map[string]map[string]string)
+	}
+	h.refMaps[key] = refs
+}
+
 // queryViewport queries the browser for the current viewport size.
 // Returns nil if the query fails (best-effort).
 func (h *Handlers) queryViewport() map[string]interface{} {
@@ -674,6 +708,7 @@ func (h *Handlers) Close() {
 	ownsRemote := h.ownsRemote
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
+	h.ownedUserContexts = nil
 	recorder := h.recorder
 	h.recorder = nil
 	h.sessionMu.Unlock()
@@ -1001,11 +1036,12 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("failed to map for annotation: %w", err)
 		}
 
-		// Build ordered list of selectors from refMap (@e1, @e2, ...)
-		selectors := make([]string, 0, len(h.refMap))
-		for i := 1; i <= len(h.refMap); i++ {
+		// Build ordered list of selectors from this page's refs (@e1, @e2, ...)
+		refs := h.refMaps[h.refKey()]
+		selectors := make([]string, 0, len(refs))
+		for i := 1; i <= len(refs); i++ {
 			ref := fmt.Sprintf("@e%d", i)
-			if sel, ok := h.refMap[ref]; ok {
+			if sel, ok := refs[ref]; ok {
 				selectors = append(selectors, sel)
 			}
 		}
@@ -1156,9 +1192,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 			return nil, fmt.Errorf("failed to parse find result: %w", err)
 		}
 
-		// Store ref in refMap
-		h.refMap = make(map[string]string)
-		h.refMap["@e1"] = found.Selector
+		// Store ref in this page's ref table
+		h.setRefs(h.refKey(), map[string]string{"@e1": found.Selector})
 
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -1197,9 +1232,8 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
 	}
 
-	// Store ref in refMap
-	h.refMap = make(map[string]string)
-	h.refMap["@e1"] = selector
+	// Store ref in this page's ref table
+	h.setRefs(h.refKey(), map[string]string{"@e1": selector})
 
 	labelStr := fmt.Sprintf("%v", labelResult)
 	return &ToolsCallResult{
@@ -1494,11 +1528,31 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	url, _ := args["url"].(string)
+	isolated, _ := args["isolated"].(bool)
 
 	s := h.newSession()
-	contextID, err := api.NewPage(s, url)
+	userContext := ""
+	if isolated {
+		uc, err := api.NewUserContext(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create isolated context: %w", err)
+		}
+		userContext = uc
+	}
+	contextID, err := api.NewPageInContext(s, url, userContext)
 	if err != nil {
+		if userContext != "" {
+			if rmErr := api.RemoveUserContext(s, userContext); rmErr != nil {
+				log.Warn("failed to remove isolated context after page creation failed", "userContext", userContext, "error", rmErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+	if userContext != "" {
+		if h.ownedUserContexts == nil {
+			h.ownedUserContexts = make(map[string]bool)
+		}
+		h.ownedUserContexts[userContext] = true
 	}
 	// Activate and track the new page so subsequent commands target it
 	if err := api.SwitchPage(s, contextID); err != nil {
@@ -1507,9 +1561,13 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	h.activeContext = contextID
 
 	// The id lets a caller pin later calls to this page (#383).
-	msg := fmt.Sprintf("New page opened (page: %s)", contextID)
+	kind := "page"
+	if isolated {
+		kind = "isolated page"
+	}
+	msg := fmt.Sprintf("New %s opened (page: %s)", kind, contextID)
 	if url != "" {
-		msg = fmt.Sprintf("New page opened and navigated to %s (page: %s)", url, contextID)
+		msg = fmt.Sprintf("New %s opened and navigated to %s (page: %s)", kind, url, contextID)
 	}
 
 	return &ToolsCallResult{
@@ -1534,7 +1592,11 @@ func (h *Handlers) browserListPages(args map[string]interface{}) (*ToolsCallResu
 
 	var text string
 	for i, page := range pages {
-		text += fmt.Sprintf("[%d] %s (page: %s)\n", i, page.URL, page.Context)
+		isolated := ""
+		if h.ownedUserContexts[page.UserContext] {
+			isolated = " [isolated]"
+		}
+		text += fmt.Sprintf("[%d] %s (page: %s)%s\n", i, page.URL, page.Context, isolated)
 	}
 	if text == "" {
 		text = "No pages open"
@@ -1597,7 +1659,7 @@ func (h *Handlers) browserSwitchPage(args map[string]interface{}) (*ToolsCallRes
 	}, nil
 }
 
-// browserClosePage closes a page by index (default: current page).
+// browserClosePage closes a page by id or index (default: current page).
 func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
@@ -1613,27 +1675,36 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 		return nil, fmt.Errorf("no pages open")
 	}
 
-	idx := -1
-	if i, ok := argFloat(args, "index"); ok {
-		idx = int(i)
-	} else if h.activeContext != "" {
-		// No index given — default to the active page
-		for i, page := range pages {
-			if page.Context == h.activeContext {
-				idx = i
-				break
+	var closedContext, label string
+	if page, ok := args["page"].(string); ok && page != "" {
+		// Already validated as live by Call, like any page argument.
+		closedContext = page
+		label = page
+	} else {
+		idx := -1
+		if i, ok := argFloat(args, "index"); ok {
+			idx = int(i)
+		} else if h.activeContext != "" {
+			// No index given — default to the active page
+			for i, page := range pages {
+				if page.Context == h.activeContext {
+					idx = i
+					break
+				}
 			}
 		}
-	}
-	if idx < 0 {
-		idx = 0 // fall back to first page
+		if idx < 0 {
+			idx = 0 // fall back to first page
+		}
+
+		if idx >= len(pages) {
+			return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
+		}
+
+		closedContext = pages[idx].Context
+		label = strconv.Itoa(idx)
 	}
 
-	if idx < 0 || idx >= len(pages) {
-		return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
-	}
-
-	closedContext := pages[idx].Context
 	if err := api.ClosePage(s, closedContext); err != nil {
 		return nil, err
 	}
@@ -1641,10 +1712,38 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 		h.activeContext = ""
 	}
 
+	// Closing the last page of an isolated context removes the context too,
+	// so its storage partition does not outlive its pages.
+	note := ""
+	closedUserContext := ""
+	for _, page := range pages {
+		if page.Context == closedContext {
+			closedUserContext = page.UserContext
+			break
+		}
+	}
+	if h.ownedUserContexts[closedUserContext] {
+		lastInContext := true
+		for _, page := range pages {
+			if page.UserContext == closedUserContext && page.Context != closedContext {
+				lastInContext = false
+				break
+			}
+		}
+		if lastInContext {
+			if err := api.RemoveUserContext(s, closedUserContext); err != nil {
+				log.Warn("failed to remove isolated context", "userContext", closedUserContext, "error", err)
+			} else {
+				delete(h.ownedUserContexts, closedUserContext)
+				note = " and its isolated context"
+			}
+		}
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Closed page %d", idx),
+			Text: fmt.Sprintf("Closed page %s%s", label, note),
 		}},
 	}, nil
 }
@@ -1921,13 +2020,14 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	// Build ref map and output
-	h.refMap = make(map[string]string)
+	refs := make(map[string]string)
 	var lines []string
 	for i, el := range elements {
 		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
+		refs[ref] = el.Selector
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
+	h.setRefs(h.refKey(), refs)
 
 	text := strings.Join(lines, "\n")
 	if text == "" {
@@ -2825,9 +2925,10 @@ func (h *Handlers) discardSession() {
 	h.client = nil
 	h.conn = nil
 	h.prompts = nil
-	h.refMap = nil
-	h.lastMap = ""
+	h.refMaps = nil
+	h.lastMaps = nil
 	h.activeContext = ""
+	h.ownedUserContexts = nil
 }
 
 // resolveRefsInArgs returns a copy of args with any @ref selector resolved
@@ -2849,10 +2950,12 @@ func (h *Handlers) resolveRefsInArgs(args map[string]interface{}) map[string]int
 	return cp
 }
 
-// resolveSelector resolves @ref selectors to CSS selectors from the refMap.
+// resolveSelector resolves @ref selectors to CSS selectors from this
+// page's ref table, so a pinned caller cannot pick up selectors another
+// caller's map minted on a different page (#383).
 func (h *Handlers) resolveSelector(selector string) string {
 	if strings.HasPrefix(selector, "@e") {
-		if resolved, ok := h.refMap[selector]; ok {
+		if resolved, ok := h.refMaps[h.refKey()][selector]; ok {
 			return resolved
 		}
 	}
@@ -2985,19 +3088,24 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	}
 
 	// Build ref map and output
-	h.refMap = make(map[string]string)
+	refs := make(map[string]string)
 	var lines []string
 	for i, el := range elements {
 		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
+		refs[ref] = el.Selector
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
+	key := h.refKey()
+	h.setRefs(key, refs)
 
 	output := strings.Join(lines, "\n")
 	if output == "" {
 		output = "No interactive elements found"
 	}
-	h.lastMap = output
+	if h.lastMaps == nil {
+		h.lastMaps = make(map[string]string)
+	}
+	h.lastMaps[key] = output
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -3007,19 +3115,20 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	}, nil
 }
 
-// browserDiffMap compares current page state vs last map.
+// browserDiffMap compares current page state vs this page's last map.
 func (h *Handlers) browserDiffMap(args map[string]interface{}) (*ToolsCallResult, error) {
-	if h.lastMap == "" {
+	key := h.refKey()
+	if h.lastMaps[key] == "" {
 		return nil, fmt.Errorf("no previous map to diff against — run browser_map first")
 	}
 
 	// Get current map
-	prevMap := h.lastMap
+	prevMap := h.lastMaps[key]
 	_, err := h.browserMap(args)
 	if err != nil {
 		return nil, err
 	}
-	currentMap := h.lastMap
+	currentMap := h.lastMaps[key]
 
 	// Simple line-based diff
 	prevLines := strings.Split(prevMap, "\n")
