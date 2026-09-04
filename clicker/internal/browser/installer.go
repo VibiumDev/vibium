@@ -20,6 +20,14 @@ const (
 	lastKnownGoodURL     = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
 )
 
+// pinnedChromeVersion is the known-good Chrome for Testing version
+// stable-channel installs default to. CI tests exactly this version; the
+// version-bump workflow opens a tested PR when Google ships a new Stable
+// (#470). Bumping it also renews test.yml's Chrome cache key, which hashes
+// this file, so the bump PR installs the new version instead of a cached
+// old one.
+const pinnedChromeVersion = "152.0.7977.82"
+
 // VersionInfo represents the Chrome for Testing version information.
 type VersionInfo struct {
 	Version   string                `json:"version"`
@@ -153,14 +161,30 @@ var chromeChannelKeys = map[string]string{
 }
 
 // resolveChromeVersionInfo returns the version to install:
-// VIBIUM_ENGINE_VERSION when set, otherwise the channel's current version.
-// Unlike Firefox there is no offline path for a pin: Chrome for Testing
+// VIBIUM_ENGINE_VERSION when set, the baked known-good version for the
+// stable channel, otherwise the channel's current version. Unlike Firefox
+// there is no offline path even for a pinned version: Chrome for Testing
 // download URLs come from its versions JSON, not a constructible pattern.
+// But a pinned lookup can never resolve to an untested new release.
 func resolveChromeVersionInfo() (*VersionInfo, error) {
-	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+	if v := chromeInstallVersion(); v != "" {
 		return fetchVersionInfoFor(v)
 	}
 	return fetchChannelVersion(paths.ChromeChannel())
+}
+
+// chromeInstallVersion returns the exact version to install, or "" when the
+// channel's current version should be fetched instead. Beta, dev, and
+// canary track their moving edge on purpose: beta-watch needs the current
+// beta, and pinning a canary would defeat it entirely.
+func chromeInstallVersion() string {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+		return v
+	}
+	if paths.ChromeChannel() == "stable" {
+		return pinnedChromeVersion
+	}
+	return ""
 }
 
 // fetchChannelVersion fetches the channel's current Chrome for Testing version.

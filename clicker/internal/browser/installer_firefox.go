@@ -19,6 +19,14 @@ import (
 
 const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 
+// pinnedFirefoxVersion is the known-good Firefox version release-channel
+// installs default to. CI tests exactly this version; the version-bump
+// workflow opens a tested PR when Mozilla ships a new release (#469).
+// Bumping it also renews test.yml's Firefox cache key, which hashes this
+// file, so the bump PR installs the new version instead of a cached old
+// one.
+const pinnedFirefoxVersion = "155.0.1"
+
 // InstallFirefox downloads Firefox from Mozilla's release archive into the
 // vibium cache and returns the executable path. Skips the download if the
 // current version is already installed. The channel comes from
@@ -118,13 +126,18 @@ func IsFirefoxInstalled() bool {
 }
 
 // resolveFirefoxVersion returns the Firefox version to install:
-// VIBIUM_ENGINE_VERSION when set, otherwise the channel's current version
-// from Mozilla's product-details JSON. The pin exists because "latest"
-// changes out from under CI and fleets (a beta pin silently jumped 154 to
-// 155 the day 154 reached release); it also skips the network round-trip.
+// VIBIUM_ENGINE_VERSION when set, the baked known-good version for the
+// release channel, otherwise the channel's current version from Mozilla's
+// product-details JSON. Release installs stay off the network and off
+// untested versions — Firefox 155 broke every fresh install on its release
+// day (#464) because this used to resolve "latest" for everyone. Beta
+// keeps tracking the current beta: a pinned beta would blind beta-watch.
 func resolveFirefoxVersion(channel string) (string, error) {
 	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
 		return v, nil
+	}
+	if channel == "release" {
+		return pinnedFirefoxVersion, nil
 	}
 	return fetchLatestFirefoxVersion(channel)
 }
