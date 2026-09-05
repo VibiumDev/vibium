@@ -11,6 +11,7 @@ import (
 	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // StatusResult is returned by daemon/status.
@@ -122,6 +123,18 @@ func (d *Daemon) route(req agent.Request, notifyLaunch func()) (interface{}, *ag
 	log.Debug("daemon request", "method", req.Method, "id", req.ID)
 
 	switch req.Method {
+	case verifier.Method:
+		var p verifier.Request
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid verification request"}
+		}
+		d.mu.Lock()
+		result, err := d.handlers.Verify(p)
+		d.mu.Unlock()
+		if err != nil {
+			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
+		}
+		return result, nil
 	case "daemon/status":
 		return d.handleStatus()
 	case "daemon/shutdown":

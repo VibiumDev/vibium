@@ -23,3 +23,11 @@ Everything else here is internal, outside those four: **specs/**
 **updates/** (release notes and progress posts), **trackers/**
 (living status pages), and **contributing/** (maintainer and contributor
 runbooks).
+
+## Vibium Verify
+
+| Reader's goal | Document |
+|---------------|----------|
+| Learn through a first browser run | [Your coding agent's first verification on var.parts](tutorials/first-verification.md) |
+| Configure and run a check | [Verify a claim in local Chrome](how-to-guides/verify.md) |
+| Understand the independence boundary and evidence | [Why independent verification matters](explanation/independent-verification.md) |

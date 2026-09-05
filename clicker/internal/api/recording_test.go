@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // traceLines unzips a recording and returns the decoded trace.trace events.
@@ -94,5 +95,43 @@ func TestNoDropEventWhenNothingDropped(t *testing.T) {
 
 	if drop := findDropEvent(traceLines(t, zipData)); drop != nil {
 		t.Fatalf("trace claims dropped events on a clean recording: %v", drop)
+	}
+}
+
+func TestVerificationGroupAndResults(t *testing.T) {
+	r := NewRecorder()
+	r.Start(RecordingStartOptions{}, nil)
+	outer := r.StartGroup("outer")
+	parent := r.StartGroup("Verify: claim")
+	r.SetGroupParams(parent, map[string]interface{}{"method": "vibium:verify.run", "claim": "claim"})
+	child := r.NextCallId()
+	r.RecordAction(child, "vibium:page.map", map[string]interface{}{}, "", "page")
+	r.RecordActionEnd(child, "", time.Now(), nil)
+	r.RecordCallOutcome(child, map[string]string{"observed": "name"}, nil)
+	r.StopGroup()
+	r.RecordCallOutcome(parent, map[string]string{"status": "passed", "summary": "persisted"}, nil)
+	r.SetGroupTitle(parent, "Verify: claim — PASS: persisted")
+	r.StopGroup()
+	data, err := r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := traceLines(t, data)
+	for _, e := range events {
+		if e["type"] == "before" && e["callId"] == parent {
+			if e["parentId"] != outer || e["method"] != "tracingGroup" {
+				t.Fatal(e)
+			}
+		}
+		if e["type"] == "before" && e["callId"] == child {
+			if e["parentId"] != parent {
+				t.Fatal(e)
+			}
+		}
+		if e["type"] == "after" && (e["callId"] == child || e["callId"] == parent) {
+			if e["result"] == nil {
+				t.Fatal("missing result", e)
+			}
+		}
 	}
 }

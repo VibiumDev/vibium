@@ -1,6 +1,7 @@
 package bidi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -498,5 +499,32 @@ func TestEventsForwardedInOrder(t *testing.T) {
 		if seq != i {
 			t.Fatalf("event %d arrived at position %d", seq, i)
 		}
+	}
+}
+
+func TestCommandContextCancellationAndRestore(t *testing.T) {
+	client := newTestClient(t, func(s *testServerConn) {
+		for {
+			cmd, err := s.readCommand()
+			if err != nil {
+				return
+			}
+			if cmd.Method == "test.ok" {
+				s.respond(cmd.ID, map[string]interface{}{})
+			}
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	restore := client.SetCommandContext(ctx)
+	if _, err := client.SendCommand("test.hang", nil); err == nil {
+		t.Fatal("expected cancellation")
+	}
+	if _, err := client.SendCommand("test.ok", nil); err == nil {
+		t.Fatal("sent after cancellation")
+	}
+	restore()
+	if _, err := client.SendCommand("test.ok", nil); err != nil {
+		t.Fatal(err)
 	}
 }

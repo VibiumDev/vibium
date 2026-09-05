@@ -132,6 +132,7 @@ func main() {
 	rootCmd.AddCommand(newWSTestCmd())
 	rootCmd.AddCommand(newBiDiTestCmd())
 	rootCmd.AddCommand(newNavigateCmd())
+	rootCmd.AddCommand(newVerifyCmd())
 	rootCmd.AddCommand(newScreenshotCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newFindCmd())

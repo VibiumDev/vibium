@@ -304,6 +304,9 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 
 	for {
 		result, err := callActionableScript(s, context, script, args)
+		if commandCanceled(err) {
+			return nil, err
+		}
 		if err == nil {
 			lastResult = result
 			if result.Status == "ok" {
@@ -311,6 +314,9 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 					// Check stability: sleep 50ms, re-run, compare bbox
 					time.Sleep(50 * time.Millisecond)
 					result2, err2 := callActionableScript(s, context, script, args)
+					if commandCanceled(err2) {
+						return nil, err2
+					}
 					if err2 == nil && result2.Status == "ok" {
 						if result.Box == result2.Box {
 							return &ElementInfo{Tag: result2.Tag, Text: result2.Text, Box: result2.Box, Point: result2.Point}, nil

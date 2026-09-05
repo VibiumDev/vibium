@@ -5,6 +5,7 @@ package agent
 // other tool accepts an optional page argument (added in GetToolSchemas)
 // that pins the call to one browsing context (#383).
 var noPageParam = map[string]bool{
+	"vibium_verify":              true,
 	"browser_start":              true,
 	"browser_stop":               true,
 	"browser_new_page":           true,
@@ -23,6 +24,7 @@ var noPageParam = map[string]bool{
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
 	tools := []Tool{
+		{Name: "vibium_verify", Description: "Independently verify an explicit claim against the current local Chrome/Firefox session, or a read-only recording zip. Returns passed, failed, or inconclusive with evidence. Recorded mode never launches a browser. Uses verifier configuration from the server environment.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"claim": map[string]interface{}{"type": "string"}, "record": map[string]interface{}{"type": "string", "description": "Optional path to an existing version 8 Vibium record.zip or Playwright trace.zip on this host; selects archive mode instead of the live browser."}}, "required": []string{"claim"}, "additionalProperties": false}},
 		{
 			Name:        "browser_start",
 			Description: "Start a browser session",

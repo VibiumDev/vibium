@@ -1,0 +1,73 @@
+---
+name: verify
+description: Independently check a running application's acceptance criteria with the Vibium CLI. Use for a formal verification step in the development loop, with PASS, FAIL, or INCONCLUSIVE and recorded evidence.
+---
+
+# Verify with Vibium
+
+Use `vibium verify "<claim>"` to hand a specific acceptance claim to a fresh
+verifier context. The coding agent builds and fixes the application; Vibium's
+verifier investigates the running behavior with constrained browser tools.
+Your own browser inspection does not substitute for this invocation.
+
+## Setup
+
+Use the project's configured Vibium binary. Otherwise try `vibium`,
+`./clicker/bin/vibium`, then `./node_modules/.bin/vibium`. Confirm
+`verify --help` works. This slice supports the CLI and local Chrome.
+
+The verifier needs `VIBIUM_VERIFIER_MODEL` and, for OpenAI, `OPENAI_API_KEY`.
+An OpenAI-compatible service uses `VIBIUM_VERIFIER_PROVIDER=openai-compatible`
+and `VIBIUM_VERIFIER_BASE_URL`. Use the project's existing configuration;
+Vibium does not load environment files automatically. If an environment file
+is configured, source it in the same shell invocation as Verify. Never print
+or log credentials. Do not choose another provider or model to work around a
+missing configuration without the user's direction.
+
+## Development loop
+
+1. Turn the requested behavior into a concrete, observable claim. Keep the
+   acceptance condition faithful to the request. For example: “Changing the
+   display name persists after refresh.” State any boundaries needed for the
+   task, such as inspecting a cart without proceeding to checkout. If several
+   independent behaviors matter, check them separately.
+2. Run the application and exercise the relevant flow through the existing
+   Vibium CLI. Use `go`, `map`, `find`, `click`, and `fill`; inspect fresh refs
+   after page changes. Reuse the current browser, page, and `--session` or
+   `VIBIUM_SESSION` throughout setup and verification. Create a named session
+   only when starting a new isolated test, not when verifying existing state.
+3. Record the flow. If the user already has a recording active, keep it active.
+   Otherwise start one with `vibium record start` (the default filename is
+   unique) and stop/save the recording you started after verification, even
+   when the check fails. Do not stop someone else's browser or recording.
+4. Run `vibium verify --json "<claim>"` in that same session. The command
+   starts a fresh verifier conversation; do not send the builder transcript,
+   source code, or a suggested verdict. It may operate the page to test the
+   claim. Let it finish before continuing browser work.
+5. Read the JSON result and report the actual verdict, concise evidence, and
+   recording path. The Verify group contains verifier-driven child actions.
+   A passed check applies to the stated claim and observed session.
+6. When a check fails and fixing the application is within the user's task,
+   investigate the evidence, fix the cause, and rerun the original claim.
+   Preserve the earlier result. Do not weaken the claim or retry unchanged
+   behavior until a model happens to pass it. For INCONCLUSIVE, address the
+   missing evidence or report the limitation. Stop when the requested claims
+   pass or a concrete blocker requires user input.
+
+## Result contract
+
+Successful execution returns:
+
+```json
+{"ok":true,"result":{"status":"passed","claim":"…","summary":"…","evidence":[{"type":"observation","summary":"…"}]}}
+```
+
+`result.status` is `passed`, `failed`, or `inconclusive`, displayed as PASS,
+FAIL, or INCONCLUSIVE. **All three verdicts have CLI exit code zero.** A script
+that gates completion must inspect `result.status`; exit zero alone is not a
+pass. Provider, configuration, and browser execution failures are errors,
+not FAIL verdicts. Report them separately and retain available evidence.
+
+For casual exploration and spot-checks, use the `vibe-check` skill if installed.
+It supplies a broader CLI reference; this skill can run on its own using
+`vibium <command> --help` when needed.

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
+	verifying bool // daemon mutex protects the complete verification and its child calls
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -33,9 +35,9 @@ type Handlers struct {
 	engine         string // "chrome" (default) or "firefox"
 	firefoxChannel string // daemon/session default; captured at construction
 	headless       bool
-	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header       // headers for remote WebSocket connection
-	ownsRemote     bool              // remote session was created here, so Close() ends it
+	connectURL     string                       // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header                  // headers for remote WebSocket connection
+	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
 	lastMaps       map[string]string            // context -> last map output (for diff)
 	recorder       *api.Recorder
@@ -129,6 +131,9 @@ func (h *Handlers) newSession() *api.AgentSession {
 // to produce before/after events (matching the API path), and captures a
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
+	if name == "vibium_verify" {
+		return h.verifyMCP(args)
+	}
 	log.Debug("tool call", "name", name, "args", args)
 
 	// A page argument pins this call to one browsing context. Validate it
@@ -152,7 +157,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	}
 
 	var callId string
-	if h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.verifying && name == "browser_screenshot")) {
 		callId = h.recorder.NextCallId()
 		pageId := h.getContext()
 		// Resolve @e1 refs to real selectors so the trace shows meaningful selectors
@@ -170,12 +175,15 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	h.lastElementBox = nil
 
 	// Per-action screenshot: capture after successful non-recording commands
-	if err == nil && h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if err == nil && h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.verifying && name == "browser_screenshot")) {
 		api.CaptureRecordingScreenshot(h.newSession(), h.recorder, endTime)
 	}
 
 	if callId != "" {
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
+		if h.verifying {
+			h.recorder.RecordCallOutcome(callId, verifyRecordedResult(result), err)
+		}
 	}
 
 	return result, err
@@ -184,6 +192,10 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 // dispatch routes a tool call to the appropriate handler method.
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
+	case "browser_console":
+		return h.verifyBrowserObservations("console")
+	case "browser_network":
+		return h.verifyBrowserObservations("network")
 	case "browser_start":
 		return h.browserLaunch(args)
 	case "browser_navigate":
@@ -2405,6 +2417,9 @@ func pollCallFunction(h *Handlers, script string, args []interface{}, timeout ti
 
 	for {
 		result, err := h.client.CallFunction(h.currentContext(), script, args)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {

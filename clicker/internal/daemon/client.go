@@ -10,6 +10,7 @@ import (
 	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // Vars, not consts, so tests can shrink them to hermetic sizes.
@@ -145,7 +146,11 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 		return nil, fmt.Errorf("write request: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(readTimeout))
+	responseTimeout := readTimeout
+	if method == verifier.Method {
+		responseTimeout = verifier.Timeout + 30*time.Second
+	}
+	conn.SetReadDeadline(time.Now().Add(responseTimeout))
 	// bufio.Reader grows as needed; bufio.Scanner failed with "token too long"
 	// on any response over its fixed buffer — a long page's text, a large
 	// storage state (#209).
@@ -189,4 +194,28 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	}
 
 	return &resp, nil
+}
+
+// Verify uses the same private JSON-RPC connection as every daemon command.
+func Verify(req verifier.Request) (*verifier.Result, error) {
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("encode verification request")
+	}
+	response, err := sendRequest(verifier.Method, data)
+	if err != nil {
+		return nil, err
+	}
+	if response.Error != nil {
+		return nil, &ToolError{Msg: response.Error.Message}
+	}
+	data, err = json.Marshal(response.Result)
+	if err != nil {
+		return nil, err
+	}
+	var result verifier.Result
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("invalid verification result")
+	}
+	return &result, result.Validate()
 }

@@ -93,6 +93,7 @@ build: build-go build-js build-java
 # Build vibium binary
 build-go: deps
 	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
+	cp skills/verify/SKILL.md clicker/cmd/clicker/VERIFY_SKILL.md
 	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
@@ -113,6 +114,7 @@ build-js: deps
 build-go-all:
 	@echo "Cross-compiling vibium for all platforms..."
 	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
+	cp skills/verify/SKILL.md clicker/cmd/clicker/VERIFY_SKILL.md
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker

@@ -4,7 +4,7 @@
 
 **The verification layer for coding agents.**
 
-Vibium gives AI agents the tools they need to check their work. Install the `vibium` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
+Vibium gives AI agents the tools they need to check their work. Install the `vibe-check` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
 
 **New here?** Get started in [JavaScript](docs/tutorials/getting-started-js.md), [Python](docs/tutorials/getting-started-python.md), or [Java](docs/tutorials/getting-started-java.md) — zero to hello world in 5 minutes.
 
@@ -25,7 +25,27 @@ npm install -g vibium
 npx skills add https://github.com/VibiumDev/vibium --skill vibe-check
 ```
 
-The first command installs Vibium and the `vibium` binary, and downloads Chrome. The second installs the skill to `{project}/.agents/skills/vibium`.
+The first command installs Vibium and the `vibium` binary, and downloads Chrome. The second installs the browser skill for the agent and scope you select.
+
+Use **vibe-check** for casual browser exploration and spot-checks. Add the
+**verify** skill for an independent acceptance check before completing a change.
+From the checkout containing this development build:
+
+```bash
+npx skills add . --skill verify
+```
+
+Verify currently requires the development build in this checkout, local Chrome,
+and verifier configuration. Follow [Your coding agent's first verification](docs/tutorials/first-verification.md) for installation and a complete
+agent-driven example. In agents with slash skills these are `/vibe-check` and
+`/verify`; in Codex, use `$vibe-check` and `$verify`.
+
+Verify supplies a fresh model context and recorded evidence for a second
+opinion. Its verdict can be wrong, and the reliability benefit has not yet
+been measured. Use it where browser exploration or judgment adds value; keep
+deterministic tests for stable, repeatable assertions. See
+[why independent verification matters](docs/explanation/independent-verification.md)
+for the benefits, costs, and limits.
 
 > `skills` is the [open agent skills CLI](https://github.com/vercel-labs/skills) — a package manager for AI agent skills. No global install needed; `npx` runs it directly.
 

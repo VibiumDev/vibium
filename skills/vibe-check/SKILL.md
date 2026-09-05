@@ -1,11 +1,18 @@
 ---
 name: vibe-check
-description: Browser automation for AI agents. Use when the user needs to navigate websites, read page content, fill forms, click elements, take screenshots, or manage browser pages.
+description: Casual browser exploration and spot-checks with the Vibium CLI. Use to navigate websites, inspect pages, interact with controls, take screenshots, or investigate UI behavior.
 ---
 
 # Vibium Browser Automation — CLI Reference
 
 The `vibium` CLI automates Chrome (and Firefox, via `--engine firefox`) from the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
+
+Use this skill for hands-on exploration and casual spot-checks. Report what you
+observed. For a formal acceptance check in the development loop, use the
+`verify` skill if installed, or `vibium verify "<claim>"` with a configured
+verifier and local Chrome. That command returns an independent verdict and
+records its child actions when recording is active. A casual spot-check does
+not require a verifier call.
 
 ```
 vibium go <url> && vibium map && vibium click @e1 && vibium map

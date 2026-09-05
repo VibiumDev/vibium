@@ -541,7 +541,7 @@ func (t *Recorder) currentGroupIdLocked() string {
 }
 
 // StartGroup adds a group-start marker to the recording.
-func (t *Recorder) StartGroup(name string) {
+func (t *Recorder) StartGroup(name string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -563,6 +563,7 @@ func (t *Recorder) StartGroup(name string) {
 		ev["parentId"] = parentId
 	}
 	t.events = append(t.events, ev)
+	return callId
 }
 
 // StopGroup adds a group-end marker to the recording.
@@ -1326,7 +1327,7 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create trace entry: %w", err)
 	}
 	for _, event := range t.events {
-		data, err := marshalEvent(event)
+		data, err := marshalRecordingEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1346,7 +1347,7 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create network entry: %w", err)
 	}
 	for _, event := range t.network {
-		data, err := marshalEvent(event)
+		data, err := marshalRecordingEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1664,4 +1665,90 @@ func WriteRecordToFile(data []byte, path string) error {
 		return fmt.Errorf("failed to create recording dir: %w", err)
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// SetGroupParams adds semantic metadata without changing tracingGroup's wire shape.
+func (t *Recorder) SetGroupParams(callID string, params map[string]interface{}) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, e := range t.events {
+		if e["type"] == "before" && e["callId"] == callID {
+			e["params"] = params
+			return
+		}
+	}
+}
+func (t *Recorder) SetGroupTitle(callID, title string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, e := range t.events {
+		if e["type"] == "before" && e["callId"] == callID {
+			e["title"] = title
+			return
+		}
+	}
+}
+
+// RecordCallOutcome uses Playwright's ordinary after.result / after.error fields.
+func (t *Recorder) RecordCallOutcome(callID string, result interface{}, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := len(t.events) - 1; i >= 0; i-- {
+		e := t.events[i]
+		if e["type"] == "after" && e["callId"] == callID {
+			if result != nil {
+				e["result"] = result
+			}
+			if err != nil {
+				e["error"] = map[string]interface{}{"message": err.Error()}
+			}
+			return
+		}
+	}
+}
+
+// BrowserObservations returns a small, page-scoped projection of observations
+// already captured by the live recorder. Headers, cookies, bodies, and console
+// argument objects are deliberately excluded from the verifier payload.
+func (t *Recorder) BrowserObservations(kind, page string) []map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := []map[string]interface{}{}
+	if kind == "console" {
+		for i := len(t.events) - 1; i >= 0 && len(result) < 50; i-- {
+			e := t.events[i]
+			if e["method"] != "log.entryAdded" {
+				continue
+			}
+			p, _ := e["params"].(map[string]interface{})
+			source, _ := p["source"].(map[string]interface{})
+			if source["context"] != page {
+				continue
+			}
+			text, _ := p["text"].(string)
+			if len(text) > 1000 {
+				text = text[:1000] + " [truncated]"
+			}
+			result = append(result, map[string]interface{}{"level": p["level"], "type": p["type"], "text": text, "time": e["time"]})
+		}
+	} else {
+		for i := len(t.network) - 1; i >= 0 && len(result) < 50; i-- {
+			snapshot, _ := t.network[i]["snapshot"].(map[string]interface{})
+			if snapshot["_frameref"] != formatPageID(page) {
+				continue
+			}
+			req, _ := snapshot["request"].(map[string]interface{})
+			response, _ := snapshot["response"].(map[string]interface{})
+			raw, _ := req["url"].(string)
+			u, err := url.Parse(raw)
+			if err != nil {
+				continue
+			}
+			u.User = nil
+			u.RawQuery = ""
+			u.Fragment = ""
+			result = append(result, map[string]interface{}{"url": u.String(), "method": req["method"], "status": response["status"], "time": snapshot["_monotonicTime"]})
+		}
+	}
+	return result
 }
