@@ -157,15 +157,16 @@ describe('MCP Server: Protocol', () => {
     assert.ok(response.result.capabilities.tools, 'Should have tools capability');
   });
 
-  test('tools/list returns all 85 browser tools', async () => {
+  test('tools/list returns all 86 tools including Verify', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 85, 'Should have 85 tools');
+    assert.strictEqual(response.result.tools.length, 86, 'Should have 86 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
+      'vibium_verify',
       'browser_start', 'browser_navigate', 'browser_click', 'browser_type',
       'browser_screenshot', 'browser_find', 'browser_evaluate', 'browser_stop',
       'browser_get_text', 'browser_get_url', 'browser_get_title',

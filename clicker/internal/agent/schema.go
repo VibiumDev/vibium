@@ -5,7 +5,6 @@ package agent
 // other tool accepts an optional page argument (added in GetToolSchemas)
 // that pins the call to one browsing context (#383).
 var noPageParam = map[string]bool{
-	"vibium_verify":              true,
 	"browser_start":              true,
 	"browser_stop":               true,
 	"browser_new_page":           true,

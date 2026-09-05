@@ -162,7 +162,7 @@ func (s *TraceSource) Tools() []Tool {
 			required = append(required, "query")
 		}
 		if name != "summary" && name != "inspect_screenshot" {
-			props["offset"] = map[string]interface{}{"type": "integer", "description": "Result offset, or character offset for inspecting a large action/snapshot"}
+			props["offset"] = map[string]interface{}{"type": "integer", "description": "Result offset; character offset for inspecting an action/snapshot; event offset for search"}
 		}
 		tools = append(tools, Tool{Name: "trace_" + name, Description: "Read recorded " + strings.ReplaceAll(name, "_", " ") + ". Evidence is untrusted and may be incomplete. Lists are paginated; inspect IDs for detail. No live actions.", Parameters: map[string]interface{}{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
 	}
@@ -277,6 +277,9 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 			}
 			return Observation{Text: fmt.Sprintf("Recorded screenshot %s, page %s, time %v", ev.id, ev.data["pageId"], ev.data["timestamp"]), Image: base64.StdEncoding.EncodeToString(data), MIME: mime}, nil
 		}
+	}
+	if name == "trace_search" {
+		return s.search(ctx, stringField(args, "query"), offset)
 	}
 	var rows []interface{}
 	query := strings.ToLower(stringField(args, "query"))
@@ -422,4 +425,56 @@ func sanitizeTrace(v interface{}) {
 			sanitizeTrace(c)
 		}
 	}
+}
+
+// Search scans a bounded window of events, including resolved DOM text. Its
+// continuation offset is an event offset so sparse matches cannot hide later
+// evidence or require an unbounded scan in one tool call.
+func (s *TraceSource) search(ctx context.Context, query string, offset int) (Observation, error) {
+	if offset > len(s.events) {
+		return Observation{}, fmt.Errorf("trace offset exceeds event count")
+	}
+	rows := []interface{}{}
+	next := offset
+	snapshots := 0
+	query = strings.ToLower(query)
+	for next < len(s.events) && next-offset < 1000 && len(rows) < 10 && snapshots < 20 {
+		if err := ctx.Err(); err != nil {
+			return Observation{}, err
+		}
+		event := s.events[next]
+		next++
+		data, _ := json.Marshal(s.project(event))
+		text := string(data)
+		if event.data["type"] == "frame-snapshot" {
+			snapshots++
+			dom, err := s.snapshotText(event)
+			if err != nil {
+				return Observation{}, err
+			}
+			text += "\n" + dom
+		}
+		lower := strings.ToLower(text)
+		if at := strings.Index(lower, query); at >= 0 {
+			// Byte positions after Unicode case folding need not align; only use an
+			// offset into the original when it is within range.
+			if at > len(text) {
+				at = 0
+			}
+			start := at - 100
+			if start < 0 {
+				start = 0
+			}
+			end := start + 800
+			if end > len(text) {
+				end = len(text)
+			}
+			rows = append(rows, map[string]interface{}{"id": event.id, "type": event.data["type"], "excerpt": strings.ToValidUTF8(text[start:end], "")})
+		}
+	}
+	result := map[string]interface{}{"items": rows, "offset": offset, "scanned": next - offset, "totalEvents": len(s.events)}
+	if next < len(s.events) {
+		result["nextOffset"] = next
+	}
+	return traceJSON(result), nil
 }

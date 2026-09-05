@@ -59,6 +59,7 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// focus. Fail-fast (video: true on an engine that can't deliver) means
 	// the recording does not start at all.
 	sess := NewAPISession(r, session, lastContext)
+	CaptureRecordingSecrets(sess, recorder, nil)
 	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return

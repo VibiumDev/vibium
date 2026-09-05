@@ -34,6 +34,9 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
   # the browser launch. A bare echo closes it first and the command comes
   # back {"type":"error","message":"connection closed"}.
 
+  # Read-only archive commands, no browser startup
+  vibium pipe --no-browser
+
   # Connect to a remote browser
   vibium pipe --connect ws://remote:9515
 
@@ -54,15 +57,21 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
 				}
 			}
 
-			runPipe(connectURL, connectHeaders)
+			noBrowser, _ := cmd.Flags().GetBool("no-browser")
+			if noBrowser && connectURL != "" {
+				printError(fmt.Errorf("--no-browser cannot be combined with --connect"))
+				return
+			}
+			runPipe(connectURL, connectHeaders, noBrowser)
 		},
 	}
+	cmd.Flags().Bool("no-browser", false, "Start the existing pipe runtime for read-only archive commands without installing or launching a browser")
 	cmd.Flags().String("connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArray("connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
 	return cmd
 }
 
-func runPipe(connectURL string, connectHeaders http.Header) {
+func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool) {
 	// Save a reference to the real fd 1 for protocol output BEFORE redirecting.
 	fd, err := dupFd(os.Stdout.Fd())
 	if err != nil {
@@ -82,7 +91,7 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// marker line must precede any network call (EngineInstalled only stats
 	// local paths) — clients see it and extend their ready deadline once,
 	// covering the download.
-	if connectURL == "" && !browser.SkipBrowserDownload() && !browser.EngineInstalled(engineName) {
+	if !noBrowser && connectURL == "" && !browser.SkipBrowserDownload() && !browser.EngineInstalled(engineName) {
 		fmt.Fprintf(os.Stderr, "%s (%s)\n", installingMarker, engineName)
 		if err := browser.EnsureInstalled(engineName); err != nil {
 			fmt.Fprintf(os.Stderr, "[pipe] Failed to install browser: %v\n", err)
@@ -94,14 +103,18 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// A clean shutdown removes a session's own dir, but any hard kill (crash,
 	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
 	// Parallel-safe: the minAge filter never touches a live sibling's dir.
-	browser.CleanupOrphanedBrowserTempDirs(time.Minute)
+	if !noBrowser {
+		browser.CleanupOrphanedBrowserTempDirs(time.Minute)
+	}
 
 	router := api.NewRouter(engineName, headless, connectURL, connectHeaders)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,
 	// and events subscribed — the client won't see messages until it's ready.
-	router.OnClientConnect(client)
+	if !noBrowser {
+		router.OnClientConnect(client)
+	}
 
 	// Send ready signal so the client knows it can start sending commands.
 	ready := map[string]interface{}{
@@ -151,7 +164,7 @@ func runPipe(connectURL string, connectHeaders http.Header) {
 	// started themselves on this machine and handed us the URL for.
 	router.OnClientDisconnect(client)
 	router.CloseAll()
-	if connectURL == "" {
+	if !noBrowser && connectURL == "" {
 		browser.KillOrphanedChromeProcesses()
 		browser.KillOrphanedFirefoxProcesses()
 	}

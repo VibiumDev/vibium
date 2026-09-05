@@ -3,8 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +29,15 @@ func (h *Handlers) Verify(req verifier.Request) (result verifier.Result, err err
 	if dead, _ := h.client.Dead(); dead {
 		return result, fmt.Errorf("verify browser session is no longer usable")
 	}
+	// Reserve the destination before any verifier action. The existing recorder
+	// exports without clearing a chunk; a recording owned by Verify stops here.
+	if req.Output != "" {
+		finish, startErr := h.startVerifyRecording(req.Output)
+		if startErr != nil {
+			return result, startErr
+		}
+		defer func() { err = errors.Join(err, finish()) }()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), verifier.Timeout)
 	defer cancel()
 	restore := h.client.SetCommandContext(ctx)
@@ -39,6 +51,7 @@ func (h *Handlers) Verify(req verifier.Request) (result verifier.Result, err err
 	defer func() { h.verifying = false }()
 	var group string
 	if h.recorder != nil && h.recorder.IsRecording() {
+		h.recorder.RegisterSecret(req.Config.APIKey)
 		group = h.recorder.StartGroup("Verify: " + req.Claim)
 		h.recorder.SetGroupParams(group, map[string]interface{}{"name": "Verify: " + req.Claim, "method": verifier.Method, "claim": req.Claim})
 		defer func() {
@@ -64,7 +77,7 @@ func (h *Handlers) Verify(req verifier.Request) (result verifier.Result, err err
 
 func (h *Handlers) verifyMCP(args map[string]interface{}) (*ToolsCallResult, error) {
 	for key := range args {
-		if key != "claim" && key != "record" {
+		if key != "claim" && key != "record" && key != "page" {
 			return nil, fmt.Errorf("unsupported verification argument %s", key)
 		}
 	}
@@ -80,8 +93,21 @@ func (h *Handlers) verifyMCP(args map[string]interface{}) (*ToolsCallResult, err
 			return nil, fmt.Errorf("record must be a nonempty path")
 		}
 	}
+	page, hasPage := args["page"]
+	if hasPage {
+		if p, ok := page.(string); !ok || p == "" {
+			return nil, fmt.Errorf("page must be a nonempty context ID")
+		}
+		if record != "" {
+			return nil, fmt.Errorf("record and live page selection cannot be combined")
+		}
+	}
 	config, err := verifier.ConfigFromEnv()
 	if err != nil {
+		return nil, err
+	}
+	req := verifier.Request{Claim: claim, Record: record, Config: config}
+	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 	if record == "" {
@@ -89,7 +115,14 @@ func (h *Handlers) verifyMCP(args map[string]interface{}) (*ToolsCallResult, err
 			return nil, err
 		}
 	}
-	result, err := h.Verify(verifier.Request{Claim: claim, Record: record, Config: config})
+	if hasPage {
+		if err := h.checkPageOpen(page.(string)); err != nil {
+			return nil, err
+		}
+		h.pageOverride = page.(string)
+		defer func() { h.pageOverride = "" }()
+	}
+	result, err := h.Verify(req)
 	if err != nil {
 		return nil, err
 	}
@@ -270,4 +303,61 @@ func (h *Handlers) verifyBrowserObservations(kind string) (*ToolsCallResult, err
 		return nil, err
 	}
 	return &ToolsCallResult{Content: []Content{{Type: "text", Text: string(data)}}}, nil
+}
+
+// startVerifyRecording preserves a caller-owned recorder, including its group
+// stack, resources, video track, and declared output path. Export the full
+// current chunk so snapshot references and earlier evidence remain valid.
+func (h *Handlers) startVerifyRecording(path string) (func() error, error) {
+	if h.recorder != nil {
+		// Resolve parent symlinks even when the destination file does not exist yet.
+		canonical := func(p string) string {
+			absolute, _ := filepath.Abs(p)
+			if dir, err := filepath.EvalSymlinks(filepath.Dir(absolute)); err == nil {
+				return filepath.Join(dir, filepath.Base(absolute))
+			}
+			return absolute
+		}
+		if canonical(path) == canonical(h.recorder.Options().Path) {
+			return nil, fmt.Errorf("verification output must differ from the active recording's destination")
+		}
+	}
+
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("create verification recording: %w", err)
+	}
+	owned := h.recorder == nil
+	if owned {
+		_, err = h.browserRecordStart(map[string]interface{}{"name": "verification", "path": path, "snapshots": true, "video": false})
+		if err != nil {
+			f.Close()
+			os.Remove(path)
+			return nil, err
+		}
+	}
+	return func() error {
+		recorder := h.recorder
+		if h.client != nil {
+			recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
+		}
+		var data []byte
+		var exportErr error
+		if owned {
+			recorder.StopScreenshots()
+			data, exportErr = recorder.Stop()
+			h.recorder = nil
+		} else {
+			data, exportErr = recorder.StopChunk()
+		}
+		if exportErr == nil {
+			_, exportErr = f.Write(data)
+		}
+		exportErr = errors.Join(exportErr, f.Close())
+		if exportErr != nil {
+			os.Remove(path)
+			return fmt.Errorf("save verification recording: %w", exportErr)
+		}
+		return nil
+	}, nil
 }

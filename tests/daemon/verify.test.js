@@ -21,8 +21,10 @@ async function acceptance(t, broken = false) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-verify-'));
   const record = process.env.VIBIUM_VERIFY_RECORD || path.join(dir, 'record.zip');
   const session = `verify-${process.pid}-${broken ? 'fail' : 'pass'}`;
+  const output = path.join(dir, 'verification.zip');
+  const report = path.join(dir, 'verdict.json');
   const claim = 'changing my display name persists after refresh';
-  const env = { ...process.env, VIBIUM_SESSION: session, VIBIUM_CONNECT_URL: '', VIBIUM_ENGINE: 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '' };
+  const env = { ...process.env, VIBIUM_SESSION: session, VIBIUM_CONNECT_URL: '', VIBIUM_ENGINE: process.env.VIBIUM_VERIFY_ENGINE || 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: process.env.VIBIUM_VERIFY_ENGINE === 'firefox' ? 'beta' : '' };
   const cli = async (...args) => {
     const { stdout } = await exec(VIBIUM, ['--json', '--headless', ...args], { env, timeout: 230000, maxBuffer: 4 * 1024 * 1024 });
     const out = JSON.parse(stdout); assert.equal(out.ok, true); return out.result;
@@ -111,10 +113,19 @@ async function acceptance(t, broken = false) {
       await cli('eval', `const password = document.createElement('input'); password.id='password'; password.type='password'; password.value='PASSWORD-SENTINEL'; document.body.append(password); password.focus(); 'ready'`);
     }
     const pagesBefore = await cli('pages');
-    await cli('record', 'start', '-o', record);
-    recordingActive = true;
-    await cli('record', 'group', 'start', 'Builder workflow');
-    const result = await cli('verify', claim);
+    if (!broken) {
+      await cli('record', 'start', '-o', record);
+      recordingActive = true;
+      await cli('record', 'group', 'start', 'Builder workflow');
+    }
+    const result = await cli('verify', claim, '-o', output, '--report', report);
+    assert.deepEqual(JSON.parse(fs.readFileSync(report, 'utf8')), result);
+    assert.ok(fs.statSync(output).size > 0);
+    const { stdout: exported } = await exec('unzip', ['-p', output, 'trace.trace'], { maxBuffer: 12 * 1024 * 1024 });
+    const outputEvents = exported.trim().split('\n').map(JSON.parse);
+    const outputParent = outputEvents.find(e => e.type === 'before' && e.params?.method === 'vibium:verify.run');
+    assert.ok(outputParent);
+    assert.deepEqual(outputEvents.find(e => e.type === 'after' && e.callId === outputParent.callId).result, result);
     t.diagnostic(`${live ? 'Real model' : 'Fixture'}: ${result.status}: ${result.summary}`);
     assert.equal(result.status, broken ? 'failed' : 'passed');
     assert.equal(result.claim, claim);
@@ -133,24 +144,44 @@ async function acceptance(t, broken = false) {
       assert.ok(loaded.some(name => name !== 'Jason'), 'A changed display name must survive a page load');
       assert.equal(await cli('eval', "localStorage.getItem('displayName')"), current);
     }
-    await cli('record', 'group', 'stop');
-    await cli('record', 'stop');
-    recordingActive = false;
-    const { stdout: trace } = await exec('unzip', ['-p', record, 'trace.trace'], { maxBuffer: 12 * 1024 * 1024 });
-    const { stdout: network } = await exec('unzip', ['-p', record, 'trace.network'], { maxBuffer: 12 * 1024 * 1024 });
+    if (!broken) {
+      await cli('record', 'group', 'stop');
+      await cli('record', 'stop');
+      recordingActive = false;
+    } else {
+      // Verify must release the recorder it started.
+      await cli('record', 'start', '--video=false', '-o', record);
+      recordingActive = true;
+      await cli('record', 'stop');
+      recordingActive = false;
+    }
+    const traceFile = broken ? output : record;
+    const { stdout: trace } = await exec('unzip', ['-p', traceFile, 'trace.trace'], { maxBuffer: 12 * 1024 * 1024 });
+    const { stdout: network } = await exec('unzip', ['-p', traceFile, 'trace.network'], { maxBuffer: 12 * 1024 * 1024 });
     assert.ok(!network.includes('APP-HEADER-SECRET'), 'Response API key must be masked');
     assert.ok(!network.includes('cookie-sentinel'), 'Session cookie must be masked');
     const events = trace.trim().split('\n').map(JSON.parse);
     assert.equal(events[0].version, 8);
     const parent = events.find(e => e.type === 'before' && e.params?.method === 'vibium:verify.run');
-    assert.ok(parent && parent.parentId, 'Verify nested under builder group');
+    assert.ok(parent);
+    if (!broken) {
+      assert.ok(parent.parentId, 'Verify nested under builder group');
+      assert.ok(events.length > outputEvents.length, 'Existing recording continues collecting actions after Verify output');
+      assert.ok(events.some(e => e.type === 'after' && e.callId === parent.parentId), 'Builder group remains open until caller closes it');
+    } else {
+      assert.ok(!parent.parentId);
+    }
     assert.equal(parent.params.claim, claim);
     assert.equal(parent.method, 'tracingGroup');
     const children = events.filter(e => e.type === 'before' && e.parentId === parent.callId);
     assert.ok(children.some(e => e.method === 'vibium:element.fill'));
     assert.ok(children.some(e => e.method === 'vibium:element.click'));
     assert.ok(children.some(e => /reload|navigate/.test(e.method)));
-    assert.ok(events.some(e => e.type === 'screencast-frame'));
+    if (live) assert.ok(events.some(e => e.type === 'screencast-frame'));
+    else {
+      assert.ok(!events.some(e => e.type === 'screencast-frame' || e.type === 'frame-snapshot'));
+      assert.ok(events[0].vibiumPrivacy, 'Sensitive form fields suppress visual artifacts');
+    }
     const end = events.find(e => e.type === 'after' && e.callId === parent.callId);
     assert.deepEqual(end.result, result);
     assert.ok(parent.title.includes(broken ? 'FAIL' : 'PASS'));
@@ -168,5 +199,52 @@ async function acceptance(t, broken = false) {
   }
 }
 
-test('Verify reuses live Chrome and records persistence evidence', { timeout: 300000 }, t => acceptance(t));
+test(`Verify reuses live ${process.env.VIBIUM_VERIFY_ENGINE || 'chrome'} and records persistence evidence`, { timeout: 300000 }, t => acceptance(t));
 test('Verify reports a persistence regression', { timeout: 300000, skip: live }, t => acceptance(t, true));
+
+test('Verify saves error evidence and preserves recording ownership', { timeout: 120000, skip: live }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-verify-error-'));
+  const env = { ...process.env, VIBIUM_SESSION: `verify-error-${process.pid}`, VIBIUM_CONNECT_URL: '', VIBIUM_ENGINE: 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_VERIFIER_PROVIDER: 'openai-compatible', VIBIUM_VERIFIER_MODEL: 'fixture', OPENAI_API_KEY: 'fixture-secret' };
+  let calls = 0;
+  const provider = http.createServer((req, res) => { calls++; req.resume(); res.writeHead(503); res.end('SECRET-ERROR-BODY'); });
+  env.VIBIUM_VERIFIER_BASE_URL = `${await listen(provider)}/v1`;
+  const app = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<h1>Account</h1>'); });
+  const base = await listen(app);
+  const cli = async (...args) => JSON.parse((await exec(VIBIUM, ['--json', '--headless', ...args], { env, timeout: 45000 })).stdout).result;
+  try {
+    await cli('go', base);
+    for (const active of [false, true]) {
+      const original = path.join(dir, `workflow-${active}.zip`);
+      const output = path.join(dir, `verify-${active}.zip`);
+      const report = path.join(dir, `verdict-${active}.json`);
+      if (active) {
+        await cli('record', 'start', '--video=false', '-o', original);
+        const before = calls;
+        await assert.rejects(cli('verify', 'claim', '-o', original), e => { assert.match(e.stdout, /active recording/); return true; });
+        assert.equal(calls, before);
+        assert.ok(!fs.existsSync(original));
+      }
+      await assert.rejects(cli('verify', 'The Account heading is visible', '-o', output, '--report', report), e => {
+        assert.match(e.stdout, /503/);
+        assert.ok(!e.stdout.includes('SECRET-ERROR-BODY')); return true;
+      });
+      assert.ok(!fs.existsSync(report), 'No verdict report for an operational error');
+      const { stdout } = await exec('unzip', ['-p', output, 'trace.trace']);
+      const events = stdout.trim().split('\n').map(JSON.parse);
+      const parent = events.find(e => e.type === 'before' && e.params?.method === 'vibium:verify.run');
+      assert.ok(parent);
+      const end = events.find(e => e.type === 'after' && e.callId === parent.callId);
+      assert.ok(end.error && !end.result, 'Error is recorded separately from a verdict');
+      assert.ok(events.some(e => e.type === 'before' && e.parentId === parent.callId), 'Initial inspection remains available');
+      assert.ok(!stdout.includes('fixture-secret') && !stdout.includes('SECRET-ERROR-BODY'));
+      // The caller's recorder remains active, or Verify's recorder is released.
+      if (!active) await cli('record', 'start', '--video=false', '-o', original);
+      await cli('record', 'stop');
+      assert.ok(fs.existsSync(original));
+    }
+  } finally {
+    await exec(VIBIUM, ['daemon', 'stop'], { env, timeout: 15000 }).catch(() => {});
+    for (const server of [app, provider]) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

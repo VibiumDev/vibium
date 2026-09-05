@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"github.com/vibium/clicker/internal/api"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -34,5 +37,49 @@ func TestVerifierToolBoundary(t *testing.T) {
 				t.Fatal("mutated shared schema")
 			}
 		}
+	}
+}
+
+func TestVerifyRecordingPreservesActiveRecorder(t *testing.T) {
+	dir := t.TempDir()
+	original := filepath.Join(dir, "workflow.zip")
+	recorder := api.NewRecorder()
+	recorder.Start(api.RecordingStartOptions{Name: "builder", Path: original}, nil)
+	group := recorder.StartGroup("Builder workflow")
+	h := &Handlers{recorder: recorder}
+	if _, err := h.startVerifyRecording(original); err == nil {
+		t.Fatal("allowed active recording destination")
+	}
+	output := filepath.Join(dir, "verification.zip")
+	finish, err := h.startVerifyRecording(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder.StartGroup("Verify: claim")
+	recorder.StopGroup()
+	if err := finish(); err != nil {
+		t.Fatal(err)
+	}
+	if h.recorder != recorder || !recorder.IsRecording() {
+		t.Fatal("interrupted caller recording")
+	}
+	if recorder.Options().Path != original {
+		t.Fatal("redirected original recording")
+	}
+	if _, err := os.Stat(original); !os.IsNotExist(err) {
+		t.Fatal("wrote caller destination prematurely")
+	}
+	data, err := os.ReadFile(output)
+	if err != nil || len(data) == 0 {
+		t.Fatal("missing output archive", err)
+	}
+	if _, err := h.startVerifyRecording(output); err == nil {
+		t.Fatal("overwrote existing artifact")
+	}
+	// The group stack still belongs to the caller, and can be closed normally.
+	recorder.SetGroupTitle(group, "Builder continued")
+	recorder.StopGroup()
+	if _, err := recorder.Stop(); err != nil {
+		t.Fatal(err)
 	}
 }

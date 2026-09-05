@@ -229,6 +229,8 @@ type pendingRequest struct {
 type Recorder struct {
 	mu              sync.Mutex
 	recording       bool
+	secrets         map[string]bool
+	omitVisuals     bool
 	options         RecordingStartOptions
 	events          []recordEvent              // current chunk's recording events
 	network         []recordEvent              // current chunk's network events
@@ -277,6 +279,13 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	defer t.mu.Unlock()
 
 	t.recording = true
+	t.secrets = map[string]bool{}
+	t.omitVisuals = false
+	for _, key := range []string{"OPENAI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
+		if value := os.Getenv(key); value != "" {
+			t.secrets[value] = true
+		}
+	}
 	t.options = opts
 	t.events = nil
 	t.network = nil
@@ -461,7 +470,7 @@ func (t *Recorder) Summary() RecordingSummary {
 			s.Steps++
 		}
 	}
-	if t.video != nil {
+	if t.video != nil && !t.omitVisuals {
 		vs := VideoSummary{
 			Context:    t.video.Context,
 			DurationMs: t.video.DurationMs,
@@ -927,6 +936,11 @@ func (t *Recorder) RecordBidiEvent(msg string) {
 		return
 	}
 
+	if t.secrets == nil {
+		t.secrets = map[string]bool{}
+	}
+	t.discoverSecrets(bidiEvent.Params)
+
 	// Only record events (not responses)
 	if bidiEvent.Method == "" {
 		return
@@ -1302,6 +1316,16 @@ func (t *Recorder) StartScreenshotLoop(captureFunc func() (string, string, error
 // video file (session artifact); chunk artifacts pass false and get a
 // videoRange manifest instead.
 func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
+	if t.secrets == nil {
+		t.secrets = map[string]bool{}
+	}
+	for _, event := range t.events {
+		t.discoverSecrets(map[string]interface{}(event))
+	}
+	for _, event := range t.network {
+		t.discoverSecrets(map[string]interface{}(event))
+	}
+
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	now := time.Now()
@@ -1327,7 +1351,10 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create trace entry: %w", err)
 	}
 	for _, event := range t.events {
-		data, err := marshalRecordingEvent(event)
+		if t.omitVisuals && (event["type"] == "screencast-frame" || event["type"] == "frame-snapshot") {
+			continue
+		}
+		data, err := t.marshalPrivateEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1347,7 +1374,7 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create network entry: %w", err)
 	}
 	for _, event := range t.network {
-		data, err := marshalRecordingEvent(event)
+		data, err := t.marshalPrivateEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1357,6 +1384,9 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 
 	// Write resources: resources/<name> (e.g. resources/page@abc123-1773879004791.jpeg)
 	for name, data := range t.resources {
+		if t.omitVisuals {
+			continue
+		}
 		rw, err := createEntry("resources/" + name)
 		if err != nil {
 			continue
@@ -1367,8 +1397,10 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 	// Video entries are additive to the trace format; existing trace tooling
 	// ignores them.
 	if t.video != nil {
-		if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
-			return nil, err
+		if !t.omitVisuals {
+			if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
+				return nil, err
+			}
 		}
 	}
 

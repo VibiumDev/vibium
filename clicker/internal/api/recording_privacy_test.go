@@ -1,9 +1,13 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecordingCredentialRedaction(t *testing.T) {
@@ -31,5 +35,46 @@ func TestRecordingCredentialRedaction(t *testing.T) {
 	original, _ := json.Marshal(event)
 	if !strings.Contains(string(original), "AUTH-SECRET") {
 		t.Fatal("mutated original event")
+	}
+}
+
+func TestRecordingRedactsEarlierObservationsAndOmitsSensitiveVisuals(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "PROVIDER-KEY-SENTINEL")
+	r := NewRecorder()
+	r.Start(RecordingStartOptions{}, nil)
+	r.RegisterSecret("PASSWORD-SENTINEL")
+	r.mu.Lock()
+	r.events = append(r.events,
+		recordEvent{"type": "before", "callId": "call@1", "method": "vibium:element.fill", "params": map[string]interface{}{"value": "PASSWORD-SENTINEL"}},
+		recordEvent{"type": "after", "callId": "call@1", "result": map[string]interface{}{"status": "passed", "observation": "PASSWORD-SENTINEL and PROVIDER-KEY-SENTINEL and LATE-HEADER-SECRET"}},
+	)
+	r.network = append(r.network, recordEvent{"type": "resource-snapshot", "snapshot": map[string]interface{}{"request": map[string]interface{}{"headers": []interface{}{map[string]interface{}{"name": "X-API-Key", "value": "LATE-HEADER-SECRET"}}}}})
+	r.omitVisuals = true
+	r.mu.Unlock()
+	r.AddScreenshot([]byte("SECRET-IMAGE"), "page", 1, 1, time.Now())
+	r.AddFrameSnapshot("call@1", "after", "page", "https://example.test", "html", []interface{}{"HTML", map[string]interface{}{}, "SECRET-DOM"}, nil, nil)
+	data, err := r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range z.File {
+		if strings.HasPrefix(file.Name, "resources/") || strings.HasPrefix(file.Name, "video/") {
+			t.Fatal("sensitive visual resource exported")
+		}
+		reader, _ := file.Open()
+		contents, _ := io.ReadAll(reader)
+		reader.Close()
+		for _, secret := range []string{"PASSWORD-SENTINEL", "PROVIDER-KEY-SENTINEL", "LATE-HEADER-SECRET", "SECRET-IMAGE", "SECRET-DOM"} {
+			if bytes.Contains(contents, []byte(secret)) {
+				t.Fatalf("%s leaked %s", file.Name, secret)
+			}
+		}
+		if file.Name == "trace.trace" && (!bytes.Contains(contents, []byte("vibiumPrivacy")) || !bytes.Contains(contents, []byte(`"status":"passed"`))) {
+			t.Fatal("lost privacy marker or result schema")
+		}
 	}
 }

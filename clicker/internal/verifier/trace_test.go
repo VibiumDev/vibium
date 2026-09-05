@@ -152,3 +152,19 @@ func TestRecordedVerifierLoop(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
+
+func TestTraceSearchIncludesResolvedDOM(t *testing.T) {
+	p := archive(t, map[string]string{"trace.trace": traceFixture})
+	source, err := OpenTrace(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	obs, err := source.Execute(context.Background(), "trace_search", map[string]interface{}{"query": "Order 123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(obs.Text, "Order 123") || !strings.Contains(obs.Text, "frame-snapshot") {
+		t.Fatal("DOM evidence not searchable", obs.Text)
+	}
+}

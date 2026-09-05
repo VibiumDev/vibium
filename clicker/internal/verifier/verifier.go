@@ -61,12 +61,16 @@ func (c Config) Validate() error {
 type Request struct {
 	Claim  string `json:"claim"`
 	Record string `json:"record,omitempty"` // explicit archive on the runtime host
+	Output string `json:"output,omitempty"` // optional new live recording on the runtime host
 	// Configuration is transmitted only over the existing private daemon socket.
 	// Never pass it to the recorder, tool executor, or provider messages.
 	Config Config `json:"config"`
 }
 
 func (r Request) Validate() error {
+	if r.Record != "" && r.Output != "" {
+		return fmt.Errorf("input archive and live recording output cannot be combined")
+	}
 	if strings.TrimSpace(r.Claim) == "" || len(r.Claim) > MaxClaim {
 		return fmt.Errorf("verify requires a nonempty claim of at most %d bytes", MaxClaim)
 	}

@@ -32,15 +32,15 @@ var version = "dev"
 
 // Global flags
 var (
-	headless       bool
-	verbose        bool
-	jsonOutput     bool
-	session        string
-	engineName     string
+	headless      bool
+	verbose       bool
+	jsonOutput    bool
+	session       string
+	engineName    string
 	engineChannel string
-	headlessSet    bool
-	engineSet      bool
-	channelSet     bool
+	headlessSet   bool
+	engineSet     bool
+	channelSet    bool
 )
 
 // defaultEngine returns the browser engine to launch when --engine is not given.
@@ -70,6 +70,12 @@ func main() {
 			if session != "" {
 				if err := os.Setenv("VIBIUM_SESSION", session); err != nil {
 					return err
+				}
+			}
+			if cmd.Name() == "pipe" {
+				noBrowser, _ := cmd.Flags().GetBool("no-browser")
+				if noBrowser {
+					return paths.ValidateSessionName(paths.SessionName())
 				}
 			}
 			if engineName != "chrome" && engineName != "firefox" {
