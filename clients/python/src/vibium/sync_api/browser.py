@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..verification import VerificationResult, send_verification
+
 from typing import Callable, List, Optional, TYPE_CHECKING
 
 from .page import Page
@@ -22,6 +24,10 @@ class Browser:
 
     def __repr__(self) -> str:
         return "Browser(connected=True)"
+
+    def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return self._loop.run(self._async.verify(claim, record=record), timeout=210)
 
     def page(self) -> Page:
         """Get the default page (first browsing context)."""
@@ -69,6 +75,18 @@ class Browser:
 
 class _BrowserLauncher:
     """Module-level sync browser launcher object."""
+
+    def verify(self, claim: str, *, record: str, executable_path: Optional[str] = None) -> VerificationResult:
+        """Inspect an archive without installing or starting a browser."""
+        from .._sync_base import _EventLoopThread
+        from ..async_api.browser import browser as async_launcher
+        loop = _EventLoopThread()
+        loop.start()
+        try:
+            return loop.run(async_launcher.verify(claim, record=record, executable_path=executable_path), timeout=210)
+        finally:
+            loop.stop()
+
 
     def start(
         self,

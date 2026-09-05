@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..verification import VerificationResult, send_verification
+
 import asyncio
 import base64
 import json
@@ -199,6 +201,10 @@ class Page:
         return self._context
 
     # --- Navigation ---
+
+    async def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return await send_verification(self._client, claim, record, self._context_id)
 
     async def go(self, url: str) -> None:
         """Navigate to a URL."""

@@ -5,6 +5,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
+import com.vibium.internal.Verification;
+import com.vibium.types.VerifyOptions;
+import com.vibium.types.VerificationResult;
 import com.vibium.internal.VibiumProcess;
 
 import java.util.ArrayList;
@@ -16,6 +19,13 @@ import java.util.function.Consumer;
  * Manages the browser lifecycle.
  */
 public class Browser {
+    /** Verify the existing session with a fresh verifier inference context. */
+    public VerificationResult verify(String claim) { return verify(claim, new VerifyOptions()); }
+    /** Inspect an archive when record is supplied; otherwise use this live session. */
+    public VerificationResult verify(String claim, VerifyOptions options) {
+        return Verification.run(client, claim, options, null);
+    }
+
 
     private final BiDiClient client;
     private final VibiumProcess process;

@@ -21,7 +21,7 @@ implementation demonstrates the workflow; we have not yet measured how much
 reliability it adds compared with the builder checking its own work.
 
 For a hands-on introduction, see [Your coding agent's first verification on var.parts](../tutorials/first-verification.md).
-For configuration and commands, see [Verify a claim in local Chrome](../how-to-guides/verify.md).
+For configuration and commands, see [Verify a live browser or saved recording](../how-to-guides/verify.md).
 
 ## Why asking the builder again can miss the problem
 
@@ -85,7 +85,7 @@ Opening a different browser could lose the relevant cookies, storage, cart,
 unsaved input, or authentication. The verifier would then be examining a
 different situation.
 
-Verify therefore uses the daemon's existing local Chrome session and pins its
+Verify therefore uses the runtime's existing local Chrome or Firefox session and pins its
 tools to the active tab. The browser process and its state are shared with the
 builder. The daemon serializes the verification and its child actions so other
 daemon commands wait until the check completes.
@@ -244,12 +244,18 @@ and raw BiDi events: authorization and API-key headers, cookies, password
 fields, and token query parameters. Password input values in structured DOM
 snapshots are masked when present.
 
-This is structural redaction, not general secret detection. Sensitive text
-elsewhere on a page, in a console message, in an unusually named field, or in
-a screenshot can still reach the provider or recording. Use test data when
-checking sensitive applications; review recordings before sharing them. The
-specification's absolute “never record secrets” requirement is not fully
-guaranteed for arbitrary application content.
+Known credential values are also masked in free-form textual recording
+payloads, including earlier actions and observations in the current recording.
+The runtime recognizes password and common credential form fields through
+fixed browser inspection. If these fields occur, visual artifacts for that
+recording are omitted and a privacy notice is retained. This includes the
+continuous video track: text replacement cannot sanitize its pixels.
+
+These controls do not identify every possible secret in arbitrary application
+content, unusual fields, or opaque images. The specification's absolute
+“never record secrets” requirement cannot be guaranteed for unknown content.
+Use test data and review recordings before sharing them. The verifier is also
+a data recipient: its constrained tools still observe application content.
 
 An archived check can be reviewed later, but it describes the run that produced
 it. A recorded PASS does not prove that a later deployment or a different
@@ -285,9 +291,15 @@ cover known behavior.
 Code review, automated tests, and browser verification provide different kinds
 of evidence. A browser check can demonstrate a user-visible result while
 leaving implementation quality, security properties, and unexercised cases
-unexamined. The current product boundary is local Chrome through the CLI;
-MCP, SDK verification methods, Firefox, hosted verification, and recorded-trace
-input remain outside this implementation.
+unexamined. The CLI supports live verification and read-only inspection of
+existing Vibium recordings and compatible Playwright version 8 traces. Use
+`--input` for saved evidence, `--output` to record a live verification run, and
+`--report` for a JSON verdict. A saved-input check does not replay browser
+actions or establish the state of a current deployment. When recording is
+already active, live `--output` exports the current chunk without interrupting
+it. MCP and the JavaScript/TypeScript, Python, and Java APIs use the same
+verifier runtime; live checks support Chrome and Firefox. Hosted verification
+remains outside this implementation.
 
 ## What remains to be demonstrated
 

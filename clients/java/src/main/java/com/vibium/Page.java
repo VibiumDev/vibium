@@ -5,6 +5,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
+import com.vibium.internal.Verification;
+import com.vibium.types.VerifyOptions;
+import com.vibium.types.VerificationResult;
 import com.vibium.types.*;
 
 import java.util.*;
@@ -19,6 +22,13 @@ import java.util.function.Function;
  * Represents a browser tab. The primary interface for page automation.
  */
 public class Page {
+    /** Verify the existing session with a fresh verifier inference context. */
+    public VerificationResult verify(String claim) { return verify(claim, new VerifyOptions()); }
+    /** Inspect an archive when record is supplied; otherwise use this live session. */
+    public VerificationResult verify(String claim, VerifyOptions options) {
+        return Verification.run(client, claim, options, contextId);
+    }
+
 
     private static final Gson GSON = new Gson();
     private static final ExecutorService NETWORK_CALLBACKS = Executors.newCachedThreadPool(r -> {

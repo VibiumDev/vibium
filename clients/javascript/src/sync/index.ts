@@ -7,3 +7,5 @@ export { BrowserContextSync } from './context';
 export { RecordingSync } from './recording';
 export { RouteSync } from './route';
 export { DialogSync } from './dialog';
+
+export { VerifyOptions, RecordedVerifyOptions, VerificationResult } from '../verification';

@@ -1,3 +1,4 @@
+import { VerifyOptions, RecordedVerifyOptions, VerificationResult, sendVerification } from './verification';
 import { VibiumProcess } from './clicker';
 import { BiDiClient, BiDiEvent } from './bidi';
 import { Page } from './page';
@@ -55,6 +56,11 @@ export class Browser {
 
   [customInspect](): string {
     return 'Browser { connected: true }';
+  }
+
+  /** Independently verify this session, or inspect a saved archive. */
+  verify(claim: string, options: VerifyOptions = {}): Promise<VerificationResult> {
+    return sendVerification(this.client, claim, options);
   }
 
   /** Get the default page (first browsing context). */
@@ -124,6 +130,18 @@ function envHeaders(): Record<string, string> {
 }
 
 export const browser = {
+  /** Inspect a saved archive without installing or starting a browser. */
+  async verify(claim: string, options: RecordedVerifyOptions): Promise<VerificationResult> {
+    if (!options?.record) throw new Error('Standalone verification requires record');
+    const proc = await VibiumProcess.start({ noBrowser: true, executablePath: options.executablePath });
+    let client: BiDiClient | undefined;
+    try {
+      client = BiDiClient.fromStreams(proc.stdin, proc.stdout, proc.preReadyLines);
+      return await sendVerification(client, claim, options);
+    } finally {
+      try { await client?.close(); } finally { await proc.stop(); }
+    }
+  },
   async start(urlOrOptions?: string | StartOptions, options: StartOptions = {}): Promise<Browser> {
     let url: string | undefined;
     if (typeof urlOrOptions === 'object') {

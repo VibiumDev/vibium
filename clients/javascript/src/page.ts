@@ -1,3 +1,4 @@
+import { VerifyOptions, VerificationResult, sendVerification } from './verification';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
 import { BrowserContext } from './context';
@@ -406,6 +407,11 @@ export class Page {
   /** The parent BrowserContext that owns this page. */
   get context(): BrowserContext {
     return this._context;
+  }
+
+  /** Verify this exact page, or inspect a read-only archive. */
+  verify(claim: string, options: VerifyOptions = {}): Promise<VerificationResult> {
+    return sendVerification(this.client, claim, options, this.contextId);
   }
 
   /** Navigate to a URL. */

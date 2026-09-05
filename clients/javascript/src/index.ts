@@ -31,3 +31,5 @@ export {
   ElementNotFoundError,
   BrowserCrashedError,
 } from './utils/errors';
+
+export { VerifyOptions, RecordedVerifyOptions, VerificationResult } from './verification';

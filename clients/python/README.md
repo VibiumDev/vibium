@@ -74,3 +74,11 @@ vibium version   # Show version
 ## License
 
 Apache-2.0
+
+## Independent verification
+
+`Page.verify` and `Browser.verify` provide a fresh verifier context using the
+existing browser session. Supply `record` to inspect an immutable archive, or
+use the module-level launcher (`Vibium.verify` in Java) for archive inspection
+without launching a browser. See the [Verify guide](../../docs/how-to-guides/verify.md#mcp-and-language-apis)
+for configuration, examples, recording, and verdict semantics.

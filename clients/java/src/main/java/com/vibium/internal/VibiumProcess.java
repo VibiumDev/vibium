@@ -58,9 +58,18 @@ public class VibiumProcess {
      * Start a vibium pipe subprocess.
      */
     public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders) {
+        return start(binaryPath, engine, channel, headless, connectURL, connectHeaders, false);
+    }
+
+    public static VibiumProcess startWithoutBrowser(String binaryPath) {
+        return start(binaryPath, null, null, false, null, null, true);
+    }
+
+    private static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, boolean noBrowser) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
+        if (noBrowser) cmd.add("--no-browser");
 
         if (engine != null && !engine.isEmpty()) {
             cmd.add("--engine");

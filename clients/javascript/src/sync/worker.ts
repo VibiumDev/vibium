@@ -1,3 +1,4 @@
+import { VerifyOptions, RecordedVerifyOptions } from '../verification';
 import { parentPort, workerData, MessagePort } from 'worker_threads';
 import { browser, Browser } from '../browser';
 import { Page } from '../page';
@@ -142,6 +143,19 @@ const handlers: Record<string, Handler> = {
   // Browser commands
   // ========================
 
+  'verify.record': async (args) => {
+    const [claim, options] = args as [string, RecordedVerifyOptions];
+    return browser.verify(claim, options);
+  },
+  'browser.verify': async (args) => {
+    const [claim, options] = args as [string, VerifyOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.verify(claim, options);
+  },
+  'page.verify': async (args) => {
+    const [pageId, claim, options] = args as [number, string, VerifyOptions];
+    return getPage(pageId).verify(claim, options);
+  },
   'browser.start': async (args) => {
     const [url, options] = args as [string | undefined, {
       engine?: 'chrome' | 'firefox';

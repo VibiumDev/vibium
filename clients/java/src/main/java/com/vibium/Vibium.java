@@ -20,6 +20,20 @@ public final class Vibium {
 
     private Vibium() {}
 
+    /** Inspect a saved recording without installing or starting a browser. */
+    public static com.vibium.types.VerificationResult verify(String claim, com.vibium.types.VerifyOptions options) {
+        if (options == null || options.record() == null) throw new IllegalArgumentException("Standalone verification requires record");
+        VibiumProcess process = VibiumProcess.startWithoutBrowser(BinaryResolver.resolve());
+        BiDiClient client = null;
+        try {
+            client = BiDiClient.fromProcess(process);
+            return com.vibium.internal.Verification.run(client, claim, options, null);
+        } finally {
+            try { if (client != null) client.close(); } finally { process.stop(); }
+        }
+    }
+
+
     /**
      * Start a visible browser.
      */

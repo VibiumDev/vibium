@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..verification import VerificationResult, send_verification
+
 import os
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -42,6 +44,10 @@ class Browser:
             page = Page(self._client, params["context"], params.get("userContext", "default"))
             for cb in callbacks:
                 cb(page)
+
+    async def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return await send_verification(self._client, claim, record)
 
     async def page(self) -> Page:
         """Get the default page (first browsing context)."""
@@ -91,6 +97,25 @@ class Browser:
 
 class _BrowserLauncher:
     """Module-level browser launcher object."""
+
+    async def verify(self, claim: str, *, record: str, executable_path: Optional[str] = None) -> VerificationResult:
+        """Inspect an archive without installing or starting a browser."""
+        from ..binary import VibiumProcess
+        from ..client import BiDiClient
+        if not record:
+            raise ValueError("Standalone verification requires record")
+        process = await VibiumProcess.start(no_browser=True, executable_path=executable_path)
+        client = None
+        try:
+            client = await BiDiClient.connect(process)
+            return await send_verification(client, claim, record)
+        finally:
+            try:
+                if client:
+                    await client.close()
+            finally:
+                await process.stop()
+
 
     async def start(
         self,

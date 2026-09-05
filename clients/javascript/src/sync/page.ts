@@ -1,3 +1,4 @@
+import { VerifyOptions, VerificationResult, VERIFY_TIMEOUT_MS } from '../verification';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { SyncBridge } from './bridge';
@@ -154,6 +155,10 @@ export class PageSync {
   }
 
   // --- Navigation ---
+
+  verify(claim: string, options: VerifyOptions = {}): VerificationResult {
+    return this._bridge.call('page.verify', [this._pageId, claim, options], VERIFY_TIMEOUT_MS);
+  }
 
   go(url: string): void {
     this._bridge.call('page.go', [this._pageId, url]);

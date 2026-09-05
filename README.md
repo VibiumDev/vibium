@@ -35,8 +35,10 @@ From the checkout containing this development build:
 npx skills add . --skill verify
 ```
 
-Verify currently requires the development build in this checkout, local Chrome,
-and verifier configuration. Follow [Your coding agent's first verification](docs/tutorials/first-verification.md) for installation and a complete
+Verify currently requires the development build in this checkout and verifier
+configuration. Live checks use your existing local browser; `--input` reads a
+saved recording or compatible Playwright trace. Use `--output` to save a live
+verification recording and `--report` for a JSON verdict. Follow [Your coding agent's first verification](docs/tutorials/first-verification.md) for installation and a complete
 agent-driven example. In agents with slash skills these are `/vibe-check` and
 `/verify`; in Codex, use `$vibe-check` and `$verify`.
 

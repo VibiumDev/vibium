@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Independently check a running application's acceptance criteria with the Vibium CLI. Use for a formal verification step in the development loop, with PASS, FAIL, or INCONCLUSIVE and recorded evidence.
+description: Independently check application acceptance criteria in a live browser or saved recording with the Vibium CLI. Use for a formal verification step in the development loop, with PASS, FAIL, or INCONCLUSIVE and recorded evidence.
 ---
 
 # Verify with Vibium
@@ -14,7 +14,8 @@ Your own browser inspection does not substitute for this invocation.
 
 Use the project's configured Vibium binary. Otherwise try `vibium`,
 `./clicker/bin/vibium`, then `./node_modules/.bin/vibium`. Confirm
-`verify --help` works. This slice supports the CLI and local Chrome.
+`verify --help` works. Local Chrome is the tested baseline for live checks.
+Saved-input checks do not require a browser.
 
 The verifier needs `VIBIUM_VERIFIER_MODEL` and, for OpenAI, `OPENAI_API_KEY`.
 An OpenAI-compatible service uses `VIBIUM_VERIFIER_PROVIDER=openai-compatible`
@@ -53,6 +54,24 @@ missing configuration without the user's direction.
    behavior until a model happens to pass it. For INCONCLUSIVE, address the
    missing evidence or report the limitation. Stop when the requested claims
    pass or a concrete blocker requires user input.
+
+## Recording and report flags
+
+Use `-o verification.zip` to record the verification run automatically when no
+recording is active. With an active recording, it exports the whole current
+chunk through Verify without stopping or resetting it; the export excludes
+continuous video. Choose a new path different from the active recording's
+output. Use `--report verdict.json` for a separate JSON verdict; `--json` still
+controls stdout. Files are not overwritten, and available recording evidence
+is saved even if the verifier encounters an operational error.
+
+When asked to verify saved evidence, use
+`vibium verify -i record.zip "<claim>"` instead of the live browser steps above.
+`--input` accepts Vibium recordings and compatible Playwright version 8 traces.
+Inspect the actual evidence behind earlier verdicts; do not treat an embedded
+PASS as proof. Report that the result concerns the recorded run. `--input`
+cannot be combined with `--output`; use `--report` to save this verdict.
+`--record` and `--trace` are not input flags.
 
 ## Result contract
 

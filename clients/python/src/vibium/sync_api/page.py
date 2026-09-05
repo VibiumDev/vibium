@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..verification import VerificationResult, send_verification
+
 import shutil
 import warnings
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
@@ -126,6 +128,10 @@ class Page:
         return self._cached_context
 
     # --- Navigation ---
+
+    def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return self._loop.run(self._async.verify(claim, record=record), timeout=210)
 
     def go(self, url: str) -> None:
         self._loop.run(self._async.go(url))

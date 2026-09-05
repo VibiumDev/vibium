@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-verify test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -280,7 +280,8 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 	"$(MAKE)" test-browser-modes test-cleanup && \
 	"$(MAKE)" test-firefox test-cleanup && \
 	"$(MAKE)" test-daemon test-cleanup && \
-	"$(MAKE)" test-js-sync; \
+	"$(MAKE)" test-js-sync && \
+	"$(MAKE)" test-verify; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
 	END_TIME=$$(date +%s); \
@@ -406,7 +407,7 @@ test-mcp: build-go
 # Run daemon tests (sequential - daemon lifecycle)
 test-daemon: build-go
 	@echo "--- Daemon Tests ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js tests/daemon/verify.test.js tests/daemon/verify-archive.test.js
 
 # Run Python client tests
 # PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
@@ -718,3 +719,8 @@ help:
 	@echo "  make clean-all             - Clean everything"
 	@echo ""
 	@echo "  make help                  - Show this help"
+
+# Verify acceptance across the existing pipe and MCP surfaces.
+test-verify: build-go build-js build-java python-venv
+	node --test --test-concurrency=1 tests/verify/surfaces.test.js tests/daemon/verify.test.js tests/daemon/verify-archive.test.js
+	VIBIUM_VERIFY_ENGINE=firefox node --test tests/daemon/verify.test.js

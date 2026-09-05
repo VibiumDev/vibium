@@ -242,6 +242,14 @@ outcomes in its report rather than describing every completed run as a pass.
 Open [Record Player](https://player.vibium.dev) and drop the saved zip onto it.
 Find the **Verify** group. You can inspect the agent's product-selection and
 Add to Cart actions, then the verifier's observations, verdict, and evidence.
+For a later check where you only need to record the verification itself, ask
+your agent to use `vibium verify "<claim>" -o verification.zip`. This starts and
+finishes a recording automatically when none is active. If your workflow is
+already recording, it exports the current chunk without stopping that recording.
+Use `--report verdict.json` to also save the verdict separately. To investigate
+saved evidence later, use `vibium verify -i record.zip "<claim>"`; this inspects
+the ZIP without opening a browser.
+
 Chrome may report video unavailable; the screenshots and action trace are
 sufficient for this tutorial.
 

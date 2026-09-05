@@ -20,6 +20,8 @@ from ..errors import (
 )
 
 __all__ = [
+    "VerificationResult",
+    "VerificationEvidence",
     "browser",
     "Browser",
     "Page",
@@ -42,3 +44,5 @@ __all__ = [
     "ElementNotFoundError",
     "BrowserCrashedError",
 ]
+
+from ..verification import VerificationResult, VerificationEvidence

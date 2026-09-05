@@ -150,7 +150,7 @@ export class SyncBridge {
     this.callbackPortMain.postMessage({ decision });
   }
 
-  call<T = unknown>(method: string, args: unknown[] = []): T {
+  call<T = unknown>(method: string, args: unknown[] = [], commandTimeoutMs = 60_000): T {
     // Handle any callbacks that fired between bridge calls
     this.processPendingCallbacks();
 
@@ -168,7 +168,6 @@ export class SyncBridge {
 
     // Block until worker signals — loop to handle mid-command callbacks
     // Use a 1000ms Atomics.wait timeout and track total elapsed time (60s max)
-    const commandTimeoutMs = 60_000;
     const waitSliceMs = 1000;
     const startTime = Date.now();
 

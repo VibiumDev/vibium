@@ -35,6 +35,8 @@ from .errors import (
 
 __version__ = "26.8.21"
 __all__ = [
+    "VerificationResult",
+    "VerificationEvidence",
     "browser",
     "firefox",
     "chrome",
@@ -58,3 +60,5 @@ __all__ = [
     "ElementNotFoundError",
     "BrowserCrashedError",
 ]
+
+from .verification import VerificationResult, VerificationEvidence

@@ -1,3 +1,4 @@
+import { VerifyOptions, RecordedVerifyOptions, VerificationResult, VERIFY_TIMEOUT_MS } from '../verification';
 import { SyncBridge } from './bridge';
 import { PageSync } from './page';
 import { BrowserContextSync } from './context';
@@ -26,6 +27,10 @@ export class BrowserSync {
 
   [customInspect](): string {
     return 'Browser { connected: true }';
+  }
+
+  verify(claim: string, options: VerifyOptions = {}): VerificationResult {
+    return this._bridge.call('browser.verify', [claim, options], VERIFY_TIMEOUT_MS);
   }
 
   page(): PageSync {
@@ -104,6 +109,12 @@ export class BrowserSync {
 }
 
 export const browser = {
+  verify(claim: string, options: RecordedVerifyOptions): VerificationResult {
+    if (!options?.record) throw new Error('Standalone verification requires record');
+    const bridge = SyncBridge.create();
+    try { return bridge.call('verify.record', [claim, options], VERIFY_TIMEOUT_MS); }
+    finally { bridge.terminate(); }
+  },
   start(urlOrOptions?: string | StartOptions, options: StartOptions = {}): BrowserSync {
     let url: string | undefined;
     if (typeof urlOrOptions === 'object') {
