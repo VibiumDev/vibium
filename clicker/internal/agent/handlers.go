@@ -723,6 +723,9 @@ func (h *Handlers) Close() {
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
 	h.ownedUserContexts = nil
+	h.activeContext = ""
+	h.refMaps = nil
+	h.lastMaps = nil
 	recorder := h.recorder
 	h.recorder = nil
 	h.sessionMu.Unlock()

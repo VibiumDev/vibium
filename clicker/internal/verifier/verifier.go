@@ -31,28 +31,49 @@ func ConfigFromEnv() (Config, error) {
 	return c, c.Validate()
 }
 
-func (c Config) Validate() error {
+// ConfigCheck describes configuration validity without exposing configured values.
+type ConfigCheck struct {
+	Variable string
+	Error    string
+}
+
+// Checks is shared by normal verification and setup diagnostics. Keep messages
+// value-free: even a malformed endpoint or model setting could contain a secret.
+func (c Config) Checks() []ConfigCheck {
+	var checks []ConfigCheck
+	check := func(variable string, valid bool, problem string) {
+		if valid {
+			problem = ""
+		}
+		checks = append(checks, ConfigCheck{Variable: variable, Error: problem})
+	}
+	validEffort := false
 	switch c.ReasoningEffort {
 	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-	default:
-		return fmt.Errorf("invalid VIBIUM_VERIFIER_REASONING_EFFORT")
+		validEffort = true
 	}
-	if c.Provider != "openai" && c.Provider != "openai-compatible" {
-		return fmt.Errorf("set VIBIUM_VERIFIER_PROVIDER to openai or openai-compatible")
-	}
-	if strings.TrimSpace(c.Model) == "" {
-		return fmt.Errorf("VIBIUM_VERIFIER_MODEL is required")
-	}
-	if c.Provider == "openai" && c.APIKey == "" {
-		return fmt.Errorf("OPENAI_API_KEY is required")
-	}
+	check("VIBIUM_VERIFIER_REASONING_EFFORT", validEffort, "invalid VIBIUM_VERIFIER_REASONING_EFFORT")
+	check("VIBIUM_VERIFIER_PROVIDER", c.Provider == "openai" || c.Provider == "openai-compatible", "set VIBIUM_VERIFIER_PROVIDER to openai or openai-compatible")
+	check("VIBIUM_VERIFIER_MODEL", strings.TrimSpace(c.Model) != "", "VIBIUM_VERIFIER_MODEL is required")
+	check("OPENAI_API_KEY", c.Provider != "openai" || c.APIKey != "", "OPENAI_API_KEY is required")
+	endpointProblem := ""
 	if c.Provider == "openai-compatible" && c.BaseURL == "" {
-		return fmt.Errorf("VIBIUM_VERIFIER_BASE_URL is required for openai-compatible")
+		endpointProblem = "VIBIUM_VERIFIER_BASE_URL is required for openai-compatible"
 	}
 	if c.BaseURL != "" {
 		u, err := url.Parse(c.BaseURL)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return fmt.Errorf("VIBIUM_VERIFIER_BASE_URL must be an HTTP(S) URL without credentials, query, or fragment")
+			endpointProblem = "VIBIUM_VERIFIER_BASE_URL must be an HTTP(S) URL without credentials, query, or fragment"
+		}
+	}
+	check("VIBIUM_VERIFIER_BASE_URL", endpointProblem == "", endpointProblem)
+	return checks
+}
+
+func (c Config) Validate() error {
+	for _, check := range c.Checks() {
+		if check.Error != "" {
+			return fmt.Errorf("%s", check.Error)
 		}
 	}
 	return nil

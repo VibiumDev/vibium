@@ -139,6 +139,7 @@ func main() {
 	rootCmd.AddCommand(newBiDiTestCmd())
 	rootCmd.AddCommand(newNavigateCmd())
 	rootCmd.AddCommand(newVerifyCmd())
+	rootCmd.AddCommand(newSoundcheckCmd())
 	rootCmd.AddCommand(newScreenshotCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newFindCmd())

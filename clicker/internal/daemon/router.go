@@ -124,12 +124,20 @@ func (d *Daemon) route(req agent.Request, notifyLaunch func()) (interface{}, *ag
 
 	switch req.Method {
 	case verifier.Method:
-		var p verifier.Request
+		var p verifyParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid verification request"}
 		}
 		d.mu.Lock()
-		result, err := d.handlers.Verify(p)
+		d.handlers.SetLaunchNotify(notifyLaunch)
+		var result verifier.Result
+		var err error
+		if p.CLI != nil {
+			result, err = d.handlers.VerifyCLI(p.Request, *p.CLI)
+		} else {
+			result, err = d.handlers.Verify(p.Request)
+		}
+		d.handlers.SetLaunchNotify(nil)
 		d.mu.Unlock()
 		if err != nil {
 			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}

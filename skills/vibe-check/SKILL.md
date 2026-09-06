@@ -10,9 +10,17 @@ The `vibium` CLI automates Chrome (and Firefox, via `--engine firefox`) from the
 Use this skill for hands-on exploration and casual spot-checks. Report what you
 observed. For a formal acceptance check in the development loop, use the
 `verify` skill if installed, or `vibium verify "<claim>"` with a configured
-verifier and local Chrome. That command returns an independent verdict and
-records its child actions when recording is active. A casual spot-check does
-not require a verifier call.
+verifier and a local Chrome or Firefox session. That command returns an
+independent verdict and records its child actions when recording is active. A casual spot-check does
+not require a verifier call. Verify preserves a browser that is already
+running; a standalone Verify closes a browser it starts unless `--keep-open`
+is set.
+
+Before your first formal Verify run, load the project's verifier settings and
+run `vibium soundcheck` (or `--json` for structured checks). It checks verifier
+configuration and provider tool support, reports fixes, and exits 1 if setup
+needs attention. It makes small model requests but does not launch a browser.
+Casual browser exploration does not require a soundcheck or provider API key.
 
 ```
 vibium go <url> && vibium map && vibium click @e1 && vibium map

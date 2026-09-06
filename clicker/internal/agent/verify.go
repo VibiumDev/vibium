@@ -15,6 +15,41 @@ import (
 	"github.com/vibium/clicker/internal/verifier"
 )
 
+// VerifyCLIOptions controls browser ownership for the CLI only. These options
+// are never included in the verifier's inference context or tool permissions.
+type VerifyCLIOptions struct {
+	LaunchOptions map[string]interface{} `json:"launchOptions,omitempty"`
+	KeepOpen      bool                   `json:"keepOpen,omitempty"`
+}
+
+// VerifyCLI runs under the daemon command mutex. Checking ownership, launching,
+// verifying, finalizing the recording, and closing form one serialized action:
+// another command cannot start or borrow a browser between these steps.
+func (h *Handlers) VerifyCLI(req verifier.Request, options VerifyCLIOptions) (verifier.Result, error) {
+	if err := req.Validate(); err != nil {
+		return verifier.Result{}, err
+	}
+	if req.Record != "" {
+		return verifier.Result{}, fmt.Errorf("browser lifecycle options require live verification")
+	}
+	if h.connectURL != "" {
+		return verifier.Result{}, fmt.Errorf("verify requires a local Chrome or Firefox session")
+	}
+	h.sessionMu.Lock()
+	hadBrowser := h.client != nil
+	h.sessionMu.Unlock()
+	if !hadBrowser && !options.KeepOpen {
+		// Verify's recording finalizer runs before this outer defer, even on
+		// errors. Close is the same cleanup used by browser_stop, and is safe
+		// if launch failed or the browser crashed during verification.
+		defer h.Close()
+	}
+	if _, err := h.browserLaunch(options.LaunchOptions); err != nil {
+		return verifier.Result{}, err
+	}
+	return h.Verify(req)
+}
+
 // Verify runs under the daemon mutex or the MCP server's serialized handler.
 func (h *Handlers) Verify(req verifier.Request) (result verifier.Result, err error) {
 	if err = req.Validate(); err != nil {
@@ -329,7 +364,7 @@ func (h *Handlers) startVerifyRecording(path string) (func() error, error) {
 	}
 	owned := h.recorder == nil
 	if owned {
-		_, err = h.browserRecordStart(map[string]interface{}{"name": "verification", "path": path, "snapshots": true, "video": false})
+		_, err = h.browserRecordStart(map[string]interface{}{"name": "verification", "path": path, "snapshots": true})
 		if err != nil {
 			f.Close()
 			os.Remove(path)
@@ -345,6 +380,9 @@ func (h *Handlers) startVerifyRecording(path string) (func() error, error) {
 		var exportErr error
 		if owned {
 			recorder.StopScreenshots()
+			// Match ordinary recording.stop: finalize the native screencast
+			// before exporting and before Verify closes its browser.
+			api.StopRecordingVideo(h.newSession(), recorder)
 			data, exportErr = recorder.Stop()
 			h.recorder = nil
 		} else {

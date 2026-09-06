@@ -28,6 +28,9 @@ runbooks).
 
 | Reader's goal | Document |
 |---------------|----------|
-| Learn through a first browser run | [Your coding agent's first verification on var.parts](tutorials/first-verification.md) |
-| Configure and run a check | [Verify a live browser or saved recording](how-to-guides/verify.md) |
+| Run a live check yourself | [Part 1: Verify a live website](tutorials/first-verification.md) |
+| Write and run a check with a coding agent | [Part 2: Verify with your coding agent](tutorials/verification-with-a-coding-agent.md) |
+| Check evidence from a saved run | [Part 3: Verify a recording or trace](tutorials/verification-from-a-recording.md) |
+| Run a check and save evidence | [Verify a live browser or saved recording](how-to-guides/verify.md) |
+| Look up options, configuration, and language APIs | [Verify reference](reference/verify.md) |
 | Understand the independence boundary and evidence | [Why independent verification matters](explanation/independent-verification.md) |

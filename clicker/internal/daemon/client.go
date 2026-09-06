@@ -181,7 +181,7 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 		if json.Unmarshal(line, &msg) == nil && msg.Method != "" && len(msg.ID) == 0 {
 			if msg.Method == launchingBrowserMethod && !extended {
 				extended = true
-				conn.SetReadDeadline(time.Now().Add(launchGrace + readTimeout))
+				conn.SetReadDeadline(time.Now().Add(launchGrace + responseTimeout))
 			}
 			continue
 		}
@@ -196,8 +196,24 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	return &resp, nil
 }
 
+// verifyParams adds CLI lifecycle policy on the existing private connection.
+// SDK/MCP requests keep their existing browser ownership behavior.
+type verifyParams struct {
+	verifier.Request
+	CLI *agent.VerifyCLIOptions `json:"cli,omitempty"`
+}
+
 // Verify uses the same private JSON-RPC connection as every daemon command.
 func Verify(req verifier.Request) (*verifier.Result, error) {
+	return verifyRequest(verifyParams{Request: req})
+}
+
+// VerifyWithBrowser lets the daemon atomically reuse or own a live browser.
+func VerifyWithBrowser(req verifier.Request, options agent.VerifyCLIOptions) (*verifier.Result, error) {
+	return verifyRequest(verifyParams{Request: req, CLI: &options})
+}
+
+func verifyRequest(req verifyParams) (*verifier.Result, error) {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("encode verification request")

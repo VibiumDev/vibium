@@ -66,22 +66,7 @@ func (v *OpenAI) Verify(ctx context.Context, req Request, executor ToolExecutor)
 			return Result{}, err
 		}
 		if len(msg.ToolCalls) == 0 {
-			content, ok := msg.Content.(string)
-			if !ok {
-				return Result{}, fmt.Errorf("verifier returned no verdict")
-			}
-			var result Result
-			if len(content) > MaxText || json.Unmarshal([]byte(content), &result) != nil {
-				return Result{}, fmt.Errorf("verifier returned an invalid JSON verdict")
-			}
-			result.Claim = req.Claim
-			if result.Evidence == nil {
-				result.Evidence = []Evidence{}
-			}
-			if err := result.Validate(); err != nil {
-				return Result{}, err
-			}
-			return result, nil
+			return parseResult(msg, req.Claim)
 		}
 		if actions+len(msg.ToolCalls) > MaxActions {
 			return Result{Status: "inconclusive", Claim: req.Claim, Summary: "Verification action limit reached before a verdict was established.", Evidence: []Evidence{}}, nil
@@ -202,4 +187,24 @@ func (v *OpenAI) complete(ctx context.Context, config Config, messages []message
 		return message{}, fmt.Errorf("verifier response incomplete or refused")
 	}
 	return choice.Message, nil
+}
+
+// parseResult validates the structured verdict without exposing model content.
+func parseResult(msg message, claim string) (Result, error) {
+	content, ok := msg.Content.(string)
+	if !ok {
+		return Result{}, fmt.Errorf("verifier returned no verdict")
+	}
+	var result Result
+	if len(content) > MaxText || json.Unmarshal([]byte(content), &result) != nil {
+		return Result{}, fmt.Errorf("verifier returned an invalid JSON verdict")
+	}
+	result.Claim = claim
+	if result.Evidence == nil {
+		result.Evidence = []Evidence{}
+	}
+	if err := result.Validate(); err != nil {
+		return Result{}, err
+	}
+	return result, nil
 }

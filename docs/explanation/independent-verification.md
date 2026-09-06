@@ -20,7 +20,7 @@ does not prove that the software works or replace automated tests. The current
 implementation demonstrates the workflow; we have not yet measured how much
 reliability it adds compared with the builder checking its own work.
 
-For a hands-on introduction, see [Your coding agent's first verification on var.parts](../tutorials/first-verification.md).
+For a hands-on introduction, start with [Part 1: Verify a live website](../tutorials/first-verification.md).
 For configuration and commands, see [Verify a live browser or saved recording](../how-to-guides/verify.md).
 
 ## Why asking the builder again can miss the problem
@@ -85,8 +85,8 @@ Opening a different browser could lose the relevant cookies, storage, cart,
 unsaved input, or authentication. The verifier would then be examining a
 different situation.
 
-Verify therefore uses the runtime's existing local Chrome or Firefox session and pins its
-tools to the active tab. The browser process and its state are shared with the
+Verify therefore uses the runtime's existing local Chrome or Firefox session
+and pins its tools to the selected tab. The browser process and its state are shared with the
 builder. The daemon serializes the verification and its child actions so other
 daemon commands wait until the check completes.
 
@@ -98,19 +98,20 @@ a server restart. Those require different claims and observations.
 Verification can change the page. A verifier checking persistence may edit a
 value, click Save, or navigate. The implementation does not promise to restore
 the starting state. A caller should use a suitable test environment and inspect
-the final state before continuing a workflow.
+the final state before continuing a workflow. For a standalone CLI check,
+Verify closes a browser it starts after saving the requested evidence. An
+existing browser stays open; `--keep-open` also preserves a newly started one.
 
 ## How the verification loop works
 
-The CLI routes the semantic operation `vibium:verify.run` through the existing
-local daemon connection. The daemon keeps ownership of the browser while a
-provider adapter runs the inference loop:
+The CLI sends the claim to the existing local daemon. The daemon keeps
+ownership of the browser while the verifier model investigates:
 
 ```text
 Builder supplies a claim
           |
           v
-Existing Vibium daemon --------> Existing Chrome session
+Existing Vibium daemon --------> Existing browser session
           |                            ^
           v                            |
 Fresh verifier context                 |
@@ -144,6 +145,34 @@ The model is configurable. Every verification creates its own in-memory
 conversation, and the adapter discards free-form assistant content accompanying
 tool calls and provider reasoning fields. It retains the tool interaction
 needed for the current run and parses the final structured verdict.
+
+## How Verify relates to WebDriver BiDi
+
+Verify has a custom Vibium command: **`vibium:verify.run`**. It names the whole
+verification operation, including the claim and the eventual verdict. The CLI
+sends it through the existing daemon connection; the runtime router also
+recognizes it as a `vibium:` extension command on its existing protocol path.
+Vibium handles this command rather than forwarding it to Chrome or Firefox.
+
+The browser work underneath it uses Vibium's existing WebDriver BiDi
+connection. When the model requests an allowed tool, Vibium validates the
+request and runs the normal browser operation. For example, a reload reaches
+the browser as `browsingContext.reload`. Results and subscribed browser events
+provide observations that Vibium can return to the verifier.
+
+```text
+vibium:verify.run — handled by Vibium
+    Fresh verifier chooses an allowed tool
+        Vibium validates and executes the browser operation
+            WebDriver BiDi commands reach the existing browser session
+            Results and browser events return to Vibium
+        Observations return to the verifier
+    Verdict and concise evidence return to the caller
+```
+
+The model chooses constrained Vibium tools; it does not get unrestricted BiDi
+access. BiDi supplies browser control and observations. The verifier model
+assesses whether those observations support the claim.
 
 ## The tool boundary and its limits
 
@@ -200,7 +229,8 @@ click proves that an action was attempted. A successful network response is
 another piece of evidence. The resulting page state may still need to be
 checked before a broader claim is supported.
 
-The var.parts tutorial illustrates why the claim matters. In its rehearsal,
+The [coding-agent tutorial](../tutorials/verification-with-a-coding-agent.md)
+on var.parts illustrates why the claim matters. In its rehearsal,
 the current-cart check passed: the expected product, quantity, and subtotal
 were present. A second claim about retaining that product after refresh
 failed. The first PASS did not establish persistence. Asking the stronger
@@ -215,9 +245,20 @@ automatically improve the claim or ensure a thorough investigation.
 ## Why the recording is part of verification
 
 A verdict is more useful when another person can examine what led to it.
-While recording is active, Verify becomes a named parent group in the existing
-Playwright-compatible trace. Its browser actions inherit the group's
-`parentId`, alongside the recorder's normal screenshots and browser events.
+While recording is active, Verify appears as a group in the recording
+timeline. Its browser actions sit inside that group, alongside the normal
+screenshots and browser events.
+
+The recorder explicitly represents `vibium:verify.run` as a parent group. It
+stores the command name and claim in the group's parameters, nests the
+verifier-driven actions beneath it, and attaches the verdict and evidence to
+the group's result. This uses the existing Playwright-compatible trace events
+inside the recording ZIP. Record Player can therefore show Verify as one
+expandable operation within the larger browser workflow.
+
+The custom command identifies the operation; the recording integration gives
+it that parent-and-child structure. Recording must be active, either already
+running or started by `verify -o record.zip`, for this evidence to be saved.
 
 For a cart check, the timeline might contain:
 
@@ -232,17 +273,15 @@ Verify: "Refreshing the current cart keeps exactly one ..."
 ```
 
 The exact actions are chosen by the model, so their order and number can vary.
-The claim is stored in the group's parameters. Concise child observations and
-the final result use standard trace `after.result` fields, and the completed
-group title includes the verdict and evidence for the existing Record Player.
-The current implementation needs no extra sidecar or trace-format version.
+The recording includes the claim, observations, verdict, and evidence, so
+you can review the check in Record Player using the same file as the rest of
+the browser workflow.
 
-The recording captures actions, observations, and the conclusion. Provider
-credentials, raw model responses, and private model reasoning are not passed
-to the recorder. Record export also masks common credential fields in HAR
-and raw BiDi events: authorization and API-key headers, cookies, password
-fields, and token query parameters. Password input values in structured DOM
-snapshots are masked when present.
+Provider credentials, raw model responses, and private model reasoning are
+not passed to the recorder. Record export also masks common credential fields
+in network and browser events: authorization and API-key headers, cookies,
+password fields, and token query parameters. Password input values in
+structured DOM snapshots are masked when present.
 
 Known credential values are also masked in free-form textual recording
 payloads, including earlier actions and observations in the current recording.
@@ -257,10 +296,13 @@ content, unusual fields, or opaque images. The specification's absolute
 Use test data and review recordings before sharing them. The verifier is also
 a data recipient: its constrained tools still observe application content.
 
-An archived check can be reviewed later, but it describes the run that produced
-it. A recorded PASS does not prove that a later deployment or a different
-session has the same behavior. Verifying an existing `record.zip` or Playwright
-trace as input is a separate capability and is not implemented in this slice.
+You can also ask a fresh verifier to examine an existing recording or supported
+Playwright trace. It uses read-only tools to inspect the saved evidence, without
+launching a browser or replaying actions. Missing observations can lead to
+INCONCLUSIVE; an earlier PASS is something to assess, not proof to accept.
+
+This check describes the recorded run. It cannot establish that a later
+deployment or a different browser session has the same behavior.
 
 ## How this fits alongside tests and review
 
@@ -291,15 +333,9 @@ cover known behavior.
 Code review, automated tests, and browser verification provide different kinds
 of evidence. A browser check can demonstrate a user-visible result while
 leaving implementation quality, security properties, and unexercised cases
-unexamined. The CLI supports live verification and read-only inspection of
-existing Vibium recordings and compatible Playwright version 8 traces. Use
-`--input` for saved evidence, `--output` to record a live verification run, and
-`--report` for a JSON verdict. A saved-input check does not replay browser
-actions or establish the state of a current deployment. When recording is
-already active, live `--output` exports the current chunk without interrupting
-it. MCP and the JavaScript/TypeScript, Python, and Java APIs use the same
-verifier runtime; live checks support Chrome and Firefox. Hosted verification
-remains outside this implementation.
+unexamined. Choose the check that can actually observe the requirement you
+care about. For supported interfaces, recording options, and current limits,
+see the [Verify reference](../reference/verify.md).
 
 ## What remains to be demonstrated
 

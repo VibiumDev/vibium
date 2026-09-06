@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,5 +86,20 @@ func TestVerifyNeverOverwritesEvidence(t *testing.T) {
 	data, _ := os.ReadFile(original)
 	if string(data) != "immutable" {
 		t.Fatal("changed input")
+	}
+}
+
+func TestVerifyKeepOpenOnlyForLiveChecks(t *testing.T) {
+	cmd := newVerifyCmd()
+	if err := cmd.ParseFlags([]string{"--keep-open"}); err != nil {
+		t.Fatal(err)
+	}
+	keepOpen, _ := cmd.Flags().GetBool("keep-open")
+	if !keepOpen {
+		t.Fatal("flag was not set")
+	}
+	_, err := runVerify(cmd, "claim", verifyFiles{input: "record.zip"})
+	if err == nil || !strings.Contains(err.Error(), "only applies to live verification") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

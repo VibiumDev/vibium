@@ -2,13 +2,16 @@ package daemon
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // fakeDaemon listens on the session socket and serves one connection with the
@@ -156,5 +159,37 @@ func TestUnknownNotificationSkippedWithoutExtension(t *testing.T) {
 	}
 	if len(result.Content) != 1 || result.Content[0].Text != "ok" {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+// A launch notification must not replace Verify's multi-minute budget with
+// the shorter ordinary-command timeout now that startup is inside Verify.
+func TestVerifyLaunchNotificationPreservesVerificationBudget(t *testing.T) {
+	setupSocketDir(t)
+	shrinkTimeouts(t, 200*time.Millisecond, 200*time.Millisecond)
+	fakeDaemon(t, func(conn net.Conn) {
+		line, err := bufio.NewReader(conn).ReadBytes('\n')
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var request struct {
+			Method string
+			Params verifyParams
+		}
+		if err := json.Unmarshal(line, &request); err != nil {
+			t.Error(err)
+			return
+		}
+		if request.Method != verifier.Method || request.Params.CLI == nil || !request.Params.CLI.KeepOpen || request.Params.Claim != "claim" {
+			t.Error("CLI lifecycle options did not use the existing Verify request")
+		}
+		fmt.Fprintf(conn, "{\"jsonrpc\":\"2.0\",\"method\":%q}\n", launchingBrowserMethod)
+		time.Sleep(600 * time.Millisecond)
+		fmt.Fprintln(conn, `{"jsonrpc":"2.0","id":1,"result":{"status":"inconclusive","claim":"claim","summary":"fixture","evidence":[]}}`)
+	})
+	result, err := VerifyWithBrowser(verifier.Request{Claim: "claim"}, agent.VerifyCLIOptions{KeepOpen: true})
+	if err != nil || result.Status != "inconclusive" {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

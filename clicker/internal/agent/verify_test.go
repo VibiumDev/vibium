@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"github.com/vibium/clicker/internal/api"
+	"github.com/vibium/clicker/internal/verifier"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,5 +82,29 @@ func TestVerifyRecordingPreservesActiveRecorder(t *testing.T) {
 	recorder.StopGroup()
 	if _, err := recorder.Stop(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVerifyCLIRejectsInvalidSetupBeforeLaunch(t *testing.T) {
+	config := verifier.Config{Provider: "openai", Model: "model", APIKey: "key"}
+	for _, req := range []verifier.Request{
+		{Claim: "claim"},
+		{Claim: "", Config: config},
+		{Claim: "claim", Record: "record.zip", Config: config},
+	} {
+		h := &Handlers{}
+		launched := false
+		h.SetLaunchNotify(func() { launched = true })
+		if _, err := h.VerifyCLI(req, VerifyCLIOptions{}); err == nil || launched || h.client != nil {
+			t.Fatalf("invalid setup launched a browser: %v", err)
+		}
+	}
+}
+
+func TestCloseClearsBrowserSpecificState(t *testing.T) {
+	h := &Handlers{activeContext: "old-tab", refMaps: map[string]map[string]string{"old-tab": {"@e1": "button"}}, lastMaps: map[string]string{"old-tab": "old-map"}}
+	h.Close()
+	if h.activeContext != "" || h.refMaps != nil || h.lastMaps != nil {
+		t.Fatal("closed browser retained tab or element state")
 	}
 }

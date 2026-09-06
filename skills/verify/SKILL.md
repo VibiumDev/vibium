@@ -17,13 +17,23 @@ Use the project's configured Vibium binary. Otherwise try `vibium`,
 `verify --help` works. Local Chrome is the tested baseline for live checks.
 Saved-input checks do not require a browser.
 
-The verifier needs `VIBIUM_VERIFIER_MODEL` and, for OpenAI, `OPENAI_API_KEY`.
+For OpenAI, export `VIBIUM_VERIFIER_PROVIDER=openai`,
+`VIBIUM_VERIFIER_MODEL`, and `OPENAI_API_KEY`.
 An OpenAI-compatible service uses `VIBIUM_VERIFIER_PROVIDER=openai-compatible`
 and `VIBIUM_VERIFIER_BASE_URL`. Use the project's existing configuration;
 Vibium does not load environment files automatically. If an environment file
-is configured, source it in the same shell invocation as Verify. Never print
-or log credentials. Do not choose another provider or model to work around a
+is configured, source it in the same shell invocation as Verify. Its shell
+assignments must export the settings (`export NAME=value`) so the CLI receives
+them. Never print or log credentials. Do not choose another provider or model to work around a
 missing configuration without the user's direction.
+
+After loading settings, run `vibium soundcheck --json` during initial setup or
+when provider configuration changes. Exit 0 and `result.ready: true` mean the
+configuration and provider tool round-trip passed; exit 1 includes failed
+checks and fixes. It makes up to two small model requests and does not launch
+or change a browser. It does not check the application or replace Verify.
+Resolve reported setup problems before the browser workflow; do not rerun it
+before every claim when the configuration is unchanged.
 
 ## Development loop
 
@@ -55,10 +65,20 @@ missing configuration without the user's direction.
    missing evidence or report the limitation. Stop when the requested claims
    pass or a concrete blocker requires user input.
 
+## Browser cleanup
+
+Verify preserves an existing browser session. If it starts a browser itself,
+it closes that browser after saving any requested recording, on all verdicts
+and execution errors. Use `--keep-open` when a standalone check should leave
+the browser available for inspection or more work. Do not assume it stays
+open just because `--output` saved a recording. `--keep-open` is live-only and
+cannot be combined with `--input`.
+
 ## Recording and report flags
 
 Use `-o verification.zip` to record the verification run automatically when no
-recording is active. With an active recording, it exports the whole current
+recording is active. It includes video when supported (Firefox 154+), finalized
+before browser cleanup. With an active recording, it exports the whole current
 chunk through Verify without stopping or resetting it; the export excludes
 continuous video. Choose a new path different from the active recording's
 output. Use `--report verdict.json` for a separate JSON verdict; `--json` still

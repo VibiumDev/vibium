@@ -324,6 +324,7 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 212 | Independently verify the active session or a saved archive | `vibium:verify.run` | `vibium verify <claim>` | `vibium_verify` | `browser.verify(claim, opts?)` | `browser.verify(claim, record=...)` | `browser.verify(claim, options?)` |
 | 213 | Independently verify a pinned page or a saved archive | `vibium:verify.run` | — | — | `page.verify(claim, opts?)` | `page.verify(claim, record=...)` | `page.verify(claim, options?)` |
 | 214 | Verify a saved archive without launching a browser | `vibium:verify.run` | — | — | — | — | `Vibium.verify(claim, options)` |
+| 215 | Check verifier configuration and provider tool support | — | `vibium soundcheck` | — | — | — | — |
 
 The JS and Python module-level `browser.verify` launcher requires `record` and
 uses the existing pipe runtime without launching a browser. Browser instances
@@ -334,4 +335,4 @@ Operational errors raise exceptions instead of returning a verdict.
 
 CLI `-i`/`--input` maps to the runtime `record` field. CLI `-o`/`--output`
 saves a live recording, `--report` writes a JSON verdict, and `--json` controls
-stdout. See [Verify](../how-to-guides/verify.md) for configuration and examples.
+stdout. See the [Verify reference](verify.md) for configuration and examples.

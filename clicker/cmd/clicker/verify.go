@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/verifier"
 )
@@ -48,10 +49,13 @@ func newVerifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   `verify "<claim>"`,
 		Short: "Verify a claim in a live browser or an existing recording with an independent model",
+		Long:  "Verify a claim in a live browser or an existing recording with an independent model.\nCheck provider setup first with: vibium soundcheck.\nCloses a browser it starts after saving evidence; reuses and preserves an existing browser.\nUse --keep-open to leave a newly started browser open.",
 		Example: `  vibium verify "changing my display name persists after refresh"
   # Returns PASS, FAIL, or INCONCLUSIVE with concise evidence.
   vibium verify "changing my display name persists after refresh" -o verification.zip
   # Saves the live verification in a new recording ZIP.
+  vibium verify "https://example.com is up" -o status.zip --keep-open
+  # Leaves a browser started by Verify open for inspection.
   vibium verify -i record.zip "checkout completed successfully"
   vibium verify --input trace.zip --report verification.json "the order confirmation is visible"
   # Reads a Vibium recording or Playwright trace without launching a browser.
@@ -83,6 +87,7 @@ func newVerifyCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&files.input, "input", "i", "", "Read an existing Vibium recording or Playwright trace ZIP; no browser is launched")
 	cmd.Flags().StringVarP(&files.output, "output", "o", "", "Save a new recording ZIP of live verification; an active recording is exported without stopping it (current chunk, no video)")
 	cmd.Flags().StringVar(&files.report, "report", "", "Save the verdict and concise evidence as a new JSON file")
+	cmd.Flags().Bool("keep-open", false, "Leave a browser started by Verify open after the run (existing browsers are always preserved)")
 	return cmd
 }
 
@@ -92,9 +97,13 @@ func runVerify(cmd *cobra.Command, claim string, files verifyFiles) (result *ver
 	if err = files.validate(cmd); err != nil {
 		return
 	}
+	keepOpen, _ := cmd.Flags().GetBool("keep-open")
+	if files.input != "" && cmd.Flags().Changed("keep-open") {
+		return nil, fmt.Errorf("--keep-open only applies to live verification; it cannot be combined with --input")
+	}
 	config, err := verifier.ConfigFromEnv()
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("%w; run vibium soundcheck for setup checks", err)
 	}
 	req := verifier.Request{Claim: claim, Record: files.input, Output: files.output, Config: config}
 	if err = req.Validate(); err != nil {
@@ -116,16 +125,19 @@ func runVerify(cmd *cobra.Command, claim string, files verifyFiles) (result *ver
 			}
 		}()
 	}
-	if files.input == "" {
-		if _, err = daemonCall("browser_start", map[string]interface{}{}); err != nil {
-			return
+	// Keep browser startup and cleanup inside the daemon's serialized Verify
+	// request. A separate browser_start call cannot safely establish ownership.
+	run := func() (*verifier.Result, error) {
+		if files.input == "" {
+			return daemon.VerifyWithBrowser(req, agent.VerifyCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
 		}
+		return daemon.Verify(req)
 	}
-	result, err = daemon.Verify(req)
-	if files.input != "" && isConnectionError(err) {
+	result, err = run()
+	if isConnectionError(err) {
 		daemon.CleanStale()
 		if err = autoStartDaemon(); err == nil {
-			result, err = daemon.Verify(req)
+			result, err = run()
 		}
 	}
 	if err != nil {

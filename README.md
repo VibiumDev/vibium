@@ -35,12 +35,16 @@ From the checkout containing this development build:
 npx skills add . --skill verify
 ```
 
-Verify currently requires the development build in this checkout and verifier
-configuration. Live checks use your existing local browser; `--input` reads a
-saved recording or compatible Playwright trace. Use `--output` to save a live
-verification recording and `--report` for a JSON verdict. Follow [Your coding agent's first verification](docs/tutorials/first-verification.md) for installation and a complete
-agent-driven example. In agents with slash skills these are `/vibe-check` and
-`/verify`; in Codex, use `$vibe-check` and `$verify`.
+Verify currently requires the development build and a configured verifier
+model. Follow the three-part tutorial series:
+[Part 1: Live websites](docs/tutorials/first-verification.md),
+[Part 2: Coding agents](docs/tutorials/verification-with-a-coding-agent.md), and
+[Part 3: Recordings and traces](docs/tutorials/verification-from-a-recording.md).
+In agents with slash skills,
+use `/vibe-check` and `/verify`; in Codex, use `$vibe-check` and `$verify`.
+Run `vibium soundcheck` after loading verifier settings to check setup and
+provider access. For commands to check a live browser or saved recording, see the
+[Verify how-to](docs/how-to-guides/verify.md).
 
 Verify supplies a fresh model context and recorded evidence for a second
 opinion. Its verdict can be wrong, and the reliability benefit has not yet
