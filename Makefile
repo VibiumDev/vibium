@@ -723,10 +723,11 @@ help:
 
 # Check acceptance across the existing pipe and MCP surfaces.
 test-check: build-go build-js build-java python-venv
-	node --test --test-concurrency=1 tests/check/surfaces.test.js tests/daemon/check.test.js tests/daemon/check-lifecycle.test.js tests/daemon/check-archive.test.js
-	VIBIUM_CHECK_ENGINE=firefox node --test --test-concurrency=1 tests/daemon/check.test.js tests/daemon/check-lifecycle.test.js
+	@echo "--- Check Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/check/surfaces.test.js tests/daemon/check.test.js tests/daemon/check-lifecycle.test.js tests/daemon/check-archive.test.js
 
 # Deterministic native-provider contracts, live browser behavior, and SDK parity.
 # Real-provider runs are opt-in; no credentials or local model server required.
 test-run: build-go build-js build-java python-venv
-	node --test --test-concurrency=1 tests/naming/*.test.js tests/run/cli.test.js tests/run/overrides.test.js tests/run/surfaces.test.js tests/run/live.test.js
+	@echo "--- Run Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/naming/*.test.js tests/run/cli.test.js tests/run/overrides.test.js tests/run/surfaces.test.js tests/run/live.test.js

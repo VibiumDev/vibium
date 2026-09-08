@@ -5,13 +5,13 @@ const { promisify } = require('node:util');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, ENGINE } = require('../helpers');
 const { fixture } = require('./fixture.cjs');
 const exec = promisify(execFile);
 
 async function run(t, options = {}) {
   const f = await fixture(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-cli-'));
-  const env = { ...process.env, ...f.env, VIBIUM_SESSION: `run-${process.pid}`, VIBIUM_ENGINE: options.engine || 'chrome', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_ENGINE_PATH: '', VIBIUM_CONNECT_URL: '', VIBIUM_AI_PROVIDER: options.provider || 'openai-compatible' };
+  const env = { ...process.env, ...f.env, VIBIUM_SESSION: `run-${process.pid}`, VIBIUM_ENGINE: ENGINE, VIBIUM_ENGINE_CHANNEL: '', VIBIUM_ENGINE_PATH: '', VIBIUM_CONNECT_URL: '', VIBIUM_AI_PROVIDER: options.provider || 'openai-compatible' };
   if (env.VIBIUM_AI_PROVIDER === 'openai') env.OPENAI_API_KEY = 'openai-test-key';
   const cli = async (...args) => JSON.parse((await exec(VIBIUM, ['--json', '--headless', ...args], { env, timeout: 230000, maxBuffer: 8*1024*1024 })).stdout).result;
   const output = path.join(dir, 'run.zip'), original = path.join(dir, 'builder.zip');
@@ -53,7 +53,7 @@ async function run(t, options = {}) {
     assert.ok(!trace.includes('native-key') && !trace.includes('PRIVATE-REASONING'));
     const names = (await exec('unzip', ['-Z1', output])).stdout;
     if (options.privacy) { assert.ok(!trace.includes('TEST-PASSWORD-SECRET')); assert.ok(events[0].vibiumPrivacy); assert.ok(!names.includes('video/')); }
-    else if (options.engine === 'firefox' && !options.existing) assert.match(names, /video\/.+\.webm/);
+    else if (ENGINE === 'firefox' && !options.existing) assert.match(names, /video\/.+\.webm/);
     assert.match(await cli('stop'), options.existing || options.keepOpen ? /Browser session closed/ : /No browser session to close/);
   } finally {
     await exec(VIBIUM, ['daemon', 'stop'], { env, timeout: 15000 }).catch(() => {});
@@ -61,7 +61,7 @@ async function run(t, options = {}) {
   }
 }
 for (const provider of ['openai', 'anthropic', 'google', 'openai-compatible', 'local']) test(`Run CLI uses ${provider} browser tools and shared AI configuration`, { timeout: 120000 }, t => run(t, { provider, existing: true }));
-for (const state of [{}, { incomplete: true }, { error: true }, { keepOpen: true }, { keepOpen: true, error: true }, { existing: true, error: true }, { existing: true, privacy: true }, { engine: 'firefox' }]) test(`Run ownership and evidence ${JSON.stringify(state)}`, { timeout: 120000 }, t => run(t, state));
+for (const state of [{}, { incomplete: true }, { error: true }, { keepOpen: true }, { keepOpen: true, error: true }, { existing: true, error: true }, { existing: true, privacy: true }]) test(`Run ownership and evidence ${JSON.stringify(state)}`, { timeout: 120000 }, t => run(t, state));
 test('Run rejects archive/report flags and requires shared AI configuration', async () => {
   // Old per-feature variables must not silently configure the shared model loop.
   for (const args of [['run', 'goal', '-i', 'record.zip'], ['run', 'goal', '--report', 'result.json'], ['run', 'goal']]) {
