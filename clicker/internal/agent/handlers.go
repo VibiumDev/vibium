@@ -82,11 +82,22 @@ type Handlers struct {
 	// daemon sets it per request under the same mutex that serializes
 	// handler calls; it must not be mutated while a call is in flight.
 	launchNotify func()
+
+	// installNotify, when set, is called when a launch finds the engine
+	// missing and starts downloading it. A download is not bounded by the
+	// launch budget, so callers need to distinguish it from a slow launch.
+	// Set and cleared alongside launchNotify.
+	installNotify func()
 }
 
 // SetLaunchNotify installs (or clears, with nil) the launch-start callback.
 func (h *Handlers) SetLaunchNotify(fn func()) {
 	h.launchNotify = fn
+}
+
+// SetInstallNotify installs (or clears, with nil) the install-start callback.
+func (h *Handlers) SetInstallNotify(fn func()) {
+	h.installNotify = fn
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -857,6 +868,20 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				return nil, fmt.Errorf("unknown Firefox channel %q (supported: release, beta)", val)
 			}
 			useChannel = val
+		}
+	}
+
+	// Install the engine if this machine has never had one. The client
+	// libraries get this from `vibium pipe` (#312), but the CLI and MCP reach
+	// the browser through here instead and used to fail with "Chrome not
+	// found" / "Firefox not found" telling the user to go run an install
+	// command by hand. VIBIUM_SKIP_BROWSER_DOWNLOAD restores that error.
+	if !browser.SkipBrowserDownload() && !browser.EngineInstalledForChannel(useEngine, useChannel) {
+		if h.installNotify != nil {
+			h.installNotify()
+		}
+		if err := browser.EnsureInstalledForChannel(useEngine, useChannel); err != nil {
+			return nil, fmt.Errorf("failed to install %s: %w", useEngine, err)
 		}
 	}
 

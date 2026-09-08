@@ -27,15 +27,23 @@ const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_vers
 // one.
 const pinnedFirefoxVersion = "155.0.1"
 
-// InstallFirefox downloads Firefox from Mozilla's release archive into the
-// vibium cache and returns the executable path. Skips the download if the
-// current version is already installed. The channel comes from
-// VIBIUM_ENGINE_CHANNEL (default "release"; "beta" for pre-release testing).
+// InstallFirefox downloads Firefox for the VIBIUM_ENGINE_CHANNEL channel
+// (default "release"; "beta" for pre-release testing).
+func InstallFirefox() (string, error) {
+	return InstallFirefoxForChannel("")
+}
+
+// InstallFirefoxForChannel downloads Firefox from Mozilla's release archive
+// into the vibium cache and returns the executable path. Skips the download
+// if the current version is already installed. An empty channel means the
+// VIBIUM_ENGINE_CHANNEL default; passing it explicitly lets a long-lived
+// daemon install for a per-call channel without mutating process-wide
+// environment state, mirroring paths.GetFirefoxExecutableForChannel.
 //
 // Windows is unsupported: Mozilla ships only installer executables there, no
 // archive build we can unpack into the cache. Install Firefox manually and
 // set VIBIUM_ENGINE_PATH instead.
-func InstallFirefox() (string, error) {
+func InstallFirefoxForChannel(channel string) (string, error) {
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return "", fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
@@ -51,13 +59,15 @@ func InstallFirefox() (string, error) {
 		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_ENGINE_PATH to firefox.exe")
 	}
 
-	channel := paths.FirefoxChannel()
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
 	version, err := resolveFirefoxVersion(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Firefox version info: %w", err)
 	}
 
-	ffDir, err := paths.GetFirefoxDir()
+	ffDir, err := paths.GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -115,9 +125,19 @@ func InstallFirefox() (string, error) {
 	return exePath, nil
 }
 
-// IsFirefoxInstalled checks if a usable Firefox executable is available.
+// IsFirefoxInstalled checks if a usable Firefox executable is available for
+// the VIBIUM_ENGINE_CHANNEL channel.
 func IsFirefoxInstalled() bool {
-	p, err := paths.GetFirefoxExecutable()
+	return IsFirefoxInstalledForChannel("")
+}
+
+// IsFirefoxInstalledForChannel checks a specific channel's cache. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default.
+func IsFirefoxInstalledForChannel(channel string) bool {
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
+	p, err := paths.GetFirefoxExecutableForChannel(channel)
 	if err != nil {
 		return false
 	}

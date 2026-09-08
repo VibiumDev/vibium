@@ -25,6 +25,12 @@ var (
 	// wedged daemon: no launch notification means the plain readTimeout
 	// still applies (#407).
 	launchGrace = browser.LaunchBudget
+
+	// installGrace covers a browser download, which has no bound of its own:
+	// it is the network's, not the launch path's. Matches the ready timeout
+	// the JS, Python, and Java clients already allow when `vibium pipe`
+	// reports the same install (#312).
+	installGrace = 5 * time.Minute
 )
 
 // ToolError is an error the daemon itself reported. It means the daemon was
@@ -158,6 +164,7 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	reader := bufio.NewReader(conn)
 	var line []byte
 	extended := false
+	installExtended := false
 	for {
 		line, err = reader.ReadBytes('\n')
 		if err != nil && len(line) == 0 {
@@ -183,6 +190,13 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 			if msg.Method == launchingBrowserMethod && !extended {
 				extended = true
 				conn.SetReadDeadline(time.Now().Add(launchGrace + responseTimeout))
+			}
+			// An install always follows the launch notification that already
+			// extended once, so it gets its own grace on top rather than
+			// sharing the one-shot flag.
+			if msg.Method == installingBrowserMethod && !installExtended {
+				installExtended = true
+				conn.SetReadDeadline(time.Now().Add(installGrace + launchGrace + responseTimeout))
 			}
 			continue
 		}
