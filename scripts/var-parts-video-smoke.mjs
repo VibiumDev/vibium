@@ -4,7 +4,7 @@
 //   node scripts/var-parts-video-smoke.mjs
 //
 // Firefox 154 is required for video. Until it reaches stable on 2026-08-18 the
-// beta channel is needed; VIBIUM_FIREFOX_CHANNEL overrides if that has landed.
+// beta channel is needed; VIBIUM_ENGINE_CHANNEL overrides if that has landed.
 
 import { firefox } from "../clients/javascript/dist/index.mjs";
 import { execFileSync } from "child_process";
@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outPath = path.resolve(__dirname, "..", "var-parts-video-record.zip");
-const channel = process.env.VIBIUM_FIREFOX_CHANNEL || "beta";
+const channel = process.env.VIBIUM_ENGINE_CHANNEL || "beta";
 
 const failures = [];
 function check(ok, label) {

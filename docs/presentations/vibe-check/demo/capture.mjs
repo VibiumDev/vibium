@@ -16,7 +16,7 @@ if(!model)throw new Error('Configure VIBIUM_AI_MODEL and its provider credential
 const provider=process.env.VIBIUM_AI_PROVIDER||'openai';
 const settings=['--provider',provider,'--model',model,'--base-url',process.env.VIBIUM_AI_BASE_URL||'','--reasoning-effort',process.env.VIBIUM_AI_REASONING_EFFORT||''];
 const bin=process.env.VIBIUM_BIN_PATH||path.join(root,'clicker/bin/vibium');
-const env={...process.env,VIBIUM_SESSION:`meetup-capture-${process.pid}`,VIBIUM_ENGINE:'firefox',VIBIUM_ENGINE_PATH:'',VIBIUM_ENGINE_CHANNEL:process.env.VIBIUM_FIREFOX_CHANNEL||'beta',VIBIUM_CONNECT_URL:''};
+const env={...process.env,VIBIUM_SESSION:`meetup-capture-${process.pid}`,VIBIUM_ENGINE:'firefox',VIBIUM_ENGINE_PATH:'',VIBIUM_ENGINE_CHANNEL:process.env.VIBIUM_ENGINE_CHANNEL||'beta',VIBIUM_CONNECT_URL:''};
 const cli=async(...args)=>{
   let stdout;
   try { ({stdout}=await exec(bin,['--headless','--json',...args],{env,timeout:240000,maxBuffer:16*1024*1024})); }
