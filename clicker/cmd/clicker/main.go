@@ -75,6 +75,69 @@ func defaultEngine() string {
 	return "chrome"
 }
 
+// applyGlobalFlags computes the state the persistent flags control: the *Set
+// booleans, the log level, the env-var bridges for --session and --channel,
+// and the engine, channel and session validation.
+//
+// It runs from the root's PersistentPreRunE, and again from
+// parseFlagsAllowNegative for the commands that set DisableFlagParsing. Those
+// parse their flags inside Run, after PersistentPreRunE has already read them
+// as unset, so without the second pass --session and --channel are accepted
+// and silently ignored (#482).
+func applyGlobalFlags(cmd *cobra.Command) error {
+	headlessSet = cmd.Flags().Changed("headless")
+	engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
+	channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
+	// Enable logging only if --verbose is used
+	if verbose {
+		log.Setup(log.LevelVerbose)
+	}
+	// Bridge the flag to the env var so the paths package and any
+	// auto-started daemon child process resolve the same session.
+	if session != "" {
+		if err := os.Setenv("VIBIUM_SESSION", session); err != nil {
+			return err
+		}
+	}
+	if cmd.Name() == "pipe" {
+		noBrowser, _ := cmd.Flags().GetBool("no-browser")
+		if noBrowser {
+			return paths.ValidateSessionName(paths.SessionName())
+		}
+	}
+	if engineName != "chrome" && engineName != "firefox" {
+		return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
+	}
+	// Channels differ per engine: Mozilla's are release/beta, Chrome
+	// for Testing's are stable/beta/dev/canary.
+	if engineChannel != "" {
+		valid := map[string][]string{
+			"firefox": {"release", "beta"},
+			"chrome":  {"stable", "beta", "dev", "canary"},
+		}[engineName]
+		if !slices.Contains(valid, engineChannel) {
+			return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
+				engineChannel, engineName, strings.Join(valid, ", "))
+		}
+	}
+	// VIBIUM_ENGINE_PATH is an engine-neutral name but only Firefox
+	// implements it. Say so rather than accepting the setting and
+	// ignoring it.
+	if engineName != "firefox" && os.Getenv("VIBIUM_ENGINE_PATH") != "" {
+		return fmt.Errorf("VIBIUM_ENGINE_PATH is not supported for engine %q (firefox only)", engineName)
+	}
+	// Bridge the flag to the env var, like --session: the paths
+	// package resolves the channel from the environment at both
+	// install and launch time, and a daemon child process spawned
+	// later inherits it.
+	if engineChannel != "" {
+		if err := os.Setenv("VIBIUM_ENGINE_CHANNEL", engineChannel); err != nil {
+			return err
+		}
+	}
+	return paths.ValidateSessionName(paths.SessionName())
+}
+
 func main() {
 	progName := filepath.Base(os.Args[0])
 
@@ -95,57 +158,7 @@ func main() {
 			if isReadyCommand(cmd) {
 				return nil
 			}
-			headlessSet = cmd.Flags().Changed("headless")
-			engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
-			channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
-			// Enable logging only if --verbose is used
-			if verbose {
-				log.Setup(log.LevelVerbose)
-			}
-			// Bridge the flag to the env var so the paths package and any
-			// auto-started daemon child process resolve the same session.
-			if session != "" {
-				if err := os.Setenv("VIBIUM_SESSION", session); err != nil {
-					return err
-				}
-			}
-			if cmd.Name() == "pipe" {
-				noBrowser, _ := cmd.Flags().GetBool("no-browser")
-				if noBrowser {
-					return paths.ValidateSessionName(paths.SessionName())
-				}
-			}
-			if engineName != "chrome" && engineName != "firefox" {
-				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
-			}
-			// Channels differ per engine: Mozilla's are release/beta, Chrome
-			// for Testing's are stable/beta/dev/canary.
-			if engineChannel != "" {
-				valid := map[string][]string{
-					"firefox": {"release", "beta"},
-					"chrome":  {"stable", "beta", "dev", "canary"},
-				}[engineName]
-				if !slices.Contains(valid, engineChannel) {
-					return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
-						engineChannel, engineName, strings.Join(valid, ", "))
-				}
-			}
-			// VIBIUM_ENGINE_PATH is an engine-neutral name but only Firefox
-			// implements it. Say so rather than accepting the setting and
-			// ignoring it.
-			if engineName != "firefox" && os.Getenv("VIBIUM_ENGINE_PATH") != "" {
-				return fmt.Errorf("VIBIUM_ENGINE_PATH is not supported for engine %q (firefox only)", engineName)
-			}
-			// Bridge the flag to the env var, like --session: the paths
-			// package resolves the channel from the environment at both
-			// install and launch time, and a daemon child process spawned
-			// later inherits it.
-			if engineChannel != "" {
-				if err := os.Setenv("VIBIUM_ENGINE_CHANNEL", engineChannel); err != nil {
-					return err
-				}
-			}
-			return paths.ValidateSessionName(paths.SessionName())
+			return applyGlobalFlags(cmd)
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
