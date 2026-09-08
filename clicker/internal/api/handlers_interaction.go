@@ -127,6 +127,10 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+	if err := caretToEnd(s, context, ep); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
 	if err := TypeText(s, context, text); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
@@ -155,6 +159,10 @@ func (r *Router) handleVibiumPress(session *BrowserSession, cmd bidiCommand) {
 	}
 	r.captureBeforeSnapshotAfterScroll(session, cmd.Params)
 	if err := ClickAtCenter(s, context, info); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if err := caretToEnd(s, context, ep); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -848,6 +856,39 @@ func Fill(s Session, context string, ep ElementParams, value string) error {
 	return nil
 }
 
+// caretToEnd moves the caret past the element's existing content, ignoring
+// elements that cannot carry one.
+//
+// TypeInto, PressOn and their router twins focus by clicking the element's
+// center, and a click in a text field puts the caret at the character nearest
+// that x-coordinate — a fixed fraction of the field's width, independent of
+// how much text is there. A value long enough to reach that point got new
+// text spliced into its middle, and which character a press acted on
+// depended on CSS width, font metrics and engine (#488). Collapsing the
+// caret to the end afterwards restores the documented "appends to existing
+// content" contract.
+func caretToEnd(s Session, context string, ep ElementParams) error {
+	script, args := buildElActionScript(ep, nil, nil, `
+			const n = el.value !== undefined && el.value !== null ? String(el.value).length : null;
+			if (n !== null && typeof el.setSelectionRange === 'function') {
+				// setSelectionRange throws on input types that do not support
+				// selection (number, email, date). Those cannot hold a caret
+				// mid-value anyway, so leaving them alone is correct.
+				try { el.setSelectionRange(n, n); } catch (e) {}
+			} else if (el.isContentEditable) {
+				const r = document.createRange();
+				r.selectNodeContents(el);
+				r.collapse(false);
+				const sel = window.getSelection();
+				sel.removeAllRanges();
+				sel.addRange(r);
+			}
+			return 'ok';
+		`)
+	_, err := CallScript(s, context, script, args)
+	return err
+}
+
 // TypeInto resolves an element with actionability checks, clicks to focus, and types text.
 func TypeInto(s Session, context string, ep ElementParams, text string) error {
 	info, err := resolveWithActionability(s, context, ep, ClickChecks)
@@ -855,6 +896,9 @@ func TypeInto(s Session, context string, ep ElementParams, text string) error {
 		return err
 	}
 	if err := ClickAtCenter(s, context, info); err != nil {
+		return err
+	}
+	if err := caretToEnd(s, context, ep); err != nil {
 		return err
 	}
 	return TypeText(s, context, text)
@@ -867,6 +911,9 @@ func PressOn(s Session, context string, ep ElementParams, key string) error {
 		return err
 	}
 	if err := ClickAtCenter(s, context, info); err != nil {
+		return err
+	}
+	if err := caretToEnd(s, context, ep); err != nil {
 		return err
 	}
 	return PressKey(s, context, key)
