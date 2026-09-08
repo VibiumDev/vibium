@@ -6,7 +6,7 @@ import "testing"
 // a browser, before the connect/launch work. A remote URL with nothing
 // listening makes the attempt fail fast while still crossing the commit point.
 func TestLaunchNotifyFiresOnLaunchAttempt(t *testing.T) {
-	h := NewHandlers("", "", false, "ws://127.0.0.1:1/session", nil)
+	h := NewHandlers("", "", false, "ws://127.0.0.1:1/session", nil, nil)
 	calls := 0
 	h.SetLaunchNotify(func() { calls++ })
 

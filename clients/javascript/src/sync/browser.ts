@@ -14,6 +14,9 @@ export interface StartOptions {
   channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
+  /** Extra alwaysMatch capabilities for classic WebDriver endpoints
+   *  (cloud grids take their config this way, via vendor-prefixed capability keys). */
+  caps?: Record<string, unknown>;
 }
 
 export interface BrowserSync { (goal: string, options?: RunOptions): RunResult; }

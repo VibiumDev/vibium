@@ -67,7 +67,7 @@ func TestDownloadBehaviorIsEstablishedDuringConnect(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	router := NewRouter("chrome", true, "ws"+strings.TrimPrefix(ts.URL, "http"), nil)
+	router := NewRouter("chrome", true, "ws"+strings.TrimPrefix(ts.URL, "http"), nil, nil)
 	client := &recordingClient{}
 	t.Cleanup(router.CloseAll)
 

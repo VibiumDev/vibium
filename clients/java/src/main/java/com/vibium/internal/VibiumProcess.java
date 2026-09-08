@@ -58,14 +58,18 @@ public class VibiumProcess {
      * Start a vibium pipe subprocess.
      */
     public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders) {
-        return start(binaryPath, engine, channel, headless, connectURL, connectHeaders, false);
+        return start(binaryPath, engine, channel, headless, connectURL, connectHeaders, null);
+    }
+
+    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, String connectCaps) {
+        return start(binaryPath, engine, channel, headless, connectURL, connectHeaders, connectCaps, false);
     }
 
     public static VibiumProcess startWithoutBrowser(String binaryPath) {
-        return start(binaryPath, null, null, false, null, null, true);
+        return start(binaryPath, null, null, false, null, null, null, true);
     }
 
-    private static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, boolean noBrowser) {
+    private static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, String connectCaps, boolean noBrowser) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
@@ -93,8 +97,14 @@ public class VibiumProcess {
         if (connectHeaders != null) {
             for (Map.Entry<String, String> entry : connectHeaders.entrySet()) {
                 cmd.add("--connect-header");
-                cmd.add(entry.getKey() + "=" + entry.getValue());
+                // The binary parses "Key: Value" — an "=" separator is silently dropped.
+                cmd.add(entry.getKey() + ": " + entry.getValue());
             }
+        }
+
+        if (connectCaps != null && !connectCaps.isEmpty()) {
+            cmd.add("--connect-caps");
+            cmd.add(connectCaps);
         }
 
         // Startup is slow (~16s cold) and slower when many browsers launch at

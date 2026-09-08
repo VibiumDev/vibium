@@ -27,6 +27,8 @@ export interface VibiumProcessOptions {
   executablePath?: string;
   connectURL?: string;
   connectHeaders?: Record<string, string>;
+  /** JSON object of extra alwaysMatch capabilities for classic WebDriver endpoints. */
+  connectCaps?: string;
 }
 
 export class VibiumProcess {
@@ -69,6 +71,9 @@ export class VibiumProcess {
       for (const [key, value] of Object.entries(options.connectHeaders)) {
         args.push('--connect-header', `${key}: ${value}`);
       }
+    }
+    if (options.connectCaps) {
+      args.push('--connect-caps', options.connectCaps);
     }
 
     // Startup is slow (~16s cold) and gets slower when many browsers launch at

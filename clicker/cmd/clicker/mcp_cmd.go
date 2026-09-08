@@ -102,6 +102,7 @@ with LLM agents like Claude Code.
 					Headless:       headless,
 					ConnectURL:     connectURL,
 					ConnectHeaders: connectHeaders,
+					ConnectCaps:    connectCapsFromEnv(),
 				})
 				defer server.Close()
 

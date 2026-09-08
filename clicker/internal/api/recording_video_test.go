@@ -64,7 +64,7 @@ func TestVideoSupportErrorPassesThroughSpecificRefusals(t *testing.T) {
 
 func TestRequiredVideoOnRemoteConnectionFailsClearly(t *testing.T) {
 	client := &recordingTestClient{}
-	router := NewRouter("firefox", true, "ws://remote.example/session", nil)
+	router := NewRouter("firefox", true, "ws://remote.example/session", nil, nil)
 	router.handleRecordingStart(&BrowserSession{Client: client}, bidiCommand{
 		ID:     7,
 		Params: map[string]interface{}{"video": true},

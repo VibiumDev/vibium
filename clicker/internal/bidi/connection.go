@@ -3,6 +3,7 @@ package bidi
 import (
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,13 @@ func Connect(url string) (*Connection, error) {
 // ConnectWithHeaders establishes a WebSocket connection with optional HTTP headers.
 // Headers are sent during the WebSocket handshake (useful for authentication tokens).
 func ConnectWithHeaders(url string, headers http.Header) (*Connection, error) {
+	// gorilla rejects userinfo in ws URLs outright, but cloud providers hand
+	// out ws://user:key@host URLs — fold the credentials into Basic auth.
+	if u, err := neturl.Parse(url); err == nil && u.User != nil {
+		headers = foldUserinfo(u, headers)
+		url = u.String()
+	}
+
 	dialer := websocket.Dialer{
 		ReadBufferSize:   maxMessageSize,
 		WriteBufferSize:  maxMessageSize,

@@ -40,6 +40,11 @@ type Handlers struct {
 	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
 	lastMaps       map[string]string            // context -> last map output (for diff)
+	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	// classicSession is set when connectURL was a classic WebDriver HTTP
+	// endpoint and this process created the session there. Grids release
+	// the slot on DELETE, so Close() must delete it.
+	classicSession *bidi.ClassicSession
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
@@ -104,7 +109,7 @@ func (h *Handlers) SetInstallNotify(fn func()) {
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
 // engine selects the browser ("chrome" or "firefox").
 // headless controls whether the browser is launched in headless mode.
-func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header) *Handlers {
+func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Handlers {
 	return &Handlers{
 		screenshotDir:  screenshotDir,
 		engine:         engine,
@@ -112,6 +117,7 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
+		connectCaps:    connectCaps,
 	}
 }
 
@@ -733,7 +739,7 @@ func mcpToolToMethod(name string) string {
 func (h *Handlers) Close() {
 	h.sessionMu.Lock()
 	conn, client, launchResult := h.conn, h.client, h.launchResult
-	ownsRemote := h.ownsRemote
+	ownsRemote, classic := h.ownsRemote, h.classicSession
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
 	h.ownedUserContexts = nil
@@ -742,6 +748,7 @@ func (h *Handlers) Close() {
 	h.lastMaps = nil
 	recorder := h.recorder
 	h.recorder = nil
+	h.classicSession = nil
 	h.sessionMu.Unlock()
 
 	// An active recording auto-finalizes to its declared path, as if
@@ -770,6 +777,11 @@ func (h *Handlers) Close() {
 	}
 	if conn != nil {
 		conn.Close()
+	}
+	// A session this process created on a classic endpoint is also ours to
+	// end; DELETE is what releases the slot on grids and cloud providers.
+	if classic != nil {
+		classic.Delete()
 	}
 	if launchResult != nil {
 		launchResult.Close()
@@ -825,14 +837,22 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 
 	// Remote browser connect mode
 	if h.connectURL != "" {
-		conn, client, session, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
+		// http(s) URLs are classic WebDriver endpoints: create a session
+		// there first and connect to the BiDi URL it hands back.
+		wsURL, classic, err := bidi.ResolveEndpoint(h.connectURL, h.connectHeaders, h.connectCaps)
 		if err != nil {
+			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
+		}
+		conn, client, session, err := bidi.ConnectRemote(wsURL, h.connectHeaders)
+		if err != nil {
+			classic.Delete()
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
 		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
 		h.ownsRemote = session.Created
+		h.classicSession = classic
 		h.sessionMu.Unlock()
 		h.startPromptTracking()
 
@@ -843,7 +863,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, bidi.RedactURL(h.connectURL), session.ID),
 			}},
 		}, nil
 	}
