@@ -1126,6 +1126,25 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 	if err != nil {
 		return nil, err
 	}
+
+	// A pinned page (#383) is usually not the foreground tab, and headless
+	// Chrome composites no frame for a background one: captureScreenshot then
+	// blocks until the BiDi timeout instead of returning. Raise the target for
+	// the capture and put the previous tab back. This surface reaches it and
+	// the router-backed clients do not because browser_new_page activates the
+	// page it creates (browserNewPage) while vibium:browser.newPage leaves the
+	// foreground alone. Firefox 155 refuses activate as privileged, so a
+	// failure here is not fatal — the capture is still worth attempting.
+	if ctx != "" && h.activeContext != "" && ctx != h.activeContext {
+		if err := api.SwitchPage(s, ctx); err == nil {
+			defer func() {
+				if err := api.SwitchPage(s, h.activeContext); err != nil {
+					log.Warn("failed to restore the active page after a pinned screenshot", "context", h.activeContext, "error", err)
+				}
+			}()
+		}
+	}
+
 	base64Data, err := api.Screenshot(s, ctx, fullPage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture screenshot: %w", err)
