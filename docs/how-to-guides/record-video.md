@@ -1,9 +1,9 @@
 # Record Video
 
-Recordings can include a video track of the session. Pass `video` to
-`recording.start()` and the browser encodes the viewport to WebM itself,
-using the WebDriver BiDi `browsingContext.startScreencast` command — nothing
-extra to install. The video lands inside the recording zip next to the trace:
+Recordings include a video track wherever the engine supports it — no option
+needed. The browser encodes the viewport to WebM itself, using the WebDriver
+BiDi `browsingContext.startScreencast` command, so there is nothing extra to
+install. The video lands inside the recording zip next to the trace:
 
 ```
 record.zip
@@ -79,6 +79,8 @@ const { firefox } = require('vibium');
 const bro = await firefox.start();
 const vibe = await bro.page();
 
+// video: true because this script exists to produce a video -- fail
+// rather than quietly write a trace without one.
 await vibe.context.recording.start({ video: true, path: 'runs/login.zip' });
 await vibe.go('https://example.com');
 // ... actions to record ...
@@ -102,6 +104,8 @@ from vibium import firefox
 bro = firefox.start()
 vibe = bro.page()
 
+# video=True because this script exists to produce a video -- fail
+# rather than quietly write a trace without one.
 vibe.context.recording.start(video=True, path="runs/login.zip")
 vibe.go("https://example.com")
 # ... actions to record ...
