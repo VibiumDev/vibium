@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const exec = promisify(execFile);
 const root = path.resolve(__dirname, '../..');
+const { ENGINE } = require('../helpers');
 const listen = s => new Promise(r => s.listen(0, '127.0.0.1', () => r(`http://127.0.0.1:${s.address().port}`)));
 
 test('Check SDK and MCP surfaces share the native runtime', { timeout: 300000 }, async t => {
@@ -49,11 +50,10 @@ test('Check SDK and MCP surfaces share the native runtime', { timeout: 300000 },
     if (req.url === '/other') { res.end('<h1>Other page</h1><input id="name" value="Other">'); return; }
     res.end(`<!doctype html><title>Account</title><h1>Account</h1><form><label>Display name<input id="name"></label><button>Save</button></form><script>const input=document.querySelector('input');input.value=localStorage.getItem('name')||'Original';document.querySelector('form').onsubmit=e=>{e.preventDefault();localStorage.setItem('name',input.value);console.log('Saved')};</script>`);
   });
-  const env = { ...process.env, VIBIUM_BIN_PATH: path.join(root, 'clicker/bin/vibium'), VIBIUM_CONNECT_URL: '', VIBIUM_ENGINE: 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_AI_PROVIDER: 'openai-compatible', VIBIUM_AI_MODEL: 'fixture', OPENAI_API_KEY: 'fixture-secret', VIBIUM_AI_BASE_URL: `${await listen(provider)}/v1`, CHECK_TEST_URL: await listen(app), CHECK_TEST_INPUT: path.join(root, 'tests/fixtures/check/playwright-checkout.zip') };
+  const env = { ...process.env, VIBIUM_BIN_PATH: path.join(root, 'clicker/bin/vibium'), VIBIUM_CONNECT_URL: '', VIBIUM_ENGINE: ENGINE, VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_AI_PROVIDER: 'openai-compatible', VIBIUM_AI_MODEL: 'fixture', OPENAI_API_KEY: 'fixture-secret', VIBIUM_AI_BASE_URL: `${await listen(provider)}/v1`, CHECK_TEST_URL: await listen(app), CHECK_TEST_INPUT: path.join(root, 'tests/fixtures/check/playwright-checkout.zip') };
   try {
     const runners = [
       ['JavaScript async', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '0'],
-      ['JavaScript Firefox', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '0'],
       ['JavaScript sync', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '1'],
       ['Python async', path.join(root, process.platform === 'win32' ? 'clients/python/.venv/Scripts/python.exe' : 'clients/python/.venv/bin/python'), [path.join(__dirname, 'sdk-python.py')], '0'],
       ['Python sync', path.join(root, process.platform === 'win32' ? 'clients/python/.venv/Scripts/python.exe' : 'clients/python/.venv/bin/python'), [path.join(__dirname, 'sdk-python.py')], '1'],
@@ -64,7 +64,7 @@ test('Check SDK and MCP surfaces share the native runtime', { timeout: 300000 },
       for (const archived of ['0', '1']) {
         await t.test(`${label} ${archived === '1' ? 'archive without browser' : 'live pinned page'}`, async () => {
           const output = path.join(dir, `result-${label.replaceAll(" ", "-")}-${archived}.zip`);
-          const localEnv = { ...env, CHECK_TEST_ENGINE: label.includes('Firefox') ? 'firefox' : 'chrome', CHECK_TEST_SYNC: sync, CHECK_TEST_ARCHIVE_ONLY: archived, CHECK_TEST_OUTPUT: output };
+          const localEnv = { ...env, CHECK_TEST_ENGINE: ENGINE, CHECK_TEST_SYNC: sync, CHECK_TEST_ARCHIVE_ONLY: archived, CHECK_TEST_OUTPUT: output };
           if (archived === '1') { localEnv.VIBIUM_ENGINE = 'firefox'; localEnv.VIBIUM_ENGINE_PATH = '/browser-must-not-launch'; }
           try { await exec(binary, args, { env: localEnv, timeout: 90000 }); }
           catch (err) { t.diagnostic(errors.join('\n')); throw err; }

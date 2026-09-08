@@ -235,21 +235,44 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-firefox-
 
+      # The Check and Run suites below drive Chrome for their non-Firefox
+      # cases. Same key as the chrome job, so this restores what that job
+      # saved rather than downloading Chrome again.
+      - name: Cache Chrome for Testing
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/vibium/chrome-for-testing
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/browser/installer.go') }}
+          restore-keys: |
+            ${{ runner.os }}-chrome-
+
+      # Chrome's sandbox needs this on Ubuntu 24.04, same as the chrome job.
+      - name: Configure kernel for Chrome sandbox
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
       - name: Install dependencies
         run: |
           npm ci
           npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
-      - name: Build and install Firefox
+      - name: Build and install browsers
         run: |
           make
           make install-firefox
+          make install-browser
 
       - name: Test Firefox capabilities
         run: xvfb-run --auto-servernum make test-firefox-capabilities
 
       - name: Test focused Firefox behavior
         run: xvfb-run --auto-servernum make test-firefox
+
+      # Same suites the chrome job runs, with the engine parameter pointed at
+      # Firefox — the shape every other engine-parity target already uses. A
+      # handful of cases used to name Firefox inside the default suite instead,
+      # so the chrome job ran them against a browser it never installs.
+      - name: Test Check and Run on Firefox
+        run: xvfb-run --auto-servernum make test-check test-run ENGINE=firefox
 
       - name: Clean up zombie processes
         if: always()
