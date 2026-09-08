@@ -82,11 +82,22 @@ type Handlers struct {
 	// daemon sets it per request under the same mutex that serializes
 	// handler calls; it must not be mutated while a call is in flight.
 	launchNotify func()
+
+	// installNotify, when set, is called when a launch finds the engine
+	// missing and starts downloading it. A download is not bounded by the
+	// launch budget, so callers need to distinguish it from a slow launch.
+	// Set and cleared alongside launchNotify.
+	installNotify func()
 }
 
 // SetLaunchNotify installs (or clears, with nil) the launch-start callback.
 func (h *Handlers) SetLaunchNotify(fn func()) {
 	h.launchNotify = fn
+}
+
+// SetInstallNotify installs (or clears, with nil) the install-start callback.
+func (h *Handlers) SetInstallNotify(fn func()) {
+	h.installNotify = fn
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -860,6 +871,20 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		}
 	}
 
+	// Install the engine if this machine has never had one. The client
+	// libraries get this from `vibium pipe` (#312), but the CLI and MCP reach
+	// the browser through here instead and used to fail with "Chrome not
+	// found" / "Firefox not found" telling the user to go run an install
+	// command by hand. VIBIUM_SKIP_BROWSER_DOWNLOAD restores that error.
+	if !browser.SkipBrowserDownload() && !browser.EngineInstalledForChannel(useEngine, useChannel) {
+		if h.installNotify != nil {
+			h.installNotify()
+		}
+		if err := browser.EnsureInstalledForChannel(useEngine, useChannel); err != nil {
+			return nil, fmt.Errorf("failed to install %s: %w", useEngine, err)
+		}
+	}
+
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{
 		Engine: useEngine, FirefoxChannel: useChannel, Headless: useHeadless,
@@ -1101,6 +1126,25 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 	if err != nil {
 		return nil, err
 	}
+
+	// A pinned page (#383) is usually not the foreground tab, and headless
+	// Chrome composites no frame for a background one: captureScreenshot then
+	// blocks until the BiDi timeout instead of returning. Raise the target for
+	// the capture and put the previous tab back. This surface reaches it and
+	// the router-backed clients do not because browser_new_page activates the
+	// page it creates (browserNewPage) while vibium:browser.newPage leaves the
+	// foreground alone. Firefox 155 refuses activate as privileged, so a
+	// failure here is not fatal — the capture is still worth attempting.
+	if ctx != "" && h.activeContext != "" && ctx != h.activeContext {
+		if err := api.SwitchPage(s, ctx); err == nil {
+			defer func() {
+				if err := api.SwitchPage(s, h.activeContext); err != nil {
+					log.Warn("failed to restore the active page after a pinned screenshot", "context", h.activeContext, "error", err)
+				}
+			}()
+		}
+	}
+
 	base64Data, err := api.Screenshot(s, ctx, fullPage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture screenshot: %w", err)

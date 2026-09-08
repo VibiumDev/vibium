@@ -14,7 +14,7 @@ Firefox: /Users/you/Library/Caches/vibium/firefox/release/153.0.3/Firefox.app/Co
 
 Firefox installs into the vibium cache next to Chrome for Testing. The vibium
 binary auto-installs the selected engine on first launch on macOS and Linux,
-same as Chrome, so all clients get it for free. On Windows, Firefox auto-install is not available:
+same as Chrome, so the CLI, MCP, and every client get it for free. On Windows, Firefox auto-install is not available:
 install Firefox yourself and point `VIBIUM_ENGINE_PATH` at `firefox.exe`.
 
 ### Release channels

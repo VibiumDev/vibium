@@ -105,6 +105,13 @@ with LLM agents like Claude Code.
 				})
 				defer server.Close()
 
+				// NewServer captured the real stdout for protocol output, so
+				// point os.Stdout at stderr now: a tool call that installs the
+				// browser prints progress with fmt.Print, and those lines would
+				// otherwise land in the middle of the JSON-RPC stream. Same
+				// guard `vibium pipe` uses.
+				os.Stdout = os.Stderr
+
 				// Handle SIGTERM so Chrome is cleaned up even if stdin isn't closed
 				sigCh := make(chan os.Signal, 1)
 				signal.Notify(sigCh, syscall.SIGTERM)

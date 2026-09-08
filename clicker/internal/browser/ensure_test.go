@@ -2,8 +2,12 @@ package browser
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vibium/clicker/internal/paths"
 )
 
 func TestSkipBrowserDownload(t *testing.T) {
@@ -91,5 +95,44 @@ func TestProgressWriterUnknownTotal(t *testing.T) {
 	}
 	if want := "  50 MB downloaded"; lines[1] != want {
 		t.Errorf("second line = %q, want %q", lines[1], want)
+	}
+}
+
+// A per-call channel must decide the install on its own: the daemon resolves
+// --channel per request, so consulting VIBIUM_ENGINE_CHANNEL here would report
+// beta installed because release is, then fail the launch.
+func TestEngineInstalledForChannelIgnoresEnvironmentChannel(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "release")
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+
+	exe := paths.FirefoxPathInVersion(filepath.Join(cache, "firefox", "release", "155.0.1"))
+	if err := os.MkdirAll(filepath.Dir(exe), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if !EngineInstalledForChannel("firefox", "release") {
+		t.Error("release channel should be installed")
+	}
+	if EngineInstalledForChannel("firefox", "beta") {
+		t.Error("beta channel should not be installed")
+	}
+	if !EngineInstalledForChannel("firefox", "") {
+		t.Error("empty channel should fall back to VIBIUM_ENGINE_CHANNEL (release)")
+	}
+}
+
+// The skip switch must still produce the old hard launch error rather than a
+// silent download, whatever channel is asked for.
+func TestEnsureInstalledForChannelHonorsSkip(t *testing.T) {
+	t.Setenv("VIBIUM_CACHE_DIR", t.TempDir())
+	t.Setenv("VIBIUM_SKIP_BROWSER_DOWNLOAD", "1")
+	if err := EnsureInstalledForChannel("firefox", "beta"); err != nil {
+		t.Errorf("EnsureInstalledForChannel with skip set = %v, want nil (no-op)", err)
 	}
 }
