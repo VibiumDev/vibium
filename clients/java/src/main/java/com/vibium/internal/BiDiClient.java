@@ -251,7 +251,7 @@ public class BiDiClient {
     /**
      * Map wire error strings to Java exceptions.
      */
-    private static VibiumException mapError(String error, String message) {
+    static VibiumException mapError(String error, String message) {
         if ("not_found".equals(error) || "no_such_element".equals(error)) {
             return new ElementNotFoundException(message);
         }
@@ -265,8 +265,13 @@ public class BiDiClient {
             return new VibiumTimeoutException(message);
         }
 
+        // Match the same specific phrases the timeout branch uses. A bare
+        // "not found" also matches text the client does not own, like a
+        // page's own Error(...) string or an engine diagnostic, so an
+        // unrelated failure whose wording happened to contain it was
+        // reported as a missing element. This mirrors the Python client.
         String lower = message.toLowerCase();
-        if (lower.contains("not found") || lower.contains("no elements")) {
+        if (lower.contains("element not found") || lower.contains("no elements found")) {
             return new ElementNotFoundException(message);
         }
 
