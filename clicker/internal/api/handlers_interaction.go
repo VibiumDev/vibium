@@ -553,27 +553,10 @@ func (r *Router) handleVibiumElSetFiles(session *BrowserSession, cmd bidiCommand
 		files[i] = s
 	}
 
-	if err := RequireFileInput(NewAPISession(r, session, context), context, ep); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Resolve the element to get its BiDi sharedId
-	sharedID, err := r.resolveElementRef(session, context, ep)
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Call input.setFiles
-	_, err = r.sendInternalCommand(session, "input.setFiles", map[string]interface{}{
-		"context": context,
-		"element": map[string]interface{}{
-			"sharedId": sharedID,
-		},
-		"files": files,
-	})
-	if err != nil {
+	// Upload does the file-input check, path validation and the setFiles
+	// call; going through it keeps this path and the CLI/MCP path one
+	// implementation.
+	if err := Upload(NewAPISession(r, session, context), context, ep, files, r.connectURL != ""); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
