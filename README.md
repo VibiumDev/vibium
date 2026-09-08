@@ -4,7 +4,7 @@
 
 **The verification layer for coding agents.**
 
-Vibium gives AI agents the tools they need to check their work. Install the `vibe-check` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
+Vibium gives AI agents the tools they need to check their work. Install the `browser` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
 
 **New here?** Get started in [JavaScript](docs/tutorials/getting-started-js.md), [Python](docs/tutorials/getting-started-python.md), or [Java](docs/tutorials/getting-started-java.md) — zero to hello world in 5 minutes.
 
@@ -22,42 +22,43 @@ Vibium gives AI agents the tools they need to check their work. Install the `vib
 
 ```bash
 npm install -g vibium
-npx skills add https://github.com/VibiumDev/vibium --skill vibe-check
+npx skills add https://github.com/VibiumDev/vibium
 ```
 
-The first command installs Vibium and the `vibium` binary, and downloads Chrome. The second installs the browser skill for the agent and scope you select.
+Select all Vibium skills in the installer, then choose your agent and installation
+scope. Vibium installs Chrome automatically.
 
-Use **vibe-check** for casual browser exploration and spot-checks. Add the
-**verify** skill for an independent acceptance check before completing a change.
-From the checkout containing this development build:
+- **browser** — explore pages, automate actions, record sessions, and carry out browser tasks from plain-language instructions.
+- **check** — independently assess whether a claim holds in the browser or a recording.
 
-```bash
-npx skills add . --skill verify
-```
+Invoke `/browser` or `/check` in agents with slash skills, or `$browser` and
+`$check` in Codex. Setup guides: [Codex](docs/how-to-guides/using-vibium-with-codex.md),
+[Claude Code](docs/how-to-guides/using-vibium-with-claude-code.md), and
+[Claude Desktop Chat via MCP](docs/how-to-guides/using-vibium-with-claude-desktop.md).
+Run [`vibium ready`](docs/reference/ready.md) to check setup.
 
-Verify currently requires the development build and a configured verifier
-model. Follow the three-part tutorial series:
-[Part 1: Live websites](docs/tutorials/first-verification.md),
-[Part 2: Coding agents](docs/tutorials/verification-with-a-coding-agent.md), and
-[Part 3: Recordings and traces](docs/tutorials/verification-from-a-recording.md).
-In agents with slash skills,
-use `/vibe-check` and `/verify`; in Codex, use `$vibe-check` and `$verify`.
-Run `vibium soundcheck` after loading verifier settings to check setup and
-provider access. For commands to check a live browser or saved recording, see the
-[Verify how-to](docs/how-to-guides/verify.md).
+For a walkthrough, follow [Your coding agent’s first Check](docs/tutorials/check-with-a-coding-agent.md).
+Run and Check currently require the development build and [AI configuration](docs/reference/model-providers.md).
 
-Verify supplies a fresh model context and recorded evidence for a second
-opinion. Its verdict can be wrong, and the reliability benefit has not yet
-been measured. Use it where browser exploration or judgment adds value; keep
-deterministic tests for stable, repeatable assertions. See
-[why independent verification matters](docs/explanation/independent-verification.md)
-for the benefits, costs, and limits.
+See [Introducing Run and Check](docs/updates/2026-09-07-run-and-check.md) for examples and limitations.
 
-> `skills` is the [open agent skills CLI](https://github.com/vercel-labs/skills) — a package manager for AI agent skills. No global install needed; `npx` runs it directly.
-
-### CLI Quick Reference
+## CLI Quick Reference
 
 ```bash
+# Give a browser task (requires AI setup)
+vibium "open https://var.parts and add one battery pack to the cart" --keep-open
+
+# Or use the explicit run command
+vibium run "open https://var.parts and add one battery pack to the cart" --keep-open
+# Check the cart
+vibium check "the cart contains exactly one battery pack"
+
+# Check and save a recording
+vibium check "the cart contains exactly one battery pack" -o cart-check.zip
+
+# Close the browser
+vibium stop
+
 # Map & interact (the core workflow)
 vibium go https://var.parts           # navigate to URL
 vibium map                            # map interactive elements → @e1, @e2, ...
@@ -89,11 +90,11 @@ vibium record stop                    # stop and save to record.zip
 # Forms & input
 vibium fill @e2 "hello@example.com"   # fill input using ref
 vibium select @e3 "US"               # pick dropdown option
-vibium check @e4                      # check a checkbox
+vibium set @e4                        # check a checkbox
 vibium press Enter                    # press a key
 ```
 
-Full command list: [SKILL.md](skills/vibe-check/SKILL.md)
+Full command list: [SKILL.md](skills/browser/SKILL.md)
 
 **Alternative: MCP server** (for structured tool use instead of CLI):
 
@@ -291,12 +292,7 @@ target builds the Go binary, JS client, and Java client.
 
 ## Roadmap
 
-V1 focuses on the core loop: browser control via CLI, MCP, and client libraries.
-
-See [ROADMAP.md](ROADMAP.md) for planned features:
-- Cortex (memory/navigation layer)
-- Retina (recording extension)
-- AI-powered locators
+See [ROADMAP.md](ROADMAP.md) for current development work and longer-term ideas.
 
 ---
 

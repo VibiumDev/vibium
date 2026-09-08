@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..verification import VerificationResult, send_verification
+from ..check import CheckResult, send_check
+from ..run import RunResult, send_run
 
 import asyncio
 import base64
@@ -202,9 +203,17 @@ class Page:
 
     # --- Navigation ---
 
-    async def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+    async def __call__(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return await self.run(goal, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def run(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        """Accomplish a goal in the live browser using the configured runtime."""
+        return await send_run(self._client, goal, self._context_id, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def check(self, claim: str, *, record: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Independently verify live behavior, or inspect a read-only archive."""
-        return await send_verification(self._client, claim, record, self._context_id)
+        return await send_check(self._client, claim, record, self._context_id, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
 
     async def go(self, url: str) -> None:
         """Navigate to a URL."""

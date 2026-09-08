@@ -77,8 +77,8 @@ Apache-2.0
 
 ## Independent verification
 
-`Page.verify` and `Browser.verify` provide a fresh verifier context using the
+`Page.check` and `Browser.check` provide a fresh verifier context using the
 existing browser session. Supply `record` to inspect an immutable archive, or
-use the module-level launcher (`Vibium.verify` in Java) for archive inspection
-without launching a browser. See the [Verify reference](../../docs/reference/verify.md#python)
+use the module-level `browser.check` launcher for archive inspection
+without launching a browser. See the [Check reference](../../docs/reference/check.md#python)
 for configuration, examples, recording, and verdict semantics.

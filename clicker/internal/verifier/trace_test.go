@@ -38,7 +38,7 @@ func archive(t *testing.T, files map[string]string) string {
 }
 
 const traceFixture = `{"type":"context-options","version":8,"browserName":"chromium","playwrightVersion":"1.58.0"}
-{"type":"before","callId":"call@1","method":"tracingGroup","title":"Verify checkout","params":{"method":"vibium:verify.run","claim":"checkout works"}}
+{"type":"before","callId":"call@1","method":"tracingGroup","title":"Check checkout","params":{"method":"vibium:check.run","claim":"checkout works"}}
 {"type":"before","callId":"call@2","parentId":"call@1","method":"click","params":{"selector":"#submit"}}
 {"type":"after","callId":"call@2","afterSnapshot":"after@call@2"}
 {"type":"after","callId":"call@1","result":{"status":"passed","summary":"Earlier assessment"}}
@@ -147,7 +147,7 @@ func TestRecordedVerifierLoop(t *testing.T) {
 	defer server.Close()
 	req := testRequest(server.URL)
 	req.Record = p
-	result, err := VerifyRecord(context.Background(), req)
+	result, err := CheckRecord(context.Background(), req)
 	if err != nil || result.Status != "inconclusive" || requests != 2 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}

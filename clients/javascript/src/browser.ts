@@ -1,4 +1,6 @@
-import { VerifyOptions, RecordedVerifyOptions, VerificationResult, sendVerification } from './verification';
+import { callable } from './callable';
+import { RunOptions, RunResult, sendRun } from './run';
+import { CheckOptions, RecordedCheckOptions, CheckResult, sendCheck } from './check';
 import { VibiumProcess } from './clicker';
 import { BiDiClient, BiDiEvent } from './bidi';
 import { Page } from './page';
@@ -19,6 +21,8 @@ export interface StartOptions {
   headers?: Record<string, string>;
   executablePath?: string;
 }
+
+export interface Browser { (goal: string, options?: RunOptions): Promise<RunResult>; }
 
 export class Browser {
   private client: BiDiClient;
@@ -52,15 +56,21 @@ export class Browser {
         }
       }
     });
+    return callable(this);
   }
 
   [customInspect](): string {
     return 'Browser { connected: true }';
   }
 
+  /** Accomplish a live browser goal; provider settings are read in the runtime. */
+  run(goal: string, options: RunOptions = {}): Promise<RunResult> {
+    return sendRun(this.client, goal, options);
+  }
+
   /** Independently verify this session, or inspect a saved archive. */
-  verify(claim: string, options: VerifyOptions = {}): Promise<VerificationResult> {
-    return sendVerification(this.client, claim, options);
+  check(claim: string, options: CheckOptions = {}): Promise<CheckResult> {
+    return sendCheck(this.client, claim, options);
   }
 
   /** Get the default page (first browsing context). */
@@ -131,13 +141,13 @@ function envHeaders(): Record<string, string> {
 
 export const browser = {
   /** Inspect a saved archive without installing or starting a browser. */
-  async verify(claim: string, options: RecordedVerifyOptions): Promise<VerificationResult> {
+  async check(claim: string, options: RecordedCheckOptions): Promise<CheckResult> {
     if (!options?.record) throw new Error('Standalone verification requires record');
     const proc = await VibiumProcess.start({ noBrowser: true, executablePath: options.executablePath });
     let client: BiDiClient | undefined;
     try {
       client = BiDiClient.fromStreams(proc.stdin, proc.stdout, proc.preReadyLines);
-      return await sendVerification(client, claim, options);
+      return await sendCheck(client, claim, options);
     } finally {
       try { await client?.close(); } finally { await proc.stop(); }
     }

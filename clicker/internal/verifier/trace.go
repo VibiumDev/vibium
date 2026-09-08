@@ -134,7 +134,7 @@ func OpenTrace(ctx context.Context, filename string) (*TraceSource, error) {
 
 func (s *TraceSource) Close() error { return s.zip.Close() }
 
-func VerifyRecord(ctx context.Context, req Request) (Result, error) {
+func CheckRecord(ctx context.Context, req Request) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -145,7 +145,7 @@ func VerifyRecord(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	defer s.Close()
-	return (&OpenAI{}).Verify(ctx, req, s)
+	return (&OpenAI{}).Check(ctx, req, s)
 }
 
 func (s *TraceSource) Tools() []Tool {

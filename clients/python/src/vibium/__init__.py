@@ -35,8 +35,9 @@ from .errors import (
 
 __version__ = "26.8.21"
 __all__ = [
-    "VerificationResult",
-    "VerificationEvidence",
+    "RunResult",
+    "CheckResult",
+    "CheckEvidence",
     "browser",
     "firefox",
     "chrome",
@@ -61,4 +62,6 @@ __all__ = [
     "BrowserCrashedError",
 ]
 
-from .verification import VerificationResult, VerificationEvidence
+from .check import CheckResult, CheckEvidence
+
+from .run import RunResult

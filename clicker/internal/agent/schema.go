@@ -23,7 +23,8 @@ var noPageParam = map[string]bool{
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
 	tools := []Tool{
-		{Name: "vibium_verify", Description: "Independently verify an explicit claim against the current local Chrome/Firefox session, or a read-only recording zip. Returns passed, failed, or inconclusive with evidence. Recorded mode never launches a browser. Uses verifier configuration from the server environment.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"claim": map[string]interface{}{"type": "string"}, "record": map[string]interface{}{"type": "string", "description": "Optional path to an existing version 8 Vibium record.zip or Playwright trace.zip on this host; selects archive mode instead of the live browser."}}, "required": []string{"claim"}, "additionalProperties": false}},
+		{Name: "vibium_run", Description: "Accomplish a goal in the current local browser session using configured AI provider and constrained browser tools. Returns completed or not_completed with evidence. Live only; uses VIBIUM_AI_* configuration.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"goal": map[string]interface{}{"type": "string"}}, "required": []string{"goal"}, "additionalProperties": false}},
+		{Name: "vibium_check", Description: "Independently verify an explicit claim against the current local Chrome/Firefox session, or a read-only recording zip. Returns passed, failed, or inconclusive with evidence. Recorded mode never launches a browser. Uses shared AI configuration from the server environment.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"claim": map[string]interface{}{"type": "string"}, "record": map[string]interface{}{"type": "string", "description": "Optional path to an existing version 8 Vibium record.zip or Playwright trace.zip on this host; selects archive mode instead of the live browser."}}, "required": []string{"claim"}, "additionalProperties": false}},
 		{
 			Name:        "browser_start",
 			Description: "Start a browser session",
@@ -702,11 +703,12 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_check",
-			Description: "Check a checkbox or radio button. Idempotent — does nothing if already checked.",
+			Name:        "browser_set",
+			Description: "Set checkbox/radio selection. Defaults to true; false clears a checkbox. Idempotent.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"value": map[string]interface{}{"type": "boolean", "default": true, "description": "Desired selection state; false clears a checkbox"},
 					"selector": map[string]interface{}{
 						"type":        "string",
 						"description": "CSS selector for the checkbox or radio button",
@@ -722,7 +724,7 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_uncheck",
+			Name:        "browser_unset",
 			Description: "Uncheck a checkbox. Idempotent — does nothing if already unchecked.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -979,7 +981,7 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_is_checked",
+			Name:        "browser_is_set",
 			Description: "Check if a checkbox or radio button is checked. Returns true/false.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -1607,5 +1609,14 @@ func GetToolSchemas() []Tool {
 				"Concurrent callers sharing this server should create their own page and pass its id on every call.",
 		}
 	}
+	for i := range tools {
+		if tools[i].Name == "vibium_check" || tools[i].Name == "vibium_run" {
+			props := tools[i].InputSchema["properties"].(map[string]interface{})
+			for _, name := range []string{"provider", "model", "baseURL", "reasoningEffort"} {
+				props[name] = map[string]interface{}{"type": "string", "description": "Per-call model setting override. Changing provider clears inherited model, endpoint, and reasoning effort. Credentials come from the runtime environment."}
+			}
+		}
+	}
+
 	return tools
 }

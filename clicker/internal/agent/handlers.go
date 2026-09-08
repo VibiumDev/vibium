@@ -23,7 +23,7 @@ import (
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
-	verifying bool // daemon mutex protects the complete verification and its child calls
+	modelRunning bool // daemon mutex protects the complete verification and its child calls
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -131,8 +131,11 @@ func (h *Handlers) newSession() *api.AgentSession {
 // to produce before/after events (matching the API path), and captures a
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
-	if name == "vibium_verify" {
-		return h.verifyMCP(args)
+	if name == "vibium_run" {
+		return h.runMCP(args)
+	}
+	if name == "vibium_check" {
+		return h.checkMCP(args)
 	}
 	log.Debug("tool call", "name", name, "args", args)
 
@@ -157,7 +160,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	}
 
 	var callId string
-	if h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.verifying && name == "browser_screenshot")) {
+	if h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		callId = h.recorder.NextCallId()
 		pageId := h.getContext()
 		// Resolve @e1 refs to real selectors so the trace shows meaningful selectors
@@ -176,15 +179,15 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	h.lastElementBox = nil
 
 	// Per-action screenshot: capture after successful non-recording commands
-	if err == nil && h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.verifying && name == "browser_screenshot")) {
+	if err == nil && h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		api.CaptureRecordingScreenshot(h.newSession(), h.recorder, endTime)
 	}
 
 	if callId != "" {
 		api.CaptureRecordingSecrets(h.newSession(), h.recorder, nil)
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
-		if h.verifying {
-			h.recorder.RecordCallOutcome(callId, verifyRecordedResult(result), err)
+		if h.modelRunning {
+			h.recorder.RecordCallOutcome(callId, recordedToolResult(result), err)
 		}
 	}
 
@@ -195,9 +198,9 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
 	case "browser_console":
-		return h.verifyBrowserObservations("console")
+		return h.browserObservations("console")
 	case "browser_network":
-		return h.verifyBrowserObservations("network")
+		return h.browserObservations("network")
 	case "browser_start":
 		return h.browserLaunch(args)
 	case "browser_navigate":
@@ -276,9 +279,9 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserGetAttribute(args)
 	case "browser_is_visible":
 		return h.browserIsVisible(args)
-	case "browser_check":
+	case "browser_set":
 		return h.browserCheck(args)
-	case "browser_uncheck":
+	case "browser_unset":
 		return h.browserUncheck(args)
 	case "browser_scroll_into_view":
 		return h.browserScrollIntoView(args)
@@ -304,7 +307,7 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserCount(args)
 	case "browser_is_enabled":
 		return h.browserIsEnabled(args)
-	case "browser_is_checked":
+	case "browser_is_set":
 		return h.browserIsChecked(args)
 	case "browser_wait_for_text":
 		return h.browserWaitForText(args)
@@ -393,11 +396,11 @@ func needsFindStep(name string) bool {
 	switch name {
 	case "browser_click", "browser_dblclick", "browser_fill", "browser_type",
 		"browser_press", "browser_hover", "browser_select",
-		"browser_check", "browser_uncheck", "browser_focus",
+		"browser_set", "browser_unset", "browser_focus",
 		"browser_scroll_into_view", "browser_drag",
 		"browser_get_text", "browser_get_html", "browser_get_value",
 		"browser_get_attribute", "browser_is_visible",
-		"browser_is_enabled", "browser_is_checked",
+		"browser_is_enabled", "browser_is_set",
 		"browser_upload", "browser_highlight":
 		return true
 	}
@@ -545,10 +548,10 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.hover"
 	case "browser_select":
 		return "vibium:element.selectOption"
-	case "browser_check":
-		return "vibium:element.check"
-	case "browser_uncheck":
-		return "vibium:element.uncheck"
+	case "browser_set":
+		return "vibium:element.set"
+	case "browser_unset":
+		return "vibium:element.unset"
 	case "browser_focus":
 		return "vibium:element.focus"
 	case "browser_scroll_into_view":
@@ -591,8 +594,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.isVisible"
 	case "browser_is_enabled":
 		return "vibium:element.isEnabled"
-	case "browser_is_checked":
-		return "vibium:element.isChecked"
+	case "browser_is_set":
+		return "vibium:element.isSet"
 	case "browser_count":
 		return "vibium:page.findAll"
 	case "browser_evaluate":
@@ -2698,6 +2701,16 @@ func (h *Handlers) browserIsVisible(args map[string]interface{}) (*ToolsCallResu
 
 // browserCheck checks a checkbox or radio button (idempotent).
 func (h *Handlers) browserCheck(args map[string]interface{}) (*ToolsCallResult, error) {
+	if value, exists := args["value"]; exists {
+		selected, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("set value must be a boolean")
+		}
+		if !selected {
+			return h.browserUncheck(args)
+		}
+	}
+
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
 	}

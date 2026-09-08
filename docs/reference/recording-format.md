@@ -141,7 +141,7 @@ Every vibium command emits a `before`/`after` pair automatically — both mutati
 | `startTime` | number | Relative ms since recording start. |
 | `pageId` | string | Browsing context ID of the page the action targets. Present on actions, absent on groups. |
 | `parentId` | string | `call@<N>` of the enclosing action group, if the action is inside a `startGroup()`/`stopGroup()` span. Absent for top-level actions. |
-| `beforeSnapshot` | string | `"before@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured before the action ran. Present on interaction actions (`click`, `fill`, `hover`, etc.) that resolve an element — the snapshot is taken after scrolling the element into view. Click-like actions (`click`, `dblclick`, `hover`, `tap`, `check`, `uncheck`, `dragTo`) have `beforeSnapshot` only. Fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) have both `beforeSnapshot` and `afterSnapshot`. Query actions (`find`, `text`, `navigate`, etc.) have `afterSnapshot` only. |
+| `beforeSnapshot` | string | `"before@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured before the action ran. Present on interaction actions (`click`, `fill`, `hover`, etc.) that resolve an element — the snapshot is taken after scrolling the element into view. Click-like actions (`click`, `dblclick`, `hover`, `tap`, `set`, `unset`, `dragTo`) have `beforeSnapshot` only. Fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) have both `beforeSnapshot` and `afterSnapshot`. Query actions (`find`, `text`, `navigate`, etc.) have `afterSnapshot` only. |
 
 **`input` fields** (emitted for element-targeting actions only):
 
@@ -151,7 +151,7 @@ Every vibium command emits a `before`/`after` pair automatically — both mutati
 | `point` | object | `{x, y}` — center of the resolved element's bounding box (viewport coordinates). Compatible with Playwright's trace viewer click-dot overlay. |
 | `box` | object | `{x, y, width, height}` — full bounding box of the resolved element (viewport coordinates). Used by the record player to draw a highlight rectangle. |
 
-Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `check`, etc.). Absent for non-element actions (`page.navigate`, `page.eval`, etc.) and action groups.
+Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `set`, etc.). Absent for non-element actions (`page.navigate`, `page.eval`, etc.) and action groups.
 
 **`after` fields:**
 
@@ -159,7 +159,7 @@ Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `
 |-------|------|-------------|
 | `callId` | string | `call@<N>` — matches the corresponding `before` event. |
 | `endTime` | number | Relative ms since recording start. |
-| `afterSnapshot` | string | `"after@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured after the action completed. Present on fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) and all non-interaction actions (`navigate`, `find`, `text`, etc.). Absent on click-like actions (`click`, `dblclick`, `hover`, `tap`, `check`, `uncheck`, `dragTo`) which use `beforeSnapshot` only, and absent on groups. |
+| `afterSnapshot` | string | `"after@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured after the action completed. Present on fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) and all non-interaction actions (`navigate`, `find`, `text`, etc.). Absent on click-like actions (`click`, `dblclick`, `hover`, `tap`, `set`, `unset`, `dragTo`) which use `beforeSnapshot` only, and absent on groups. |
 
 The `dispatch()` wrapper in the router records these markers — every vibium command that goes through `dispatch()` gets recorded. Recording commands themselves (`recording.start`, `recording.stop`, etc.) are excluded since they control recording.
 

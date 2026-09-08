@@ -11,9 +11,18 @@ func TestSkillInstallation(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("USERPROFILE", homeDir)
-	for _, name := range []string{"vibe-check", "verify"} {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"browser", nil},
+		{"browser", []string{"browser"}},
+		{"check", []string{"check"}},
+	} {
+		name := tc.name
 		cmd := newSkillCmd()
-		cmd.SetArgs([]string{name})
+		// Empty arguments must install the same browser skill as the named form.
+		cmd.SetArgs(append([]string{}, tc.args...))
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +56,7 @@ func TestSkillInstallation(t *testing.T) {
 	}
 }
 
-func TestDefaultSkillRemainsVibeCheck(t *testing.T) {
+func TestDefaultSkillIsBrowser(t *testing.T) {
 	var out bytes.Buffer
 	cmd := newSkillCmd()
 	cmd.SetOut(&out)

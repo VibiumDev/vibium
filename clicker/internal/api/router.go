@@ -25,9 +25,9 @@ const slowClientSend = time.Second
 
 // BrowserSession represents a browser session connected to a client.
 type BrowserSession struct {
-	verifyMu      sync.RWMutex
-	verifyContext context.Context          // guarded by mu; scoped to a serialized Verify run
-	verifyReplies map[int]chan verifyReply // internal Go calls, not another transport
+	modelMu      sync.RWMutex
+	modelContext context.Context         // guarded by mu; scoped to a serialized Check run
+	modelReplies map[int]chan modelReply // internal Go calls, not another transport
 
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
@@ -124,8 +124,8 @@ func (s *BrowserSession) SetLastElementBox(box *BoxInfo) {
 
 // BiDi command structure for parsing incoming messages
 type bidiCommand struct {
-	verifyDone   chan struct{}
-	verifyCallID *string
+	modelDone   chan struct{}
+	modelCallID *string
 
 	ID     int                    `json:"id"`
 	Method string                 `json:"method"`
@@ -311,7 +311,7 @@ type vibiumHandler func(*BrowserSession, bidiCommand)
 func handlerCapturesBefore(method string) bool {
 	switch method {
 	case "vibium:element.click", "vibium:element.dblclick", "vibium:element.hover", "vibium:element.tap",
-		"vibium:element.check", "vibium:element.uncheck", "vibium:element.dragTo",
+		"vibium:element.set", "vibium:element.unset", "vibium:element.dragTo",
 		"vibium:element.fill", "vibium:element.type", "vibium:element.press", "vibium:element.clear",
 		"vibium:element.selectOption":
 		return true
@@ -348,11 +348,11 @@ func unblocksAnotherCommand(method string) bool {
 
 func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
 	go func() {
-		if cmd.verifyDone != nil {
-			defer close(cmd.verifyDone)
+		if cmd.modelDone != nil {
+			defer close(cmd.modelDone)
 		} else if !unblocksAnotherCommand(cmd.Method) {
-			session.verifyMu.RLock()
-			defer session.verifyMu.RUnlock()
+			session.modelMu.RLock()
+			defer session.modelMu.RUnlock()
 		}
 		session.mu.Lock()
 		recorder := session.recorder
@@ -365,7 +365,7 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		// handlerScreenshot, screenshotInFlight) is read only while recording.
 		// Taking it unconditionally serialized all 104 dispatched methods on
 		// every session, recording or not.
-		if cmd.verifyDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
+		if cmd.modelDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
 			session.dispatchMu.Lock()
 			defer session.dispatchMu.Unlock()
 		}
@@ -373,10 +373,10 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		var callId string
 
 		if recorder != nil && recorder.IsRecording() {
-			CaptureRecordingSecrets(NewAPISession(r, session, verifyContextParam(cmd.Params)), recorder, cmd.Params)
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, cmd.Params)
 			callId = recorder.NextCallId()
-			if cmd.verifyCallID != nil {
-				*cmd.verifyCallID = callId
+			if cmd.modelCallID != nil {
+				*cmd.modelCallID = callId
 			}
 			opts := recorder.Options()
 
@@ -429,7 +429,7 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 				atomic.StoreInt32(&session.screenshotInFlight, 0)
 			}
 
-			CaptureRecordingSecrets(NewAPISession(r, session, verifyContextParam(cmd.Params)), recorder, nil)
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, nil)
 			recorder.RecordActionEnd(callId, afterSnapshot, endTime, box)
 		}
 	}()
@@ -438,7 +438,7 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 // OnClientMessage is called when a message is received from a client.
 // It handles custom vibium: extension commands or forwards to the browser.
 func (r *Router) OnClientMessage(client ClientTransport, msg string) {
-	if r.handleRecordedVerify(client, msg) {
+	if r.handleRecordedCheck(client, msg) {
 		return
 	}
 	sessionVal, ok := r.sessions.Load(client.ID())
@@ -491,8 +491,11 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 
 	// Handle vibium: extension commands (per WebDriver BiDi spec for extensions)
 	switch cmd.Method {
-	case "vibium:verify.run":
-		go r.handleVerify(session, cmd)
+	case "vibium:run.run":
+		go r.handleRun(session, cmd)
+		return
+	case "vibium:check.run":
+		go r.handleCheck(session, cmd)
 		return
 	// Element interaction commands
 	case "vibium:element.click":
@@ -513,10 +516,10 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.clear":
 		r.dispatch(session, cmd, r.handleVibiumClear)
 		return
-	case "vibium:element.check":
+	case "vibium:element.set":
 		r.dispatch(session, cmd, r.handleVibiumCheck)
 		return
-	case "vibium:element.uncheck":
+	case "vibium:element.unset":
 		r.dispatch(session, cmd, r.handleVibiumUncheck)
 		return
 	case "vibium:element.selectOption":
@@ -580,7 +583,7 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.isEnabled":
 		r.dispatch(session, cmd, r.handleVibiumElIsEnabled)
 		return
-	case "vibium:element.isChecked":
+	case "vibium:element.isSet":
 		r.dispatch(session, cmd, r.handleVibiumElIsChecked)
 		return
 	case "vibium:element.isEditable":
@@ -956,7 +959,7 @@ func (s *BrowserSession) noteFirstResponse() {
 
 // sendSuccess sends a successful response to the client.
 func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}) {
-	if session.replyToVerifier(id, result, nil) {
+	if session.replyToModel(id, result, nil) {
 		return
 	}
 	session.noteFirstResponse()
@@ -967,7 +970,7 @@ func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}
 
 // sendError sends an error response to the client (follows WebDriver BiDi spec).
 func (r *Router) sendError(session *BrowserSession, id int, err error) {
-	if session.replyToVerifier(id, nil, err) {
+	if session.replyToModel(id, nil, err) {
 		return
 	}
 	session.noteFirstResponse()
@@ -1179,7 +1182,7 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
 	session.mu.Lock()
-	operationContext := session.verifyContext
+	operationContext := session.modelContext
 	session.mu.Unlock()
 	if operationContext != nil {
 		if err := operationContext.Err(); err != nil {
@@ -1247,19 +1250,19 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 		return nil, err
 	}
 
-	// Wait for response (with timeout). Verify scopes cancellation to this session.
+	// Wait for response (with timeout). Check scopes cancellation to this session.
 	session.mu.Lock()
-	verifyCtx := session.verifyContext
+	modelCtx := session.modelContext
 	session.mu.Unlock()
-	if verifyCtx == nil {
-		verifyCtx = context.Background()
+	if modelCtx == nil {
+		modelCtx = context.Background()
 	}
 	select {
-	case <-verifyCtx.Done():
+	case <-modelCtx.Done():
 		session.internalCmdsMu.Lock()
 		session.abandonedInternal[id] = struct{}{}
 		session.internalCmdsMu.Unlock()
-		return nil, verifyCtx.Err()
+		return nil, modelCtx.Err()
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(timeout):
@@ -1382,7 +1385,7 @@ func (r *Router) CloseAll() {
 	})
 }
 
-func verifyContextParam(params map[string]interface{}) string {
+func commandContextParam(params map[string]interface{}) string {
 	value, _ := params["context"].(string)
 	return value
 }

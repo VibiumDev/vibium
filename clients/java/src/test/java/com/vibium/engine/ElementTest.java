@@ -98,10 +98,13 @@ class ElementTest {
     void testCheckUncheck() {
         page.go(server.baseUrl() + "/form");
         Element checkbox = page.find("#agree");
-        checkbox.check();
-        assertTrue(checkbox.isChecked());
-        checkbox.uncheck();
-        assertFalse(checkbox.isChecked());
+        checkbox.set();
+        checkbox.set(false);
+        assertFalse(checkbox.isSet());
+        checkbox.set(true);
+        assertTrue(checkbox.isSet());
+        checkbox.unset();
+        assertFalse(checkbox.isSet());
     }
 
     @Test

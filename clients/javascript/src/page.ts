@@ -1,4 +1,6 @@
-import { VerifyOptions, VerificationResult, sendVerification } from './verification';
+import { callable } from './callable';
+import { RunOptions, RunResult, sendRun } from './run';
+import { CheckOptions, CheckResult, sendCheck } from './check';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
 import { BrowserContext } from './context';
@@ -259,6 +261,8 @@ export interface A11yNode {
   children?: A11yNode[];
 }
 
+export interface Page { (goal: string, options?: RunOptions): Promise<RunResult>; }
+
 export class Page {
   private client: BiDiClient;
   private contextId: string;
@@ -393,6 +397,7 @@ export class Page {
       }
     };
     this.client.onEvent(this.eventHandler);
+    return callable(this);
   }
 
   /** The browsing context ID for this page. */
@@ -409,9 +414,14 @@ export class Page {
     return this._context;
   }
 
+  /** Accomplish a live browser goal; provider settings are read in the runtime. */
+  run(goal: string, options: RunOptions = {}): Promise<RunResult> {
+    return sendRun(this.client, goal, options, this.contextId);
+  }
+
   /** Verify this exact page, or inspect a read-only archive. */
-  verify(claim: string, options: VerifyOptions = {}): Promise<VerificationResult> {
-    return sendVerification(this.client, claim, options, this.contextId);
+  check(claim: string, options: CheckOptions = {}): Promise<CheckResult> {
+    return sendCheck(this.client, claim, options, this.contextId);
   }
 
   /** Navigate to a URL. */

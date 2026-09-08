@@ -24,13 +24,20 @@ Everything else here is internal, outside those four: **specs/**
 (living status pages), and **contributing/** (maintainer and contributor
 runbooks).
 
-## Vibium Verify
+## Vibium Check and Run
 
 | Reader's goal | Document |
 |---------------|----------|
-| Run a live check yourself | [Part 1: Verify a live website](tutorials/first-verification.md) |
-| Write and run a check with a coding agent | [Part 2: Verify with your coding agent](tutorials/verification-with-a-coding-agent.md) |
-| Check evidence from a saved run | [Part 3: Verify a recording or trace](tutorials/verification-from-a-recording.md) |
-| Run a check and save evidence | [Verify a live browser or saved recording](how-to-guides/verify.md) |
-| Look up options, configuration, and language APIs | [Verify reference](reference/verify.md) |
-| Understand the independence boundary and evidence | [Why independent verification matters](explanation/independent-verification.md) |
+| Run a live check yourself | [Part 1: Check a live website](tutorials/first-check.md) |
+| Set up Vibium for Codex | [Use Vibium with Codex](how-to-guides/using-vibium-with-codex.md) |
+| Set up Vibium for Claude Code | [Use Vibium with Claude Code](how-to-guides/using-vibium-with-claude-code.md) |
+| Connect Claude Desktop Chat to Vibium | [Use Vibium with Claude Desktop](how-to-guides/using-vibium-with-claude-desktop.md) |
+| Write and run a check with a coding agent | [Part 2: Check with your coding agent](tutorials/check-with-a-coding-agent.md) |
+| Check evidence from a saved run | [Part 3: Check a recording or trace](tutorials/check-from-a-recording.md) |
+| Explore the new features | [Introducing Run and Check](updates/2026-09-07-run-and-check.md) |
+| Accomplish a live browser goal | [Run](how-to-guides/run.md) |
+| Configure models for either operation | [Model providers](reference/model-providers.md) |
+| Diagnose browser and AI setup | [Readiness diagnostics](reference/ready.md) |
+| Run a check and save evidence | [Check a live browser or saved recording](how-to-guides/check.md) |
+| Look up options, configuration, and language APIs | [Check reference](reference/check.md) |
+| Understand Run, Check, and their browser architecture | [How Run and Check work](explanation/run-check-webdriver-bidi-architecture.md) |

@@ -22,7 +22,7 @@ func (f *fakeTools) Tools() []Tool {
 }
 func (f *fakeTools) Execute(ctx context.Context, name string, args map[string]interface{}) (Observation, error) {
 	f.calls = append(f.calls, name)
-	obs := Observation{Text: "observed value: Jason Test"}
+	obs := Observation{Text: "observed value: America/Chicago"}
 	if f.image && len(f.calls) > 3 {
 		obs.Image = "cG5n"
 	}
@@ -46,7 +46,7 @@ func calls(name string, count int) []interface{} {
 	return result
 }
 
-const verdict = `{"status":"passed","summary":"Name survived reload.","evidence":[{"type":"observation","summary":"Jason Test after reload."}]}`
+const verdict = `{"status":"passed","summary":"Name survived reload.","evidence":[{"type":"observation","summary":"America/Chicago after reload."}]}`
 
 func TestFreshContextAndToolLoop(t *testing.T) {
 	requests := 0
@@ -86,7 +86,7 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 		tools := &fakeTools{}
 		req := testRequest(server.URL)
 		req.Config.ReasoningEffort = "none"
-		result, err := adapter.Verify(context.Background(), req, tools)
+		result, err := adapter.Check(context.Background(), req, tools)
 		if err != nil || result.Status != "passed" || result.Claim != "name persists" || len(tools.calls) != 4 {
 			t.Fatalf("result=%+v err=%v calls=%v", result, err, tools.calls)
 		}
@@ -122,7 +122,7 @@ func TestProviderErrorsAndVerdicts(t *testing.T) {
 			}))
 			defer server.Close()
 			tools := &fakeTools{}
-			_, err := (&OpenAI{}).Verify(context.Background(), testRequest(server.URL), tools)
+			_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("err=%v", err)
 			}
@@ -139,7 +139,7 @@ func TestActionBudget(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { answer(w, nil, calls("browser_map", 2)) }))
 	defer server.Close()
 	tools := &fakeTools{}
-	result, err := (&OpenAI{}).Verify(context.Background(), testRequest(server.URL), tools)
+	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
 	if err != nil || result.Status != "inconclusive" || len(tools.calls) != MaxActions+3 {
 		t.Fatalf("%+v %v %d", result, err, len(tools.calls))
 	}
@@ -149,7 +149,7 @@ func TestTimeout(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, err := (&OpenAI{}).Verify(ctx, testRequest(server.URL), &fakeTools{})
+	_, err := (&OpenAI{}).Check(ctx, testRequest(server.URL), &fakeTools{})
 	if err == nil || !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("%v", err)
 	}
@@ -171,18 +171,18 @@ func TestScreenshotMessages(t *testing.T) {
 		answer(w, verdict, nil)
 	}))
 	defer server.Close()
-	if _, err := (&OpenAI{}).Verify(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
+	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
 		t.Fatal(err)
 	}
 }
 func TestConfiguration(t *testing.T) {
-	t.Setenv("VIBIUM_VERIFIER_PROVIDER", "openai")
-	t.Setenv("VIBIUM_VERIFIER_MODEL", "")
+	t.Setenv("VIBIUM_AI_PROVIDER", "openai")
+	t.Setenv("VIBIUM_AI_MODEL", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	if _, err := ConfigFromEnv(); err == nil {
 		t.Fatal("accepted missing model")
 	}
-	t.Setenv("VIBIUM_VERIFIER_MODEL", "configured-model")
+	t.Setenv("VIBIUM_AI_MODEL", "configured-model")
 	if _, err := ConfigFromEnv(); err == nil {
 		t.Fatal("accepted missing key")
 	}

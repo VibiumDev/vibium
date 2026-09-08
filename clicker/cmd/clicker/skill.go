@@ -12,37 +12,37 @@ import (
 //go:embed SKILL.md
 var skillMD string
 
-//go:embed VERIFY_SKILL.md
-var verifySkillMD string
+//go:embed CHECK_SKILL.md
+var checkSkillMD string
 
 func newSkillCmd() *cobra.Command {
 	var stdout bool
 
 	cmd := &cobra.Command{
-		Use:   "add-skill [vibe-check|verify]",
+		Use:   "add-skill [browser|check]",
 		Short: "Install a Vibium skill for Claude Code",
 		Example: `  vibium add-skill
-  # Installs skill to ~/.claude/skills/vibe-check/
+  # Installs skill to ~/.claude/skills/browser/
 
-  vibium add-skill verify
-  # Installs skill to ~/.claude/skills/verify/
+  vibium add-skill check
+  # Installs skill to ~/.claude/skills/check/
 
-  vibium add-skill verify --stdout
+  vibium add-skill check --stdout
   # Print skill content to stdout`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"vibe-check", "verify"},
+		ValidArgs: []string{"browser", "check"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := "vibe-check"
+			name := "browser"
 			if len(args) == 1 {
 				name = args[0]
 			}
 			content := skillMD
 			switch name {
-			case "vibe-check":
-			case "verify":
-				content = verifySkillMD
+			case "browser":
+			case "check":
+				content = checkSkillMD
 			default:
-				return fmt.Errorf("unknown skill %q; choose vibe-check or verify", name)
+				return fmt.Errorf("unknown skill %q; choose browser or check", name)
 			}
 			if stdout {
 				fmt.Fprint(cmd.OutOrStdout(), content)

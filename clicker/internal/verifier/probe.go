@@ -12,7 +12,7 @@ import (
 const ProbeTimeout = 60 * time.Second
 
 // Probe checks the real provider protocol with a synthetic, side-effect-free
-// tool. It uses the same request transport and verdict parser as Verify, but
+// tool. It uses the same request transport and verdict parser as Check, but
 // never observes a browser, opens an archive, or inherits builder context.
 func (v *OpenAI) Probe(ctx context.Context, config Config) error {
 	if err := config.Validate(); err != nil {
@@ -47,7 +47,7 @@ func (v *OpenAI) Probe(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("could not encode diagnostic evidence")
 	}
-	// As in Verify, free-form assistant content and reasoning are discarded.
+	// As in Check, free-form assistant content and reasoning are discarded.
 	msg.Role, msg.Content = "assistant", nil
 	messages = append(messages, msg, message{Role: "tool", ToolCallID: call.ID, Content: string(observation)})
 	msg, err = v.complete(ctx, config, messages, functions)

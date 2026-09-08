@@ -62,13 +62,13 @@ export class ElementSync {
   }
 
   /** Check a checkbox (no-op if already checked). */
-  check(options?: ActionOptions): void {
-    this.bridge.call('element.check', [this.elementId, options]);
+  set(value: boolean = true, options?: ActionOptions): void {
+    this.bridge.call('element.set', [this.elementId, value, options]);
   }
 
   /** Uncheck a checkbox (no-op if already unchecked). */
-  uncheck(options?: ActionOptions): void {
-    this.bridge.call('element.uncheck', [this.elementId, options]);
+  unset(options?: ActionOptions): void {
+    this.bridge.call('element.unset', [this.elementId, options]);
   }
 
   /** Select an option in a <select> element by value. */
@@ -166,8 +166,8 @@ export class ElementSync {
     return result.enabled;
   }
 
-  isChecked(): boolean {
-    const result = this.bridge.call<{ checked: boolean }>('element.isChecked', [this.elementId]);
+  isSet(): boolean {
+    const result = this.bridge.call<{ checked: boolean }>('element.isSet', [this.elementId]);
     return result.checked;
   }
 

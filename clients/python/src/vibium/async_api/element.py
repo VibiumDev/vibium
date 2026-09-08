@@ -76,11 +76,11 @@ class Element:
     async def clear(self, timeout: Optional[int] = None) -> None:
         await self._client.send("vibium:element.clear", self._command_params({"timeout": timeout}))
 
-    async def check(self, timeout: Optional[int] = None) -> None:
-        await self._client.send("vibium:element.check", self._command_params({"timeout": timeout}))
+    async def set(self, value: bool = True, timeout: Optional[int] = None) -> None:
+        await self._client.send("vibium:element.set", self._command_params({"value": value, "timeout": timeout}))
 
-    async def uncheck(self, timeout: Optional[int] = None) -> None:
-        await self._client.send("vibium:element.uncheck", self._command_params({"timeout": timeout}))
+    async def unset(self, timeout: Optional[int] = None) -> None:
+        await self._client.send("vibium:element.unset", self._command_params({"timeout": timeout}))
 
     async def select_option(self, value: str, timeout: Optional[int] = None) -> None:
         await self._client.send("vibium:element.selectOption", self._command_params({"value": value, "timeout": timeout}))
@@ -171,8 +171,8 @@ class Element:
         result = await self._client.send("vibium:element.isEnabled", self._command_params())
         return result["enabled"]
 
-    async def is_checked(self) -> bool:
-        result = await self._client.send("vibium:element.isChecked", self._command_params())
+    async def is_set(self) -> bool:
+        result = await self._client.send("vibium:element.isSet", self._command_params())
         return result["checked"]
 
     async def is_editable(self) -> bool:

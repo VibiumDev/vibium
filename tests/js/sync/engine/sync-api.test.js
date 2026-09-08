@@ -309,14 +309,17 @@ describe('Sync API: Element interaction', () => {
     assert.strictEqual(value, '12345');
   });
 
-  test('check() and uncheck()', () => {
+  test('set() and unset()', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/form`);
     const checkbox = vibe.find('#agree');
-    checkbox.check();
-    assert.strictEqual(checkbox.isChecked(), true);
-    checkbox.uncheck();
-    assert.strictEqual(checkbox.isChecked(), false);
+    checkbox.set();
+    checkbox.set(false);
+    assert.strictEqual(checkbox.isSet(), false);
+    checkbox.set(true);
+    assert.strictEqual(checkbox.isSet(), true);
+    checkbox.unset();
+    assert.strictEqual(checkbox.isSet(), false);
   });
 
   test('selectOption()', () => {

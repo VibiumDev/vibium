@@ -269,16 +269,16 @@ describe('Daemon CLI: Interaction commands', () => {
     assert.strictEqual(valueResult.result, 'hello world');
   });
 
-  test('check and uncheck toggle checkbox', () => {
+  test('set and unset update checkbox state', () => {
     clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=cb type=checkbox>\';"');
 
     // Check
-    const checkResult = clickerJSON('check "#cb"');
+    const checkResult = clickerJSON('set "#cb"');
     assert.strictEqual(checkResult.ok, true);
 
     // Uncheck
-    const uncheckResult = clickerJSON('uncheck "#cb"');
+    const uncheckResult = clickerJSON('unset "#cb"');
     assert.strictEqual(uncheckResult.ok, true);
   });
 });

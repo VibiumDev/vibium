@@ -20,8 +20,9 @@ from ..errors import (
 )
 
 __all__ = [
-    "VerificationResult",
-    "VerificationEvidence",
+    "RunResult",
+    "CheckResult",
+    "CheckEvidence",
     "browser",
     "Browser",
     "Page",
@@ -45,4 +46,6 @@ __all__ = [
     "BrowserCrashedError",
 ]
 
-from ..verification import VerificationResult, VerificationEvidence
+from ..check import CheckResult, CheckEvidence
+
+from ..run import RunResult

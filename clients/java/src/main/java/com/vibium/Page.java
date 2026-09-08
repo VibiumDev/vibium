@@ -5,9 +5,12 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
-import com.vibium.internal.Verification;
-import com.vibium.types.VerifyOptions;
-import com.vibium.types.VerificationResult;
+import com.vibium.internal.Check;
+import com.vibium.internal.Run;
+import com.vibium.types.RunResult;
+import com.vibium.types.RunOptions;
+import com.vibium.types.CheckOptions;
+import com.vibium.types.CheckResult;
 import com.vibium.types.*;
 
 import java.util.*;
@@ -22,11 +25,16 @@ import java.util.function.Function;
  * Represents a browser tab. The primary interface for page automation.
  */
 public class Page {
+
+    /** Accomplish a goal through the existing runtime in this live session. */
+    public RunResult run(String goal) { return run(goal, new RunOptions()); }
+    public RunResult run(String goal, RunOptions options) { return Run.run(client, goal, options, contextId); }
+
     /** Verify the existing session with a fresh verifier inference context. */
-    public VerificationResult verify(String claim) { return verify(claim, new VerifyOptions()); }
+    public CheckResult check(String claim) { return check(claim, new CheckOptions()); }
     /** Inspect an archive when record is supplied; otherwise use this live session. */
-    public VerificationResult verify(String claim, VerifyOptions options) {
-        return Verification.run(client, claim, options, contextId);
+    public CheckResult check(String claim, CheckOptions options) {
+        return Check.run(client, claim, options, contextId);
     }
 
 

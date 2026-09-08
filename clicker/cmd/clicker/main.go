@@ -55,9 +55,22 @@ func main() {
 	progName := filepath.Base(os.Args[0])
 
 	rootCmd := &cobra.Command{
-		Use:   progName,
+		Use: progName + " [command | \"<prompt>\"]",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 && !strings.ContainsAny(args[0], " \t\r\n") {
+				return fmt.Errorf("unknown command %q; for a one-word goal use %s run %q", args[0], cmd.Name(), args[0])
+			}
+			return cobra.NoArgs(cmd, args)
+		},
+		Example: `  vibium "open example.com and find its contact page"
+  # Equivalent to vibium run "open example.com and find its contact page".
+  vibium run "stop"
+  # One-word prompts need the explicit run command.`,
 		Short: "Browser automation for AI agents and humans",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if isReadyCommand(cmd) {
+				return nil
+			}
 			headlessSet = cmd.Flags().Changed("headless")
 			engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
 			channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
@@ -138,8 +151,10 @@ func main() {
 	rootCmd.AddCommand(newWSTestCmd())
 	rootCmd.AddCommand(newBiDiTestCmd())
 	rootCmd.AddCommand(newNavigateCmd())
-	rootCmd.AddCommand(newVerifyCmd())
-	rootCmd.AddCommand(newSoundcheckCmd())
+	rootCmd.AddCommand(newCheckCmd())
+	runCmd := newRunCmd()
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(newReadyCmd())
 	rootCmd.AddCommand(newScreenshotCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newFindCmd())
@@ -166,8 +181,8 @@ func main() {
 	rootCmd.AddCommand(newStopCmd())
 	rootCmd.AddCommand(newFillCmd())
 	rootCmd.AddCommand(newPressCmd())
-	rootCmd.AddCommand(newCheckCmd())
-	rootCmd.AddCommand(newUncheckCmd())
+	rootCmd.AddCommand(newSetCmd())
+	rootCmd.AddCommand(newUnsetCmd())
 	rootCmd.AddCommand(newValueCmd())
 	rootCmd.AddCommand(newAttrCmd())
 	rootCmd.AddCommand(newA11yTreeCmd())
@@ -204,6 +219,8 @@ func main() {
 
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(progName + " v{{.Version}}\n")
+
+	rootCmd.SetArgs(promptArgs(rootCmd, runCmd, os.Args[1:]))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

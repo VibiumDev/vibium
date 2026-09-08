@@ -59,6 +59,20 @@ make test
 
 ---
 
+## Install Skills from Your Checkout
+
+To try local skill changes before they are available on GitHub, run this from
+the repository root:
+
+```bash
+npx skills add .
+```
+
+Select all Vibium skills, then choose your agent and installation scope.
+Tell your agent to use `./clicker/bin/vibium` to test the binary you built.
+
+---
+
 ## Available Make Targets
 
 ### Build

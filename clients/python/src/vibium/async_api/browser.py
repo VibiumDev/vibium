@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..verification import VerificationResult, send_verification
+from ..check import CheckResult, send_check
+from ..run import RunResult, send_run
 
 import os
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
@@ -45,9 +46,17 @@ class Browser:
             for cb in callbacks:
                 cb(page)
 
-    async def verify(self, claim: str, *, record: Optional[str] = None) -> VerificationResult:
+    async def __call__(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return await self.run(goal, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def run(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        """Accomplish a goal in the live browser using the configured runtime."""
+        return await send_run(self._client, goal, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def check(self, claim: str, *, record: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Independently verify live behavior, or inspect a read-only archive."""
-        return await send_verification(self._client, claim, record)
+        return await send_check(self._client, claim, record, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
 
     async def page(self) -> Page:
         """Get the default page (first browsing context)."""
@@ -98,7 +107,7 @@ class Browser:
 class _BrowserLauncher:
     """Module-level browser launcher object."""
 
-    async def verify(self, claim: str, *, record: str, executable_path: Optional[str] = None) -> VerificationResult:
+    async def check(self, claim: str, *, record: str, executable_path: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Inspect an archive without installing or starting a browser."""
         from ..binary import VibiumProcess
         from ..client import BiDiClient
@@ -108,7 +117,7 @@ class _BrowserLauncher:
         client = None
         try:
             client = await BiDiClient.connect(process)
-            return await send_verification(client, claim, record)
+            return await send_check(client, claim, record, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
         finally:
             try:
                 if client:

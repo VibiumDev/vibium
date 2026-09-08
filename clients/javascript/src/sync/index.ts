@@ -8,4 +8,8 @@ export { RecordingSync } from './recording';
 export { RouteSync } from './route';
 export { DialogSync } from './dialog';
 
-export { VerifyOptions, RecordedVerifyOptions, VerificationResult } from '../verification';
+export { CheckOptions, RecordedCheckOptions, CheckResult } from '../check';
+
+export { RunOptions, RunResult } from '../run';
+
+export { ModelOptions } from '../model-options';

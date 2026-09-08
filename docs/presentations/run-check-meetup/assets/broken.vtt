@@ -1,0 +1,7 @@
+WEBVTT
+
+00:00.000 --> 00:08.294
+Run: change the timezone and save.
+
+00:08.294 --> 00:12.317
+Check: reload the page and inspect the saved timezone.
