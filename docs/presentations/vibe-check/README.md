@@ -111,7 +111,7 @@ MEETUP_CAPTURE_DIR=/tmp/my-meetup-capture \
   node demo/capture.mjs
 ~~~
 
-In the repository it defaults to clicker/bin/vibium. Outside the checkout, set VIBIUM_BIN_PATH to the absolute path of a compatible Vibium binary. The script also requires unzip. It defaults to Firefox beta; set VIBIUM_FIREFOX_CHANNEL to choose another installed channel. It uses the VIBIUM_AI provider/model settings explicitly for both roles for this comparison.
+In the repository it defaults to clicker/bin/vibium. Outside the checkout, set VIBIUM_BIN_PATH to the absolute path of a compatible Vibium binary. The script also requires unzip. It defaults to Firefox beta; set VIBIUM_ENGINE_CHANNEL to choose another installed channel. It uses the VIBIUM_AI provider/model settings explicitly for both roles for this comparison.
 
 The script creates WebM files. Generate MP4 copies and captions from the saved
 recording timestamps with ffmpeg and ffprobe installed:
