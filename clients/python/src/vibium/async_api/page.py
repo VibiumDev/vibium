@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from ..check import CheckResult, send_check
+from ..run import RunResult, send_run
+
 import asyncio
 import base64
-import fnmatch
+import json
+import logging
 import re
+import warnings
+import weakref
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .. import errors
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
-from .screencast import Screencast
 from .route import Route
 from .network import Request, Response
 from .dialog import Dialog
@@ -25,13 +30,65 @@ if TYPE_CHECKING:
     from .context import BrowserContext as BrowserContextType
 
 
-def _match_pattern(pattern: str, url: str) -> bool:
-    """Match a URL against a glob-like pattern."""
-    if pattern == "**":
-        return True
-    if "*" in pattern:
-        return fnmatch.fnmatch(url, pattern)
-    return pattern in url
+# Exposed host functions are connection-scoped, not Page-instance-scoped:
+# browser.page() hands out a fresh Page object for the same context, and
+# every instance sees every event. One registry and one dispatcher per
+# client means one execution and one reply per call, whichever instance
+# registered the function. Weak keys: a registry dies with its client.
+_expose_registries: "weakref.WeakKeyDictionary[Any, Dict[str, Callable[..., Any]]]" = weakref.WeakKeyDictionary()
+
+
+def _expose_registry(client: Any) -> Dict[str, Callable[..., Any]]:
+    registry = _expose_registries.get(client)
+    if registry is None:
+        fns: Dict[str, Callable[..., Any]] = {}
+        registry = fns
+        _expose_registries[client] = fns
+
+        def _on_event(event: Dict[str, Any]) -> None:
+            if event.get("method") == "vibium:expose.call":
+                _handle_expose_call(client, fns, event.get("params") or {})
+
+        client.on_event(_on_event)
+    return registry
+
+
+def _handle_expose_call(client: Any, fns: Dict[str, Callable[..., Any]], params: Dict[str, Any]) -> None:
+    name = params.get("name", "")
+    seq = params.get("seq")
+    context = params.get("context", "")
+    realm = params.get("realm", "")
+
+    # Every outcome answers: an unanswered call leaves the page's promise
+    # parked forever. The reply carries the calling realm back, so the engine
+    # delivers into the document that made the call, not whatever the context
+    # shows after a navigation.
+    def reply(body: Dict[str, Any]) -> None:
+        asyncio.ensure_future(client.send("vibium:expose.result", {
+            "context": context, "realm": realm, "seq": seq, **body,
+        }))
+
+    fn = fns.get(name)
+    if fn is None:
+        reply({"error": f"{name} is not exposed"})
+        return
+
+    async def _run() -> None:
+        try:
+            result = fn(*params.get("args", []))
+            if hasattr(result, "__await__"):
+                result = await result
+            # Results cross as JSON; catching the serialization failure here
+            # turns it into a page-side rejection instead of a
+            # forever-pending promise.
+            json.dumps(result)
+            reply({"result": result})
+        except Exception as e:
+            reply({"error": str(e) or type(e).__name__})
+
+    asyncio.ensure_future(_run())
+
+logger = logging.getLogger("vibium")
 
 
 class Keyboard:
@@ -104,20 +161,20 @@ class Page:
         self.mouse = Mouse(client, context_id)
         self.touch = Touch(client, context_id)
         self.clock = Clock(client, context_id)
-        self.screencast = Screencast(client, context_id)
 
         # Event state
         self._routes: List[Dict[str, Any]] = []
         self._request_callbacks: List[Callable] = []
         self._response_callbacks: List[Callable] = []
         self._dialog_callbacks: List[Callable] = []
+        self._dialog_policy_manual = False
         self._console_callbacks: List[Callable] = []
         self._error_callbacks: List[Callable] = []
         self._download_callbacks: List[Callable] = []
         self._navigation_callbacks: List[Callable] = []
-        self._pending_downloads: Dict[str, Download] = {}
         self._ws_callbacks: List[Callable] = []
         self._ws_connections: Dict[int, WebSocketInfo] = {}
+        self._ws_setup: Optional[asyncio.Future] = None
         self._intercept_id: Optional[str] = None
         self._data_collector_id: Optional[str] = None
 
@@ -145,6 +202,18 @@ class Page:
         return self._context
 
     # --- Navigation ---
+
+    async def __call__(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return await self.run(goal, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def run(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        """Accomplish a goal in the live browser using the configured runtime."""
+        return await send_run(self._client, goal, self._context_id, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
+    async def check(self, claim: str, *, record: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return await send_check(self._client, claim, record, self._context_id, provider=provider, model=model, base_url=base_url, reasoning_effort=reasoning_effort)
+
 
     async def go(self, url: str) -> None:
         """Navigate to a URL."""
@@ -226,7 +295,11 @@ class Page:
         near: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all elements matching a selector or semantic options."""
+        """Find all elements matching a selector or semantic options.
+
+        Waits up to the timeout for at least one match, then returns an empty
+        list if there is none. A timeout of 0 checks once without waiting.
+        """
         params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
         if selector is not None:
             params["selector"] = selector
@@ -257,8 +330,25 @@ class Page:
 
     @property
     def wait_until(self) -> _WaitUntilNamespace:
-        """Wait until a condition is met. Callable or use .url() / .loaded() sub-methods."""
+        """Deprecated alias — use wait_for_function / wait_for_url / wait_for_load."""
+        warnings.warn(
+            "wait_until is deprecated; use wait_for_function, wait_for_url, or wait_for_load",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _WaitUntilNamespace(self)
+
+    async def wait_for_function(self, fn: str, timeout: Optional[int] = None) -> Any:
+        """Wait until a function returns a truthy value."""
+        return await self._wait_for_function(fn, timeout)
+
+    async def wait_for_url(self, pattern: str, timeout: Optional[int] = None) -> None:
+        """Wait until the page URL matches a pattern."""
+        await self._wait_for_url(pattern, timeout)
+
+    async def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
+        """Wait until the page reaches a load state."""
+        await self._wait_for_load(state, timeout)
 
     async def wait(self, ms: int) -> None:
         """Wait for a fixed amount of time (milliseconds)."""
@@ -284,283 +374,130 @@ class Page:
         return result["value"]
 
     async def _capture_response(self, pattern: str, timeout: Optional[int] = None) -> Response:
-        """Internal: wait for a response matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        """Internal: wait for a response matching a URL pattern.
 
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
+        The binary matches the pattern and waits for the event; this just
+        awaits the command.
+        """
         self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._response_callbacks:
-                self._response_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureResponse", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Response(result["event"], self._client)
 
     async def _setup_capture_response(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up response listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(response: Response) -> None:
-            if _match_pattern(pattern, response.url()):
-                self._response_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(response)
-
-        self._ensure_data_collector()
-        self._response_callbacks.append(handler)
-
-        async def _wait() -> Response:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._response_callbacks:
-                    self._response_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for response matching '{pattern}'")
-
-        return _wait()
+        """Internal: start a response capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_response(pattern, timeout))
 
     async def _capture_request(self, pattern: str, timeout: Optional[int] = None) -> Request:
         """Internal: wait for a request matching a URL pattern."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
         self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._request_callbacks:
-                self._request_callbacks.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
+        result = await self._client.send("vibium:page.captureRequest", {
+            "context": self._context_id, "pattern": pattern, "timeout": timeout or 10000,
+        })
+        return Request(result["event"], self._client)
 
     async def _setup_capture_request(self, pattern: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up request listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(request: Request) -> None:
-            if _match_pattern(pattern, request.url()):
-                self._request_callbacks.remove(handler)
-                if not future.done():
-                    future.set_result(request)
-
-        self._ensure_data_collector()
-        self._request_callbacks.append(handler)
-
-        async def _wait() -> Request:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._request_callbacks:
-                    self._request_callbacks.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for request matching '{pattern}'")
-
-        return _wait()
+        """Internal: start a request capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_request(pattern, timeout))
+    async def _capture_event_params(self, kind: str, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """Internal: one-shot capture, waited out in the engine
+        (vibium:page.captureEvent), so no client keeps its own listener and
+        timeout machinery (#446). Returns the raw event params."""
+        result = await self._client.send("vibium:page.captureEvent", {
+            "context": self._context_id, "kind": kind, "timeout": timeout or 10000,
+        })
+        return result["event"]
 
     async def _capture_navigation(self, timeout: Optional[int] = None) -> str:
         """Internal: wait for a navigation event. Resolves with URL."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(url: str) -> None:
-            self._navigation_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(url)
-
-        self._navigation_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._navigation_callbacks:
-                self._navigation_callbacks.remove(handler)
-            raise errors.TimeoutError("Timeout waiting for navigation")
+        params = await self._capture_event_params("navigation", timeout)
+        return params.get("url", "")
 
     async def _setup_capture_navigation(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up navigation listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(url: str) -> None:
-            self._navigation_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(url)
-
-        self._navigation_callbacks.append(handler)
-
-        async def _wait() -> str:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._navigation_callbacks:
-                    self._navigation_callbacks.remove(handler)
-                raise errors.TimeoutError("Timeout waiting for navigation")
-
-        return _wait()
+        """Internal: start a navigation capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_navigation(timeout))
 
     async def _capture_download(self, timeout: Optional[int] = None) -> Download:
         """Internal: wait for a download event."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(download: Download) -> None:
-            self._download_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(download)
-
-        self._download_callbacks.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._download_callbacks:
-                self._download_callbacks.remove(handler)
-            raise errors.TimeoutError("Timeout waiting for download")
+        params = await self._capture_event_params("download", timeout)
+        return Download(self._client, params)
 
     async def _setup_capture_download(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up download listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        """Internal: start a download capture now, return a task to await later."""
+        return asyncio.get_running_loop().create_task(self._capture_download(timeout))
 
-        def handler(download: Download) -> None:
-            self._download_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(download)
+    def _sync_dialog_policy(self) -> None:
+        """Tell the engine whether dialogs are handled here.
 
-        self._download_callbacks.append(handler)
-
-        async def _wait() -> Download:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._download_callbacks:
-                    self._download_callbacks.remove(handler)
-                raise errors.TimeoutError("Timeout waiting for download")
-
-        return _wait()
+        Without a handler the engine dismisses each dialog itself (#446).
+        send_setup, so the policy is acknowledged before any later command
+        can trigger a dialog.
+        """
+        manual = bool(self._dialog_callbacks)
+        if manual == self._dialog_policy_manual:
+            return
+        self._dialog_policy_manual = manual
+        params = {"context": self._context_id, "policy": "manual" if manual else "dismiss"}
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # The sync API registers handlers from its caller thread; the
+            # policy command has to be scheduled onto the client's loop.
+            self._client.send_setup_threadsafe("vibium:dialog.setPolicy", params)
+            return
+        self._client.send_setup("vibium:dialog.setPolicy", params)
 
     async def _capture_dialog(self, timeout: Optional[int] = None) -> Dialog:
-        """Internal: wait for a dialog event. Callback presence prevents auto-dismiss."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        """Internal: wait for a dialog event. The pending engine capture keeps
+        the dialog from being auto-dismissed."""
+        params = await self._capture_event_params("dialog", timeout)
+        return Dialog(self._client, self._context_id, params)
 
-        def handler(dialog: Dialog) -> None:
-            self._dialog_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(dialog)
+    async def _setup_capture_dialog(self, timeout: Optional[int] = None, auto_dismiss: bool = False) -> Any:
+        """Internal: start a dialog capture now, return a task to await later.
 
-        self._dialog_callbacks.append(handler)
+        auto_dismiss dismisses the dialog the moment it is captured, not when
+        the task is awaited. The sync wrappers use it: they return only the
+        dialog's data, so the caller has no handle to close the dialog with,
+        and a dialog left open blocks the page, including a trigger fn stuck
+        inside evaluate("alert(...)"), which otherwise deadlocks the capture
+        (#146).
+        """
+        task = asyncio.get_running_loop().create_task(self._capture_dialog(timeout))
+        if auto_dismiss:
+            def _dismiss(finished: Any) -> None:
+                if not finished.cancelled() and finished.exception() is None:
+                    asyncio.ensure_future(finished.result().dismiss())
+            task.add_done_callback(_dismiss)
+        return task
 
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in self._dialog_callbacks:
-                self._dialog_callbacks.remove(handler)
-            raise errors.TimeoutError("Timeout waiting for dialog")
-
-    async def _setup_capture_dialog(self, timeout: Optional[int] = None) -> Any:
-        """Internal: set up dialog listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        def handler(dialog: Dialog) -> None:
-            self._dialog_callbacks.remove(handler)
-            if not future.done():
-                future.set_result(dialog)
-
-        self._dialog_callbacks.append(handler)
-
-        async def _wait() -> Dialog:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in self._dialog_callbacks:
-                    self._dialog_callbacks.remove(handler)
-                raise errors.TimeoutError("Timeout waiting for dialog")
-
-        return _wait()
+    _CAPTURE_EVENT_NAMES = ("request", "response", "download", "navigation", "dialog", "console", "error")
 
     async def _capture_event(self, name: str, timeout: Optional[int] = None) -> Any:
         """Internal: wait for a named event."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        callback_list = self._get_callback_list(name)
-        if callback_list is None:
-            raise ValueError(f"Unknown event name: '{name}'")
-
-        def handler(data: Any) -> None:
-            callback_list.remove(handler)
-            if not future.done():
-                future.set_result(data)
-
-        if name in ("request", "response"):
-            self._ensure_data_collector()
-        callback_list.append(handler)
-
-        try:
-            return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-        except asyncio.TimeoutError:
-            if handler in callback_list:
-                callback_list.remove(handler)
-            raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
+        if name == "request":
+            return await self._capture_request("**", timeout)
+        if name == "response":
+            return await self._capture_response("**", timeout)
+        if name == "download":
+            return await self._capture_download(timeout)
+        if name == "navigation":
+            return await self._capture_navigation(timeout)
+        if name == "dialog":
+            return await self._capture_dialog(timeout)
+        if name == "console":
+            return ConsoleMessage(await self._capture_event_params("console", timeout))
+        if name == "error":
+            params = await self._capture_event_params("error", timeout)
+            return Exception(params.get("text", "Unknown error"))
+        raise ValueError(f"Unknown event name: '{name}'")
 
     async def _setup_capture_event(self, name: str, timeout: Optional[int] = None) -> Any:
-        """Internal: set up event listener and return a coroutine to await later."""
-        timeout_ms = timeout or 10000
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
-
-        callback_list = self._get_callback_list(name)
-        if callback_list is None:
+        """Internal: start an event capture now, return a task to await later."""
+        if name not in self._CAPTURE_EVENT_NAMES:
             raise ValueError(f"Unknown event name: '{name}'")
-
-        def handler(data: Any) -> None:
-            callback_list.remove(handler)
-            if not future.done():
-                future.set_result(data)
-
-        if name in ("request", "response"):
-            self._ensure_data_collector()
-        callback_list.append(handler)
-
-        async def _wait() -> Any:
-            try:
-                return await asyncio.wait_for(future, timeout=timeout_ms / 1000)
-            except asyncio.TimeoutError:
-                if handler in callback_list:
-                    callback_list.remove(handler)
-                raise errors.TimeoutError(f"Timeout waiting for event '{name}'")
-
-        return _wait()
-
-    def _get_callback_list(self, name: str) -> Optional[List[Callable]]:
-        """Map event name to callback list."""
-        mapping = {
-            "request": self._request_callbacks,
-            "response": self._response_callbacks,
-            "dialog": self._dialog_callbacks,
-            "download": self._download_callbacks,
-            "navigation": self._navigation_callbacks,
-            "console": self._console_callbacks,
-            "error": self._error_callbacks,
-        }
-        return mapping.get(name)
+        return asyncio.get_running_loop().create_task(self._capture_event(name, timeout))
 
     # --- Screenshots & PDF ---
 
@@ -577,9 +514,39 @@ class Page:
         })
         return base64.b64decode(result["data"])
 
-    async def pdf(self) -> bytes:
-        """Print the page to PDF. Returns PDF bytes. Only works in headless mode."""
-        result = await self._client.send("vibium:page.pdf", {"context": self._context_id})
+    async def pdf(
+        self,
+        *,
+        landscape: Optional[bool] = None,
+        scale: Optional[float] = None,
+        background: Optional[bool] = None,
+        margin_top: Optional[float] = None,
+        margin_bottom: Optional[float] = None,
+        margin_left: Optional[float] = None,
+        margin_right: Optional[float] = None,
+        page_width: Optional[float] = None,
+        page_height: Optional[float] = None,
+        page_ranges: Optional[List[Union[int, str]]] = None,
+        shrink_to_fit: Optional[bool] = None,
+    ) -> bytes:
+        """Print the page to PDF. Returns PDF bytes. Only works in headless mode.
+
+        Unset options keep the browser's print defaults (portrait, scale 1,
+        1cm margins, no background, letter-size page, all pages). Margins and
+        page size are in cm; page_ranges takes ints and range strings, e.g.
+        [1, "3-5"].
+        """
+        params: Dict[str, Any] = {"context": self._context_id}
+        for key, val in [
+            ("landscape", landscape), ("scale", scale), ("background", background),
+            ("marginTop", margin_top), ("marginBottom", margin_bottom),
+            ("marginLeft", margin_left), ("marginRight", margin_right),
+            ("pageWidth", page_width), ("pageHeight", page_height),
+            ("pageRanges", page_ranges), ("shrinkToFit", shrink_to_fit),
+        ]:
+            if val is not None:
+                params[key] = val
+        result = await self._client.send("vibium:page.pdf", params)
         return base64.b64decode(result["data"])
 
     # --- Evaluation ---
@@ -615,8 +582,26 @@ class Page:
             params["content"] = source
         await self._client.send("vibium:page.addStyle", params)
 
-    async def expose(self, name: str, fn: str) -> None:
-        """Expose a function on window."""
+    async def expose(self, name: str, fn: Union[str, Callable[..., Any]]) -> None:
+        """Expose a function on window.
+
+        Pass a callable to expose a host callback: the page calls
+        window[name](*args), the callable runs here, and its return value
+        resolves the page's promise. Arguments and results cross as JSON.
+        Pass a string to inject it as JS source instead, defining
+        window[name] inside the page.
+
+        Either form survives navigation, and re-exposing a name replaces it.
+        """
+        if callable(fn):
+            _expose_registry(self._client)[name] = fn
+            await self._client.send("vibium:page.exposeFunction", {
+                "context": self._context_id, "name": name,
+            })
+            return
+        registry = _expose_registries.get(self._client)
+        if registry is not None:
+            registry.pop(name, None)
         await self._client.send("vibium:page.expose", {
             "context": self._context_id, "name": name, "fn": fn,
         })
@@ -734,19 +719,31 @@ class Page:
     # --- Network Interception ---
 
     async def route(self, pattern: str, handler: Callable[[Route], Any]) -> None:
-        """Intercept network requests matching a URL pattern."""
-        if self._intercept_id is None:
-            result = await self._client.send("vibium:page.route", {"context": self._context_id})
-            self._intercept_id = result["intercept"]
+        """Intercept network requests matching a URL pattern.
+
+        The binary compiles the pattern, owns the intercept lifecycle, and
+        annotates blocked request events with the patterns that matched, so
+        dispatch never interprets the glob client-side.
+        """
+        result = await self._client.send(
+            "vibium:page.route", {"context": self._context_id, "pattern": pattern}
+        )
+        self._intercept_id = result["intercept"]
 
         self._ensure_data_collector()
         self._routes.append({"pattern": pattern, "handler": handler, "interceptId": self._intercept_id})
 
     async def unroute(self, pattern: str) -> None:
         """Remove a previously registered route."""
+        removed = sum(1 for r in self._routes if r["pattern"] == pattern)
         self._routes = [r for r in self._routes if r["pattern"] != pattern]
-        if not self._routes and self._intercept_id:
-            await self._client.send("network.removeIntercept", {"intercept": self._intercept_id})
+        # The binary refcounts pattern registrations and tears the intercept
+        # down when the last one goes.
+        for _ in range(removed):
+            await self._client.send(
+                "vibium:page.unroute", {"context": self._context_id, "pattern": pattern}
+            )
+        if not self._routes:
             self._intercept_id = None
 
     def on_request(self, fn: Callable[[Request], None]) -> None:
@@ -777,20 +774,58 @@ class Page:
         })
 
     def on_web_socket(self, fn: Callable[[WebSocketInfo], None]) -> None:
-        """Listen for WebSocket connections opened by the page."""
-        is_first = len(self._ws_callbacks) == 0
+        """Listen for WebSocket connections opened by the page.
+
+        Monitoring is installed in the engine before the next command on this
+        connection is sent, so a socket opened by the very next call cannot be
+        missed (#351).
+        """
         self._ws_callbacks.append(fn)
-        if is_first:
-            import asyncio
-            asyncio.ensure_future(
-                self._client.send("vibium:page.onWebSocket", {"context": self._context_id})
+        # Keyed on the setup state, not the callback count: after a failed
+        # install the callbacks are still registered, and the next
+        # registration must retry the install or they can never fire.
+        if self._ws_setup is None:
+            setup = self._client.send_setup(
+                "vibium:page.onWebSocket", {"context": self._context_id}
             )
+            self._ws_setup = setup
+
+            def _reset(finished: asyncio.Future) -> None:
+                if finished.cancelled():
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                elif finished.exception() is not None:
+                    # Reset so a later listener retries; sockets are
+                    # unmonitored until then. Guarded: a retry made in the
+                    # meantime owns the state.
+                    if self._ws_setup is setup:
+                        self._ws_setup = None
+                    logger.debug(
+                        "page.on_web_socket setup failed: %s", finished.exception()
+                    )
+
+            setup.add_done_callback(_reset)
+
+    async def _when_web_socket_setup(self) -> None:
+        """Wait until this page's WebSocket monitor is installed.
+
+        Raises if the install failed. The sync wrapper awaits this so its
+        blocking on_web_socket() reports a failure the async caller cannot
+        see.
+        """
+        # Captured before awaiting: a failed install resets _ws_setup to
+        # None, and the raise must come from the setup this caller
+        # registered under.
+        setup = self._ws_setup
+        if setup is not None:
+            await setup
 
 
     # --- Dialog Handling ---
 
     def on_dialog(self, handler: Callable[[Dialog], Any]) -> None:
         self._dialog_callbacks.append(handler)
+        self._sync_dialog_policy()
 
     def on_console(self, handler: Union[Callable[[ConsoleMessage], None], str]) -> None:
         """Register a handler for console messages, or pass 'collect' to buffer them."""
@@ -845,6 +880,7 @@ class Page:
             self._response_callbacks.clear()
         if not event or event == "dialog":
             self._dialog_callbacks.clear()
+            self._sync_dialog_policy()
         if not event or event == "console":
             self._console_callbacks.clear()
             self._console_buffer = None
@@ -866,19 +902,28 @@ class Page:
         if self._data_collector_id is not None:
             return
         self._data_collector_id = "pending"
-        import asyncio
 
-        async def _setup() -> None:
-            try:
-                result = await self._client.send(
-                    "network.addDataCollector",
-                    {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
-                )
-                self._data_collector_id = result["collector"]
-            except Exception:
+        # send_setup, not ensure_future(send): the collector must exist before
+        # the request whose body a route/on_response handler is about to read
+        # (#351).
+        task = self._client.send_setup(
+            "network.addDataCollector",
+            {"dataTypes": ["request", "response"], "maxEncodedDataSize": 10 * 1024 * 1024},
+        )
+
+        def _store(finished: Any) -> None:
+            if finished.cancelled() or finished.exception() is not None:
+                # Reset so a later listener retries; bodies are unavailable
+                # until then.
                 self._data_collector_id = None
+                if not finished.cancelled():
+                    logger.debug(
+                        "page._ensure_data_collector failed: %s", finished.exception()
+                    )
+                return
+            self._data_collector_id = (finished.result() or {}).get("collector")
 
-        asyncio.ensure_future(_setup())
+        task.add_done_callback(_store)
 
     def _teardown_data_collector(self) -> None:
         cid = self._data_collector_id
@@ -917,8 +962,6 @@ class Page:
             self._handle_user_prompt_opened(params)
         elif method == "browsingContext.downloadWillBegin":
             self._handle_download_will_begin(params)
-        elif method == "browsingContext.downloadEnd":
-            self._handle_download_completed(params)
         elif method == "log.entryAdded":
             self._handle_log_entry_added(params)
         elif method == "browsingContext.load":
@@ -944,11 +987,14 @@ class Page:
         request_id = request_data.get("request", "")
 
         if is_blocked and request_id:
-            request_url = request_data.get("url", "")
+            # The binary already matched the URL against every registered
+            # pattern (vibiumMatchedPatterns), so dispatch is a membership
+            # check, not a glob evaluation.
+            matched = params.get("vibiumMatchedPatterns") or []
             req = Request(params, self._client)
 
             for route_entry in self._routes:
-                if _match_pattern(route_entry["pattern"], request_url):
+                if route_entry["pattern"] in matched:
                     route = Route(self._client, request_id, req)
                     try:
                         result = route_entry["handler"](route)
@@ -975,21 +1021,18 @@ class Page:
             cb(resp)
 
     def _handle_user_prompt_opened(self, params: Dict[str, Any]) -> None:
+        # With no handler registered the engine dismisses the dialog itself
+        # (#446), so there is nothing to do here but deliver.
         dialog = Dialog(self._client, self._context_id, params)
 
-        if self._dialog_callbacks:
-            for cb in self._dialog_callbacks:
-                try:
-                    result = cb(dialog)
-                    if hasattr(result, "__await__"):
-                        import asyncio
-                        asyncio.ensure_future(result)
-                except Exception:
-                    pass
-        else:
-            # Auto-dismiss if no handler registered
-            import asyncio
-            asyncio.ensure_future(dialog.dismiss())
+        for cb in list(self._dialog_callbacks):
+            try:
+                result = cb(dialog)
+                if hasattr(result, "__await__"):
+                    import asyncio
+                    asyncio.ensure_future(result)
+            except Exception:
+                pass
 
     def _handle_log_entry_added(self, params: Dict[str, Any]) -> None:
         entry_type = params.get("type", "")
@@ -1004,25 +1047,11 @@ class Page:
                 cb(error)
 
     def _handle_download_will_begin(self, params: Dict[str, Any]) -> None:
-        url = params.get("url", "")
-        filename = params.get("suggestedFilename", "")
-        navigation = params.get("navigation", "")
-
-        download = Download(self._client, url, filename)
-        if navigation:
-            self._pending_downloads[navigation] = download
-
+        # Completion is awaited in the engine by navigation id (#446), so
+        # there is no client-side pending map to feed on downloadEnd.
+        download = Download(self._client, params)
         for cb in self._download_callbacks:
             cb(download)
-
-    def _handle_download_completed(self, params: Dict[str, Any]) -> None:
-        navigation = params.get("navigation", "")
-        status = params.get("status", "complete")
-        filepath = params.get("filepath")
-
-        download = self._pending_downloads.pop(navigation, None)
-        if download:
-            download._complete(status, filepath)
 
     def _handle_ws_created(self, params: Dict[str, Any]) -> None:
         ws_id = params.get("id", 0)

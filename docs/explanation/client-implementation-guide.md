@@ -325,6 +325,24 @@ Events (`onDialog`, `onRequest`, etc.) are received as WebSocket messages with n
 2. If `type` is `"success"` or `"error"` → match to pending request by `id`
 3. If `method` is present (event) → dispatch to registered listeners
 
+### Dialog Policy
+
+The engine dismisses every dialog itself while no dialog handler is registered — clients do not implement that default. The policy is per browsing context: when a page's first dialog handler registers, send `vibium:dialog.setPolicy` with `{"context": <the page's context>, "policy": "manual"}`; when its last one deregisters, send the same with `"policy": "dismiss"`. Issue the command through the same ordered channel as regular commands and ahead of any command that could trigger a dialog (the engine handles it in message order), so a dialog can never open under the policy the page just left. One-shot captures need no policy flip: a pending `vibium:page.captureEvent` with kind `dialog` holds off the auto-dismiss default by itself.
+
+### One-Shot Captures
+
+`capture.request` / `capture.response` send `vibium:page.captureRequest` / `vibium:page.captureResponse` with `{context, pattern, timeout}`; `capture.navigation`, `capture.download`, `capture.dialog`, and `capture.event("console" | "error")` send `vibium:page.captureEvent` with `{context, kind, timeout}`. The engine registers the capture in client message order, waits for the first matching event, and answers with its raw params (`{"event": {...}}`) — clients keep no listener or timeout machinery, they build the language object from the returned params. Start the capture command on the wire before running the trigger action, and run the action so that its blocking cannot block the capture's return (a trigger stuck inside `evaluate("alert(...)")` resolves only after the captured dialog is handled).
+
+### Exposed Functions
+
+`page.expose(name, fn)` with a host function sends `vibium:page.exposeFunction {context, name}`. The engine installs a preload that defines `window[name]` as a promise-returning stub: each call parks its promise under a sequence number and posts `{name, seq, args}` through a script channel. The engine forwards that as a `vibium:expose.call {name, seq, args, context, realm}` event. The client looks the name up in its per-page function map, runs the host function, and sends `vibium:expose.result {context, realm, seq, result | error}`; the engine then settles the parked promise inside the calling realm. Always reply, whatever the outcome — an unanswered call leaves the page's promise pending forever — and reply with an error for a name the page calls that this page never exposed. Arguments and results cross as JSON.
+
+The string form (`vibium:page.expose`) keeps its old meaning: the string is JS source that defines `window[name]` inside the page, with no host round trip.
+
+### Downloads
+
+The engine tracks every download by its navigation id and saves the file to a session temp dir. A Download object holds the `downloadWillBegin` params (url, suggested filename, navigation id) and nothing else; `path()` and `saveAs()` send `vibium:download.await` with `{navigation, timeout}` and get `{status, filepath}` back once the download ends. The engine answers already-finished downloads immediately, so the accessors can be called repeatedly and in any order. No client watches `downloadEnd` or keeps a pending-downloads map.
+
 ---
 
 ## Reserved Keyword Handling
@@ -378,7 +396,11 @@ The JS client provides some aliases for Playwright compatibility and discoverabi
 
 6. **Frames get full Page API.** In BiDi, frames ARE browsing contexts. `page.frame('name')` returns an object with the same interface as a page.
 
-7. **AI methods are first-class.** `page.check()` and `page.do()` aren't afterthoughts — they're the reason Vibium exists. They use the deterministic API under the hood.
+7. **AI methods reuse the browser API.** `page.run(goal)` and `page.check(claim)` use the existing runtime and deterministic browser operations. Clients send these commands through the same connection as other page methods.
+
+8. **Logic lives in the binary, clients stay thin.** The default implementation of any method is: send the wire command, return the result. Auto-waiting, actionability, selector semantics, dialog handling, geolocation persistence — all of it runs inside the vibium binary so that every client gets identical behavior for free and none of it is written once per language. Client-side logic is reserved for what genuinely cannot live in the binary: the transport, language-idiomatic types, and delivering events to user callbacks. If a port finds itself implementing behavior, stop and move that behavior into the binary first. This is what keeps N clients maintainable and is enforced socially in review; the API drift checker keeps the surfaces aligned, this rule keeps the semantics aligned.
+
+   One deliberate carve-out: the collect buffers behind `consoleMessages()` and `errors()` stay in the client. They only accumulate events the engine already delivers, which falls under delivering events to user callbacks, and their accessors are synchronous by design — an engine-side buffer would force both onto the wire and turn them async in every async client. A port implements them as an array a collector callback appends to, nothing more.
 
 ---
 

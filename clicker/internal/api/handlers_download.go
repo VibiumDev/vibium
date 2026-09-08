@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // setupDownloads creates a temp dir and tells the browser to save downloads there.
@@ -20,14 +21,47 @@ func (r *Router) setupDownloads(session *BrowserSession) {
 	session.downloadDir = dir
 	session.mu.Unlock()
 
-	_, err = r.sendInternalCommand(session, "browser.setDownloadBehavior", map[string]interface{}{
+	_, err = r.sendInternalCommandWithTimeout(session, "browser.setDownloadBehavior", map[string]interface{}{
 		"downloadBehavior": map[string]interface{}{
 			"type":              "allowed",
 			"destinationFolder": dir,
 		},
-	})
+	}, 10*time.Second)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[router] Failed to set download behavior: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[router] Failed to set download behavior (downloads stay in the browser's default dir; download.saveAs will not find them): %v\n", err)
+	}
+}
+
+// handleDownloadAwait handles vibium:download.await — waits until the
+// download named by its navigation id ends, then returns its status and
+// temp-file path. Already-finished downloads answer immediately, so repeated
+// calls (path() then saveAs()) keep working.
+func (r *Router) handleDownloadAwait(session *BrowserSession, cmd bidiCommand) {
+	navigation, _ := cmd.Params["navigation"].(string)
+	if navigation == "" {
+		r.sendError(session, cmd.ID, fmt.Errorf("download.await requires a navigation id"))
+		return
+	}
+	timeoutMs := 300000.0
+	if t, ok := cmd.Params["timeout"].(float64); ok && t > 0 {
+		timeoutMs = t
+	}
+
+	result, ch, known := session.downloads.Await(navigation)
+	if !known {
+		r.sendError(session, cmd.ID, fmt.Errorf("unknown download %q", navigation))
+		return
+	}
+	if ch == nil {
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"status": result.Status, "filepath": result.Filepath})
+		return
+	}
+	select {
+	case result := <-ch:
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"status": result.Status, "filepath": result.Filepath})
+	case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
+		r.sendError(session, cmd.ID, fmt.Errorf("timeout waiting for download to finish"))
+	case <-session.stopChan:
 	}
 }
 

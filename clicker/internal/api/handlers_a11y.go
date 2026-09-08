@@ -51,7 +51,7 @@ func (r *Router) handleVibiumElRole(session *BrowserSession, cmd bidiCommand) {
 	})()`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"role": val})
@@ -96,7 +96,7 @@ func (r *Router) handleVibiumElLabel(session *BrowserSession, cmd bidiCommand) {
 	})()`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"label": val})

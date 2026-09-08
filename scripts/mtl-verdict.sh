@@ -1,8 +1,15 @@
 #!/bin/sh
 # Prints 1 if this machine pays the dead-virtual-GPU stall that mtlshim.dylib
-# skips, 0 otherwise. The verdict is a property of the machine, so it is cached
-# after the first run — the probe itself takes ~15s on an affected guest, which
-# is precisely the cost being measured.
+# skips, 0 otherwise.
+#
+# Only a 1 is cached. The verdict is not stable on a UTM guest — the virtual
+# GPU flips between working and dead across host sleep, VM restarts, and
+# graphics-stack hiccups — so caching a 0 pins the shim off and every Chrome
+# launch pays the full stall again, which is the bug the shim exists to fix.
+#
+# Caching asymmetrically is safe because the probe is only expensive in the
+# case it caches: ~15s when affected (measured once, then remembered), ~0.01s
+# when healthy (re-measured every run, too cheap to matter).
 #
 # Deliberately decides by probe rather than by environment: a VM with working
 # GPU passthrough must NOT be shimmed, since the shim hides the GPU rather than
@@ -14,8 +21,9 @@ set -u
 CACHE="${1:?usage: mtl-verdict.sh <cache-file>}"
 SRC="$(dirname "$0")/mtlprobe.m"
 
-if [ -f "$CACHE" ]; then
-	cat "$CACHE"
+# A cached 1 stands; a 0 is never written, so absence means "probe again".
+if [ -f "$CACHE" ] && [ "$(cat "$CACHE")" = "1" ]; then
+	printf '1'
 	exit 0
 fi
 
@@ -35,6 +43,10 @@ if [ "$(uname -s)" = "Darwin" ] && [ -f "$SRC" ]; then
 	fi
 fi
 
-mkdir -p "$(dirname "$CACHE")" 2>/dev/null
-printf '%s' "$verdict" >"$CACHE" 2>/dev/null
+if [ "$verdict" = "1" ]; then
+	mkdir -p "$(dirname "$CACHE")" 2>/dev/null
+	printf '1' >"$CACHE" 2>/dev/null
+else
+	rm -f "$CACHE" 2>/dev/null
+fi
 printf '%s' "$verdict"

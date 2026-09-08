@@ -18,7 +18,7 @@ Playwright's trace format includes `error` and `result` fields on `after` events
 1. `clicker/internal/api/recording.go` — extend `RecordActionEnd` signature
 2. `clicker/internal/api/router.go` — stash result/error on session, pass to `RecordActionEnd`
 3. `clicker/internal/agent/handlers.go` — pass result/error to `RecordActionEnd`
-4. `docs/explanation/recording-format.md` — document new fields
+4. `docs/reference/recording-format.md` — document new fields
 
 ## Changes
 

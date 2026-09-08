@@ -17,7 +17,11 @@ class Element:
     def __init__(self, async_element: AsyncElement, loop_thread: _EventLoopThread) -> None:
         self._async = async_element
         self._loop = loop_thread
-        self.info = async_element.info
+
+    @property
+    def info(self):
+        """Snapshot of tag, text, and box captured when the element was found."""
+        return self._async.info
 
     def __repr__(self) -> str:
         text = self.info.text
@@ -45,11 +49,11 @@ class Element:
     def clear(self, timeout: Optional[int] = None) -> None:
         self._loop.run(self._async.clear(timeout))
 
-    def check(self, timeout: Optional[int] = None) -> None:
-        self._loop.run(self._async.check(timeout))
+    def set(self, value: bool = True, timeout: Optional[int] = None) -> None:
+        self._loop.run(self._async.set(value, timeout))
 
-    def uncheck(self, timeout: Optional[int] = None) -> None:
-        self._loop.run(self._async.uncheck(timeout))
+    def unset(self, timeout: Optional[int] = None) -> None:
+        self._loop.run(self._async.unset(timeout))
 
     def select_option(self, value: str, timeout: Optional[int] = None) -> None:
         self._loop.run(self._async.select_option(value, timeout))
@@ -119,8 +123,8 @@ class Element:
     def is_enabled(self) -> bool:
         return self._loop.run(self._async.is_enabled())
 
-    def is_checked(self) -> bool:
-        return self._loop.run(self._async.is_checked())
+    def is_set(self) -> bool:
+        return self._loop.run(self._async.is_set())
 
     def is_editable(self) -> bool:
         return self._loop.run(self._async.is_editable())

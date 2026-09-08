@@ -23,9 +23,9 @@ Inspired by [qm](https://github.com/yc-software/qm/blob/main/CONTRIBUTING.md).
 ## Development Environment
 
 We recommend developing inside a VM to limit the blast radius of AI-assisted tools like Claude Code. Check the [system requirements](docs/reference/mac-system-requirements.md) for hardware specs, then see the setup guide for your platform:
-- [macOS](docs/how-to-guides/local-dev-setup-mac.md)
-- [Linux x86](docs/how-to-guides/local-dev-setup-x86-linux.md)
-- [Windows x86](docs/how-to-guides/local-dev-setup-x86-windows.md)
+- [macOS](docs/contributing/local-dev-setup-mac.md)
+- [Linux x86](docs/contributing/local-dev-setup-x86-linux.md)
+- [Windows x86](docs/contributing/local-dev-setup-x86-windows.md)
 
 If you prefer to develop directly on your host machine, follow the steps below.
 
@@ -56,6 +56,20 @@ make test
 `make` installs npm dependencies and builds the vibium binary, JS client, and Java client. On a fresh checkout, it needs network access for `npm install` and for the Gradle wrapper to download Gradle.
 
 `make test` downloads Chrome for Testing (if needed) and runs the full test suite. If you are only working on the Go binary or JS client, use `make build-go` or `make build-js` to avoid the Java build.
+
+---
+
+## Install Skills from Your Checkout
+
+To try local skill changes before they are available on GitHub, run this from
+the repository root:
+
+```bash
+npx skills add .
+```
+
+Select all Vibium skills, then choose your agent and installation scope.
+Tell your agent to use `./clicker/bin/vibium` to test the binary you built.
 
 ---
 
@@ -454,4 +468,4 @@ For low-level debugging tools and troubleshooting tips, see [docs/how-to-guides/
 - **Team members**: push directly to `VibiumDev/vibium`
 - **External contributors**: fork the repo, push to your fork, then open a PR to `VibiumDev/vibium`
 
-See [docs/how-to-guides/local-dev-setup-mac.md](docs/how-to-guides/local-dev-setup-mac.md) for details on the fork-based workflow.
+See [docs/contributing/local-dev-setup-mac.md](docs/contributing/local-dev-setup-mac.md) for details on the fork-based workflow.

@@ -1,6 +1,7 @@
 package bidi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,9 +24,10 @@ type Client struct {
 	verbose atomic.Bool
 
 	// mu guards pending and eventHandler.
-	mu           sync.Mutex
-	pending      map[int64]chan *Message
-	eventHandler func(msg string)
+	mu             sync.Mutex
+	pending        map[int64]chan *Message
+	commandContext context.Context
+	eventHandler   func(msg string)
 
 	events chan string
 
@@ -182,6 +184,15 @@ func (c *Client) SendCommand(method string, params interface{}) (*Message, error
 
 // SendCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeout time.Duration) (*Message, error) {
+	c.mu.Lock()
+	ctx := c.commandContext
+	c.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cmd := NewCommand(method, params)
 
 	data, err := cmd.Marshal()
@@ -223,6 +234,8 @@ func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeo
 	select {
 	case msg := <-ch:
 		return responseOrError(msg)
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case <-timer.C:
 		return nil, fmt.Errorf("timeout waiting for response to %s after %s", method, timeout)
 	case <-c.readerDone:
@@ -300,4 +313,15 @@ func (c *Client) Close() error {
 	err := c.conn.Close()
 	<-c.readerDone
 	return err
+}
+
+// SetCommandContext bounds a serialized high-level operation, including calls
+// through existing convenience methods. The owner must serialize operations
+// until restore is called; no new connection or browser session is created.
+func (c *Client) SetCommandContext(ctx context.Context) (restore func()) {
+	c.mu.Lock()
+	previous := c.commandContext
+	c.commandContext = ctx
+	c.mu.Unlock()
+	return func() { c.mu.Lock(); c.commandContext = previous; c.mu.Unlock() }
 }

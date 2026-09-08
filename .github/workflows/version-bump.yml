@@ -1,0 +1,296 @@
+# Daily pin bumps for the browsers vibium installs (#469, #470). Compares
+# the pinned versions baked into the installers against Chrome's current
+# Stable and Firefox's current release, runs the engine's suite against the
+# new version, and opens a one-line bump PR only when that suite is green.
+# Red means the new browser release broke something: the run fails loudly,
+# users stay on the old pin, and the breakage has a one-line repro diff.
+#
+# Bump PRs lag upstream security releases by however long they sit, so
+# treat them as priority review. A PR opened with the workflow token does
+# not start the pull_request checks; close and reopen it to run them.
+name: Version Bump
+
+on:
+  schedule:
+    - cron: '29 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+env:
+  VIBIUM_STDERR: 1
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      chrome: ${{ steps.compare.outputs.chrome }}
+      chrome_pin: ${{ steps.compare.outputs.chrome_pin }}
+      firefox: ${{ steps.compare.outputs.firefox }}
+      firefox_pin: ${{ steps.compare.outputs.firefox_pin }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # An engine drifts when its pin differs from the current release and
+      # no bump PR for that exact version is already open. An older bump PR
+      # still open when the next release lands is left alone: the new PR
+      # supersedes it.
+      - name: Compare pins to current releases
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          chrome_pin=$(sed -n 's/^const pinnedChromeVersion = "\(.*\)"$/\1/p' clicker/internal/browser/installer.go)
+          firefox_pin=$(sed -n 's/^const pinnedFirefoxVersion = "\(.*\)"$/\1/p' clicker/internal/browser/installer_firefox.go)
+          test -n "$chrome_pin"
+          test -n "$firefox_pin"
+
+          chrome_now=$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json \
+            | jq -r '.channels.Stable.version')
+          firefox_now=$(curl -fsSL https://product-details.mozilla.org/1.0/firefox_versions.json \
+            | jq -r '.LATEST_FIREFOX_VERSION')
+          echo "$chrome_now" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+          echo "$firefox_now" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+
+          bump() {
+            engine=$1 pin=$2 now=$3
+            if [ "$pin" = "$now" ]; then
+              echo "$engine pin $pin is current"
+              return
+            fi
+            if [ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "bump/$engine-$now" --state open --json number --jq '.[].number')" ]; then
+              echo "$engine bump PR for $now is already open"
+              return
+            fi
+            echo "$engine pin $pin -> $now"
+            echo "$engine=$now" >> "$GITHUB_OUTPUT"
+            echo "${engine}_pin=$pin" >> "$GITHUB_OUTPUT"
+          }
+          bump chrome "$chrome_pin" "$chrome_now"
+          bump firefox "$firefox_pin" "$firefox_now"
+
+  bump-chrome:
+    needs: drift
+    if: needs.drift.outputs.chrome != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # persist-credentials stays off; the push step below passes the token
+      # explicitly so it is never on disk while the suite runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Move the Chrome pin
+        env:
+          NEW_VERSION: ${{ needs.drift.outputs.chrome }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^const pinnedChromeVersion = \".*\"\$/const pinnedChromeVersion = \"$NEW_VERSION\"/" \
+            clicker/internal/browser/installer.go
+          if git diff --quiet; then
+            echo "sed did not change the pin" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: |
+            clients/python/pyproject.toml
+            packages/python/vibium_linux_x64/pyproject.toml
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      # Ubuntu 24.04 restricts unprivileged user namespaces, which breaks
+      # Chrome's sandbox (HTTP 500 on session creation).
+      - name: Configure kernel for Chrome sandbox
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+      - name: Install npm dependencies
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
+
+      - name: Build
+        run: make
+
+      # No browser cache: the point of this run is a fresh install of the
+      # candidate version.
+      - name: Test against the new Chrome
+        run: xvfb-run --auto-servernum make test SUITE_PARALLEL=4
+
+      - name: Audit capability selection
+        run: make test-capability-audit
+
+      - name: Open the bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ needs.drift.outputs.chrome }}
+          OLD_VERSION: ${{ needs.drift.outputs.chrome_pin }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="bump/chrome-$NEW_VERSION"
+          git checkout -b "$branch"
+          git add clicker/internal/browser/installer.go
+          git commit -m "Bump the pinned Chrome for Testing version to $NEW_VERSION"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(cat <<EOF
+          Moves the Chrome pin from $OLD_VERSION to $NEW_VERSION (#470).
+
+          The full Chrome suite passed against $NEW_VERSION before this PR was opened: $run_url
+
+          Opened by version-bump.yml. A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging.
+          EOF
+          )
+          gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
+            --title "Bump the pinned Chrome for Testing version to $NEW_VERSION" \
+            --body "$body"
+
+      - name: Clean up zombie processes
+        if: always()
+        run: make double-tap
+
+  bump-firefox:
+    needs: drift
+    if: needs.drift.outputs.firefox != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VIBIUM_REQUIRE_FIREFOX: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Move the Firefox pin
+        env:
+          NEW_VERSION: ${{ needs.drift.outputs.firefox }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^const pinnedFirefoxVersion = \".*\"\$/const pinnedFirefoxVersion = \"$NEW_VERSION\"/" \
+            clicker/internal/browser/installer_firefox.go
+          if git diff --quiet; then
+            echo "sed did not change the pin" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: |
+            clients/python/pyproject.toml
+            packages/python/vibium_linux_x64/pyproject.toml
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Install npm dependencies
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
+
+      # The pin-format guard in the Go tests catches a bad sed before the
+      # suite spends half an hour on it.
+      - name: Go unit tests
+        run: cd clicker && go test ./...
+
+      - name: Build and install the new Firefox
+        run: |
+          make
+          make install-firefox
+
+      - name: Test Firefox capabilities
+        run: xvfb-run --auto-servernum make test-firefox-capabilities
+
+      - name: Test focused Firefox behavior
+        run: xvfb-run --auto-servernum make test-firefox
+
+      - name: Open the bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ needs.drift.outputs.firefox }}
+          OLD_VERSION: ${{ needs.drift.outputs.firefox_pin }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="bump/firefox-$NEW_VERSION"
+          git checkout -b "$branch"
+          git add clicker/internal/browser/installer_firefox.go
+          git commit -m "Bump the pinned Firefox version to $NEW_VERSION"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(cat <<EOF
+          Moves the Firefox pin from $OLD_VERSION to $NEW_VERSION (#469).
+
+          The Firefox suite passed against $NEW_VERSION before this PR was opened: $run_url
+
+          Opened by version-bump.yml. A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging.
+          EOF
+          )
+          gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
+            --title "Bump the pinned Firefox version to $NEW_VERSION" \
+            --body "$body"
+
+      - name: Clean up zombie processes
+        if: always()
+        run: make double-tap

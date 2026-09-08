@@ -49,3 +49,131 @@ describe('Packaging: npm tarball contents', () => {
     }
   });
 });
+
+describe('Packaging: postinstall shim replacement (#356)', () => {
+  const { linkBinaryOverShim } = require('../../packages/vibium/scripts/link-binary');
+  const { spawnSync } = require('node:child_process');
+
+  function makeFixture() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-link-'));
+    const shim = path.join(dir, 'cli.js');
+    const binary = path.join(dir, 'vibium');
+    fs.writeFileSync(shim, '#!/usr/bin/env node\nconsole.log("shim");\n');
+    // Stands in for the platform binary: prints a marker and exits 0
+    fs.writeFileSync(binary, '#!/bin/sh\necho REAL_BINARY\n');
+    fs.chmodSync(binary, 0o755);
+    return { dir, shim, binary };
+  }
+
+  test('replaces the shim with the binary and the bin path stays runnable', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { dir, shim, binary } = makeFixture();
+    try {
+      assert.strictEqual(linkBinaryOverShim(shim, binary), true);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), fs.readFileSync(binary, 'utf-8'),
+        'shim path must now hold the binary bytes');
+      const run = spawnSync(shim, [], { encoding: 'utf-8' });
+      assert.strictEqual(run.status, 0);
+      assert.match(run.stdout, /REAL_BINARY/, 'running the bin path must run the binary');
+      assert.ok(!fs.existsSync(shim + '.link-tmp'), 'no temp file left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('missing binary leaves the shim untouched', () => {
+    const { dir, shim } = makeFixture();
+    try {
+      const before = fs.readFileSync(shim, 'utf-8');
+      assert.strictEqual(linkBinaryOverShim(shim, path.join(dir, 'nope')), false);
+      assert.strictEqual(linkBinaryOverShim(shim, null), false);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('prefers a hard link so no extra copy is stored', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { dir, shim, binary } = makeFixture();
+    try {
+      linkBinaryOverShim(shim, binary);
+      assert.strictEqual(fs.statSync(shim).ino, fs.statSync(binary).ino,
+        'same filesystem should get a hard link, not a copy');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Packaging: shim replacement guard (#356)', () => {
+  const { shouldReplaceShim } = require('../../packages/vibium/scripts/link-binary');
+
+  test('replaces only installed copies on POSIX without PnP', () => {
+    assert.strictEqual(shouldReplaceShim('darwin', undefined, '/app/node_modules/vibium'), true);
+    assert.strictEqual(shouldReplaceShim('linux', undefined, '/x/node_modules/vibium'), true);
+  });
+
+  test('never replaces on Windows or under Yarn PnP', () => {
+    assert.strictEqual(shouldReplaceShim('win32', undefined, '/app/node_modules/vibium'), false);
+    assert.strictEqual(shouldReplaceShim('linux', '3.0.0', '/app/node_modules/vibium'), false);
+  });
+
+  test('never replaces a source checkout, whose shim is tracked', () => {
+    // The repo links packages/vibium as a file dependency; npm runs the
+    // symlinked dep's scripts in its real directory, outside node_modules.
+    assert.strictEqual(shouldReplaceShim('darwin', undefined, '/Users/dev/vibium/packages/vibium'), false);
+  });
+});
+
+describe('Packaging: postinstall and bin scripts are self-contained', () => {
+  // The nightly local-smoke on 2026-08-26 failed on every platform because
+  // postinstall.js required scripts/link-binary.js, which the files
+  // allowlist did not ship. Every relative require reachable from the
+  // packaged entry scripts must itself be in the tarball.
+  test('every relative require of packaged scripts ships in the tarball', () => {
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-pack-req-'));
+    const useShell = process.platform === 'win32';
+    const destArg = useShell ? `"${dest}"` : dest;
+    const out = execFileSync(NPM, ['pack', '--json', '--pack-destination', destArg], {
+      cwd: PKG_DIR,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+      shell: useShell,
+    });
+
+    try {
+      const files = new Set(JSON.parse(out)[0].files.map((f) => f.path));
+      // Walk relative requires transitively from the executable entries.
+      const queue = ['postinstall.js', 'bin/cli.js'];
+      const seen = new Set();
+
+      while (queue.length > 0) {
+        const entry = queue.shift();
+        if (seen.has(entry)) continue;
+        seen.add(entry);
+
+        assert.ok(files.has(entry), `tarball must include ${entry}`);
+        if (!entry.endsWith('.js')) continue;
+        const source = fs.readFileSync(path.join(PKG_DIR, entry), 'utf-8');
+        for (const match of source.matchAll(/require\(['"](\.[^'"]+)['"]\)/g)) {
+          let dep = path.posix.join(path.posix.dirname(entry), match[1]);
+          if (!dep.endsWith('.js') && !dep.endsWith('.json')) dep += '.js';
+          assert.ok(
+            files.has(dep),
+            `${entry} requires ${match[1]}, but ${dep} is not in the tarball; add it to the files allowlist`
+          );
+          queue.push(dep);
+        }
+      }
+    } finally {
+      fs.rmSync(dest, { recursive: true, force: true });
+    }
+  });
+});

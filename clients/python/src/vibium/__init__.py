@@ -33,8 +33,11 @@ from .errors import (
     BrowserCrashedError,
 )
 
-__version__ = "26.5.31"
+__version__ = "26.8.21"
 __all__ = [
+    "RunResult",
+    "CheckResult",
+    "CheckEvidence",
     "browser",
     "firefox",
     "chrome",
@@ -58,3 +61,7 @@ __all__ = [
     "ElementNotFoundError",
     "BrowserCrashedError",
 ]
+
+from .check import CheckResult, CheckEvidence
+
+from .run import RunResult

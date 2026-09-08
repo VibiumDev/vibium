@@ -4,11 +4,13 @@ Skip when Firefox is not installed, so the suite stays green on machines
 that only have Chrome. Install with: vibium install --engine firefox
 
 CI sets VIBIUM_REQUIRE_FIREFOX, which turns every skip into a failure: the
-green check must prove Firefox and screencast actually ran.
+green check must prove Firefox and video recording actually ran.
 """
 
+import io
 import os
 import subprocess
+import zipfile
 
 import pytest
 
@@ -54,18 +56,18 @@ def test_firefox_smoke(test_server):
         bro.stop()
 
 
-def test_firefox_screencast(test_server):
+def test_firefox_recording_video(test_server, tmp_path):
     bro = browser.start(engine="firefox", headless=True)
     try:
         vibe = bro.page()
         vibe.go(test_server)
         try:
-            vibe.screencast.start()
+            vibe.context.recording.start(video=True, path=str(tmp_path / "run.zip"))
         except Exception as err:
             # Firefox gains BiDi screencast in 154; self-skip on older builds
             # so this activates on its own once release catches up.
             if "not supported" in str(err):
-                _skip_or_fail("this Firefox does not support screencast yet")
+                _skip_or_fail("this Firefox does not support video recording yet")
             raise
         # Force a series of paints. A navigation can finish without Firefox's
         # encoder observing a frame, yielding a valid but empty ~200-byte WebM.
@@ -86,8 +88,16 @@ def test_firefox_screencast(test_server):
             })()
         """)
         vibe.wait(1200)
-        video = vibe.screencast.stop()
-        assert len(video) > 1000
-        assert video[:4] == b"\x1a\x45\xdf\xa3"  # WebM EBML magic
+        result = vibe.context.recording.stop()
+        assert result.path == str(tmp_path / "run.zip")
+        assert (tmp_path / "run.zip").exists()
+        assert len(result.videos) == 1 and not result.videos[0].get("error")
+        with zipfile.ZipFile(io.BytesIO((tmp_path / "run.zip").read_bytes())) as zf:
+            videos = [n for n in zf.namelist() if n.startswith("video/") and n.endswith(".webm")]
+            assert len(videos) == 1
+            video = zf.read(videos[0])
+            assert len(video) > 1000
+            assert video[:4] == b"\x1a\x45\xdf\xa3"  # WebM EBML magic
+            assert "video/index.json" in zf.namelist()
     finally:
         bro.stop()

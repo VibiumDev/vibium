@@ -107,6 +107,22 @@ func TestParseScriptResponseMissingResult(t *testing.T) {
 	}
 }
 
+// A BiDi error envelope also has no result member; the browser's own error
+// must come through, not a generic parse complaint (#358: Firefox refusing
+// script evaluation on its initial page was reported as "no result member").
+func TestParseScriptResponseErrorEnvelope(t *testing.T) {
+	raw := json.RawMessage(`{"type":"error","id":7,"error":"unsupported operation",` +
+		`"message":"script.callFunction is not supported for parent process browsing contexts: 11"}`)
+	_, err := ParseScriptResponse(raw)
+	if err == nil {
+		t.Fatal("ParseScriptResponse() returned nil error for a BiDi error envelope")
+	}
+	want := "unsupported operation: script.callFunction is not supported for parent process browsing contexts: 11"
+	if err.Error() != want {
+		t.Errorf("err = %q, want %q", err.Error(), want)
+	}
+}
+
 // Nested arrays must survive the round trip — the JS-client page.evaluate path
 // previously unwrapped only one level, leaving inner elements as typed objects
 // (issue #124).

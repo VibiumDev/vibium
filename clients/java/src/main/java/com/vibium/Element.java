@@ -73,10 +73,15 @@ public class Element {
     public void clear() { sendAction("vibium:element.clear"); }
 
     /** Check a checkbox. */
-    public void check() { sendAction("vibium:element.check"); }
+    public void set() { set(true); }
+    public void set(boolean value) {
+        JsonObject params = elementParams();
+        params.addProperty("value", value);
+        client.send("vibium:element.set", params);
+    }
 
     /** Uncheck a checkbox. */
-    public void uncheck() { sendAction("vibium:element.uncheck"); }
+    public void unset() { sendAction("vibium:element.unset"); }
 
     /** Select a dropdown option by value. */
     public void selectOption(String value) {
@@ -214,8 +219,8 @@ public class Element {
     }
 
     /** Check if the element is checked. */
-    public boolean isChecked() {
-        JsonObject result = client.send("vibium:element.isChecked", elementParams());
+    public boolean isSet() {
+        JsonObject result = client.send("vibium:element.isSet", elementParams());
         return result.get("checked").getAsBoolean();
     }
 

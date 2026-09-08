@@ -5,6 +5,11 @@ export { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 export { ClockSync } from './clock';
 export { BrowserContextSync } from './context';
 export { RecordingSync } from './recording';
-export { ScreencastSync } from './screencast';
 export { RouteSync } from './route';
 export { DialogSync } from './dialog';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from '../check';
+
+export { RunOptions, RunResult } from '../run';
+
+export { ModelOptions } from '../model-options';

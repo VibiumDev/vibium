@@ -11,6 +11,8 @@ import (
 	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
+	runop "github.com/vibium/clicker/internal/run"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // StatusResult is returned by daemon/status.
@@ -23,8 +25,22 @@ type StatusResult struct {
 	Session   string `json:"session"`
 }
 
+// launchingBrowserMethod is the notification the daemon writes before a tool
+// call launches a browser, so the client can extend its read deadline to
+// cover the launch bounds instead of timing out mid-launch (#407). Sent as a
+// JSON-RPC notification (no id) ahead of the response on the same connection.
+const launchingBrowserMethod = "daemon/launchingBrowser"
+
+// installingBrowserMethod is the notification the daemon writes when a launch
+// finds the engine missing and starts downloading it. Distinct from
+// launchingBrowser because a download is not bounded by the launch budget —
+// the client extends by an install grace instead, matching the marker the
+// client libraries already watch for on `vibium pipe` stderr (#312).
+const installingBrowserMethod = "daemon/installingBrowser"
+
 // handleConnection processes a single client connection.
-// Each connection sends one JSON-RPC request and receives one response.
+// Each connection sends one JSON-RPC request and receives one response,
+// optionally preceded by notifications.
 func (d *Daemon) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -40,7 +56,14 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 		return
 	}
 
-	response := d.handleRequest(line)
+	// The handler runs synchronously in this goroutine, so the notification
+	// write cannot interleave with the response write below.
+	notify := func(method string) {
+		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		fmt.Fprintf(conn, "{\"jsonrpc\":\"2.0\",\"method\":%q}\n", method)
+	}
+
+	response := d.handleRequest(line, notify)
 	if response == nil {
 		return
 	}
@@ -55,8 +78,10 @@ func (d *Daemon) handleConnection(conn net.Conn) {
 	fmt.Fprintf(conn, "%s\n", data)
 }
 
-// handleRequest parses and routes a JSON-RPC request.
-func (d *Daemon) handleRequest(data []byte) *agent.Response {
+// handleRequest parses and routes a JSON-RPC request. notify writes a
+// JSON-RPC notification back to the caller when handling the request starts a
+// browser launch, and again if that launch has to download the browser first.
+func (d *Daemon) handleRequest(data []byte, notify func(method string)) *agent.Response {
 	var req agent.Request
 	if err := json.Unmarshal(data, &req); err != nil {
 		return &agent.Response{
@@ -81,7 +106,7 @@ func (d *Daemon) handleRequest(data []byte) *agent.Response {
 		}
 	}
 
-	result, mcpErr := d.route(req)
+	result, mcpErr := d.route(req, notify)
 
 	if req.ID == nil {
 		return nil
@@ -103,17 +128,58 @@ func (d *Daemon) handleRequest(data []byte) *agent.Response {
 }
 
 // route dispatches requests to the appropriate handler.
-func (d *Daemon) route(req agent.Request) (interface{}, *agent.Error) {
+func (d *Daemon) route(req agent.Request, notify func(method string)) (interface{}, *agent.Error) {
 	log.Debug("daemon request", "method", req.Method, "id", req.ID)
 
 	switch req.Method {
+	case runop.Method:
+		var p struct {
+			runop.Request
+			CLI agent.OperationCLIOptions `json:"cli"`
+		}
+		if json.Unmarshal(req.Params, &p) != nil {
+			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid run request"}
+		}
+		d.mu.Lock()
+		d.handlers.SetLaunchNotify(func() { notify(launchingBrowserMethod) })
+		d.handlers.SetInstallNotify(func() { notify(installingBrowserMethod) })
+		result, err := d.handlers.RunCLI(p.Request, p.CLI)
+		d.handlers.SetLaunchNotify(nil)
+		d.handlers.SetInstallNotify(nil)
+		d.mu.Unlock()
+		if err != nil {
+			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
+		}
+		return result, nil
+	case verifier.Method:
+		var p checkParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid verification request"}
+		}
+		d.mu.Lock()
+		d.handlers.SetLaunchNotify(func() { notify(launchingBrowserMethod) })
+		d.handlers.SetInstallNotify(func() { notify(installingBrowserMethod) })
+		var result verifier.Result
+		var err error
+		if p.CLI != nil {
+			result, err = d.handlers.CheckCLI(p.Request, *p.CLI)
+		} else {
+			result, err = d.handlers.Check(p.Request)
+		}
+		d.handlers.SetLaunchNotify(nil)
+		d.handlers.SetInstallNotify(nil)
+		d.mu.Unlock()
+		if err != nil {
+			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
+		}
+		return result, nil
 	case "daemon/status":
 		return d.handleStatus()
 	case "daemon/shutdown":
 		go d.Shutdown() // Shutdown asynchronously so we can send response
 		return map[string]string{"status": "shutting down"}, nil
 	case "tools/call":
-		return d.handleToolsCall(req.Params)
+		return d.handleToolsCall(req.Params, notify)
 	case "tools/list":
 		return agent.ToolsListResult{
 			Tools: agent.GetToolSchemas(),
@@ -158,7 +224,7 @@ func (d *Daemon) handleInitialize() (interface{}, *agent.Error) {
 }
 
 // handleToolsCall executes a tool and returns the result.
-func (d *Daemon) handleToolsCall(params json.RawMessage) (interface{}, *agent.Error) {
+func (d *Daemon) handleToolsCall(params json.RawMessage, notify func(method string)) (interface{}, *agent.Error) {
 	var p agent.ToolsCallParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agent.Error{
@@ -168,9 +234,15 @@ func (d *Daemon) handleToolsCall(params json.RawMessage) (interface{}, *agent.Er
 		}
 	}
 
-	// Serialize handler access — handlers are not thread-safe
+	// Serialize handler access — handlers are not thread-safe. The launch
+	// callback targets this request's connection, so it is installed and
+	// cleared under the same lock.
 	d.mu.Lock()
+	d.handlers.SetLaunchNotify(func() { notify(launchingBrowserMethod) })
+	d.handlers.SetInstallNotify(func() { notify(installingBrowserMethod) })
 	result, err := d.handlers.Call(p.Name, p.Arguments)
+	d.handlers.SetLaunchNotify(nil)
+	d.handlers.SetInstallNotify(nil)
 	d.mu.Unlock()
 
 	if err != nil {

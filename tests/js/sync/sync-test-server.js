@@ -179,12 +179,25 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
-  if (req.url === '/download-file') {
+  // ?name= gives a test its own filename. Repeating one name within a browser
+  // session makes Firefox report the deduplicated name ("test(1).txt") in
+  // downloadWillBegin, so name-asserting tests must not share a filename.
+  const parsed = new URL(req.url, `http://${req.headers.host}`);
+  if (parsed.pathname === '/download-file') {
+    const name = parsed.searchParams.get('name') || 'test.txt';
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
-      'Content-Disposition': 'attachment; filename="test.txt"',
+      'Content-Disposition': `attachment; filename="${name}"`,
     });
     res.end('download content');
+    return;
+  }
+  if (parsed.pathname === '/download' && parsed.searchParams.has('name')) {
+    const name = parsed.searchParams.get('name');
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`<html><head><title>Download</title></head><body>
+  <a href="/download-file?name=${name}" id="download-link" download="${name}">Download</a>
+</body></html>`);
     return;
   }
   res.writeHead(200, { 'Content-Type': 'text/html' });

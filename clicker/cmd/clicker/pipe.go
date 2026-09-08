@@ -14,6 +14,12 @@ import (
 	"github.com/vibium/clicker/internal/browser"
 )
 
+// installingMarker is printed to stderr right before a browser install starts.
+// All three client libraries (JS, Python, Java) match this exact substring to
+// extend their ready-signal deadline while the download runs — do not reword
+// it without updating the clients.
+const installingMarker = "[pipe] installing browser"
+
 func newPipeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pipe",
@@ -27,6 +33,9 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
   # Drive the protocol by hand; Ctrl-C when done. cat holds stdin open past
   # the browser launch. A bare echo closes it first and the command comes
   # back {"type":"error","message":"connection closed"}.
+
+  # Read-only archive commands, no browser startup
+  vibium pipe --no-browser
 
   # Connect to a remote browser
   vibium pipe --connect ws://remote:9515
@@ -54,16 +63,22 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
 				}
 			}
 
-			runPipe(connectURL, connectHeaders, parseConnectCaps(capsJSON))
+			noBrowser, _ := cmd.Flags().GetBool("no-browser")
+			if noBrowser && connectURL != "" {
+				printError(fmt.Errorf("--no-browser cannot be combined with --connect"))
+				return
+			}
+			runPipe(connectURL, connectHeaders, noBrowser, parseConnectCaps(capsJSON))
 		},
 	}
+	cmd.Flags().Bool("no-browser", false, "Start the existing pipe runtime for read-only archive commands without installing or launching a browser")
 	cmd.Flags().String("connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArray("connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
 	cmd.Flags().String("connect-caps", "", "Extra alwaysMatch capabilities for classic WebDriver endpoints (JSON object)")
 	return cmd
 }
 
-func runPipe(connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) {
+func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, connectCaps map[string]interface{}) {
 	// Save a reference to the real fd 1 for protocol output BEFORE redirecting.
 	fd, err := dupFd(os.Stdout.Fd())
 	if err != nil {
@@ -76,18 +91,37 @@ func runPipe(connectURL string, connectHeaders http.Header, connectCaps map[stri
 	// doesn't corrupt the protocol stream.
 	os.Stdout = os.Stderr
 
+	// Ensure the selected engine is installed before the router launches it,
+	// so client libraries don't each orchestrate is-installed/install
+	// themselves (#312). Runs after the redirect above: installer output and
+	// download progress land on stderr, which clients already drain. The
+	// marker line must precede any network call (EngineInstalled only stats
+	// local paths) — clients see it and extend their ready deadline once,
+	// covering the download.
+	if !noBrowser && connectURL == "" && !browser.SkipBrowserDownload() && !browser.EngineInstalled(engineName) {
+		fmt.Fprintf(os.Stderr, "%s (%s)\n", installingMarker, engineName)
+		if err := browser.EnsureInstalled(engineName); err != nil {
+			fmt.Fprintf(os.Stderr, "[pipe] Failed to install browser: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions.
 	// A clean shutdown removes a session's own dir, but any hard kill (crash,
 	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
 	// Parallel-safe: the minAge filter never touches a live sibling's dir.
-	browser.CleanupOrphanedBrowserTempDirs(time.Minute)
+	if !noBrowser {
+		browser.CleanupOrphanedBrowserTempDirs(time.Minute)
+	}
 
 	router := api.NewRouter(engineName, headless, connectURL, connectHeaders, connectCaps)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,
 	// and events subscribed — the client won't see messages until it's ready.
-	router.OnClientConnect(client)
+	if !noBrowser {
+		router.OnClientConnect(client)
+	}
 
 	// Send ready signal so the client knows it can start sending commands.
 	ready := map[string]interface{}{
@@ -137,7 +171,7 @@ func runPipe(connectURL string, connectHeaders http.Header, connectCaps map[stri
 	// started themselves on this machine and handed us the URL for.
 	router.OnClientDisconnect(client)
 	router.CloseAll()
-	if connectURL == "" {
+	if !noBrowser && connectURL == "" {
 		browser.KillOrphanedChromeProcesses()
 		browser.KillOrphanedFirefoxProcesses()
 	}

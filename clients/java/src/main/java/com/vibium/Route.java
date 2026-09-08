@@ -41,7 +41,7 @@ public class Route {
     public void fulfill(FulfillOptions options) {
         try {
             JsonObject params = new JsonObject();
-            params.addProperty("requestId", requestId);
+            params.addProperty("request", requestId);
             if (options != null) {
                 for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
                     params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
@@ -67,7 +67,7 @@ public class Route {
     public void doContinue(ContinueOptions options) {
         try {
             JsonObject params = new JsonObject();
-            params.addProperty("requestId", requestId);
+            params.addProperty("request", requestId);
             if (options != null) {
                 for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
                     params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
@@ -83,7 +83,7 @@ public class Route {
     public void abort() {
         try {
             JsonObject params = new JsonObject();
-            params.addProperty("requestId", requestId);
+            params.addProperty("request", requestId);
             client.send("vibium:network.abort", params);
         } catch (Exception ignored) {
             // Silently ignore race conditions

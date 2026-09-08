@@ -202,9 +202,21 @@ func (r *Router) handleVibiumClear(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"cleared": true})
 }
 
-// handleVibiumCheck handles the vibium:element.check command.
+// handleVibiumCheck handles the vibium:element.set command.
 // Clicks the checkbox only if it's not already checked.
 func (r *Router) handleVibiumCheck(session *BrowserSession, cmd bidiCommand) {
+	if value, exists := cmd.Params["value"]; exists {
+		selected, ok := value.(bool)
+		if !ok {
+			r.sendError(session, cmd.ID, fmt.Errorf("set value must be a boolean"))
+			return
+		}
+		if !selected {
+			r.handleVibiumUncheck(session, cmd)
+			return
+		}
+	}
+
 	ep := ExtractElementParams(cmd.Params)
 
 	context, err := r.resolveContext(session, cmd.Params)
@@ -235,7 +247,7 @@ func (r *Router) handleVibiumCheck(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"checked": true})
 }
 
-// handleVibiumUncheck handles the vibium:element.uncheck command.
+// handleVibiumUncheck handles the vibium:element.unset command.
 // Clicks the checkbox only if it's currently checked.
 func (r *Router) handleVibiumUncheck(session *BrowserSession, cmd bidiCommand) {
 	ep := ExtractElementParams(cmd.Params)
@@ -265,6 +277,10 @@ func (r *Router) handleVibiumUncheck(session *BrowserSession, cmd bidiCommand) {
 		}
 	}
 
+	if selected, err := IsChecked(s, context, ep); err != nil || selected {
+		r.sendError(session, cmd.ID, fmt.Errorf("could not unset checkbox; select another radio in its group to clear a radio"))
+		return
+	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"unchecked": true})
 }
 
@@ -383,10 +399,8 @@ func (r *Router) handleVibiumDragTo(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := pointerTarget(srcInfo)
+	dstX, dstY := pointerTarget(targetInfo)
 
 	dragParams := map[string]interface{}{
 		"context": context,
@@ -588,10 +602,21 @@ func (r *Router) pressKey(session *BrowserSession, context, key string) error {
 // Exported standalone input primitives — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
+// pointerTarget returns the viewport coordinates for pointer actions on an
+// element: the in-view center from the actionability script when present,
+// else the bounding-box center (plain and forced resolutions). The box center
+// sits outside the viewport for elements larger than twice the viewport, and
+// out-of-bounds pointer coordinates are a WebDriver error (#340).
+func pointerTarget(info *ElementInfo) (int, int) {
+	if info.Point.X != 0 || info.Point.Y != 0 {
+		return int(info.Point.X), int(info.Point.Y)
+	}
+	return int(info.Box.X + info.Box.Width/2), int(info.Box.Y + info.Box.Height/2)
+}
+
 // ClickAtCenter performs a mouse click at the center of an element.
 func ClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	clickParams := map[string]interface{}{
 		"context": context,
@@ -617,8 +642,7 @@ func ClickAtCenter(s Session, context string, info *ElementInfo) error {
 
 // DblClickAtCenter performs a double-click at the center of an element.
 func DblClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	dblclickParams := map[string]interface{}{
 		"context": context,
@@ -756,8 +780,7 @@ func Hover(s Session, context string, ep ElementParams) error {
 
 // HoverAtCenter moves the mouse to the center of an element without clicking.
 func HoverAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	hoverParams := map[string]interface{}{
 		"context": context,
@@ -781,8 +804,7 @@ func HoverAtCenter(s Session, context string, info *ElementInfo) error {
 
 // TapAtCenter performs a touch tap at the center of an element.
 func TapAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	tapParams := map[string]interface{}{
 		"context": context,
@@ -883,6 +905,9 @@ func Uncheck(s Session, context string, ep ElementParams) (bool, error) {
 		if err := ClickAtCenter(s, context, info); err != nil {
 			return false, err
 		}
+		if selected, err := IsChecked(s, context, ep); err != nil || selected {
+			return false, fmt.Errorf("could not unset checkbox; select another radio in its group to clear a radio")
+		}
 		return true, nil // was toggled
 	}
 	return false, nil // already unchecked
@@ -963,10 +988,8 @@ func DragTo(s Session, context string, source, target ElementParams) error {
 		return fmt.Errorf("target: %w", err)
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := pointerTarget(srcInfo)
+	dstX, dstY := pointerTarget(targetInfo)
 
 	dragParams := map[string]interface{}{
 		"context": context,

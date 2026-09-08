@@ -1,3 +1,6 @@
+import { callable } from './callable';
+import { RunOptions, RunResult, sendRun } from './run';
+import { CheckOptions, CheckResult, sendCheck } from './check';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
 import { BrowserContext } from './context';
@@ -8,8 +11,6 @@ import { ConsoleMessage } from './console';
 import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
-import { Screencast } from './screencast';
-import { matchPattern } from './utils/match';
 import { debug } from './utils/debug';
 
 export interface FindOptions {
@@ -22,6 +23,32 @@ export interface ScreenshotOptions {
   fullPage?: boolean;
   /** Capture a specific region of the page. */
   clip?: { x: number; y: number; width: number; height: number };
+}
+
+/** Options for pdf(). Unset options keep the browser's print defaults. */
+export interface PdfOptions {
+  /** Landscape orientation (default: portrait). */
+  landscape?: boolean;
+  /** Print scale, 0.1-2 (default: 1). */
+  scale?: number;
+  /** Print background graphics (default: false). */
+  background?: boolean;
+  /** Top margin in cm (default: 1). */
+  marginTop?: number;
+  /** Bottom margin in cm (default: 1). */
+  marginBottom?: number;
+  /** Left margin in cm (default: 1). */
+  marginLeft?: number;
+  /** Right margin in cm (default: 1). */
+  marginRight?: number;
+  /** Page width in cm (default: 21.59). */
+  pageWidth?: number;
+  /** Page height in cm (default: 27.94). */
+  pageHeight?: number;
+  /** Pages to print, e.g. [1, '3-5'] (default: all). */
+  pageRanges?: Array<number | string>;
+  /** Shrink content to fit the page width (default: true). */
+  shrinkToFit?: boolean;
 }
 
 interface VibiumFindResult {
@@ -41,6 +68,62 @@ interface VibiumFindAllResult {
 }
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
+
+// Exposed host functions are connection-scoped, not Page-instance-scoped:
+// browser.page() hands out a fresh Page object for the same context, and
+// every instance sees every event. One registry and one dispatcher per
+// client means one execution and one reply per call, whichever instance
+// registered the function.
+const exposeRegistries = new WeakMap<BiDiClient, Map<string, (...args: unknown[]) => unknown>>();
+
+function exposeRegistry(client: BiDiClient): Map<string, (...args: unknown[]) => unknown> {
+  let registry = exposeRegistries.get(client);
+  if (!registry) {
+    const fns = new Map<string, (...args: unknown[]) => unknown>();
+    registry = fns;
+    exposeRegistries.set(client, fns);
+    client.onEvent((event) => {
+      if (event.method !== 'vibium:expose.call') return;
+      handleExposeCall(client, fns, event.params as Record<string, unknown>);
+    });
+  }
+  return registry;
+}
+
+async function handleExposeCall(
+  client: BiDiClient,
+  fns: Map<string, (...args: unknown[]) => unknown>,
+  params: Record<string, unknown>,
+): Promise<void> {
+  const name = params.name as string;
+  const seq = params.seq as number;
+  const context = params.context as string;
+  const realm = params.realm as string | undefined;
+
+  // Every outcome answers: an unanswered call leaves the page's promise
+  // parked forever. The reply carries the calling realm back, so the engine
+  // delivers into the document that made the call, not whatever the context
+  // shows after a navigation.
+  const reply = (body: { result?: unknown; error?: string }) => {
+    client.send('vibium:expose.result', { context, realm, seq, ...body }).catch(() => {});
+  };
+
+  const fn = fns.get(name);
+  if (!fn) {
+    reply({ error: `${name} is not exposed` });
+    return;
+  }
+
+  try {
+    const result = await fn(...((params.args as unknown[]) ?? []));
+    // Results cross as JSON; catching the serialization failure here turns
+    // it into a page-side rejection instead of a forever-pending promise.
+    JSON.stringify(result);
+    reply({ result: result === undefined ? null : result });
+  } catch (e) {
+    reply({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
 
 /** Page-level keyboard input. */
 export class Keyboard {
@@ -178,6 +261,8 @@ export interface A11yNode {
   children?: A11yNode[];
 }
 
+export interface Page { (goal: string, options?: RunOptions): Promise<RunResult>; }
+
 export class Page {
   private client: BiDiClient;
   private contextId: string;
@@ -191,21 +276,20 @@ export class Page {
   readonly touch: Touch;
   /** Page-level clock control for faking timers and Date. */
   readonly clock: Clock;
-  /** Native browser video recording (Firefox 154+; Chrome pending). */
-  readonly screencast: Screencast;
 
   // Network interception state
   private routes: { pattern: string; handler: (route: Route) => void; interceptId?: string }[] = [];
   private requestCallbacks: ((request: Request) => void)[] = [];
   private responseCallbacks: ((response: Response) => void)[] = [];
   private dialogCallbacks: ((dialog: Dialog) => void)[] = [];
+  private dialogPolicyManual = false;
   private consoleCallbacks: ((msg: ConsoleMessage) => void)[] = [];
   private errorCallbacks: ((error: Error) => void)[] = [];
   private downloadCallbacks: ((download: Download) => void)[] = [];
   private navigationCallbacks: ((url: string) => void)[] = [];
-  private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
+  private wsSetup: Promise<unknown> | null = null;
   private eventHandler: ((event: BiDiEvent) => void) | null = null;
   private interceptId: string | null = null;
   private dataCollectorId: string | null = null;
@@ -222,7 +306,6 @@ export class Page {
     this.mouse = new Mouse(client, contextId);
     this.touch = new Touch(client, contextId);
     this.clock = new Clock(client, contextId);
-    this.screencast = new Screencast(client, contextId);
 
     // Initialize capture namespace
     const self = this;
@@ -284,8 +367,6 @@ export class Page {
         this.handleUserPromptOpened(params);
       } else if (event.method === 'browsingContext.downloadWillBegin') {
         this.handleDownloadWillBegin(params);
-      } else if (event.method === 'browsingContext.downloadEnd') {
-        this.handleDownloadCompleted(params);
       } else if (event.method === 'log.entryAdded') {
         // log.entryAdded uses source.context, not params.context
         const source = params.source as { context?: string } | undefined;
@@ -316,6 +397,7 @@ export class Page {
       }
     };
     this.client.onEvent(this.eventHandler);
+    return callable(this);
   }
 
   /** The browsing context ID for this page. */
@@ -330,6 +412,16 @@ export class Page {
   /** The parent BrowserContext that owns this page. */
   get context(): BrowserContext {
     return this._context;
+  }
+
+  /** Accomplish a live browser goal; provider settings are read in the runtime. */
+  run(goal: string, options: RunOptions = {}): Promise<RunResult> {
+    return sendRun(this.client, goal, options, this.contextId);
+  }
+
+  /** Verify this exact page, or inspect a read-only archive. */
+  check(claim: string, options: CheckOptions = {}): Promise<CheckResult> {
+    return sendCheck(this.client, claim, options, this.contextId);
   }
 
   /** Navigate to a URL. */
@@ -536,9 +628,10 @@ export class Page {
   }
 
   /** Print the page to PDF. Returns a PDF buffer. Only works in headless mode. */
-  async pdf(): Promise<Buffer> {
+  async pdf(options?: PdfOptions): Promise<Buffer> {
     const result = await this.client.send<{ data: string }>('vibium:page.pdf', {
       context: this.contextId,
+      ...options,
     });
     return Buffer.from(result.data, 'base64');
   }
@@ -572,8 +665,27 @@ export class Page {
     });
   }
 
-  /** Expose a function on window. The function body is injected as a string. */
-  async expose(name: string, fn: string): Promise<void> {
+  /**
+   * Expose a function on window.
+   *
+   * Pass a function to expose a host callback: the page calls
+   * window[name](...args), this function runs here, and its return value
+   * resolves the page's promise. Arguments and results cross as JSON.
+   * Pass a string to inject it as JS source instead, defining window[name]
+   * inside the page.
+   *
+   * Either form survives navigation, and re-exposing a name replaces it.
+   */
+  async expose(name: string, fn: string | ((...args: unknown[]) => unknown)): Promise<void> {
+    if (typeof fn === 'function') {
+      exposeRegistry(this.client).set(name, fn);
+      await this.client.send('vibium:page.exposeFunction', {
+        context: this.contextId,
+        name,
+      });
+      return;
+    }
+    exposeRegistries.get(this.client)?.delete(name);
     await this.client.send('vibium:page.expose', {
       context: this.contextId,
       name,
@@ -599,13 +711,31 @@ export class Page {
     event(name: string, fn?: () => Promise<void>, options?: { timeout?: number }): Promise<unknown>;
   };
 
-  /** Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods. */
+  /**
+   * Wait until a condition is met. Callable with a function, or use .url() / .loaded() sub-methods.
+   * @deprecated Use waitForFunction(), waitForURL(), or waitForLoad().
+   */
   readonly waitUntil: ((fn: string, options?: { timeout?: number }) => Promise<unknown>) & {
-    /** Wait until the page URL matches a pattern. */
+    /** @deprecated Use waitForURL(). */
     url(pattern: string, options?: { timeout?: number }): Promise<void>;
-    /** Wait until the page reaches a load state. */
+    /** @deprecated Use waitForLoad(). */
     loaded(state?: string, options?: { timeout?: number }): Promise<void>;
   };
+
+  /** Wait until a function returns a truthy value. */
+  async waitForFunction(fn: string, options?: { timeout?: number }): Promise<unknown> {
+    return this._waitForFunction(fn, options);
+  }
+
+  /** Wait until the page URL matches a pattern. */
+  async waitForURL(pattern: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForURL(pattern, options);
+  }
+
+  /** Wait until the page reaches a load state. */
+  async waitForLoad(state?: string, options?: { timeout?: number }): Promise<void> {
+    await this._waitForLoad(state, options);
+  }
 
   /** Wait for a fixed amount of time (milliseconds). Discouraged but useful for debugging. */
   async wait(ms: number): Promise<void> {
@@ -657,7 +787,16 @@ export class Page {
     return fluent(promise);
   }
 
-  /** Find all elements matching a CSS selector or semantic options. Waits for at least one. */
+  /**
+   * Find all elements matching a CSS selector or semantic options. Waits up
+   * to the timeout for at least one match, then returns an empty array if
+   * there is none. A timeout of 0 checks once without waiting.
+   *
+   * Each element carries a snapshot of its tag, text, and box taken at
+   * findAll time, readable via `el.info` with no further round trips:
+   * els.map(el => el.info.text). Live reads like el.text() re-resolve the
+   * element and fail if the page has changed since findAll.
+   */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.contextId,
@@ -690,27 +829,29 @@ export class Page {
    * The handler receives a Route object that can fulfill, continue, or abort the request.
    */
   async route(pattern: string, handler: (route: Route) => void): Promise<void> {
-    // Register the intercept with the Go proxy (only once for the first route)
-    if (this.interceptId === null) {
-      const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
-        context: this.contextId,
-      });
-      this.interceptId = result.intercept;
-    }
+    // The binary compiles the pattern, owns the intercept lifecycle, and
+    // annotates blocked request events with the patterns that matched, so
+    // dispatch below never interprets the glob itself.
+    const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
+      context: this.contextId,
+      pattern,
+    });
+    this.interceptId = result.intercept;
 
     this.ensureDataCollector();
-    this.routes.push({ pattern, handler, interceptId: this.interceptId ?? undefined });
+    this.routes.push({ pattern, handler, interceptId: result.intercept });
   }
 
   /** Remove a previously registered route. If no handler given, removes all routes for the pattern. */
   async unroute(pattern: string): Promise<void> {
+    const removed = this.routes.filter(r => r.pattern === pattern).length;
     this.routes = this.routes.filter(r => r.pattern !== pattern);
-
-    // If no routes left, remove the intercept
-    if (this.routes.length === 0 && this.interceptId) {
-      await this.client.send('network.removeIntercept', {
-        intercept: this.interceptId,
-      });
+    // The binary refcounts pattern registrations and tears the intercept
+    // down when the last one goes.
+    for (let i = 0; i < removed; i++) {
+      await this.client.send('vibium:page.unroute', { context: this.contextId, pattern });
+    }
+    if (this.routes.length === 0) {
       this.interceptId = null;
     }
   }
@@ -740,6 +881,7 @@ export class Page {
     }
     if (!event || event === 'dialog') {
       this.dialogCallbacks = [];
+      this.syncDialogPolicy();
     }
     if (!event || event === 'console') {
       this.consoleCallbacks = [];
@@ -764,162 +906,84 @@ export class Page {
     }
   }
 
-  /** @internal Capture a request matching a URL pattern. */
-  _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Request>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for request matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (request: Request) => {
-        if (matchPattern(pattern, request.url())) {
-          clearTimeout(timer);
-          this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-          resolve(request);
-        }
-      };
-      this.requestCallbacks.push(handler);
+  /**
+   * @internal Capture a request matching a URL pattern. The binary matches
+   * the pattern and waits for the event; this just awaits the command.
+   */
+  async _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureRequest', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Request(result.event, this.client);
   }
 
   /** @internal Capture a response matching a URL pattern. */
-  _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
+  async _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
     this.ensureDataCollector();
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Response>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for response matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (response: Response) => {
-        if (matchPattern(pattern, response.url())) {
-          clearTimeout(timer);
-          this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-          resolve(response);
-        }
-      };
-      this.responseCallbacks.push(handler);
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureResponse', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Response(result.event, this.client);
+  }
+
+  /**
+   * @internal One-shot capture, waited out in the engine
+   * (vibium:page.captureEvent), so no client keeps its own listener and
+   * timeout machinery (#446). Returns the raw event params.
+   */
+  private async captureEventParams(kind: string, options?: { timeout?: number }): Promise<Record<string, unknown>> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureEvent', {
+      context: this.contextId,
+      kind,
+      timeout: options?.timeout ?? 10000,
+    });
+    return result.event;
   }
 
   /** @internal Capture a navigation event. Resolves with the URL. */
-  _captureNavigation(options?: { timeout?: number }): Promise<string> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for navigation`));
-      }, timeout);
-
-      const handler = (url: string) => {
-        clearTimeout(timer);
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        resolve(url);
-      };
-      this.navigationCallbacks.push(handler);
-    });
+  async _captureNavigation(options?: { timeout?: number }): Promise<string> {
+    const params = await this.captureEventParams('navigation', options);
+    return (params.url as string) ?? '';
   }
 
   /** @internal Capture a download event. */
-  _captureDownload(options?: { timeout?: number }): Promise<Download> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Download>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for download`));
-      }, timeout);
-
-      const handler = (download: Download) => {
-        clearTimeout(timer);
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        resolve(download);
-      };
-      this.downloadCallbacks.push(handler);
-    });
+  async _captureDownload(options?: { timeout?: number }): Promise<Download> {
+    const params = await this.captureEventParams('download', options);
+    return new Download(this.client, params);
   }
 
-  /** @internal Capture a dialog event. The registered callback prevents auto-dismiss. */
-  _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Dialog>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for dialog`));
-      }, timeout);
-
-      const handler = (dialog: Dialog) => {
-        clearTimeout(timer);
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        resolve(dialog);
-      };
-      this.dialogCallbacks.push(handler);
-    });
+  /** @internal Capture a dialog event. The pending engine capture keeps the dialog from being auto-dismissed. */
+  async _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
+    const params = await this.captureEventParams('dialog', options);
+    return new Dialog(this.client, this.contextId, params);
   }
 
-  /** @internal Capture a named event. Maps event name to the appropriate callback array. */
-  _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout waiting for event '${name}'`));
-      }, timeout);
-
-      let cleanup: () => void;
-
-      switch (name) {
-        case 'request': {
-          const handler = (req: Request) => { clearTimeout(timer); cleanup(); resolve(req); };
-          this.requestCallbacks.push(handler);
-          cleanup = () => { this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'response': {
-          const handler = (resp: Response) => { clearTimeout(timer); cleanup(); resolve(resp); };
-          this.responseCallbacks.push(handler);
-          cleanup = () => { this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'dialog': {
-          const handler = (dialog: Dialog) => { clearTimeout(timer); cleanup(); resolve(dialog); };
-          this.dialogCallbacks.push(handler);
-          cleanup = () => { this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'download': {
-          const handler = (download: Download) => { clearTimeout(timer); cleanup(); resolve(download); };
-          this.downloadCallbacks.push(handler);
-          cleanup = () => { this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'navigation': {
-          const handler = (url: string) => { clearTimeout(timer); cleanup(); resolve(url); };
-          this.navigationCallbacks.push(handler);
-          cleanup = () => { this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'console': {
-          const handler = (msg: ConsoleMessage) => { clearTimeout(timer); cleanup(); resolve(msg); };
-          this.consoleCallbacks.push(handler);
-          cleanup = () => { this.consoleCallbacks = this.consoleCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'error': {
-          const handler = (err: Error) => { clearTimeout(timer); cleanup(); resolve(err); };
-          this.errorCallbacks.push(handler);
-          cleanup = () => { this.errorCallbacks = this.errorCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        default:
-          clearTimeout(timer);
-          reject(new Error(`Unknown event name: '${name}'`));
+  /** @internal Capture a named event. */
+  async _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
+    switch (name) {
+      case 'request':
+        return this._captureRequest('**', options);
+      case 'response':
+        return this._captureResponse('**', options);
+      case 'download':
+        return this._captureDownload(options);
+      case 'navigation':
+        return this._captureNavigation(options);
+      case 'dialog':
+        return this._captureDialog(options);
+      case 'console':
+        return new ConsoleMessage(await this.captureEventParams('console', options));
+      case 'error': {
+        const params = await this.captureEventParams('error', options);
+        return new Error((params.text as string) ?? 'Unknown error');
       }
-    });
+      default:
+        throw new Error(`Unknown event name: '${name}'`);
+    }
   }
 
   /** Set extra HTTP headers for all requests in this page. */
@@ -946,13 +1010,49 @@ export class Page {
     throw new Error('Not implemented: BiDi does not support WebSocket interception');
   }
 
-  /** Listen for WebSocket connections opened by the page. */
+  /**
+   * Listen for WebSocket connections opened by the page.
+   *
+   * Monitoring is installed in the engine before the next command on this
+   * connection is sent, so a socket opened by the very next call cannot be
+   * missed (#351).
+   */
   onWebSocket(fn: (ws: WebSocketInfo) => void): void {
-    const isFirst = this.wsCallbacks.length === 0;
     this.wsCallbacks.push(fn);
-    if (isFirst) {
-      this.client.send('vibium:page.onWebSocket', { context: this.contextId }).catch(() => {});
+    // Keyed on the setup state, not the callback count: after a failed
+    // install the callbacks are still registered, and the next registration
+    // must retry the install or they can never fire.
+    if (this.wsSetup === null) {
+      const setup = this.client.sendSetup('vibium:page.onWebSocket', { context: this.contextId });
+      this.wsSetup = setup;
+      setup.catch(err => {
+        // Reset so a later listener retries; sockets are unmonitored until
+        // then. Guarded: a retry made in the meantime owns the state.
+        if (this.wsSetup === setup) this.wsSetup = null;
+        debug('page.onWebSocket setup failed', { error: String(err) });
+      });
     }
+  }
+
+  /**
+   * @internal Resolve when this page's WebSocket monitor is installed,
+   * rejecting if the install failed. The sync wrapper awaits it so its
+   * blocking onWebSocket() reports a failure the async caller cannot see.
+   */
+  async _whenWebSocketSetup(): Promise<void> {
+    // Captured before awaiting: a failed install resets wsSetup to null, and
+    // the raise must come from the setup this caller registered under.
+    const setup = this.wsSetup;
+    if (setup) await setup;
+  }
+
+  /**
+   * @internal Remove one registered WebSocket callback. The sync wrapper
+   * unregisters on a failed install so its raised call has no effect.
+   */
+  _removeWebSocketCallback(fn: (ws: WebSocketInfo) => void): void {
+    const i = this.wsCallbacks.indexOf(fn);
+    if (i !== -1) this.wsCallbacks.splice(i, 1);
   }
 
   // --- Dialog Handling ---
@@ -962,7 +1062,33 @@ export class Page {
    * If no handler is registered, dialogs are automatically dismissed.
    */
   onDialog(handler: (dialog: Dialog) => void): void {
+    this.addDialogCallback(handler);
+  }
+
+  /**
+   * The engine dismisses dialogs itself while no handler is registered
+   * (#446); handlers flip it to manual so the dialog stays open for them.
+   * sendSetup, so the policy is acknowledged before any later command can
+   * trigger a dialog.
+   */
+  private syncDialogPolicy(): void {
+    const manual = this.dialogCallbacks.length > 0;
+    if (manual === this.dialogPolicyManual) return;
+    this.dialogPolicyManual = manual;
+    this.client.sendSetup('vibium:dialog.setPolicy', {
+      context: this.contextId,
+      policy: manual ? 'manual' : 'dismiss',
+    }).catch(() => {});
+  }
+
+  private addDialogCallback(handler: (dialog: Dialog) => void): void {
     this.dialogCallbacks.push(handler);
+    this.syncDialogPolicy();
+  }
+
+  private removeDialogCallback(handler: (dialog: Dialog) => void): void {
+    this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+    this.syncDialogPolicy();
   }
 
   /** Register a handler for console messages, or pass 'collect' to buffer them for consoleMessages(). */
@@ -1017,13 +1143,17 @@ export class Page {
   private ensureDataCollector(): void {
     if (this.dataCollectorId !== null) return;
     this.dataCollectorId = 'pending';
-    this.client.send<{ collector: string }>(
+    // sendSetup, not send: the collector must exist before the request whose
+    // body a route/onResponse handler is about to read (#351).
+    this.client.sendSetup<{ collector: string }>(
       'network.addDataCollector',
       { dataTypes: ['request', 'response'], maxEncodedDataSize: 10 * 1024 * 1024 }
     ).then(result => {
       this.dataCollectorId = result.collector;
-    }).catch(() => {
+    }).catch(err => {
+      // Reset so a later listener retries; bodies are unavailable until then.
       this.dataCollectorId = null;
+      debug('page.ensureDataCollector failed', { error: String(err) });
     });
   }
 
@@ -1043,12 +1173,14 @@ export class Page {
     const requestId = request?.request as string | undefined;
 
     if (isBlocked && requestId) {
-      // This is an intercepted request — match against routes
-      const requestUrl = (request?.url as string) ?? '';
+      // This is an intercepted request. The binary already matched the URL
+      // against every registered pattern (vibiumMatchedPatterns), so
+      // dispatch is a membership check, not a glob evaluation.
+      const matched = (params.vibiumMatchedPatterns as string[] | undefined) ?? [];
       const req = new Request(params, this.client);
 
       for (const routeEntry of this.routes) {
-        if (matchPattern(routeEntry.pattern, requestUrl)) {
+        if (matched.includes(routeEntry.pattern)) {
           const route = new Route(this.client, requestId, req);
           // Catch errors from async route handlers (fire-and-forget pattern)
           try {
@@ -1080,21 +1212,18 @@ export class Page {
   }
 
   private handleUserPromptOpened(params: Record<string, unknown>): void {
+    // With no handler registered the engine dismisses the dialog itself
+    // (#446), so there is nothing to do here but deliver.
     const dialog = new Dialog(this.client, this.contextId, params);
 
-    if (this.dialogCallbacks.length > 0) {
-      for (const cb of this.dialogCallbacks) {
-        // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
-        try {
-          const result = cb(dialog) as unknown;
-          if (result && typeof (result as Promise<void>).catch === 'function') {
-            (result as Promise<void>).catch(() => {});
-          }
-        } catch (_) { /* ignore sync errors from handler */ }
-      }
-    } else {
-      // Auto-dismiss if no handler registered (matches Playwright behavior)
-      dialog.dismiss().catch(() => {});
+    for (const cb of this.dialogCallbacks) {
+      // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
+      try {
+        const result = cb(dialog) as unknown;
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch (_) { /* ignore sync errors from handler */ }
     }
   }
 
@@ -1116,29 +1245,11 @@ export class Page {
   }
 
   private handleDownloadWillBegin(params: Record<string, unknown>): void {
-    const url = (params.url as string) ?? '';
-    const suggestedFilename = (params.suggestedFilename as string) ?? '';
-    const navigation = (params.navigation as string) ?? '';
-
-    const download = new Download(this.client, url, suggestedFilename);
-    if (navigation) {
-      this.pendingDownloads.set(navigation, download);
-    }
-
+    // Completion is awaited in the engine by navigation id (#446), so
+    // there is no client-side pending map to feed on downloadEnd.
+    const download = new Download(this.client, params);
     for (const cb of this.downloadCallbacks) {
       cb(download);
-    }
-  }
-
-  private handleDownloadCompleted(params: Record<string, unknown>): void {
-    const navigation = (params.navigation as string) ?? '';
-    const status = (params.status as string) ?? 'complete';
-    const filepath = (params.filepath as string) ?? null;
-
-    const download = this.pendingDownloads.get(navigation);
-    if (download) {
-      download._complete(status, filepath);
-      this.pendingDownloads.delete(navigation);
     }
   }
 

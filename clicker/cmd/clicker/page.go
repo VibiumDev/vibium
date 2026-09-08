@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -18,6 +16,7 @@ func newPageCmd() *cobra.Command {
 		},
 	}
 
+	var isolated bool
 	newCmd := &cobra.Command{
 		Use:   "new [url]",
 		Short: "Open a new browser page",
@@ -25,12 +24,19 @@ func newPageCmd() *cobra.Command {
   # Open a blank new page
 
   vibium page new https://example.com
-  # Open a new page and navigate to URL`,
+  # Open a new page and navigate to URL
+
+  vibium page new --isolated https://example.com
+  # Open the page in its own isolated context (separate cookies/storage):
+  #   New isolated page opened and navigated to https://example.com (page: A1B2...)`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			toolArgs := map[string]interface{}{}
 			if len(args) == 1 {
 				toolArgs["url"] = args[0]
+			}
+			if isolated {
+				toolArgs["isolated"] = true
 			}
 
 			result, err := daemonCall("browser_new_page", toolArgs)
@@ -41,25 +47,29 @@ func newPageCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
+	newCmd.Flags().BoolVar(&isolated, "isolated", false, "Open the page in its own isolated context (separate cookies and storage)")
 
 	closeCmd := &cobra.Command{
-		Use:   "close [index]",
-		Short: "Close a browser page by index (default: current page)",
+		Use:   "close [index or page id]",
+		Short: "Close a browser page by index or id (default: current page)",
 		Example: `  vibium page close
   # Close current page (index 0)
 
   vibium page close 1
-  # Close page at index 1`,
+  # Close page at index 1
+
+  vibium page close A1B2C3D4
+  # Close the page with that id (from "vibium page new")`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			toolArgs := map[string]interface{}{}
 			if len(args) == 1 {
-				idx, err := strconv.Atoi(args[0])
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: invalid page index: %s\n", args[0])
-					os.Exit(1)
+				// An integer is an index; anything else is a page id.
+				if idx, err := strconv.Atoi(args[0]); err == nil {
+					toolArgs["index"] = float64(idx)
+				} else {
+					toolArgs["page"] = args[0]
 				}
-				toolArgs["index"] = float64(idx)
 			}
 
 			result, err := daemonCall("browser_close_page", toolArgs)

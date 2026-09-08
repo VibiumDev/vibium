@@ -1,11 +1,8 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 )
 
 // handlePageSetViewport handles vibium:page.setViewport — sets the viewport size.
@@ -246,7 +243,7 @@ func (r *Router) handlePageSetWindow(session *BrowserSession, cmd bidiCommand) {
 		opts.Y = &yv
 	}
 
-	if err := SetWindow(session.LaunchResult.Port, session.LaunchResult.SessionID, opts); err != nil {
+	if err := SetWindow(NewAPISession(r, session, ""), opts); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -302,28 +299,6 @@ func (r *Router) handlePageSetGeolocation(session *BrowserSession, cmd bidiComma
 // Exported standalone functions — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
-// ChromedriverPost sends a POST request to a chromedriver classic WebDriver endpoint.
-func ChromedriverPost(url string, body map[string]interface{}) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("chromedriver request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("chromedriver error (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
-}
-
 // WindowInfo holds OS browser window state and dimensions.
 type WindowInfo struct {
 	State  string `json:"state"`
@@ -336,27 +311,45 @@ type WindowInfo struct {
 // GetWindow returns the current OS browser window state and dimensions.
 // Uses BiDi browser.getClientWindows.
 func GetWindow(s Session) (*WindowInfo, error) {
+	win, _, err := activeClientWindow(s)
+	return win, err
+}
+
+// activeClientWindow returns the focused client window (or the first one when
+// none reports focus) along with its BiDi client window id.
+func activeClientWindow(s Session) (*WindowInfo, string, error) {
 	resp, err := s.SendBidiCommand("browser.getClientWindows", map[string]interface{}{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get window: %w", err)
+		return nil, "", fmt.Errorf("failed to get window: %w", err)
 	}
 	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, bidiErr
+		return nil, "", bidiErr
 	}
 
 	var getResult struct {
 		Result struct {
-			ClientWindows []WindowInfo `json:"clientWindows"`
+			ClientWindows []struct {
+				WindowInfo
+				ClientWindow string `json:"clientWindow"`
+				Active       bool   `json:"active"`
+			} `json:"clientWindows"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(resp, &getResult); err != nil {
-		return nil, fmt.Errorf("failed to parse getClientWindows: %w", err)
+		return nil, "", fmt.Errorf("failed to parse getClientWindows: %w", err)
 	}
-	if len(getResult.Result.ClientWindows) == 0 {
-		return nil, fmt.Errorf("no client windows available")
+	windows := getResult.Result.ClientWindows
+	if len(windows) == 0 {
+		return nil, "", fmt.Errorf("no client windows available")
 	}
-
-	return &getResult.Result.ClientWindows[0], nil
+	chosen := windows[0]
+	for _, win := range windows {
+		if win.Active {
+			chosen = win
+			break
+		}
+	}
+	return &chosen.WindowInfo, chosen.ClientWindow, nil
 }
 
 // SetWindowOpts specifies the desired window state and/or dimensions.
@@ -369,75 +362,124 @@ type SetWindowOpts struct {
 }
 
 // SetWindow sets the OS browser window size, position, or state.
-// Uses chromedriver's classic WebDriver HTTP API.
-func SetWindow(port int, sessionID string, opts SetWindowOpts) error {
-	baseURL := fmt.Sprintf("http://localhost:%d/session/%s/window", port, sessionID)
+// Uses BiDi browser.setClientWindowState: the classic WebDriver endpoint
+// operates on the session's current window handle, which goes stale once
+// the page it points at is closed.
+func SetWindow(s Session, opts SetWindowOpts) error {
+	_, id, err := activeClientWindow(s)
+	if err != nil {
+		return err
+	}
 
-	// Handle named states via dedicated endpoints
-	if opts.State != "" && opts.State != "normal" {
-		endpoint := ""
-		switch opts.State {
-		case "maximized":
-			endpoint = baseURL + "/maximize"
-		case "minimized":
-			endpoint = baseURL + "/minimize"
-		case "fullscreen":
-			endpoint = baseURL + "/fullscreen"
-		default:
-			return fmt.Errorf("unsupported window state: %s", opts.State)
+	params := map[string]interface{}{"clientWindow": id}
+	switch opts.State {
+	case "maximized", "minimized", "fullscreen":
+		params["state"] = opts.State
+	case "", "normal":
+		params["state"] = "normal"
+		if opts.Width != nil {
+			params["width"] = *opts.Width
 		}
-		return ChromedriverPost(endpoint, map[string]interface{}{})
+		if opts.Height != nil {
+			params["height"] = *opts.Height
+		}
+		if opts.X != nil {
+			params["x"] = *opts.X
+		}
+		if opts.Y != nil {
+			params["y"] = *opts.Y
+		}
+	default:
+		return fmt.Errorf("unsupported window state: %s", opts.State)
 	}
 
-	// For "normal" state or dimension changes, use /window/rect
-	rect := map[string]interface{}{}
-	if opts.Width != nil {
-		rect["width"] = *opts.Width
+	resp, err := s.SendBidiCommand("browser.setClientWindowState", params)
+	if err != nil {
+		return fmt.Errorf("failed to set window: %w", err)
 	}
-	if opts.Height != nil {
-		rect["height"] = *opts.Height
-	}
-	if opts.X != nil {
-		rect["x"] = *opts.X
-	}
-	if opts.Y != nil {
-		rect["y"] = *opts.Y
-	}
-	return ChromedriverPost(baseURL+"/rect", rect)
+	return checkBidiError(resp)
 }
 
-// geolocationScript is the JS that overrides navigator.geolocation.
-const geolocationScript = "(coordsJSON) => {\n" +
-	"const coords = JSON.parse(coordsJSON);\n" +
-	"const geo = navigator.geolocation;\n" +
-	"geo.getCurrentPosition = function(success, error, options) {\n" +
-	"  success({ coords: { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,\n" +
-	"    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
-	"};\n" +
-	"geo.watchPosition = function(success, error, options) {\n" +
-	"  success({ coords: { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,\n" +
-	"    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
-	"  return 0;\n" +
-	"};\n" +
-	"return 'ok';\n" +
-	"}"
+// ViewportCenter returns the viewport's center point. Pointer actions with a
+// fixed origin break as soon as the viewport is not the size the constant
+// assumed: Firefox rejects out-of-bounds coordinates outright, and on larger
+// viewports a fixed point can land inside whatever scrollable element happens
+// to cover it (#443, #444).
+func ViewportCenter(s Session, context string) (int, int, error) {
+	resp, err := CallScript(s, context,
+		`() => JSON.stringify({ width: window.innerWidth, height: window.innerHeight })`,
+		[]map[string]interface{}{})
+	if err != nil {
+		return 0, 0, err
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return 0, 0, err
+	}
+	var size struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	}
+	if err := json.Unmarshal([]byte(val), &size); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse viewport: %w", err)
+	}
+	return size.Width / 2, size.Height / 2, nil
+}
 
-// SetGeolocation overrides the browser geolocation via a JS override.
+// geolocationScript returns the JS that overrides navigator.geolocation with
+// the given coordinates. The coordinates are baked into the declaration
+// because addPreloadScript passes no arguments to its function.
+//
+// The script is written to run any number of times in a document: the first
+// run installs an override that reads the coordinates from a window slot at
+// query time, later runs only update the slot. Repeated setGeolocation calls
+// stack one preload script each, and on a new document they all run in the
+// order they were added, so the last call wins without any script-removal
+// bookkeeping.
+func geolocationScript(coordsJSON string) string {
+	return "() => {\n" +
+		"window.__vibiumGeoCoords = " + coordsJSON + ";\n" +
+		"if (window.__vibiumGeoInstalled) return 'ok';\n" +
+		"window.__vibiumGeoInstalled = true;\n" +
+		"const pos = () => ({ coords: { latitude: window.__vibiumGeoCoords.latitude,\n" +
+		"  longitude: window.__vibiumGeoCoords.longitude, accuracy: window.__vibiumGeoCoords.accuracy,\n" +
+		"  altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
+		"const geo = navigator.geolocation;\n" +
+		"geo.getCurrentPosition = function(success, error, options) { success(pos()); };\n" +
+		"geo.watchPosition = function(success, error, options) { success(pos()); return 0; };\n" +
+		"return 'ok';\n" +
+		"}"
+}
+
+// SetGeolocation overrides the browser geolocation via a JS override, for the
+// current document and every later document in the context.
 func SetGeolocation(s Session, context string, lat, lon, accuracy float64) error {
 	coordsJSON, _ := json.Marshal(map[string]float64{
 		"latitude":  lat,
 		"longitude": lon,
 		"accuracy":  accuracy,
 	})
+	decl := geolocationScript(string(coordsJSON))
 
 	resp, err := s.SendBidiCommand("script.callFunction", map[string]interface{}{
-		"functionDeclaration": geolocationScript,
+		"functionDeclaration": decl,
 		"target":              map[string]interface{}{"context": context},
-		"arguments": []map[string]interface{}{
-			{"type": "string", "value": string(coordsJSON)},
-		},
-		"awaitPromise":    false,
-		"resultOwnership": "root",
+		"awaitPromise":        false,
+		"resultOwnership":     "root",
+	})
+	if err != nil {
+		return err
+	}
+	if err := checkBidiError(resp); err != nil {
+		return err
+	}
+
+	// The call above dies with the document, so a navigation or reload
+	// silently dropped the override (#345). Register the same script as a
+	// preload so every new document in this context gets it re-applied.
+	resp, err = s.SendBidiCommand("script.addPreloadScript", map[string]interface{}{
+		"functionDeclaration": decl,
+		"contexts":            []interface{}{context},
 	})
 	if err != nil {
 		return err

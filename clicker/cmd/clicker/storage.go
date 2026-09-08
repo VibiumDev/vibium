@@ -12,6 +12,9 @@ func newStorageCmd() *cobra.Command {
 	storageCmd := &cobra.Command{
 		Use:   "storage",
 		Short: "Export or restore browser state (cookies, localStorage, sessionStorage)",
+		// Unlike other subcommand parents, running this bare does real work
+		// (prints the state); the annotation keeps it in `vibium commands`.
+		Annotations: map[string]string{"standalone": "true"},
 		Example: `  vibium storage
   # Print state as JSON
 
@@ -33,7 +36,12 @@ func newStorageCmd() *cobra.Command {
 					printError(fmt.Errorf("failed to write file: %w", err))
 					return
 				}
-				fmt.Printf("State saved to %s\n", output)
+				msg := fmt.Sprintf("State saved to %s", output)
+				if jsonOutput {
+					printJSON(jsonEnvelope{OK: true, Result: msg})
+					return
+				}
+				fmt.Println(msg)
 				return
 			}
 			printResult(result)
@@ -50,8 +58,8 @@ func newStorageCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: invalid path: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("invalid path: %w", err))
+				return
 			}
 
 			result, err := daemonCall("browser_restore_storage", map[string]interface{}{"path": path})

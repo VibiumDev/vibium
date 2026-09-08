@@ -36,7 +36,7 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
   vibium start --engine firefox
   # Start with Firefox instead of Chrome
 
-  vibium start --engine firefox --firefox-channel beta
+  vibium start --engine firefox --channel beta
   # Start with the installed Firefox beta instead of the release build
 
   vibium start ws://remote:9515/session
@@ -85,18 +85,20 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 				return
 			}
 
-			// Remote connect — stop existing daemon and start fresh with --connect
+			// Remote connect — stop existing daemon and start fresh with --connect.
+			// Failures go through printError: these paths wrote straight to
+			// stderr, which is why --json never reached them (#451).
 			if err := shutdownDaemonAndWait(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("stopping existing daemon: %w", err))
+				return
 			}
 
 			daemon.CleanStale()
 
 			exe, err := os.Executable()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error finding executable: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("finding executable: %w", err))
+				return
 			}
 
 			daemonArgs := []string{"daemon", "start", "--_internal", "--idle-timeout=30m",
@@ -125,14 +127,14 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 			setSysProcAttr(child)
 
 			if err := child.Start(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting daemon: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("starting daemon: %w", err))
+				return
 			}
 
 			socketPath, _ := paths.GetSocketPath()
 			if err := waitForSocket(socketPath, 5*time.Second); err != nil {
-				fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("daemon failed to start: %w", err))
+				return
 			}
 
 			// Connect now instead of leaving it to the first command that
@@ -141,12 +143,19 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 			// endpoint is no use to the next command either — take it down
 			// rather than leave it to auto-start the same failure.
 			if _, err := daemonCall("browser_start", map[string]interface{}{}); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", bidi.RedactURL(connectURL), err)
+				// Take the daemon down before reporting: it cannot reach the
+				// endpoint either, so leaving it up only defers the failure.
 				shutdownDaemonAndWait()
-				os.Exit(1)
+				printError(fmt.Errorf("failed to connect to %s: %w", bidi.RedactURL(connectURL), err))
+				return
 			}
 
-			fmt.Printf("Connected to %s (daemon pid %d)\n", bidi.RedactURL(connectURL), child.Process.Pid)
+			msg := fmt.Sprintf("Connected to %s (daemon pid %d)", bidi.RedactURL(connectURL), child.Process.Pid)
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: msg})
+				return
+			}
+			fmt.Println(msg)
 		},
 	}
 }

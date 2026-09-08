@@ -1,6 +1,8 @@
 package browser
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,43 +12,62 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/vibium/clicker/internal/paths"
 )
 
 const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 
-// InstallFirefox downloads Firefox from Mozilla's release archive into the
-// vibium cache and returns the executable path. Skips the download if the
-// current version is already installed. The channel comes from
-// VIBIUM_FIREFOX_CHANNEL (default "release"; "beta" for pre-release testing).
+// pinnedFirefoxVersion is the known-good Firefox version release-channel
+// installs default to. CI tests exactly this version; the version-bump
+// workflow opens a tested PR when Mozilla ships a new release (#469).
+// Bumping it also renews test.yml's Firefox cache key, which hashes this
+// file, so the bump PR installs the new version instead of a cached old
+// one.
+const pinnedFirefoxVersion = "155.0.1"
+
+// InstallFirefox downloads Firefox for the VIBIUM_ENGINE_CHANNEL channel
+// (default "release"; "beta" for pre-release testing).
+func InstallFirefox() (string, error) {
+	return InstallFirefoxForChannel("")
+}
+
+// InstallFirefoxForChannel downloads Firefox from Mozilla's release archive
+// into the vibium cache and returns the executable path. Skips the download
+// if the current version is already installed. An empty channel means the
+// VIBIUM_ENGINE_CHANNEL default; passing it explicitly lets a long-lived
+// daemon install for a per-call channel without mutating process-wide
+// environment state, mirroring paths.GetFirefoxExecutableForChannel.
 //
 // Windows is unsupported: Mozilla ships only installer executables there, no
 // archive build we can unpack into the cache. Install Firefox manually and
-// set VIBIUM_FIREFOX_PATH instead.
-func InstallFirefox() (string, error) {
+// set VIBIUM_ENGINE_PATH instead.
+func InstallFirefoxForChannel(channel string) (string, error) {
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return "", fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
 
-	if p := os.Getenv("VIBIUM_FIREFOX_PATH"); p != "" {
+	if p := os.Getenv("VIBIUM_ENGINE_PATH"); p != "" {
 		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("VIBIUM_FIREFOX_PATH is set but not usable: %w", err)
+			return "", fmt.Errorf("VIBIUM_ENGINE_PATH is set but not usable: %w", err)
 		}
 		return p, nil
 	}
 
 	if runtime.GOOS == "windows" {
-		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_FIREFOX_PATH to firefox.exe")
+		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_ENGINE_PATH to firefox.exe")
 	}
 
-	channel := paths.FirefoxChannel()
-	version, err := fetchLatestFirefoxVersion(channel)
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
+	version, err := resolveFirefoxVersion(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Firefox version info: %w", err)
 	}
 
-	ffDir, err := paths.GetFirefoxDir()
+	ffDir, err := paths.GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -63,14 +84,28 @@ func InstallFirefox() (string, error) {
 	downloadURL := firefoxDownloadURL(version)
 	fmt.Printf("Downloading Firefox from %s...\n", downloadURL)
 
+	pattern := "firefox-*.tar.xz"
+	if runtime.GOOS == "darwin" {
+		pattern = "firefox-*.dmg"
+	}
+	archivePath, err := downloadToTemp(downloadURL, pattern)
+	if err != nil {
+		return "", fmt.Errorf("failed to download Firefox: %w", err)
+	}
+	defer os.Remove(archivePath)
+
+	if err := verifyFirefoxArchive(archivePath, version); err != nil {
+		return "", fmt.Errorf("Firefox download failed verification: %w", err)
+	}
+
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create version dir: %w", err)
 	}
 
 	if runtime.GOOS == "darwin" {
-		err = installFirefoxDMG(downloadURL, versionDir)
+		err = installFirefoxDMG(archivePath, versionDir)
 	} else {
-		err = installFirefoxTarXZ(downloadURL, versionDir)
+		err = installFirefoxTarXZ(archivePath, versionDir)
 	}
 	if err != nil {
 		os.RemoveAll(versionDir)
@@ -90,14 +125,41 @@ func InstallFirefox() (string, error) {
 	return exePath, nil
 }
 
-// IsFirefoxInstalled checks if a usable Firefox executable is available.
+// IsFirefoxInstalled checks if a usable Firefox executable is available for
+// the VIBIUM_ENGINE_CHANNEL channel.
 func IsFirefoxInstalled() bool {
-	p, err := paths.GetFirefoxExecutable()
+	return IsFirefoxInstalledForChannel("")
+}
+
+// IsFirefoxInstalledForChannel checks a specific channel's cache. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default.
+func IsFirefoxInstalledForChannel(channel string) bool {
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
+	p, err := paths.GetFirefoxExecutableForChannel(channel)
 	if err != nil {
 		return false
 	}
 	_, err = os.Stat(p)
 	return err == nil
+}
+
+// resolveFirefoxVersion returns the Firefox version to install:
+// VIBIUM_ENGINE_VERSION when set, the baked known-good version for the
+// release channel, otherwise the channel's current version from Mozilla's
+// product-details JSON. Release installs stay off the network and off
+// untested versions — Firefox 155 broke every fresh install on its release
+// day (#464) because this used to resolve "latest" for everyone. Beta
+// keeps tracking the current beta: a pinned beta would blind beta-watch.
+func resolveFirefoxVersion(channel string) (string, error) {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+		return v, nil
+	}
+	if channel == "release" {
+		return pinnedFirefoxVersion, nil
+	}
+	return fetchLatestFirefoxVersion(channel)
 }
 
 // fetchLatestFirefoxVersion resolves the current version for a channel from
@@ -140,17 +202,104 @@ func fetchLatestFirefoxVersion(channel string) (string, error) {
 // firefoxDownloadURL returns the Mozilla archive URL for this platform.
 // Betas live under the same releases/ tree as stable versions.
 func firefoxDownloadURL(version string) string {
-	base := "https://ftp.mozilla.org/pub/firefox/releases/" + version
-	switch runtime.GOOS {
+	return firefoxDownloadURLFor(runtime.GOOS, runtime.GOARCH, version)
+}
+
+func firefoxDownloadURLFor(goos, goarch, version string) string {
+	segments := strings.Split(firefoxArchiveRelPath(goos, goarch, version), "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "https://ftp.mozilla.org/pub/firefox/releases/" + version + "/" + strings.Join(segments, "/")
+}
+
+// firefoxArchiveRelPath returns the archive's path relative to the release
+// directory, unescaped, exactly as it appears in Mozilla's SHA256SUMS.
+func firefoxArchiveRelPath(goos, goarch, version string) string {
+	switch goos {
 	case "darwin":
-		return base + "/mac/en-US/" + url.PathEscape("Firefox "+version+".dmg")
+		return "mac/en-US/Firefox " + version + ".dmg"
 	default: // linux
 		arch := "linux-x86_64"
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			arch = "linux-aarch64"
 		}
-		return base + "/" + arch + "/en-US/firefox-" + version + ".tar.xz"
+		return arch + "/en-US/firefox-" + version + ".tar.xz"
 	}
+}
+
+// verifyFirefoxArchive checks the downloaded archive against Mozilla's
+// published SHA256SUMS for the release, before anything unpacks it.
+func verifyFirefoxArchive(archivePath, version string) error {
+	sums, err := fetchFirefoxChecksums(version)
+	if err != nil {
+		return fmt.Errorf("fetching SHA256SUMS: %w", err)
+	}
+	relPath := firefoxArchiveRelPath(runtime.GOOS, runtime.GOARCH, version)
+	if err := verifyArchiveAgainstSums(archivePath, sums, relPath); err != nil {
+		return err
+	}
+	fmt.Printf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
+	return nil
+}
+
+// fetchFirefoxChecksums downloads the SHA256SUMS body for a release.
+func fetchFirefoxChecksums(version string) (string, error) {
+	resp, err := http.Get("https://ftp.mozilla.org/pub/firefox/releases/" + version + "/SHA256SUMS")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// verifyArchiveAgainstSums compares the file's SHA256 with the entry for
+// relPath in a SHA256SUMS body (lines of "<hex>  <path>").
+func verifyArchiveAgainstSums(archivePath, sums, relPath string) error {
+	want := findFirefoxChecksum(sums, relPath)
+	if want == "" {
+		return fmt.Errorf("no SHA256SUMS entry for %q", relPath)
+	}
+	got, err := sha256File(archivePath)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("SHA256 mismatch for %q: got %s, want %s", relPath, got, want)
+	}
+	return nil
+}
+
+// findFirefoxChecksum returns the hash listed for relPath, or "" if absent.
+func findFirefoxChecksum(sums, relPath string) string {
+	for _, line := range strings.Split(sums, "\n") {
+		hash, path, ok := strings.Cut(line, "  ")
+		if ok && path == relPath {
+			return hash
+		}
+	}
+	return ""
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // downloadToTemp downloads a URL to a temp file and returns its path.
@@ -172,7 +321,8 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 	}
 	tmpPath := tmpFile.Name()
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return "", err
@@ -187,13 +337,7 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 // installFirefoxDMG mounts the DMG and copies Firefox.app into versionDir.
 // cp -R (not Go file walking) preserves the app bundle's symlinks and
 // permissions, which code signing validation depends on.
-func installFirefoxDMG(downloadURL, versionDir string) error {
-	dmgPath, err := downloadToTemp(downloadURL, "firefox-*.dmg")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(dmgPath)
-
+func installFirefoxDMG(dmgPath, versionDir string) error {
 	mountPoint, err := os.MkdirTemp("", "firefox-dmg-")
 	if err != nil {
 		return err
@@ -213,13 +357,7 @@ func installFirefoxDMG(downloadURL, versionDir string) error {
 
 // installFirefoxTarXZ extracts the Linux tar.xz (a firefox/ directory) into
 // versionDir. The system tar handles xz; Go's stdlib does not.
-func installFirefoxTarXZ(downloadURL, versionDir string) error {
-	tarPath, err := downloadToTemp(downloadURL, "firefox-*.tar.xz")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tarPath)
-
+func installFirefoxTarXZ(tarPath, versionDir string) error {
 	if out, err := exec.Command("tar", "-xJf", tarPath, "-C", versionDir).CombinedOutput(); err != nil {
 		return fmt.Errorf("extracting Firefox archive failed: %w: %s", err, out)
 	}

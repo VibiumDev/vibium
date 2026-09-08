@@ -26,7 +26,7 @@ func exitOnFalse(cmd *cobra.Command, result *agent.ToolsCallResult) {
 func newIsCmd() *cobra.Command {
 	isCmd := &cobra.Command{
 		Use:   "is",
-		Short: "Check element state (visible, enabled, checked, actionable)",
+		Short: "Check element state (visible, enabled, set, actionable)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
@@ -68,13 +68,13 @@ func newIsCmd() *cobra.Command {
 	}
 
 	checkedCmd := &cobra.Command{
-		Use:   "checked [selector]",
+		Use:   "set [selector]",
 		Short: "Check if a checkbox or radio is checked",
-		Example: `  vibium is checked "input[type=checkbox]"
+		Example: `  vibium is set "input[type=checkbox]"
   # Prints true or false`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_is_checked", map[string]interface{}{"selector": args[0]})
+			result, err := daemonCall("browser_is_set", map[string]interface{}{"selector": args[0]})
 			if err != nil {
 				printError(err)
 				return
@@ -111,7 +111,9 @@ func newIsCmd() *cobra.Command {
 				selector = args[1]
 			}
 
-			fmt.Printf("\nChecking actionability for selector: %s\n", selector)
+			if !jsonOutput {
+				fmt.Printf("\nChecking actionability for selector: %s\n", selector)
+			}
 
 			// Evaluate actionability script
 			script := `(() => {
@@ -124,8 +126,8 @@ func newIsCmd() *cobra.Command {
 				const visible = rect.width > 0 && rect.height > 0 &&
 					style.visibility !== 'hidden' && style.display !== 'none';
 
-				const cx = rect.x + rect.width/2, cy = rect.y + rect.height/2;
-				const hit = document.elementFromPoint(cx, cy);
+				` + api.InViewCenterJS + `
+				const hit = document.elementFromPoint(px, py);
 				const receivesEvents = hit && (el === hit || el.contains(hit));
 
 				let enabled = true;
@@ -173,7 +175,7 @@ func newIsCmd() *cobra.Command {
 				ReceivesEvents bool   `json:"receivesEvents"`
 				Enabled        bool   `json:"enabled"`
 				Editable       bool   `json:"editable"`
-				Error          string `json:"error"`
+				Error          string `json:"error,omitempty"`
 			}
 			if err := json.Unmarshal([]byte(resultText), &actionResult); err != nil {
 				printError(fmt.Errorf("failed to parse actionability result: %w", err))
@@ -181,6 +183,13 @@ func newIsCmd() *cobra.Command {
 			}
 			if actionResult.Error != "" {
 				printError(fmt.Errorf("%s", actionResult.Error))
+				return
+			}
+
+			// The five booleans are the result; a string would lose them.
+			// Struct-valued like paths --json (#392).
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: actionResult})
 				return
 			}
 

@@ -157,15 +157,16 @@ describe('MCP Server: Protocol', () => {
     assert.ok(response.result.capabilities.tools, 'Should have tools capability');
   });
 
-  test('tools/list returns all 85 browser tools', async () => {
+  test('tools/list returns all 87 tools including Check and Run', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 85, 'Should have 85 tools');
+    assert.strictEqual(response.result.tools.length, 87, 'Should have 87 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
+      'vibium_check', 'vibium_run',
       'browser_start', 'browser_navigate', 'browser_click', 'browser_type',
       'browser_screenshot', 'browser_find', 'browser_evaluate', 'browser_stop',
       'browser_get_text', 'browser_get_url', 'browser_get_title',
@@ -179,11 +180,11 @@ describe('MCP Server: Protocol', () => {
       'browser_fill', 'browser_press',
       'browser_back', 'browser_forward', 'browser_reload',
       'browser_get_value', 'browser_get_attribute', 'browser_is_visible',
-      'browser_check', 'browser_uncheck', 'browser_scroll_into_view',
+      'browser_set', 'browser_unset', 'browser_scroll_into_view',
       'browser_wait_for_url', 'browser_wait_for_load', 'browser_sleep',
       'browser_map', 'browser_diff_map', 'browser_pdf', 'browser_highlight',
       'browser_dblclick', 'browser_focus', 'browser_count',
-      'browser_is_enabled', 'browser_is_checked',
+      'browser_is_enabled', 'browser_is_set',
       'browser_wait_for_text', 'browser_wait_for_fn',
       'browser_dialog_accept', 'browser_dialog_dismiss',
       'browser_get_cookies', 'browser_set_cookie', 'browser_delete_cookies',
@@ -825,7 +826,7 @@ describe('MCP Server: Recording', { timeout: 120000 }, () => {
 
     assert.ok(!response.result.isError, 'Should not be an error');
     assert.ok(
-      response.result.content[0].text.includes('Recording saved'),
+      response.result.content[0].text.includes('Saved'),
       'Should confirm save'
     );
 

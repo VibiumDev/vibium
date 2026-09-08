@@ -1,8 +1,11 @@
+import { RunOptions } from '../run';
+import { CheckOptions, RecordedCheckOptions } from '../check';
 import { parentPort, workerData, MessagePort } from 'worker_threads';
 import { browser, Browser } from '../browser';
 import { Page } from '../page';
 import { BrowserContext } from '../context';
 import { Element, SelectorOptions } from '../element';
+import { WebSocketInfo } from '../websocket';
 
 interface WorkerData {
   signal: Int32Array;
@@ -141,6 +144,28 @@ const handlers: Record<string, Handler> = {
   // Browser commands
   // ========================
 
+  'browser.run': async (args) => {
+    const [goal, options] = args as [string, RunOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.run(goal, options);
+  },
+  'page.run': async (args) => {
+    const [pageId, goal, options] = args as [number, string, RunOptions];
+    return getPage(pageId).run(goal, options);
+  },
+  'check.record': async (args) => {
+    const [claim, options] = args as [string, RecordedCheckOptions];
+    return browser.check(claim, options);
+  },
+  'browser.check': async (args) => {
+    const [claim, options] = args as [string, CheckOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.check(claim, options);
+  },
+  'page.check': async (args) => {
+    const [pageId, claim, options] = args as [number, string, CheckOptions];
+    return getPage(pageId).check(claim, options);
+  },
   'browser.start': async (args) => {
     const [url, options] = args as [string | undefined, {
       engine?: 'chrome' | 'firefox';
@@ -344,8 +369,8 @@ const handlers: Record<string, Handler> = {
   },
 
   'page.pdf': async (args) => {
-    const [pageId] = args as [number];
-    const buffer = await getPage(pageId).pdf();
+    const [pageId, options] = args as [number, unknown];
+    const buffer = await getPage(pageId).pdf(options as any);
     return { data: buffer.toString('base64') };
   },
 
@@ -398,19 +423,19 @@ const handlers: Record<string, Handler> = {
 
   'page.waitForURL': async (args) => {
     const [pageId, pattern, options] = args as [number, string, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.url(pattern, options);
+    await getPage(pageId).waitForURL(pattern, options);
     return { success: true };
   },
 
   'page.waitForLoad': async (args) => {
     const [pageId, state, options] = args as [number, string | undefined, { timeout?: number } | undefined];
-    await getPage(pageId).waitUntil.loaded(state, options);
+    await getPage(pageId).waitForLoad(state, options);
     return { success: true };
   },
 
   'page.waitForFunction': async (args) => {
     const [pageId, fn, options] = args as [number, string, { timeout?: number } | undefined];
-    const value = await getPage(pageId).waitUntil(fn, options);
+    const value = await getPage(pageId).waitForFunction(fn, options);
     return { value };
   },
 
@@ -740,6 +765,20 @@ const handlers: Record<string, Handler> = {
 
   // --- Page events (simplified for sync) ---
 
+  'page.exposeWithCallback': async (args) => {
+    const [pageId, name, handlerId] = args as [number, string, string];
+    const page = getPage(pageId);
+    await page.expose(name, async (...fnArgs: unknown[]) => {
+      const outcome = await invokeMainThread(handlerId, fnArgs) as
+        { ok: boolean; value?: unknown; error?: string } | null;
+      if (!outcome || outcome.ok !== true) {
+        throw new Error(outcome?.error ?? `${name} handler failed`);
+      }
+      return outcome.value;
+    });
+    return { success: true };
+  },
+
   'page.onDialog': async (args) => {
     const [pageId, action] = args as [number, 'accept' | 'dismiss'];
     const page = getPage(pageId);
@@ -875,7 +914,7 @@ const handlers: Record<string, Handler> = {
     const page = getPage(pageId);
     onWebSocketHandlerIds.set(pageId, handlerId);
     let nextWsId = 0;
-    page.onWebSocket((ws) => {
+    const callback = (ws: WebSocketInfo) => {
       const hid = onWebSocketHandlerIds.get(pageId);
       if (!hid) return;
       const wsId = nextWsId++;
@@ -901,7 +940,19 @@ const handlers: Record<string, Handler> = {
           data: { type: 'close', wsId, code, reason },
         });
       });
-    });
+    };
+    page.onWebSocket(callback);
+    // The sync caller has no promise to await, so hold the blocking bridge
+    // call until the engine has acknowledged the install, and let a failed
+    // install raise here, the only place a sync caller can see it (#351).
+    // A raised call must have no effect, so unregister before rethrowing;
+    // a retry then registers once and re-sends the install.
+    try {
+      await page._whenWebSocketSetup();
+    } catch (err) {
+      page._removeWebSocketCallback(callback);
+      throw err;
+    }
     return { success: true };
   },
 
@@ -977,22 +1028,6 @@ const handlers: Record<string, Handler> = {
   },
 
   // ========================
-  // Screencast commands (page-scoped)
-  // ========================
-
-  'screencast.start': async (args) => {
-    const [pageId, options] = args as [number, any];
-    await getPage(pageId).screencast.start(options);
-    return { success: true };
-  },
-
-  'screencast.stop': async (args) => {
-    const [pageId, options] = args as [number, any];
-    const buffer = await getPage(pageId).screencast.stop(options);
-    return { data: buffer.toString('base64') };
-  },
-
-  // ========================
   // Recording commands (context-scoped)
   // ========================
 
@@ -1004,8 +1039,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stop': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stop(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stop(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startChunk': async (args) => {
@@ -1016,8 +1051,8 @@ const handlers: Record<string, Handler> = {
 
   'recording.stopChunk': async (args) => {
     const [contextId, options] = args as [number, any];
-    const buffer = await getContext(contextId).recording.stopChunk(options);
-    return { data: buffer.toString('base64') };
+    const { bytes, ...rest } = await getContext(contextId).recording.stopChunk(options);
+    return bytes ? { ...rest, data: bytes.toString('base64') } : rest;
   },
 
   'recording.startGroup': async (args) => {
@@ -1196,15 +1231,13 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
-  'element.check': async (args) => {
-    const [elementId, options] = args as [number, any];
-    await getElement(elementId).check(options);
-    return { success: true };
+  'element.set': async (args) => {
+    const [elementId, value, options] = args;
+    await getElement(elementId).set(value, options);
   },
-
-  'element.uncheck': async (args) => {
+  'element.unset': async (args) => {
     const [elementId, options] = args as [number, any];
-    await getElement(elementId).uncheck(options);
+    await getElement(elementId).unset(options);
     return { success: true };
   },
 
@@ -1223,6 +1256,12 @@ const handlers: Record<string, Handler> = {
   'element.focus': async (args) => {
     const [elementId, options] = args as [number, any];
     await getElement(elementId).focus(options);
+    return { success: true };
+  },
+
+  'element.highlight': async (args) => {
+    const [elementId, options] = args as [number, any];
+    await getElement(elementId).highlight(options);
     return { success: true };
   },
 
@@ -1323,9 +1362,9 @@ const handlers: Record<string, Handler> = {
     return { enabled };
   },
 
-  'element.isChecked': async (args) => {
+  'element.isSet': async (args) => {
     const [elementId] = args as [number];
-    const checked = await getElement(elementId).isChecked();
+    const checked = await getElement(elementId).isSet();
     return { checked };
   },
 

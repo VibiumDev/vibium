@@ -1,5 +1,6 @@
 package com.vibium;
 
+import com.vibium.engine.TestServer;
 import com.vibium.errors.*;
 import com.vibium.types.FindOptions;
 import com.vibium.types.StartOptions;

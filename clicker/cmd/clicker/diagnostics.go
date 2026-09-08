@@ -24,30 +24,73 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
+// pathsInfo is the --json result for the paths command. Missing binaries are
+// omitted rather than carrying a "not found" sentinel, so scripts can test
+// key presence instead of scraping the human text (#392).
+type pathsInfo struct {
+	Engine       string `json:"engine"`
+	CacheDir     string `json:"cacheDir,omitempty"`
+	Chrome       string `json:"chrome,omitempty"`
+	Chromedriver string `json:"chromedriver,omitempty"`
+	Firefox      string `json:"firefox,omitempty"`
+}
+
 func newPathsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "paths",
-		Short: "Print browser and cache paths",
+		Short: "Print browser and cache paths for the selected engine",
+		Example: `  vibium paths
+  # Cache directory: ~/Library/Caches/vibium
+  # Chrome: .../Google Chrome for Testing
+  # Chromedriver: .../chromedriver
+
+  vibium --engine firefox paths
+  # Cache directory: ~/Library/Caches/vibium
+  # Firefox: .../Firefox.app/Contents/MacOS/firefox
+
+  vibium paths --json
+  # {"ok":true,"result":{"engine":"chrome","cacheDir":"...","chrome":"...","chromedriver":"..."}}`,
 		Run: func(cmd *cobra.Command, args []string) {
-			cacheDir, err := paths.GetCacheDir()
-			if err != nil {
-				fmt.Printf("Cache directory: error: %v\n", err)
+			info := pathsInfo{Engine: engineName}
+			cacheDir, cacheErr := paths.GetCacheDir()
+			if cacheErr == nil {
+				info.CacheDir = cacheDir
+			}
+			if engineName == "firefox" {
+				if p, err := paths.GetFirefoxExecutable(); err == nil {
+					info.Firefox = p
+				}
 			} else {
-				fmt.Printf("Cache directory: %s\n", cacheDir)
+				if p, err := paths.GetChromeExecutable(); err == nil {
+					info.Chrome = p
+				}
+				if p, err := paths.GetChromedriverPath(); err == nil {
+					info.Chromedriver = p
+				}
 			}
 
-			chromePath, err := paths.GetChromeExecutable()
-			if err != nil {
-				fmt.Println("Chrome: not found")
-			} else {
-				fmt.Printf("Chrome: %s\n", chromePath)
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: info})
+				return
 			}
 
-			chromedriverPath, err := paths.GetChromedriverPath()
-			if err != nil {
-				fmt.Println("Chromedriver: not found")
+			if cacheErr != nil {
+				fmt.Printf("Cache directory: error: %v\n", cacheErr)
 			} else {
-				fmt.Printf("Chromedriver: %s\n", chromedriverPath)
+				fmt.Printf("Cache directory: %s\n", info.CacheDir)
+			}
+			printPath := func(label, path string) {
+				if path == "" {
+					fmt.Printf("%s: not found\n", label)
+				} else {
+					fmt.Printf("%s: %s\n", label, path)
+				}
+			}
+			if engineName == "firefox" {
+				printPath("Firefox", info.Firefox)
+			} else {
+				printPath("Chrome", info.Chrome)
+				printPath("Chromedriver", info.Chromedriver)
 			}
 		},
 	}
@@ -81,7 +124,7 @@ func newInstallCmd() *cobra.Command {
   vibium install --engine firefox
   # Installing Firefox v153.0.3 (release channel)...
 
-  vibium install --engine firefox --firefox-channel beta
+  vibium install --engine firefox --channel beta
   # Installing Firefox v154.0b6 (beta channel)...`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if engineName == "firefox" {

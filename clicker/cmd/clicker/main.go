@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/log"
@@ -54,15 +56,15 @@ var version = "dev"
 
 // Global flags
 var (
-	headless       bool
-	verbose        bool
-	jsonOutput     bool
-	session        string
-	engineName     string
-	firefoxChannel string
-	headlessSet    bool
-	engineSet      bool
-	channelSet     bool
+	headless      bool
+	verbose       bool
+	jsonOutput    bool
+	session       string
+	engineName    string
+	engineChannel string
+	headlessSet   bool
+	engineSet     bool
+	channelSet    bool
 )
 
 // defaultEngine returns the browser engine to launch when --engine is not given.
@@ -77,12 +79,25 @@ func main() {
 	progName := filepath.Base(os.Args[0])
 
 	rootCmd := &cobra.Command{
-		Use:   progName,
+		Use: progName + " [command | \"<prompt>\"]",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 && !strings.ContainsAny(args[0], " \t\r\n") {
+				return fmt.Errorf("unknown command %q; for a one-word goal use %s run %q", args[0], cmd.Name(), args[0])
+			}
+			return cobra.NoArgs(cmd, args)
+		},
+		Example: `  vibium "open example.com and find its contact page"
+  # Equivalent to vibium run "open example.com and find its contact page".
+  vibium run "stop"
+  # One-word prompts need the explicit run command.`,
 		Short: "Browser automation for AI agents and humans",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if isReadyCommand(cmd) {
+				return nil
+			}
 			headlessSet = cmd.Flags().Changed("headless")
 			engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
-			channelSet = cmd.Flags().Changed("firefox-channel") || os.Getenv("VIBIUM_FIREFOX_CHANNEL") != ""
+			channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
 			// Enable logging only if --verbose is used
 			if verbose {
 				log.Setup(log.LevelVerbose)
@@ -94,15 +109,39 @@ func main() {
 					return err
 				}
 			}
+			if cmd.Name() == "pipe" {
+				noBrowser, _ := cmd.Flags().GetBool("no-browser")
+				if noBrowser {
+					return paths.ValidateSessionName(paths.SessionName())
+				}
+			}
 			if engineName != "chrome" && engineName != "firefox" {
 				return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
+			}
+			// Channels differ per engine: Mozilla's are release/beta, Chrome
+			// for Testing's are stable/beta/dev/canary.
+			if engineChannel != "" {
+				valid := map[string][]string{
+					"firefox": {"release", "beta"},
+					"chrome":  {"stable", "beta", "dev", "canary"},
+				}[engineName]
+				if !slices.Contains(valid, engineChannel) {
+					return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
+						engineChannel, engineName, strings.Join(valid, ", "))
+				}
+			}
+			// VIBIUM_ENGINE_PATH is an engine-neutral name but only Firefox
+			// implements it. Say so rather than accepting the setting and
+			// ignoring it.
+			if engineName != "firefox" && os.Getenv("VIBIUM_ENGINE_PATH") != "" {
+				return fmt.Errorf("VIBIUM_ENGINE_PATH is not supported for engine %q (firefox only)", engineName)
 			}
 			// Bridge the flag to the env var, like --session: the paths
 			// package resolves the channel from the environment at both
 			// install and launch time, and a daemon child process spawned
 			// later inherits it.
-			if firefoxChannel != "" {
-				if err := os.Setenv("VIBIUM_FIREFOX_CHANNEL", firefoxChannel); err != nil {
+			if engineChannel != "" {
+				if err := os.Setenv("VIBIUM_ENGINE_CHANNEL", engineChannel); err != nil {
 					return err
 				}
 			}
@@ -116,7 +155,7 @@ func main() {
 	// Add global flags for browser commands
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
-	rootCmd.PersistentFlags().StringVar(&firefoxChannel, "firefox-channel", os.Getenv("VIBIUM_FIREFOX_CHANNEL"), "Firefox channel to install and run: release (default) or beta (env: VIBIUM_FIREFOX_CHANNEL)")
+	rootCmd.PersistentFlags().StringVar(&engineChannel, "channel", os.Getenv("VIBIUM_ENGINE_CHANNEL"), "Engine release channel to install and run (env: VIBIUM_ENGINE_CHANNEL); firefox: release (default) or beta; chrome: stable (default), beta, dev, or canary")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")
@@ -127,6 +166,7 @@ func main() {
 	rootCmd.AddCommand(newCompletionCmd(rootCmd))
 
 	// Register all commands
+	rootCmd.AddCommand(newCommandsCmd(rootCmd))
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newPathsCmd())
 	rootCmd.AddCommand(newIsInstalledCmd())
@@ -135,6 +175,10 @@ func main() {
 	rootCmd.AddCommand(newWSTestCmd())
 	rootCmd.AddCommand(newBiDiTestCmd())
 	rootCmd.AddCommand(newNavigateCmd())
+	rootCmd.AddCommand(newCheckCmd())
+	runCmd := newRunCmd()
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(newReadyCmd())
 	rootCmd.AddCommand(newScreenshotCmd())
 	rootCmd.AddCommand(newEvalCmd())
 	rootCmd.AddCommand(newFindCmd())
@@ -161,8 +205,8 @@ func main() {
 	rootCmd.AddCommand(newStopCmd())
 	rootCmd.AddCommand(newFillCmd())
 	rootCmd.AddCommand(newPressCmd())
-	rootCmd.AddCommand(newCheckCmd())
-	rootCmd.AddCommand(newUncheckCmd())
+	rootCmd.AddCommand(newSetCmd())
+	rootCmd.AddCommand(newUnsetCmd())
 	rootCmd.AddCommand(newValueCmd())
 	rootCmd.AddCommand(newAttrCmd())
 	rootCmd.AddCommand(newA11yTreeCmd())
@@ -199,6 +243,8 @@ func main() {
 
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(progName + " v{{.Version}}\n")
+
+	rootCmd.SetArgs(promptArgs(rootCmd, runCmd, os.Args[1:]))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

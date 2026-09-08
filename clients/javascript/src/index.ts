@@ -2,8 +2,7 @@ export { browser, firefox, chrome, Browser, StartOptions } from './browser';
 export { Page, Keyboard, Mouse, Touch, ScreenshotOptions, A11yNode, FindOptions } from './page';
 export { Clock, ClockInstallOptions } from './clock';
 export { BrowserContext, Cookie, SetCookieParam, StorageState, OriginState } from './context';
-export { Recording, RecordingStartOptions, RecordingStopOptions } from './recording';
-export { Screencast, ScreencastStartOptions, ScreencastStopOptions } from './screencast';
+export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary } from './recording';
 export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FluentElement, fluent } from './element';
 export { Route } from './route';
 export { Request, Response } from './network';
@@ -23,7 +22,6 @@ export {
   ClockSync,
   BrowserContextSync,
   RecordingSync,
-  ScreencastSync,
 } from './sync';
 
 // Error types
@@ -33,3 +31,9 @@ export {
   ElementNotFoundError,
   BrowserCrashedError,
 } from './utils/errors';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from './check';
+
+export { RunOptions, RunResult } from './run';
+
+export { ModelOptions } from './model-options';

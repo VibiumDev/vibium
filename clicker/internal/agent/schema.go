@@ -1,8 +1,30 @@
 package agent
 
+// noPageParam lists the tools that are not scoped to a page: session
+// lifecycle, page management, recording control, and plain waits. Every
+// other tool accepts an optional page argument (added in GetToolSchemas)
+// that pins the call to one browsing context (#383).
+var noPageParam = map[string]bool{
+	"browser_start":              true,
+	"browser_stop":               true,
+	"browser_new_page":           true,
+	"browser_list_pages":         true,
+	"browser_switch_page":        true,
+	"browser_sleep":              true,
+	"browser_record_start":       true,
+	"browser_record_stop":        true,
+	"browser_record_start_group": true,
+	"browser_record_stop_group":  true,
+	"browser_record_start_chunk": true,
+	"browser_record_stop_chunk":  true,
+	"browser_download_set_dir":   true,
+}
+
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
-	return []Tool{
+	tools := []Tool{
+		{Name: "vibium_run", Description: "Accomplish a goal in the current local browser session using configured AI provider and constrained browser tools. Returns completed or not_completed with evidence. Live only; uses VIBIUM_AI_* configuration.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"goal": map[string]interface{}{"type": "string"}}, "required": []string{"goal"}, "additionalProperties": false}},
+		{Name: "vibium_check", Description: "Independently verify an explicit claim against the current local Chrome/Firefox session, or a read-only recording zip. Returns passed, failed, or inconclusive with evidence. Recorded mode never launches a browser. Uses shared AI configuration from the server environment.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"claim": map[string]interface{}{"type": "string"}, "record": map[string]interface{}{"type": "string", "description": "Optional path to an existing version 8 Vibium record.zip or Playwright trace.zip on this host; selects archive mode instead of the live browser."}}, "required": []string{"claim"}, "additionalProperties": false}},
 		{
 			Name:        "browser_start",
 			Description: "Start a browser session",
@@ -262,6 +284,11 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "URL to navigate to in the new page (optional)",
 					},
+					"isolated": map[string]interface{}{
+						"type": "boolean",
+						"description": "Open the page in its own isolated context with separate cookies and storage (default: false). " +
+							"Concurrent callers sharing this server should open an isolated page and pass its id as the page argument on every call.",
+					},
 				},
 				"additionalProperties": false,
 			},
@@ -295,13 +322,13 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_close_page",
-			Description: "Close a browser page by index (default: current page)",
+			Description: "Close a browser page by id or index (default: current page)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"index": map[string]interface{}{
 						"type":        "number",
-						"description": "Page index to close (default: 0, the current page)",
+						"description": "Page index to close (default: 0, the current page); ignored when a page id is given",
 						"default":     0,
 					},
 				},
@@ -371,7 +398,7 @@ func GetToolSchemas() []Tool {
 					},
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for element to scroll to (optional, defaults to viewport center)",
+						"description": "CSS selector for the element to scroll within (optional; without it the page scrolls at the viewport center)",
 					},
 				},
 				"additionalProperties": false,
@@ -676,11 +703,12 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_check",
-			Description: "Check a checkbox or radio button. Idempotent — does nothing if already checked.",
+			Name:        "browser_set",
+			Description: "Set checkbox/radio selection. Defaults to true; false clears a checkbox. Idempotent.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"value": map[string]interface{}{"type": "boolean", "default": true, "description": "Desired selection state; false clears a checkbox"},
 					"selector": map[string]interface{}{
 						"type":        "string",
 						"description": "CSS selector for the checkbox or radio button",
@@ -696,7 +724,7 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_uncheck",
+			Name:        "browser_unset",
 			Description: "Uncheck a checkbox. Idempotent — does nothing if already unchecked.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -818,6 +846,51 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "Output filename for the PDF (e.g., page.pdf)",
 					},
+					"landscape": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Landscape orientation (default: portrait)",
+					},
+					"scale": map[string]interface{}{
+						"type":        "number",
+						"description": "Print scale, 0.1-2 (default: 1)",
+					},
+					"background": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Print background graphics (default: false)",
+					},
+					"marginTop": map[string]interface{}{
+						"type":        "number",
+						"description": "Top margin in cm (default: 1)",
+					},
+					"marginBottom": map[string]interface{}{
+						"type":        "number",
+						"description": "Bottom margin in cm (default: 1)",
+					},
+					"marginLeft": map[string]interface{}{
+						"type":        "number",
+						"description": "Left margin in cm (default: 1)",
+					},
+					"marginRight": map[string]interface{}{
+						"type":        "number",
+						"description": "Right margin in cm (default: 1)",
+					},
+					"pageWidth": map[string]interface{}{
+						"type":        "number",
+						"description": "Page width in cm (default: 21.59)",
+					},
+					"pageHeight": map[string]interface{}{
+						"type":        "number",
+						"description": "Page height in cm (default: 27.94)",
+					},
+					"pageRanges": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": []string{"string", "integer"}},
+						"description": "Pages to print, e.g. [1, \"3-5\"] (default: all)",
+					},
+					"shrinkToFit": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Shrink content to fit the page width (default: true)",
+					},
 				},
 				"additionalProperties": false,
 			},
@@ -908,7 +981,7 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
-			Name:        "browser_is_checked",
+			Name:        "browser_is_set",
 			Description: "Check if a checkbox or radio button is checked. Returns true/false.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -1341,7 +1414,7 @@ func GetToolSchemas() []Tool {
 				"properties": map[string]interface{}{
 					"name": map[string]interface{}{
 						"type":        "string",
-						"description": "Name for the recording (default: \"record\")",
+						"description": "Name for the recording (default: \"record\"; also seeds the default filename stem)",
 					},
 					"title": map[string]interface{}{
 						"type":        "string",
@@ -1378,19 +1451,44 @@ func GetToolSchemas() []Tool {
 						"description": "JPEG quality 0.0-1.0 (default: 0.5, ignored for png)",
 						"default":     0.5,
 					},
+					"video": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Omit to record video when the engine supports it (Firefox 154+). Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
+					},
+					"video_width": map[string]interface{}{
+						"type":        "number",
+						"description": "Video width in pixels (defaults to the viewport)",
+					},
+					"video_height": map[string]interface{}{
+						"type":        "number",
+						"description": "Video height in pixels (defaults to the viewport)",
+					},
+					"video_frame_rate": map[string]interface{}{
+						"type":        "number",
+						"description": "Video frame rate (engine default if omitted)",
+					},
+					"video_remote": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"keep"},
+						"description": "On a remote browser connection, \"keep\" records anyway and leaves the video on the remote host; the stop result reports its remote path. Retrieval and cleanup are the caller's.",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Where the recording ZIP lands at stop (default: a timestamped record-<timestamp>.zip in the server's working directory, or ~/Documents/Vibium when that isn't writable)",
+					},
 				},
 				"additionalProperties": false,
 			},
 		},
 		{
 			Name:        "browser_record_stop",
-			Description: "Stop recording and save to a Playwright-compatible trace ZIP file",
+			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "Output file path (default: record.zip)",
+						"description": "Output file path (overrides the path declared at start; default: record.zip)",
 					},
 				},
 				"additionalProperties": false,
@@ -1494,4 +1592,31 @@ func GetToolSchemas() []Tool {
 			},
 		},
 	}
+
+	// One definition of the page argument for every page-scoped tool, added
+	// here instead of once per literal so a new tool cannot forget it.
+	for i := range tools {
+		if noPageParam[tools[i].Name] {
+			continue
+		}
+		props, ok := tools[i].InputSchema["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		props["page"] = map[string]interface{}{
+			"type": "string",
+			"description": "Page id (from browser_new_page or browser_list_pages) that pins this call to that page instead of the globally current one. " +
+				"Concurrent callers sharing this server should create their own page and pass its id on every call.",
+		}
+	}
+	for i := range tools {
+		if tools[i].Name == "vibium_check" || tools[i].Name == "vibium_run" {
+			props := tools[i].InputSchema["properties"].(map[string]interface{})
+			for _, name := range []string{"provider", "model", "baseURL", "reasoningEffort"} {
+				props[name] = map[string]interface{}{"type": "string", "description": "Per-call model setting override. Changing provider clears inherited model, endpoint, and reasoning effort. Credentials come from the runtime environment."}
+			}
+		}
+	}
+
+	return tools
 }

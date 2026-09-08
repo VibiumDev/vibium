@@ -66,26 +66,9 @@ func (r *Router) handlePageOnWebSocket(session *BrowserSession, cmd bidiCommand)
 		return
 	}
 
-	// Subscribe to script.message events (once per session)
-	session.mu.Lock()
-	needSubscribe := !session.wsSubscribed
-	session.mu.Unlock()
-
-	if needSubscribe {
-		resp, err := r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
-			"events": []string{"script.message"},
-		})
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-		if bidiErr := checkBidiError(resp); bidiErr != nil {
-			r.sendError(session, cmd.ID, bidiErr)
-			return
-		}
-		session.mu.Lock()
-		session.wsSubscribed = true
-		session.mu.Unlock()
+	if err := r.ensureScriptMessageSubscription(session); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
 	}
 
 	// Install preload script (once per session) — applies to all future navigations

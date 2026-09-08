@@ -13,8 +13,7 @@ from .page import Page, Keyboard, Mouse, Touch
 from .element import Element
 from .context import BrowserContext
 from .clock import Clock
-from .recording import Recording
-from .screencast import Screencast
+from .recording import Recording, RecordingResult
 from .dialog import Dialog
 from .route import Route
 from .network import Request, Response
@@ -32,6 +31,9 @@ from ..errors import (
 )
 
 __all__ = [
+    "RunResult",
+    "CheckResult",
+    "CheckEvidence",
     "browser",
     "firefox",
     "chrome",
@@ -44,7 +46,7 @@ __all__ = [
     "BrowserContext",
     "Clock",
     "Recording",
-    "Screencast",
+    "RecordingResult",
     "Dialog",
     "Route",
     "Request",
@@ -60,3 +62,7 @@ __all__ = [
     "ElementNotFoundError",
     "BrowserCrashedError",
 ]
+
+from ..check import CheckResult, CheckEvidence
+
+from ..run import RunResult

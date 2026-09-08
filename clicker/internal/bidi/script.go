@@ -103,12 +103,21 @@ func ParseScriptResult(raw json.RawMessage) (*ScriptResult, error) {
 
 // ParseScriptResponse decodes a full BiDi response envelope, { "result": ... },
 // as returned by the proxy's internal command path. See ParseScriptResult.
+// A BiDi error envelope is surfaced with the browser's own error and message
+// — it also has no result member, and reporting it as such hid errors like
+// Firefox refusing script evaluation on its privileged initial page (#358).
 func ParseScriptResponse(raw json.RawMessage) (*ScriptResult, error) {
 	var env struct {
-		Result json.RawMessage `json:"result"`
+		Type    string          `json:"type"`
+		Error   string          `json:"error"`
+		Message string          `json:"message"`
+		Result  json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil, fmt.Errorf("failed to parse script result: %w", err)
+	}
+	if env.Type == "error" {
+		return nil, fmt.Errorf("%s: %s", env.Error, env.Message)
 	}
 	if len(env.Result) == 0 {
 		return nil, fmt.Errorf("failed to parse script result: no result member")

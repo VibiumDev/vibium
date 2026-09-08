@@ -17,6 +17,9 @@ The AI will control a real browser to do it. Vibium exposes dozens of browser au
 
 ## Prerequisites
 
+For Claude Desktop’s Chat tab, follow the dedicated
+[Claude Desktop setup guide](../how-to-guides/using-vibium-with-claude-desktop.md).
+
 Install one of the supported AI coding assistants:
 
 - **Claude Code:** [claude.ai/download](https://claude.ai/download)
@@ -146,7 +149,7 @@ npx -y vibium install
 On macOS, if you see a Gatekeeper warning about chromedriver, run:
 
 ```bash
-xattr -cr "$(npx -y vibium which chromedriver)"
+xattr -cr "$(npx -y vibium paths | sed -n 's/^Chromedriver: //p')"
 ```
 
 ### Changes not taking effect

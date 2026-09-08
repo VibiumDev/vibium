@@ -1,0 +1,188 @@
+{
+  "capturedAt": "2026-09-08T01:08:19.281Z",
+  "provider": "openai",
+  "model": "gpt-5.6-sol",
+  "engine": "firefox",
+  "description": "Real model calls on a controlled local shop fixture. Broken mode shows Added to cart but drops the cart write.",
+  "runs": [
+    {
+      "mode": "broken",
+      "run": {
+        "status": "completed",
+        "goal": "Add one battery pack to the cart. Confirm the Added to cart message, then stay on the product page.",
+        "summary": "Added one Vibium Battery Pack to the cart and remained on the product page.",
+        "evidence": [
+          {
+            "type": "observation",
+            "summary": "Cart count updated from 0 to 1."
+          },
+          {
+            "type": "observation",
+            "summary": "The product page displayed the confirmation message “Added to cart”."
+          },
+          {
+            "type": "observation",
+            "summary": "The current URL remained http://127.0.0.1:51868/ and the Vibium Battery Pack product details were still visible."
+          }
+        ]
+      },
+      "check": {
+        "status": "failed",
+        "claim": "Does the cart contain exactly one battery pack? Open the cart and inspect its contents without adding or removing anything.",
+        "summary": "The cart does not contain exactly one battery pack; the opened cart reports that it is empty with 0 items.",
+        "evidence": [
+          {
+            "type": "observation",
+            "summary": "After opening the Cart 1 link, the cart page displayed “0 items,” “Your cart is empty,” and “Looks like you haven’t added anything yet.”"
+          },
+          {
+            "type": "observation",
+            "summary": "The cart URL was http://127.0.0.1:51868/?view=cart."
+          }
+        ]
+      },
+      "parents": [
+        {
+          "method": "vibium:run.run",
+          "startTime": 133,
+          "endTime": 8219,
+          "modelConfig": {
+            "maxActions": 24,
+            "maxOutputTokens": 4096,
+            "model": "gpt-5.6-sol",
+            "provider": "openai",
+            "reasoningEffort": "none",
+            "timeoutMs": 180000
+          },
+          "children": [
+            "vibium:page.url",
+            "vibium:page.eval",
+            "vibium:page.a11yTree",
+            "vibium:element.text",
+            "vibium:element.click",
+            "vibium:element.text",
+            "vibium:page.url"
+          ]
+        },
+        {
+          "method": "vibium:check.run",
+          "startTime": 8267,
+          "endTime": 15722,
+          "modelConfig": {
+            "maxActions": 24,
+            "maxOutputTokens": 4096,
+            "model": "gpt-5.6-sol",
+            "provider": "openai",
+            "reasoningEffort": "none",
+            "timeoutMs": 180000
+          },
+          "children": [
+            "vibium:page.url",
+            "vibium:page.eval",
+            "vibium:page.a11yTree",
+            "vibium:element.click",
+            "vibium:page.url",
+            "vibium:element.text",
+            "vibium:page.a11yTree"
+          ]
+        }
+      ],
+      "video": {
+        "file": "broken.webm",
+        "durationSeconds": 15.676,
+        "checkStartsSeconds": 8.192,
+        "recordingOffsetMs": 75
+      }
+    },
+    {
+      "mode": "fixed",
+      "run": {
+        "status": "completed",
+        "goal": "Add one battery pack to the cart. Confirm the Added to cart message, then stay on the product page.",
+        "summary": "Added one Vibium Battery Pack to the cart and remained on its product page.",
+        "evidence": [
+          {
+            "type": "observation",
+            "summary": "Cart count changed from 0 to 1."
+          },
+          {
+            "type": "observation",
+            "summary": "Product page displayed the confirmation message “Added to cart”."
+          },
+          {
+            "type": "observation",
+            "summary": "Current URL remained http://127.0.0.1:51868/?fixed=1, the battery pack product page."
+          }
+        ]
+      },
+      "check": {
+        "status": "passed",
+        "claim": "Does the cart contain exactly one battery pack? Open the cart and inspect its contents without adding or removing anything.",
+        "summary": "The cart contains exactly one battery pack.",
+        "evidence": [
+          {
+            "type": "observation",
+            "summary": "The cart page shows “1 item” and lists “Vibium Battery Pack” with “Quantity: 1”."
+          },
+          {
+            "type": "observation",
+            "summary": "The cart navigation indicator displays “Cart 1”."
+          }
+        ]
+      },
+      "parents": [
+        {
+          "method": "vibium:run.run",
+          "startTime": 145,
+          "endTime": 7352,
+          "modelConfig": {
+            "maxActions": 24,
+            "maxOutputTokens": 4096,
+            "model": "gpt-5.6-sol",
+            "provider": "openai",
+            "reasoningEffort": "none",
+            "timeoutMs": 180000
+          },
+          "children": [
+            "vibium:page.url",
+            "vibium:page.eval",
+            "vibium:page.a11yTree",
+            "vibium:element.text",
+            "vibium:element.click",
+            "vibium:element.text",
+            "vibium:page.url",
+            "vibium:page.a11yTree"
+          ]
+        },
+        {
+          "method": "vibium:check.run",
+          "startTime": 7563,
+          "endTime": 14009,
+          "modelConfig": {
+            "maxActions": 24,
+            "maxOutputTokens": 4096,
+            "model": "gpt-5.6-sol",
+            "provider": "openai",
+            "reasoningEffort": "none",
+            "timeoutMs": 180000
+          },
+          "children": [
+            "vibium:page.url",
+            "vibium:page.eval",
+            "vibium:page.a11yTree",
+            "vibium:element.click",
+            "vibium:page.url",
+            "vibium:element.text",
+            "vibium:page.a11yTree"
+          ]
+        }
+      ],
+      "video": {
+        "file": "fixed.webm",
+        "durationSeconds": 13.947,
+        "checkStartsSeconds": 7.489,
+        "recordingOffsetMs": 74
+      }
+    }
+  ]
+}
