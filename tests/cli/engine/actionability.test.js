@@ -56,7 +56,7 @@ describe('CLI: Actionability', () => {
 
   test('is actionable honors --json', () => {
     // The five booleans are the whole result, so under --json they must
-    // come back machine-readable, like the is visible/enabled/checked
+    // come back machine-readable, like the is visible/enabled/set
     // siblings (#451).
     const out = execSync(`${VIBIUM} is actionable ${baseURL}/example "a" --json`, {
       encoding: 'utf-8',
@@ -188,7 +188,7 @@ describe('CLI: fillable input types', () => {
 });
 
 describe('CLI: operation preconditions', () => {
-  test('check refuses a non-checkbox instead of silently succeeding (#195)', () => {
+  test('set refuses a non-checkbox instead of silently succeeding (#195)', () => {
     execSync(`${VIBIUM} content '<p id="p">not a checkbox</p><input type="checkbox" id="cb">'`, {
       encoding: 'utf-8',
       timeout: 30000,
@@ -196,15 +196,19 @@ describe('CLI: operation preconditions', () => {
 
     assert.throws(
       () => {
-        execSync(`${VIBIUM} check "#p"`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
+        execSync(`${VIBIUM} set "#p"`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
       },
       /not a checkbox or radio/i,
-      'check on a <p> should be refused, not reported as checked'
+      'set on a <p> should be refused, not reported as checked'
     );
 
     // The real checkbox must still work.
-    const ok = execSync(`${VIBIUM} check "#cb"`, { encoding: 'utf-8', timeout: 30000 });
-    assert.match(ok, /Checked/);
+    execSync(`${VIBIUM} set "#cb"`, { encoding: 'utf-8', timeout: 30000 });
+    const checked = execSync(`${VIBIUM} eval 'document.getElementById("cb").checked'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    assert.strictEqual(checked.trim(), 'true', 'the checkbox should actually be checked');
   });
 
   test('upload refuses a non-file-input with a readable error (#197)', () => {

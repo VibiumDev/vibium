@@ -103,8 +103,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 66 | Type text character by character | `vibium:element.type` | `vibium type <text>` | `browser_type` | `el.type(text, opts?)` | `el.type(text, timeout?)` | `el.type(text)` |
 | 67 | Press a key on focused element | `vibium:element.press` | `vibium press <key>` | `browser_press` | `el.press(key, opts?)` | `el.press(key, timeout?)` | `el.press(key)` |
 | 68 | Clear an input field | `vibium:element.clear` | — | — | `el.clear(opts?)` | `el.clear(timeout?)` | `el.clear()` |
-| 69 | Check a checkbox | `vibium:element.check` | `vibium check <sel>` | `browser_check` | `el.check(opts?)` | `el.check(timeout?)` | `el.check()` |
-| 70 | Uncheck a checkbox | `vibium:element.uncheck` | `vibium uncheck <sel>` | `browser_uncheck` | `el.uncheck(opts?)` | `el.uncheck(timeout?)` | `el.uncheck()` |
+| 69 | Check a checkbox | `vibium:element.set` | `vibium set <sel>` | `browser_set` | `el.set(value?, opts?)` | `el.set(value=True, timeout=...)` | `el.set(value?)` |
+| 70 | Uncheck a checkbox | `vibium:element.unset` | `vibium unset <sel>` | `browser_unset` | `el.unset(opts?)` | `el.unset(timeout?)` | `el.unset()` |
 | 71 | Select a dropdown option | `vibium:element.selectOption` | `vibium select <sel> <val>` | `browser_select` | `el.selectOption(val, opts?)` | `el.select_option(val, timeout?)` | `el.selectOption(val)` |
 | 72 | Hover over an element | `vibium:element.hover` | `vibium hover <sel>` | `browser_hover` | `el.hover(opts?)` | `el.hover(timeout?)` | `el.hover()` |
 | 73 | Focus an element | `vibium:element.focus` | `vibium focus <sel>` | `browser_focus` | `el.focus(opts?)` | `el.focus(timeout?)` | `el.focus()` |
@@ -126,7 +126,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 86 | Check if element is visible | `vibium:element.isVisible` | `vibium is visible <sel>` | `browser_is_visible` | `el.isVisible()` | `el.is_visible()` | `el.isVisible()` |
 | 87 | Check if element is hidden | `vibium:element.isHidden` | — | — | `el.isHidden()` | `el.is_hidden()` | `el.isHidden()` |
 | 88 | Check if element is enabled | `vibium:element.isEnabled` | `vibium is enabled <sel>` | `browser_is_enabled` | `el.isEnabled()` | `el.is_enabled()` | `el.isEnabled()` |
-| 89 | Check if element is checked | `vibium:element.isChecked` | `vibium is checked <sel>` | `browser_is_checked` | `el.isChecked()` | `el.is_checked()` | `el.isChecked()` |
+| 89 | Check if element is checked | `vibium:element.isSet` | `vibium is set <sel>` | `browser_is_set` | `el.isSet()` | `el.is_set()` | `el.isSet()` |
 | 90 | Check if element is editable | `vibium:element.isEditable` | ⬜ | ⬜ | `el.isEditable()` | `el.is_editable()` | `el.isEditable()` |
 | 91 | Get element ARIA role | `vibium:element.role` | — | — | `el.role()` | `el.role()` | `el.role()` |
 | 92 | Get element accessible label | `vibium:element.label` | — | — | `el.label()` | `el.label()` | `el.label()` |
@@ -305,14 +305,48 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 210 | Diagnostic: test a websocket endpoint | — | `vibium ws-test <url>` | — | — | — | — |
 | 211 | Diagnostic: test a BiDi endpoint | — | `vibium bidi-test <url>` | — | — | — | — |
 
-## AI-Native (Planned)
+## Planned AI extensions
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 167 | Assert a visual claim | *TBD* | ⬜ | ⬜ | `page.check(claim)` | `page.check(claim)` | ⬜ |
-| 168 | Perform a natural language action | *TBD* | ⬜ | ⬜ | `page.do(action)` | `page.do(action)` | ⬜ |
-| 169 | NL action with data extraction | *TBD* | ⬜ | ⬜ | `page.do(action, {data})` | `page.do(action, data=...)` | ⬜ |
+| 169 | Structured data extraction from a natural-language goal | *TBD* | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 
----
+## Run and Check
 
-**Total: 169 commands**
+| # | Description | Wire Command | CLI | MCP | JS | Python | Java |
+|---|---|---|---|---|---|---|---|
+| 212 | Independently verify the active session or a saved archive | `vibium:check.run` | `vibium check <claim>` | `vibium_check` | `browser.check(claim, opts?)` | `browser.check(claim, record=...)` | `browser.check(claim, options?)` |
+| 213 | Independently verify a pinned page or a saved archive | `vibium:check.run` | — | — | `page.check(claim, opts?)` | `page.check(claim, record=...)` | `page.check(claim, options?)` |
+| 214 | Check a saved archive without launching a browser | `vibium:check.run` | — | — | — | — | `Vibium.check(claim, options)` |
+| 215 | Check browser installation and configured AI readiness | — | `vibium ready` | — | — | — | — |
+| 218 | Require AI configuration and provider tool support | — | `vibium ready ai` | — | — | — | — |
+| 219 | Check local browser executable files without launching | — | `vibium ready browser` | — | — | — | — |
+| 216 | Accomplish a goal in the active browser session | `vibium:run.run` | `vibium run <goal>` | `vibium_run` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` |
+| 217 | Accomplish a goal on a pinned page | `vibium:run.run` | — | — | `page.run(goal, opts?)` | `page.run(goal, opts?)` | `page.run(goal, opts?)` |
+
+The JS and Python module-level `browser.check` launcher requires `record` and
+uses the existing pipe runtime without launching a browser. Browser instances
+and Page instances use the current live session unless `record` is supplied.
+Page instances pin their own context. The result contains `status` (`passed`,
+`failed`, or `inconclusive`), `claim`, `summary`, and concise `evidence`.
+Operational errors raise exceptions instead of returning a verdict.
+
+CLI `-i`/`--input` maps to the runtime `record` field. CLI `-o`/`--output`
+saves a live recording, `--report` writes a JSON verdict, and `--json` controls
+stdout. See the [Check reference](check.md) for configuration and examples.
+
+Run is live-only and returns `completed` or `not_completed` with a goal,
+summary, and evidence. Execution errors remain errors. Configure its provider
+with `VIBIUM_AI_*` and check it with `vibium ready ai`.
+See [Run](../how-to-guides/run.md).
+
+Run and Check accept per-call provider, model, base URL, and reasoning-effort
+options, including saved-input Check. See [model overrides](model-providers.md#override-settings-for-one-call)
+for option names and precedence. Recorded parent spans include public resolved
+settings in `params.modelConfig`; credentials and endpoint URLs are omitted.
+
+
+Connected JS/TS and Python Browser/Page objects are callable: `vibe(goal)` is
+an alias for `vibe.run(goal)` with identical options and results. JS sync returns
+a result directly; JS async and Python async return an awaitable. Java uses
+`run()`. See [Introducing Run and Check](../updates/2026-09-07-run-and-check.md).

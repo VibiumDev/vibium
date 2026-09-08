@@ -1,7 +1,7 @@
 /**
  * JS Library Tests: Element State + Waiting
  * Tests el.text, innerText, html, value, attr, bounds, isVisible, isHidden,
- * isEnabled, isChecked, isEditable, eval, screenshot, waitForFunction.
+ * isEnabled, isSet, isEditable, eval, screenshot, waitForFunction.
  * Also tests page.wait, page.waitForFunction.
  */
 
@@ -148,14 +148,14 @@ describe('Element State: enabled/checked/editable', () => {
     assert.strictEqual(enabled, true);
   });
 
-  test('isChecked() returns state of checkbox', async () => {
+  test('isSet() returns state of checkbox', async () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/checkboxes`);
 
     const checkboxes = await vibe.findAll('input[type="checkbox"]');
     // First checkbox is unchecked, second is checked
-    const firstChecked = await checkboxes[0].isChecked();
-    const secondChecked = await checkboxes[1].isChecked();
+    const firstChecked = await checkboxes[0].isSet();
+    const secondChecked = await checkboxes[1].isSet();
     assert.strictEqual(firstChecked, false, 'First checkbox should be unchecked');
     assert.strictEqual(secondChecked, true, 'Second checkbox should be checked');
   });

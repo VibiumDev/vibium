@@ -31,6 +31,9 @@ from ..errors import (
 )
 
 __all__ = [
+    "RunResult",
+    "CheckResult",
+    "CheckEvidence",
     "browser",
     "firefox",
     "chrome",
@@ -59,3 +62,7 @@ __all__ = [
     "ElementNotFoundError",
     "BrowserCrashedError",
 ]
+
+from ..check import CheckResult, CheckEvidence
+
+from ..run import RunResult

@@ -1,19 +1,23 @@
 ---
-name: vibe-check
-description: Browser automation for AI agents. Use when the user needs to navigate websites, read page content, fill forms, click elements, take screenshots, or manage browser pages.
+name: browser
+description: Automate browsers with the Vibium CLI. Use to navigate websites, inspect pages, fill forms, extract page data, debug UI behavior, capture screenshots and recordings, or delegate browser goals with vibium run.
 ---
 
 # Vibium Browser Automation — CLI Reference
 
 The `vibium` CLI automates Chrome (and Firefox, via `--engine firefox`) from the command line. The browser auto-launches on first use (daemon mode keeps it running between commands).
 
-```
-vibium go <url> && vibium map && vibium click @e1 && vibium map
-```
+Use this skill for browser automation, exploration, debugging, and recording.
+Choose explicit CLI commands when you know the steps, or use `vibium run`
+when a model should work out how to accomplish a browser goal.
+
+For an independent acceptance verdict, use the `check` skill if installed,
+or `vibium check "<claim>"`. Run’s `completed` result and your own browser
+observations do not substitute for that invocation.
 
 ## Core Workflow
 
-Every browser automation follows this pattern:
+For direct browser commands, use this pattern:
 
 1. **Navigate**: `vibium go <url>`
 2. **Map**: `vibium map` (get element refs like `@e1`, `@e2`)
@@ -31,6 +35,52 @@ Before running any commands, resolve the `vibium` binary path once:
 Run `vibium --help` (or the resolved path) to confirm. Use the resolved path for all subsequent commands.
 
 **Windows note:** Use forward slashes in paths (e.g. `./clicker/bin/vibium.exe`) and quote paths containing spaces.
+
+## Browser readiness
+
+During initial setup, run `vibium ready browser --json` with the engine/channel
+that the workflow will use. It inspects installed browser and driver files
+without launching them or touching existing sessions. Passing confirms the
+installation, not browser launch or BiDi connectivity. If installation is missing, use the reported `vibium install`
+command and retry. Direct browser work does not need AI configuration.
+Do not rerun readiness before every action when setup is unchanged.
+
+## Delegate a browser goal with Run
+
+Use `vibium run "<goal>"` when the task is clear but the sequence of browser
+actions needs investigation. For known steps, use the commands below directly.
+Run uses the existing local Chrome or Firefox session and a fresh model context.
+Keep the same `--session` or `VIBIUM_SESSION` throughout the workflow.
+
+Load the project's configured AI settings in the shell running the CLI. Settings
+in an environment file must use exported assignments (`export NAME=value`).
+Run `vibium ready ai --json` during initial setup or after configuration changes;
+`result.ready: true` means the provider tool round-trip passed. Never print
+credentials. Direct browser commands do not require a model or AI readiness.
+
+With a settings page already open:
+
+```sh
+vibium run "Change the timezone to America/Chicago and save it" --json -o browser-run.zip
+```
+
+`vibium "<multiword goal>"` is shorthand for Run. Use explicit `run` in scripts
+or when the prompt could be mistaken for a command.
+
+Read `result.status` (`completed` or `not_completed`), the summary, and evidence.
+Execution failures return an error. If independent verification is needed,
+follow with the `check` skill or `vibium check "<claim>"` in the same session;
+Check starts another fresh model context.
+
+`-o` saves a recording to a new path. An existing recording is exported without
+stopping it. A browser that Run starts closes afterward unless `--keep-open`
+is set; a browser already open stays open. Run can change application state.
+
+Run and Check share `VIBIUM_AI_*` defaults. Per-call `--provider`, `--model`,
+`--base-url`, and `--reasoning-effort` also work with `vibium ready ai`. When changing
+provider, supply a model explicitly; inherited endpoint and effort settings
+are cleared. Credentials remain in the provider's environment variable.
+Use the project's chosen provider rather than silently switching it.
 
 ## Command Chaining
 
@@ -90,8 +140,8 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium scroll into-view "<selector>"` — scroll element into view (centered)
 - `vibium keys "<combo>"` — press keys (Enter, Control+a, Shift+Tab)
 - `vibium select "<selector>" "<value>"` — pick a dropdown option
-- `vibium check "<selector>"` — check a checkbox/radio (idempotent)
-- `vibium uncheck "<selector>"` — uncheck a checkbox (idempotent)
+- `vibium set "<selector>"` — check a checkbox/radio (idempotent)
+- `vibium unset "<selector>"` — uncheck a checkbox (idempotent)
 
 ### Mouse Primitives
 - `vibium mouse click [x] [y]` — click at coordinates or current position (`--button 0|1|2`)
@@ -105,7 +155,7 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium attr "<selector>" "<attribute>"` — get HTML attribute value
 - `vibium is visible "<selector>"` — check if element is visible (true/false)
 - `vibium is enabled "<selector>"` — check if element is enabled (true/false)
-- `vibium is checked "<selector>"` — check if checkbox/radio is checked (true/false)
+- `vibium is set "<selector>"` — check if checkbox/radio is checked (true/false)
 - `vibium is actionable "<selector>"` — check if element is actionable (true/false)
 
 ### Waiting
@@ -203,7 +253,7 @@ vibium click @e1
 vibium map  # re-map after interaction
 ```
 
-### Verify action worked
+### Check action worked
 ```sh
 vibium map
 vibium click @e3
@@ -397,7 +447,7 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 - Use `vibium text "<selector>"` to read specific sections
 - Use `vibium diff map` after interactions to see what changed
 - `vibium eval` is the escape hatch for complex DOM queries
-- `vibium check`/`vibium uncheck` are idempotent — safe to call without checking state first
+- `vibium set`/`vibium unset` are idempotent — safe to call without checking state first
 - Screenshots save to the current directory by default (`-o` to change)
 - Use `vibium storage` / `vibium storage restore` to persist auth across sessions
 - Without `--session`, all commands on a host share one daemon and one browser — set `VIBIUM_SESSION` when running concurrently

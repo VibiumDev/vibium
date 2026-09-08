@@ -174,9 +174,11 @@ describe('JS Firefox', () => {
 
       if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
 
-      const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
+      // Keep the video fixture free of credential fields: visiting the login
+      // page intentionally suppresses visual artifacts under recorder privacy.
+      const link = await vibe.find('a[href="/checkboxes"]', { timeout: 5000 });
       await link.click();
-      await vibe.find('#login', { timeout: 10000 });
+      await vibe.find('#checkboxes', { timeout: 10000 });
 
       const result = await vibe.context.recording.stop();
       assert.strictEqual(result.path, zipPath, 'Result should carry the delivery path');

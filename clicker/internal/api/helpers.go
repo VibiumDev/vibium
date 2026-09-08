@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -301,6 +302,11 @@ func (r *Router) resolveElement(session *BrowserSession, context string, ep Elem
 // Exported standalone functions — usable from both proxy and MCP handlers.
 // ---------------------------------------------------------------------------
 
+// commandCanceled distinguishes cancellation from transient browser errors.
+func commandCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 // evalNavigationRetryBudget bounds how long EvalSimpleScript keeps retrying
 // an eval whose realm a navigation tore down. The gap between the old realm
 // dying and the new document's realm existing is milliseconds; the budget
@@ -349,7 +355,7 @@ func EvalSimpleScript(s Session, context, fn string) (string, error) {
 
 	out, err := send()
 	deadline := time.Now().Add(evalNavigationRetryBudget)
-	for err != nil && time.Now().Before(deadline) {
+	for err != nil && !commandCanceled(err) && time.Now().Before(deadline) {
 		nav := s.NavTracker()
 		navigating := nav != nil && nav.IsNavigating(context)
 		if !navigating && !realmDestroyedByNavigation(err) {
@@ -437,6 +443,9 @@ func ResolveElementRef(s Session, context string, ep ElementParams) (string, err
 
 	for {
 		resp, err := CallScript(s, context, script, args)
+		if commandCanceled(err) {
+			return "", err
+		}
 		if err == nil {
 			var result struct {
 				Result struct {
@@ -470,6 +479,9 @@ func WaitForElementWithScript(s Session, context, script string, args []map[stri
 
 	for {
 		resp, err := CallScript(s, context, script, args)
+		if commandCanceled(err) {
+			return nil, err
+		}
 		if err == nil {
 			var result struct {
 				Result struct {

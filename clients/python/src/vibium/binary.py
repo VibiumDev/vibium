@@ -184,6 +184,7 @@ class VibiumProcess:
         executable_path: Optional[str] = None,
         connect_url: Optional[str] = None,
         connect_headers: Optional[dict] = None,
+        no_browser: bool = False,
     ) -> "VibiumProcess":
         """Start a vibium pipe process.
 
@@ -202,6 +203,8 @@ class VibiumProcess:
         binary = executable_path or find_vibium_bin()
 
         args = [binary, "pipe"]
+        if no_browser:
+            args.append("--no-browser")
         if engine:
             args.extend(["--engine", engine])
         if channel:

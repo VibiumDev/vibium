@@ -1,3 +1,6 @@
+import { callable } from '../callable';
+import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
+import { CheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { SyncBridge } from './bridge';
@@ -88,6 +91,8 @@ export class WebSocketInfoSync {
   }
 }
 
+export interface PageSync { (goal: string, options?: RunOptions): RunResult; }
+
 export class PageSync {
   /** @internal */
   readonly _bridge: SyncBridge;
@@ -132,6 +137,7 @@ export class PageSync {
         },
       }
     );
+    return callable(this);
   }
 
   [customInspect](): string {
@@ -154,6 +160,14 @@ export class PageSync {
   }
 
   // --- Navigation ---
+
+  run(goal: string, options: RunOptions = {}): RunResult {
+    return this._bridge.call('page.run', [this._pageId, goal, options], RUN_TIMEOUT_MS);
+  }
+
+  check(claim: string, options: CheckOptions = {}): CheckResult {
+    return this._bridge.call('page.check', [this._pageId, claim, options], CHECK_TIMEOUT_MS);
+  }
 
   go(url: string): void {
     this._bridge.call('page.go', [this._pageId, url]);

@@ -10,6 +10,8 @@ import (
 	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/paths"
+	runop "github.com/vibium/clicker/internal/run"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // Vars, not consts, so tests can shrink them to hermetic sizes.
@@ -145,7 +147,11 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 		return nil, fmt.Errorf("write request: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(readTimeout))
+	responseTimeout := readTimeout
+	if method == verifier.Method || method == runop.Method {
+		responseTimeout = verifier.Timeout + 30*time.Second
+	}
+	conn.SetReadDeadline(time.Now().Add(responseTimeout))
 	// bufio.Reader grows as needed; bufio.Scanner failed with "token too long"
 	// on any response over its fixed buffer — a long page's text, a large
 	// storage state (#209).
@@ -176,7 +182,7 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 		if json.Unmarshal(line, &msg) == nil && msg.Method != "" && len(msg.ID) == 0 {
 			if msg.Method == launchingBrowserMethod && !extended {
 				extended = true
-				conn.SetReadDeadline(time.Now().Add(launchGrace + readTimeout))
+				conn.SetReadDeadline(time.Now().Add(launchGrace + responseTimeout))
 			}
 			continue
 		}
@@ -189,4 +195,74 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	}
 
 	return &resp, nil
+}
+
+// checkParams adds CLI lifecycle policy on the existing private connection.
+// SDK/MCP requests keep their existing browser ownership behavior.
+type checkParams struct {
+	verifier.Request
+	CLI *agent.OperationCLIOptions `json:"cli,omitempty"`
+}
+
+// Check uses the same private JSON-RPC connection as every daemon command.
+func Check(req verifier.Request) (*verifier.Result, error) {
+	return checkRequest(checkParams{Request: req})
+}
+
+// CheckWithBrowser lets the daemon atomically reuse or own a live browser.
+func CheckWithBrowser(req verifier.Request, options agent.OperationCLIOptions) (*verifier.Result, error) {
+	return checkRequest(checkParams{Request: req, CLI: &options})
+}
+
+func checkRequest(req checkParams) (*verifier.Result, error) {
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("encode verification request")
+	}
+	response, err := sendRequest(verifier.Method, data)
+	if err != nil {
+		return nil, err
+	}
+	if response.Error != nil {
+		return nil, &ToolError{Msg: response.Error.Message}
+	}
+	data, err = json.Marshal(response.Result)
+	if err != nil {
+		return nil, err
+	}
+	var result verifier.Result
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("invalid verification result")
+	}
+	return &result, result.Validate()
+}
+
+// Run uses the same private daemon connection and ownership policy as Check.
+func Run(req runop.Request, options agent.OperationCLIOptions) (*runop.Result, error) {
+	data, err := json.Marshal(struct {
+		runop.Request
+		CLI agent.OperationCLIOptions `json:"cli"`
+	}{req, options})
+	if err != nil {
+		return nil, fmt.Errorf("encode run request")
+	}
+	response, err := sendRequest(runop.Method, data)
+	if err != nil {
+		return nil, err
+	}
+	if response.Error != nil {
+		return nil, fmt.Errorf("%s", response.Error.Message)
+	}
+	encoded, err := json.Marshal(response.Result)
+	if err != nil {
+		return nil, err
+	}
+	var result runop.Result
+	if json.Unmarshal(encoded, &result) != nil {
+		return nil, fmt.Errorf("invalid run response")
+	}
+	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

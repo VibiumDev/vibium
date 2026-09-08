@@ -26,7 +26,7 @@ func exitOnFalse(cmd *cobra.Command, result *agent.ToolsCallResult) {
 func newIsCmd() *cobra.Command {
 	isCmd := &cobra.Command{
 		Use:   "is",
-		Short: "Check element state (visible, enabled, checked, actionable)",
+		Short: "Check element state (visible, enabled, set, actionable)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
@@ -68,13 +68,13 @@ func newIsCmd() *cobra.Command {
 	}
 
 	checkedCmd := &cobra.Command{
-		Use:   "checked [selector]",
+		Use:   "set [selector]",
 		Short: "Check if a checkbox or radio is checked",
-		Example: `  vibium is checked "input[type=checkbox]"
+		Example: `  vibium is set "input[type=checkbox]"
   # Prints true or false`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			result, err := daemonCall("browser_is_checked", map[string]interface{}{"selector": args[0]})
+			result, err := daemonCall("browser_is_set", map[string]interface{}{"selector": args[0]})
 			if err != nil {
 				printError(err)
 				return

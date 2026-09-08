@@ -7,3 +7,9 @@ export { BrowserContextSync } from './context';
 export { RecordingSync } from './recording';
 export { RouteSync } from './route';
 export { DialogSync } from './dialog';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from '../check';
+
+export { RunOptions, RunResult } from '../run';
+
+export { ModelOptions } from '../model-options';

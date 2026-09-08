@@ -31,3 +31,9 @@ export {
   ElementNotFoundError,
   BrowserCrashedError,
 } from './utils/errors';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from './check';
+
+export { RunOptions, RunResult } from './run';
+
+export { ModelOptions } from './model-options';

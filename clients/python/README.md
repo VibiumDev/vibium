@@ -74,3 +74,11 @@ vibium version   # Show version
 ## License
 
 Apache-2.0
+
+## Independent verification
+
+`Page.check` and `Browser.check` provide a fresh verifier context using the
+existing browser session. Supply `record` to inspect an immutable archive, or
+use the module-level `browser.check` launcher for archive inspection
+without launching a browser. See the [Check reference](../../docs/reference/check.md#python)
+for configuration, examples, recording, and verdict semantics.

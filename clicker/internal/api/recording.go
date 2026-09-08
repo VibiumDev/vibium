@@ -229,6 +229,8 @@ type pendingRequest struct {
 type Recorder struct {
 	mu              sync.Mutex
 	recording       bool
+	secrets         map[string]bool
+	omitVisuals     bool
 	options         RecordingStartOptions
 	events          []recordEvent              // current chunk's recording events
 	network         []recordEvent              // current chunk's network events
@@ -277,6 +279,13 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	defer t.mu.Unlock()
 
 	t.recording = true
+	t.secrets = map[string]bool{}
+	t.omitVisuals = false
+	for _, key := range []string{"OPENAI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
+		if value := os.Getenv(key); value != "" {
+			t.secrets[value] = true
+		}
+	}
 	t.options = opts
 	t.events = nil
 	t.network = nil
@@ -461,7 +470,7 @@ func (t *Recorder) Summary() RecordingSummary {
 			s.Steps++
 		}
 	}
-	if t.video != nil {
+	if t.video != nil && !t.omitVisuals {
 		vs := VideoSummary{
 			Context:    t.video.Context,
 			DurationMs: t.video.DurationMs,
@@ -541,7 +550,7 @@ func (t *Recorder) currentGroupIdLocked() string {
 }
 
 // StartGroup adds a group-start marker to the recording.
-func (t *Recorder) StartGroup(name string) {
+func (t *Recorder) StartGroup(name string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -563,6 +572,7 @@ func (t *Recorder) StartGroup(name string) {
 		ev["parentId"] = parentId
 	}
 	t.events = append(t.events, ev)
+	return callId
 }
 
 // StopGroup adds a group-end marker to the recording.
@@ -925,6 +935,11 @@ func (t *Recorder) RecordBidiEvent(msg string) {
 	if err := json.Unmarshal([]byte(msg), &bidiEvent); err != nil {
 		return
 	}
+
+	if t.secrets == nil {
+		t.secrets = map[string]bool{}
+	}
+	t.discoverSecrets(bidiEvent.Params)
 
 	// Only record events (not responses)
 	if bidiEvent.Method == "" {
@@ -1301,6 +1316,16 @@ func (t *Recorder) StartScreenshotLoop(captureFunc func() (string, string, error
 // video file (session artifact); chunk artifacts pass false and get a
 // videoRange manifest instead.
 func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
+	if t.secrets == nil {
+		t.secrets = map[string]bool{}
+	}
+	for _, event := range t.events {
+		t.discoverSecrets(map[string]interface{}(event))
+	}
+	for _, event := range t.network {
+		t.discoverSecrets(map[string]interface{}(event))
+	}
+
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	now := time.Now()
@@ -1326,7 +1351,10 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create trace entry: %w", err)
 	}
 	for _, event := range t.events {
-		data, err := marshalEvent(event)
+		if t.omitVisuals && (event["type"] == "screencast-frame" || event["type"] == "frame-snapshot") {
+			continue
+		}
+		data, err := t.marshalPrivateEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1346,7 +1374,7 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create network entry: %w", err)
 	}
 	for _, event := range t.network {
-		data, err := marshalEvent(event)
+		data, err := t.marshalPrivateEvent(event)
 		if err != nil {
 			continue
 		}
@@ -1356,6 +1384,9 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 
 	// Write resources: resources/<name> (e.g. resources/page@abc123-1773879004791.jpeg)
 	for name, data := range t.resources {
+		if t.omitVisuals {
+			continue
+		}
 		rw, err := createEntry("resources/" + name)
 		if err != nil {
 			continue
@@ -1366,8 +1397,10 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 	// Video entries are additive to the trace format; existing trace tooling
 	// ignores them.
 	if t.video != nil {
-		if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
-			return nil, err
+		if !t.omitVisuals {
+			if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1664,4 +1697,90 @@ func WriteRecordToFile(data []byte, path string) error {
 		return fmt.Errorf("failed to create recording dir: %w", err)
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// SetGroupParams adds semantic metadata without changing tracingGroup's wire shape.
+func (t *Recorder) SetGroupParams(callID string, params map[string]interface{}) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, e := range t.events {
+		if e["type"] == "before" && e["callId"] == callID {
+			e["params"] = params
+			return
+		}
+	}
+}
+func (t *Recorder) SetGroupTitle(callID, title string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, e := range t.events {
+		if e["type"] == "before" && e["callId"] == callID {
+			e["title"] = title
+			return
+		}
+	}
+}
+
+// RecordCallOutcome uses Playwright's ordinary after.result / after.error fields.
+func (t *Recorder) RecordCallOutcome(callID string, result interface{}, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i := len(t.events) - 1; i >= 0; i-- {
+		e := t.events[i]
+		if e["type"] == "after" && e["callId"] == callID {
+			if result != nil {
+				e["result"] = result
+			}
+			if err != nil {
+				e["error"] = map[string]interface{}{"message": err.Error()}
+			}
+			return
+		}
+	}
+}
+
+// BrowserObservations returns a small, page-scoped projection of observations
+// already captured by the live recorder. Headers, cookies, bodies, and console
+// argument objects are deliberately excluded from the verifier payload.
+func (t *Recorder) BrowserObservations(kind, page string) []map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := []map[string]interface{}{}
+	if kind == "console" {
+		for i := len(t.events) - 1; i >= 0 && len(result) < 50; i-- {
+			e := t.events[i]
+			if e["method"] != "log.entryAdded" {
+				continue
+			}
+			p, _ := e["params"].(map[string]interface{})
+			source, _ := p["source"].(map[string]interface{})
+			if source["context"] != page {
+				continue
+			}
+			text, _ := p["text"].(string)
+			if len(text) > 1000 {
+				text = text[:1000] + " [truncated]"
+			}
+			result = append(result, map[string]interface{}{"level": p["level"], "type": p["type"], "text": text, "time": e["time"]})
+		}
+	} else {
+		for i := len(t.network) - 1; i >= 0 && len(result) < 50; i-- {
+			snapshot, _ := t.network[i]["snapshot"].(map[string]interface{})
+			if snapshot["_frameref"] != formatPageID(page) {
+				continue
+			}
+			req, _ := snapshot["request"].(map[string]interface{})
+			response, _ := snapshot["response"].(map[string]interface{})
+			raw, _ := req["url"].(string)
+			u, err := url.Parse(raw)
+			if err != nil {
+				continue
+			}
+			u.User = nil
+			u.RawQuery = ""
+			u.Fragment = ""
+			result = append(result, map[string]interface{}{"url": u.String(), "method": req["method"], "status": response["status"], "time": snapshot["_monotonicTime"]})
+		}
+	}
+	return result
 }

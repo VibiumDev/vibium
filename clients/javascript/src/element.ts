@@ -135,15 +135,16 @@ export class Element {
   }
 
   /** Check a checkbox (no-op if already checked). */
-  async check(options?: ActionOptions): Promise<void> {
-    await this.client.send('vibium:element.check', this.commandParams({
+  async set(value: boolean = true, options?: ActionOptions): Promise<void> {
+    await this.client.send('vibium:element.set', this.commandParams({
+      value,
       timeout: options?.timeout,
     }));
   }
 
   /** Uncheck a checkbox (no-op if already unchecked). */
-  async uncheck(options?: ActionOptions): Promise<void> {
-    await this.client.send('vibium:element.uncheck', this.commandParams({
+  async unset(options?: ActionOptions): Promise<void> {
+    await this.client.send('vibium:element.unset', this.commandParams({
       timeout: options?.timeout,
     }));
   }
@@ -283,8 +284,8 @@ export class Element {
   }
 
   /** Check if the element is checked (for checkboxes/radios). */
-  async isChecked(): Promise<boolean> {
-    const result = await this.client.send<{ checked: boolean }>('vibium:element.isChecked', this.commandParams());
+  async isSet(): Promise<boolean> {
+    const result = await this.client.send<{ checked: boolean }>('vibium:element.isSet', this.commandParams());
     return result.checked;
   }
 
@@ -400,8 +401,8 @@ export type FluentElement = Promise<Element> & {
   type(text: string, options?: ActionOptions): Promise<void>;
   press(key: string, options?: ActionOptions): Promise<void>;
   clear(options?: ActionOptions): Promise<void>;
-  check(options?: ActionOptions): Promise<void>;
-  uncheck(options?: ActionOptions): Promise<void>;
+  set(value?: boolean, options?: ActionOptions): Promise<void>;
+  unset(options?: ActionOptions): Promise<void>;
   selectOption(value: string, options?: ActionOptions): Promise<void>;
   hover(options?: ActionOptions): Promise<void>;
   focus(options?: ActionOptions): Promise<void>;
@@ -422,7 +423,7 @@ export type FluentElement = Promise<Element> & {
   isVisible(): Promise<boolean>;
   isHidden(): Promise<boolean>;
   isEnabled(): Promise<boolean>;
-  isChecked(): Promise<boolean>;
+  isSet(): Promise<boolean>;
   isEditable(): Promise<boolean>;
   role(): Promise<string>;
   label(): Promise<string>;
@@ -442,8 +443,8 @@ export function fluent(promise: Promise<Element>): FluentElement {
   p.type = (text, opts?) => promise.then(el => el.type(text, opts));
   p.press = (key, opts?) => promise.then(el => el.press(key, opts));
   p.clear = (opts?) => promise.then(el => el.clear(opts));
-  p.check = (opts?) => promise.then(el => el.check(opts));
-  p.uncheck = (opts?) => promise.then(el => el.uncheck(opts));
+  p.set = (value?, opts?) => promise.then(el => el.set(value, opts));
+  p.unset = (opts?) => promise.then(el => el.unset(opts));
   p.selectOption = (value, opts?) => promise.then(el => el.selectOption(value, opts));
   p.hover = (opts?) => promise.then(el => el.hover(opts));
   p.focus = (opts?) => promise.then(el => el.focus(opts));
@@ -464,7 +465,7 @@ export function fluent(promise: Promise<Element>): FluentElement {
   p.isVisible = () => promise.then(el => el.isVisible());
   p.isHidden = () => promise.then(el => el.isHidden());
   p.isEnabled = () => promise.then(el => el.isEnabled());
-  p.isChecked = () => promise.then(el => el.isChecked());
+  p.isSet = () => promise.then(el => el.isSet());
   p.isEditable = () => promise.then(el => el.isEditable());
   p.role = () => promise.then(el => el.role());
   p.label = () => promise.then(el => el.label());

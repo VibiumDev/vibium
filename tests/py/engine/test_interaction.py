@@ -55,13 +55,16 @@ async def test_press(async_page, test_server):
     assert await inp.value() == "a"
 
 
-async def test_check_uncheck(async_page, test_server):
+async def test_set_unset(async_page, test_server):
     await async_page.go(test_server + "/form")
     cb = await async_page.find("#agree")
-    await cb.check()
-    assert await cb.is_checked()
-    await cb.uncheck()
-    assert not await cb.is_checked()
+    await cb.set()
+    await cb.set(False)
+    assert not await cb.is_set()
+    await cb.set(True)
+    assert await cb.is_set()
+    await cb.unset()
+    assert not await cb.is_set()
 
 
 async def test_select_option(async_page, test_server):
@@ -119,8 +122,8 @@ async def test_login_flow_checkpoint(async_page, test_server):
     email = await async_page.find("#email")
     await email.fill("user@test.com")
     cb = await async_page.find("#agree")
-    await cb.check()
-    assert await cb.is_checked()
+    await cb.set()
+    assert await cb.is_set()
     sel = await async_page.find("#color")
     await sel.select_option("green")
     assert await sel.value() == "green"

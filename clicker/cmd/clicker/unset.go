@@ -6,21 +6,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUncheckCmd() *cobra.Command {
+func newUnsetCmd() *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:   "uncheck [selector]",
+		Use:   "unset [selector]",
 		Short: "Uncheck a checkbox",
-		Example: `  vibium uncheck "input[name=agree]"
+		Example: `  vibium unset "input[name=agree]"
   # Uncheck the "agree" checkbox (idempotent)
 
-  vibium uncheck "input[name=agree]" --timeout 5s
+  vibium unset "input[name=agree]" --timeout 5s
   # Custom timeout (5s, or 5000 for milliseconds)`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			selector := args[0]
 
-			result, err := daemonCall("browser_uncheck", map[string]interface{}{
+			result, err := daemonCall("browser_unset", map[string]interface{}{
 				"selector": selector,
 				"timeout":  float64(timeout.Milliseconds()),
 			})

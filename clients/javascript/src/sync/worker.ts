@@ -1,3 +1,5 @@
+import { RunOptions } from '../run';
+import { CheckOptions, RecordedCheckOptions } from '../check';
 import { parentPort, workerData, MessagePort } from 'worker_threads';
 import { browser, Browser } from '../browser';
 import { Page } from '../page';
@@ -142,6 +144,28 @@ const handlers: Record<string, Handler> = {
   // Browser commands
   // ========================
 
+  'browser.run': async (args) => {
+    const [goal, options] = args as [string, RunOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.run(goal, options);
+  },
+  'page.run': async (args) => {
+    const [pageId, goal, options] = args as [number, string, RunOptions];
+    return getPage(pageId).run(goal, options);
+  },
+  'check.record': async (args) => {
+    const [claim, options] = args as [string, RecordedCheckOptions];
+    return browser.check(claim, options);
+  },
+  'browser.check': async (args) => {
+    const [claim, options] = args as [string, CheckOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.check(claim, options);
+  },
+  'page.check': async (args) => {
+    const [pageId, claim, options] = args as [number, string, CheckOptions];
+    return getPage(pageId).check(claim, options);
+  },
   'browser.start': async (args) => {
     const [url, options] = args as [string | undefined, {
       engine?: 'chrome' | 'firefox';
@@ -1207,15 +1231,13 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
-  'element.check': async (args) => {
-    const [elementId, options] = args as [number, any];
-    await getElement(elementId).check(options);
-    return { success: true };
+  'element.set': async (args) => {
+    const [elementId, value, options] = args;
+    await getElement(elementId).set(value, options);
   },
-
-  'element.uncheck': async (args) => {
+  'element.unset': async (args) => {
     const [elementId, options] = args as [number, any];
-    await getElement(elementId).uncheck(options);
+    await getElement(elementId).unset(options);
     return { success: true };
   },
 
@@ -1340,9 +1362,9 @@ const handlers: Record<string, Handler> = {
     return { enabled };
   },
 
-  'element.isChecked': async (args) => {
+  'element.isSet': async (args) => {
     const [elementId] = args as [number];
-    const checked = await getElement(elementId).isChecked();
+    const checked = await getElement(elementId).isSet();
     return { checked };
   },
 

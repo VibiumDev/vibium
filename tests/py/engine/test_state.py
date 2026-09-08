@@ -116,12 +116,12 @@ async def test_is_enabled(async_page, test_server):
     assert await btn.is_enabled()
 
 
-async def test_is_checked(async_page, test_server):
+async def test_is_set(async_page, test_server):
     await async_page.go(test_server + "/form")
     cb = await async_page.find("#agree")
-    assert not await cb.is_checked()
-    await cb.check()
-    assert await cb.is_checked()
+    assert not await cb.is_set()
+    await cb.set()
+    assert await cb.is_set()
 
 
 async def test_is_editable(async_page, test_server):

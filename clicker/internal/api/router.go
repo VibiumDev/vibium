@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,6 +25,10 @@ const slowClientSend = time.Second
 
 // BrowserSession represents a browser session connected to a client.
 type BrowserSession struct {
+	modelMu      sync.RWMutex
+	modelContext context.Context         // guarded by mu; scoped to a serialized Check run
+	modelReplies map[int]chan modelReply // internal Go calls, not another transport
+
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
 	Client       ClientTransport
@@ -119,6 +124,9 @@ func (s *BrowserSession) SetLastElementBox(box *BoxInfo) {
 
 // BiDi command structure for parsing incoming messages
 type bidiCommand struct {
+	modelDone   chan struct{}
+	modelCallID *string
+
 	ID     int                    `json:"id"`
 	Method string                 `json:"method"`
 	Params map[string]interface{} `json:"params"`
@@ -303,7 +311,7 @@ type vibiumHandler func(*BrowserSession, bidiCommand)
 func handlerCapturesBefore(method string) bool {
 	switch method {
 	case "vibium:element.click", "vibium:element.dblclick", "vibium:element.hover", "vibium:element.tap",
-		"vibium:element.check", "vibium:element.uncheck", "vibium:element.dragTo",
+		"vibium:element.set", "vibium:element.unset", "vibium:element.dragTo",
 		"vibium:element.fill", "vibium:element.type", "vibium:element.press", "vibium:element.clear",
 		"vibium:element.selectOption":
 		return true
@@ -340,6 +348,12 @@ func unblocksAnotherCommand(method string) bool {
 
 func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
 	go func() {
+		if cmd.modelDone != nil {
+			defer close(cmd.modelDone)
+		} else if !unblocksAnotherCommand(cmd.Method) {
+			session.modelMu.RLock()
+			defer session.modelMu.RUnlock()
+		}
 		session.mu.Lock()
 		recorder := session.recorder
 		session.mu.Unlock()
@@ -351,7 +365,7 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		// handlerScreenshot, screenshotInFlight) is read only while recording.
 		// Taking it unconditionally serialized all 104 dispatched methods on
 		// every session, recording or not.
-		if recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
+		if cmd.modelDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
 			session.dispatchMu.Lock()
 			defer session.dispatchMu.Unlock()
 		}
@@ -359,7 +373,11 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		var callId string
 
 		if recorder != nil && recorder.IsRecording() {
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, cmd.Params)
 			callId = recorder.NextCallId()
+			if cmd.modelCallID != nil {
+				*cmd.modelCallID = callId
+			}
 			opts := recorder.Options()
 
 			// Interaction handlers (click, fill, etc.) capture the before-snapshot
@@ -411,6 +429,7 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 				atomic.StoreInt32(&session.screenshotInFlight, 0)
 			}
 
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, nil)
 			recorder.RecordActionEnd(callId, afterSnapshot, endTime, box)
 		}
 	}()
@@ -419,6 +438,9 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 // OnClientMessage is called when a message is received from a client.
 // It handles custom vibium: extension commands or forwards to the browser.
 func (r *Router) OnClientMessage(client ClientTransport, msg string) {
+	if r.handleRecordedCheck(client, msg) {
+		return
+	}
 	sessionVal, ok := r.sessions.Load(client.ID())
 	if !ok {
 		// Answer instead of dropping: a command that races session teardown
@@ -469,6 +491,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 
 	// Handle vibium: extension commands (per WebDriver BiDi spec for extensions)
 	switch cmd.Method {
+	case "vibium:run.run":
+		go r.handleRun(session, cmd)
+		return
+	case "vibium:check.run":
+		go r.handleCheck(session, cmd)
+		return
 	// Element interaction commands
 	case "vibium:element.click":
 		r.dispatch(session, cmd, r.handleVibiumClick)
@@ -488,10 +516,10 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.clear":
 		r.dispatch(session, cmd, r.handleVibiumClear)
 		return
-	case "vibium:element.check":
+	case "vibium:element.set":
 		r.dispatch(session, cmd, r.handleVibiumCheck)
 		return
-	case "vibium:element.uncheck":
+	case "vibium:element.unset":
 		r.dispatch(session, cmd, r.handleVibiumUncheck)
 		return
 	case "vibium:element.selectOption":
@@ -555,7 +583,7 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.isEnabled":
 		r.dispatch(session, cmd, r.handleVibiumElIsEnabled)
 		return
-	case "vibium:element.isChecked":
+	case "vibium:element.isSet":
 		r.dispatch(session, cmd, r.handleVibiumElIsChecked)
 		return
 	case "vibium:element.isEditable":
@@ -931,6 +959,9 @@ func (s *BrowserSession) noteFirstResponse() {
 
 // sendSuccess sends a successful response to the client.
 func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}) {
+	if session.replyToModel(id, result, nil) {
+		return
+	}
 	session.noteFirstResponse()
 	resp := bidiResponse{ID: id, Type: "success", Result: result}
 	data, _ := json.Marshal(resp)
@@ -939,6 +970,9 @@ func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}
 
 // sendError sends an error response to the client (follows WebDriver BiDi spec).
 func (r *Router) sendError(session *BrowserSession, id int, err error) {
+	if session.replyToModel(id, nil, err) {
+		return
+	}
 	session.noteFirstResponse()
 	resp := bidiResponse{
 		ID:      id,
@@ -1147,6 +1181,14 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	session.mu.Lock()
+	operationContext := session.modelContext
+	session.mu.Unlock()
+	if operationContext != nil {
+		if err := operationContext.Err(); err != nil {
+			return nil, err
+		}
+	}
 	// An open user prompt means Chrome will never answer this command, so
 	// report it now rather than after the timeout.
 	if err := checkPromptBlocked(session.prompts, method, params); err != nil {
@@ -1208,8 +1250,19 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 		return nil, err
 	}
 
-	// Wait for response (with timeout)
+	// Wait for response (with timeout). Check scopes cancellation to this session.
+	session.mu.Lock()
+	modelCtx := session.modelContext
+	session.mu.Unlock()
+	if modelCtx == nil {
+		modelCtx = context.Background()
+	}
 	select {
+	case <-modelCtx.Done():
+		session.internalCmdsMu.Lock()
+		session.abandonedInternal[id] = struct{}{}
+		session.internalCmdsMu.Unlock()
+		return nil, modelCtx.Err()
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(timeout):
@@ -1330,4 +1383,9 @@ func (r *Router) CloseAll() {
 		r.sessions.Delete(key)
 		return true
 	})
+}
+
+func commandContextParam(params map[string]interface{}) string {
+	value, _ := params["context"].(string)
+	return value
 }

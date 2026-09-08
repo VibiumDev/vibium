@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
+	modelRunning bool // daemon mutex protects the complete verification and its child calls
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -33,9 +35,9 @@ type Handlers struct {
 	engine         string // "chrome" (default) or "firefox"
 	firefoxChannel string // daemon/session default; captured at construction
 	headless       bool
-	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header       // headers for remote WebSocket connection
-	ownsRemote     bool              // remote session was created here, so Close() ends it
+	connectURL     string                       // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header                  // headers for remote WebSocket connection
+	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
 	lastMaps       map[string]string            // context -> last map output (for diff)
 	recorder       *api.Recorder
@@ -129,6 +131,12 @@ func (h *Handlers) newSession() *api.AgentSession {
 // to produce before/after events (matching the API path), and captures a
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
+	if name == "vibium_run" {
+		return h.runMCP(args)
+	}
+	if name == "vibium_check" {
+		return h.checkMCP(args)
+	}
 	log.Debug("tool call", "name", name, "args", args)
 
 	// A page argument pins this call to one browsing context. Validate it
@@ -152,11 +160,12 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	}
 
 	var callId string
-	if h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		callId = h.recorder.NextCallId()
 		pageId := h.getContext()
 		// Resolve @e1 refs to real selectors so the trace shows meaningful selectors
 		recordArgs := h.resolveRefsInArgs(args)
+		api.CaptureRecordingSecrets(h.newSession(), h.recorder, recordArgs)
 		h.recorder.RecordAction(callId, mcpToolToMethod(name), recordArgs, "", pageId)
 		h.lastElementBox = nil
 	}
@@ -170,12 +179,16 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	h.lastElementBox = nil
 
 	// Per-action screenshot: capture after successful non-recording commands
-	if err == nil && h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if err == nil && h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		api.CaptureRecordingScreenshot(h.newSession(), h.recorder, endTime)
 	}
 
 	if callId != "" {
+		api.CaptureRecordingSecrets(h.newSession(), h.recorder, nil)
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
+		if h.modelRunning {
+			h.recorder.RecordCallOutcome(callId, recordedToolResult(result), err)
+		}
 	}
 
 	return result, err
@@ -184,6 +197,10 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 // dispatch routes a tool call to the appropriate handler method.
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
+	case "browser_console":
+		return h.browserObservations("console")
+	case "browser_network":
+		return h.browserObservations("network")
 	case "browser_start":
 		return h.browserLaunch(args)
 	case "browser_navigate":
@@ -262,9 +279,9 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserGetAttribute(args)
 	case "browser_is_visible":
 		return h.browserIsVisible(args)
-	case "browser_check":
+	case "browser_set":
 		return h.browserCheck(args)
-	case "browser_uncheck":
+	case "browser_unset":
 		return h.browserUncheck(args)
 	case "browser_scroll_into_view":
 		return h.browserScrollIntoView(args)
@@ -290,7 +307,7 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserCount(args)
 	case "browser_is_enabled":
 		return h.browserIsEnabled(args)
-	case "browser_is_checked":
+	case "browser_is_set":
 		return h.browserIsChecked(args)
 	case "browser_wait_for_text":
 		return h.browserWaitForText(args)
@@ -379,11 +396,11 @@ func needsFindStep(name string) bool {
 	switch name {
 	case "browser_click", "browser_dblclick", "browser_fill", "browser_type",
 		"browser_press", "browser_hover", "browser_select",
-		"browser_check", "browser_uncheck", "browser_focus",
+		"browser_set", "browser_unset", "browser_focus",
 		"browser_scroll_into_view", "browser_drag",
 		"browser_get_text", "browser_get_html", "browser_get_value",
 		"browser_get_attribute", "browser_is_visible",
-		"browser_is_enabled", "browser_is_checked",
+		"browser_is_enabled", "browser_is_set",
 		"browser_upload", "browser_highlight":
 		return true
 	}
@@ -531,10 +548,10 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.hover"
 	case "browser_select":
 		return "vibium:element.selectOption"
-	case "browser_check":
-		return "vibium:element.check"
-	case "browser_uncheck":
-		return "vibium:element.uncheck"
+	case "browser_set":
+		return "vibium:element.set"
+	case "browser_unset":
+		return "vibium:element.unset"
 	case "browser_focus":
 		return "vibium:element.focus"
 	case "browser_scroll_into_view":
@@ -577,8 +594,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.isVisible"
 	case "browser_is_enabled":
 		return "vibium:element.isEnabled"
-	case "browser_is_checked":
-		return "vibium:element.isChecked"
+	case "browser_is_set":
+		return "vibium:element.isSet"
 	case "browser_count":
 		return "vibium:page.findAll"
 	case "browser_evaluate":
@@ -709,6 +726,9 @@ func (h *Handlers) Close() {
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
 	h.ownedUserContexts = nil
+	h.activeContext = ""
+	h.refMaps = nil
+	h.lastMaps = nil
 	recorder := h.recorder
 	h.recorder = nil
 	h.sessionMu.Unlock()
@@ -2405,6 +2425,9 @@ func pollCallFunction(h *Handlers, script string, args []interface{}, timeout ti
 
 	for {
 		result, err := h.client.CallFunction(h.currentContext(), script, args)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {
@@ -2678,6 +2701,16 @@ func (h *Handlers) browserIsVisible(args map[string]interface{}) (*ToolsCallResu
 
 // browserCheck checks a checkbox or radio button (idempotent).
 func (h *Handlers) browserCheck(args map[string]interface{}) (*ToolsCallResult, error) {
+	if value, exists := args["value"]; exists {
+		selected, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("set value must be a boolean")
+		}
+		if !selected {
+			return h.browserUncheck(args)
+		}
+	}
+
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
 	}
@@ -2962,105 +2995,9 @@ func (h *Handlers) resolveSelector(selector string) string {
 	return selector
 }
 
-// GetSelectorJS returns the JS getSelector(el) function body that generates unique CSS selectors.
-func GetSelectorJS() string {
-	return `function getSelector(el) {
-			if (el.id) return '#' + CSS.escape(el.id);
-			const parts = [];
-			let cur = el;
-			while (cur && cur !== document.body && cur !== document.documentElement) {
-				let seg = cur.tagName.toLowerCase();
-				if (cur.id) {
-					parts.unshift('#' + CSS.escape(cur.id));
-					break;
-				}
-				const parent = cur.parentElement;
-				if (parent) {
-					const siblings = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
-					if (siblings.length > 1) {
-						const idx = siblings.indexOf(cur) + 1;
-						seg += ':nth-of-type(' + idx + ')';
-					}
-				}
-				parts.unshift(seg);
-				cur = parent;
-			}
-			if (parts.length === 0) return el.tagName.toLowerCase();
-			if (!parts[0].startsWith('#')) parts.unshift('body');
-			return parts.join(' > ');
-		}`
-}
-
-// GetLabelJS returns the JS getLabel(el) function body that generates descriptive labels.
-func GetLabelJS() string {
-	return `function getLabel(el) {
-			const tag = el.tagName.toLowerCase();
-			const type = el.getAttribute('type');
-			let desc = '[' + tag;
-			if (type) desc += ' type="' + type + '"';
-			desc += ']';
-
-			const ariaLabel = el.getAttribute('aria-label');
-			if (ariaLabel) return desc + ' "' + ariaLabel.substring(0, 60) + '"';
-
-			const placeholder = el.getAttribute('placeholder');
-			if (placeholder) return desc + ' placeholder="' + placeholder.substring(0, 60) + '"';
-
-			const title = el.getAttribute('title');
-			if (title) return desc + ' title="' + title.substring(0, 60) + '"';
-
-			const text = (el.textContent || '').trim().substring(0, 60);
-			if (text) return desc + ' "' + text + '"';
-
-			const name = el.getAttribute('name');
-			if (name) return desc + ' name="' + name + '"';
-
-			const src = el.getAttribute('src');
-			if (src) return desc + ' src="' + src.substring(0, 60) + '"';
-
-			return desc;
-		}`
-}
-
-// mapScript returns the JS function that maps interactive elements with refs.
-// When a selector is provided, only elements within the matching subtree are returned.
-func mapScript() string {
-	return `(scopeSelector) => {
-		` + GetSelectorJS() + `
-		` + GetLabelJS() + `
-		` + api.PierceQueryJS() + `
-
-		const interactive = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="switch"], [onclick], [tabindex]:not([tabindex="-1"]), summary, details';
-
-		const root = scopeSelector ? pierceQuery(document, scopeSelector) : document;
-		if (!root) return JSON.stringify([]);
-		// Walk shadow roots too: querySelectorAll stops at the boundary, so
-		// web-component UIs listed as empty (#203).
-		const els = [];
-		{
-			const roots = __shadowRootsUnder(root);
-			for (let r = 0; r < roots.length; r++) {
-				const found = roots[r].querySelectorAll(interactive);
-				for (let f = 0; f < found.length; f++) els.push(found[f]);
-			}
-		}
-		const results = [];
-		const seen = new Set();
-
-		for (const el of els) {
-			const style = window.getComputedStyle(el);
-			if (style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0) continue;
-
-			const sel = getSelector(el);
-			if (seen.has(sel)) continue;
-			seen.add(sel);
-
-			results.push({ selector: sel, label: getLabel(el) });
-		}
-
-		return JSON.stringify(results);
-	}`
-}
+func GetSelectorJS() string { return api.GetSelectorJS() }
+func GetLabelJS() string    { return api.GetLabelJS() }
+func mapScript() string     { return api.MapScript() }
 
 // browserMap maps interactive elements with @refs.
 func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, error) {
@@ -4251,6 +4188,7 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	recorder := api.NewRecorder()
 	viewport := h.queryViewport()
 	recorder.Start(opts, viewport)
+	api.CaptureRecordingSecrets(h.newSession(), recorder, nil)
 
 	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
 		return nil, err

@@ -311,7 +311,7 @@ func (r *Router) handleVibiumElIsEnabled(session *BrowserSession, cmd bidiComman
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"enabled": enabled})
 }
 
-// handleVibiumElIsChecked handles vibium:element.isChecked — returns element.checked.
+// handleVibiumElIsChecked handles vibium:element.isSet — returns element.checked.
 func (r *Router) handleVibiumElIsChecked(session *BrowserSession, cmd bidiCommand) {
 	ep := ExtractElementParams(cmd.Params)
 	context, err := r.resolveContext(session, cmd.Params)

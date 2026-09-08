@@ -243,14 +243,17 @@ def test_type_appends(bro, test_server):
     assert inp.value() == "abc"
 
 
-def test_check_uncheck(bro, test_server):
+def test_set_unset(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/form")
     cb = vibe.find("#agree")
-    cb.check()
-    assert cb.is_checked()
-    cb.uncheck()
-    assert not cb.is_checked()
+    cb.set()
+    cb.set(False)
+    assert not cb.is_set()
+    cb.set(True)
+    assert cb.is_set()
+    cb.unset()
+    assert not cb.is_set()
 
 
 def test_select_option(bro, test_server):
@@ -860,8 +863,8 @@ def test_full_checkpoint(bro, test_server):
     email_input.fill("test@example.com")
 
     cb = vibe.find("#agree")
-    cb.check()
-    assert cb.is_checked()
+    cb.set()
+    assert cb.is_set()
 
     sel = vibe.find("#color")
     sel.select_option("green")

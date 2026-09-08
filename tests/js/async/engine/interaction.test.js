@@ -1,6 +1,6 @@
 /**
  * JS Library Tests: Element Interaction
- * Tests click, dblclick, fill, type, press, clear, check, uncheck,
+ * Tests click, dblclick, fill, type, press, clear, set, unset,
  * selectOption, hover, focus, tap, scrollIntoView, dispatchEvent.
  */
 
@@ -43,19 +43,22 @@ describe('Interaction: Checkpoint', () => {
     assert.ok(url.includes('/secure'), `Should be on /secure page, got: ${url}`);
   });
 
-  test('checkbox: check and uncheck', async () => {
+  test('checkbox: set and unset', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/checkboxes');
 
     const first = await vibe.find('input[type="checkbox"]');
 
     // First checkbox starts unchecked
-    await first.check();
-    assert.strictEqual(await first.isChecked(), true, 'First checkbox should be checked');
+    await first.set();
+    await first.set(false);
+    assert.strictEqual(await first.isSet(), false);
+    await first.set(true);
+    assert.strictEqual(await first.isSet(), true, 'First checkbox should be checked');
 
     // Uncheck it
-    await first.uncheck();
-    assert.strictEqual(await first.isChecked(), false, 'First checkbox should be unchecked');
+    await first.unset();
+    assert.strictEqual(await first.isSet(), false, 'First checkbox should be unchecked');
   });
 
   test('hover reveals hidden content', async () => {

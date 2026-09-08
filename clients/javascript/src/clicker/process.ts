@@ -19,6 +19,8 @@ const INSTALLING_MARKER = '[pipe] installing browser';
 const STDERR_TAIL_LIMIT = 8192;
 
 export interface VibiumProcessOptions {
+  /** @internal Serve archive operations without a browser. */
+  noBrowser?: boolean;
   engine?: 'chrome' | 'firefox';
   channel?: string;
   headless?: boolean;
@@ -50,6 +52,7 @@ export class VibiumProcess {
     const binaryPath = options.executablePath || getVibiumBinPath();
 
     const args = ['pipe'];
+    if (options.noBrowser) args.push('--no-browser');
     if (options.engine) {
       args.push('--engine', options.engine);
     }
@@ -228,6 +231,8 @@ export class VibiumProcess {
       process.removeListener('SIGTERM', this._cleanupListeners);
       this._cleanupListeners = null;
     }
+
+    if (this._process.exitCode !== null || this._process.signalCode !== null) return;
 
     return new Promise((resolve) => {
       let resolved = false;

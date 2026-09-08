@@ -1,3 +1,6 @@
+import { callable } from '../callable';
+import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
+import { CheckOptions, RecordedCheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
 import { SyncBridge } from './bridge';
 import { PageSync } from './page';
 import { BrowserContextSync } from './context';
@@ -13,6 +16,8 @@ export interface StartOptions {
   headers?: Record<string, string>;
 }
 
+export interface BrowserSync { (goal: string, options?: RunOptions): RunResult; }
+
 export class BrowserSync {
   /** @internal */
   readonly _bridge: SyncBridge;
@@ -22,10 +27,19 @@ export class BrowserSync {
 
   constructor(bridge: SyncBridge) {
     this._bridge = bridge;
+    return callable(this);
   }
 
   [customInspect](): string {
     return 'Browser { connected: true }';
+  }
+
+  run(goal: string, options: RunOptions = {}): RunResult {
+    return this._bridge.call('browser.run', [goal, options], RUN_TIMEOUT_MS);
+  }
+
+  check(claim: string, options: CheckOptions = {}): CheckResult {
+    return this._bridge.call('browser.check', [claim, options], CHECK_TIMEOUT_MS);
   }
 
   page(): PageSync {
@@ -104,6 +118,12 @@ export class BrowserSync {
 }
 
 export const browser = {
+  check(claim: string, options: RecordedCheckOptions): CheckResult {
+    if (!options?.record) throw new Error('Standalone verification requires record');
+    const bridge = SyncBridge.create();
+    try { return bridge.call('check.record', [claim, options], CHECK_TIMEOUT_MS); }
+    finally { bridge.terminate(); }
+  },
   start(urlOrOptions?: string | StartOptions, options: StartOptions = {}): BrowserSync {
     let url: string | undefined;
     if (typeof urlOrOptions === 'object') {

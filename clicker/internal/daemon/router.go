@@ -11,6 +11,8 @@ import (
 	"github.com/vibium/clicker/internal/agent"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
+	runop "github.com/vibium/clicker/internal/run"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // StatusResult is returned by daemon/status.
@@ -122,6 +124,43 @@ func (d *Daemon) route(req agent.Request, notifyLaunch func()) (interface{}, *ag
 	log.Debug("daemon request", "method", req.Method, "id", req.ID)
 
 	switch req.Method {
+	case runop.Method:
+		var p struct {
+			runop.Request
+			CLI agent.OperationCLIOptions `json:"cli"`
+		}
+		if json.Unmarshal(req.Params, &p) != nil {
+			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid run request"}
+		}
+		d.mu.Lock()
+		d.handlers.SetLaunchNotify(notifyLaunch)
+		result, err := d.handlers.RunCLI(p.Request, p.CLI)
+		d.handlers.SetLaunchNotify(nil)
+		d.mu.Unlock()
+		if err != nil {
+			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
+		}
+		return result, nil
+	case verifier.Method:
+		var p checkParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid verification request"}
+		}
+		d.mu.Lock()
+		d.handlers.SetLaunchNotify(notifyLaunch)
+		var result verifier.Result
+		var err error
+		if p.CLI != nil {
+			result, err = d.handlers.CheckCLI(p.Request, *p.CLI)
+		} else {
+			result, err = d.handlers.Check(p.Request)
+		}
+		d.handlers.SetLaunchNotify(nil)
+		d.mu.Unlock()
+		if err != nil {
+			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
+		}
+		return result, nil
 	case "daemon/status":
 		return d.handleStatus()
 	case "daemon/shutdown":
