@@ -212,6 +212,7 @@ func main() {
 	rootCmd.AddCommand(newA11yTreeCmd())
 	rootCmd.AddCommand(newSleepCmd())
 	rootCmd.AddCommand(newSkillCmd())
+	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newMapCmd())
 	rootCmd.AddCommand(newDiffCmd())
 	rootCmd.AddCommand(newPDFCmd())

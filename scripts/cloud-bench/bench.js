@@ -6,8 +6,9 @@
 //   classic POST /session for grids) → first navigation → title read →
 //   screenshot → close.
 //
-// Providers activate when their env vars are set (see providers.js and
-// .env.example). Run everything configured:
+// Providers activate when their env vars are set (see providers.js, or run
+// `vibium config init cloud` for a commented template). Run everything
+// configured:
 //
 //   node scripts/cloud-bench/bench.js
 //
@@ -168,7 +169,7 @@ async function main() {
   const skipped = PROVIDERS.filter((p) => !active.includes(p));
 
   if (!active.length) {
-    console.error('No providers configured. Set env vars (see .env.example) or use --provider local');
+    console.error('No providers configured. Run `vibium config init cloud`, source the file it writes, or use --provider local');
     process.exit(1);
   }
   for (const p of skipped) {

@@ -94,6 +94,8 @@ build: build-go build-js build-java
 build-go: deps
 	cp skills/browser/SKILL.md clicker/cmd/clicker/SKILL.md
 	cp skills/check/SKILL.md clicker/cmd/clicker/CHECK_SKILL.md
+	cp config/ai.env clicker/cmd/clicker/AI_ENV_TEMPLATE
+	cp config/cloud-browser.env clicker/cmd/clicker/CLOUD_ENV_TEMPLATE
 	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
@@ -115,6 +117,8 @@ build-go-all:
 	@echo "Cross-compiling vibium for all platforms..."
 	cp skills/browser/SKILL.md clicker/cmd/clicker/SKILL.md
 	cp skills/check/SKILL.md clicker/cmd/clicker/CHECK_SKILL.md
+	cp config/ai.env clicker/cmd/clicker/AI_ENV_TEMPLATE
+	cp config/cloud-browser.env clicker/cmd/clicker/CLOUD_ENV_TEMPLATE
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker

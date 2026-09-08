@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/paths"
 	"github.com/vibium/clicker/internal/verifier"
 )
 
@@ -145,12 +146,18 @@ func runReadiness(cmd *cobra.Command, args []string, aiProbe func(context.Contex
 }
 
 func readyEnvNote() []string {
-	if home, err := os.UserHomeDir(); err == nil {
-		if info, err := os.Stat(filepath.Join(home, ".config", "vibium", "ai.env")); err == nil && info.Mode().IsRegular() {
-			return []string{"Found ~/.config/vibium/ai.env; Vibium does not load it automatically. Use export NAME=value assignments in that file. In Bash/Zsh, run: source ~/.config/vibium/ai.env; then rerun readiness in the same shell."}
-		}
+	dir, err := paths.GetConfigDir()
+	if err != nil {
+		return nil
 	}
-	return nil
+	path := tildePath(filepath.Join(dir, "ai.env"))
+
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		return []string{"Found " + path + "; Vibium does not load it automatically. Use export NAME=value assignments in that file. In Bash/Zsh, run: source " + path + "; then rerun readiness in the same shell."}
+	}
+	// No settings file yet: name the command that writes one, rather than
+	// leaving the reader to hand-roll a file the tutorial describes in prose.
+	return []string{"No AI settings file yet. Run: vibium config init; edit " + path + "; then, in Bash/Zsh: source " + path + " in the shell that runs vibium."}
 }
 
 func writeReadiness(cmd *cobra.Command, result setupResult) {
