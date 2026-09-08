@@ -88,7 +88,8 @@ restarting the daemon or browser.
 
 Vibium does not load environment files automatically. To use a file with Bash
 or Zsh, put `export NAME=value` assignments in it, then source it in the same
-shell invocation as the CLI command:
+shell invocation as the CLI command. `vibium config init` writes the file if
+you do not have one:
 
 ```bash
 source ~/.config/vibium/ai.env

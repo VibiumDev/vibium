@@ -31,12 +31,13 @@ If you already have working settings, keep them and load them below.
 Otherwise, create a private settings file:
 
 ```bash
-mkdir -p ~/.config/vibium
-(umask 077; touch ~/.config/vibium/ai.env)
-chmod 600 ~/.config/vibium/ai.env
+vibium config init
+# Wrote /Users/you/.config/vibium/ai.env (0600) — provider, model and API key for run and check
+# Edit it, then: source /Users/you/.config/vibium/ai.env
 ```
 
-Open `~/.config/vibium/ai.env` in your editor and add:
+That writes a commented file readable only by you. Open
+`~/.config/vibium/ai.env` in your editor and set:
 
 ```bash
 export VIBIUM_AI_PROVIDER=openai

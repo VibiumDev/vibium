@@ -31,7 +31,9 @@ and requires no key. Never manage or install a model runtime as part of Check.
 An OpenAI-compatible service uses `VIBIUM_AI_PROVIDER=openai-compatible`
 and `VIBIUM_AI_BASE_URL`. Use the project's existing configuration;
 Vibium does not load environment files automatically. If an environment file
-is configured, source it in the same shell invocation as Check. Its shell
+is configured, source it in the same shell invocation as Check. If none exists,
+tell the user to run `vibium config init` and fill in the file it writes at
+`~/.config/vibium/ai.env` — do not write credentials to it yourself. Its shell
 assignments must export the settings (`export NAME=value`) so the CLI receives
 them. Never print or log credentials. Do not choose another provider or model to work around a
 missing configuration without the user's direction.

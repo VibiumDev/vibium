@@ -11,6 +11,28 @@ import (
 	"strings"
 )
 
+// GetConfigDir returns the directory holding Vibium's settings files
+// (ai.env, cloud-browser.env). Unlike the cache, this is ~/.config/vibium on
+// every platform: the tutorials, the README, the check skill, the readiness
+// hint and every guide name that exact path, so resolving anywhere else sends
+// users to a file the documentation never mentions.
+//
+// XDG_CONFIG_HOME is deliberately NOT consulted. It is the Linux convention,
+// but honouring it would silently relocate the file on any machine that sets
+// it — including CI runners, where it moved the directory outside a test's
+// overridden HOME. VIBIUM_CONFIG_DIR is the explicit override, matching
+// VIBIUM_CACHE_DIR.
+func GetConfigDir() (string, error) {
+	if dir := os.Getenv("VIBIUM_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "vibium"), nil
+}
+
 // GetCacheDir returns the platform-specific cache directory for Vibium.
 // Override with VIBIUM_CACHE_DIR environment variable.
 // Linux: ~/.cache/vibium/

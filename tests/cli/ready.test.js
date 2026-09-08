@@ -61,6 +61,10 @@ test('ready ai lists missing settings and detects an unsourced env file without 
     assert.match(result.stdout, /VIBIUM_AI_PROVIDER/);
     assert.match(result.stdout, /VIBIUM_AI_MODEL/);
     assert.match(result.stdout, /source ~\/\.config\/vibium\/ai\.env/);
+    // Both notes contain that source line, so assert on the branch itself:
+    // the file is present, so readiness must say it found one.
+    assert.match(result.stdout, /Found ~\/\.config\/vibium\/ai\.env/);
+    assert.doesNotMatch(result.stdout, /No AI settings file yet/);
     assert.doesNotMatch(result.stdout + result.stderr, /secret-file-marker/);
     if (args.includes('--json')) {
       const body = JSON.parse(result.stdout);

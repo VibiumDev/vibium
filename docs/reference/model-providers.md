@@ -178,6 +178,19 @@ application behavior. Unsupported tool protocols produce errors and setup guidan
 
 Vibium does not load environment files automatically. Use `export NAME=value`
 assignments in a private file, then source it in the same shell invocation.
+
+`vibium config init` writes that file for you at `~/.config/vibium/ai.env`,
+readable only by you, with every setting present and commented:
+
+```
+$ vibium config init
+Wrote ~/.config/vibium/ai.env (0600) — provider, model and API key for run and check
+Edit it, then: source ~/.config/vibium/ai.env
+```
+
+It refuses to overwrite an existing file unless you pass `--force`, which keeps
+a `.bak`. The credential lines ship empty on purpose, so `vibium ready ai`
+reports a key you forgot to fill in before it spends a request finding out.
 The CLI reads settings on each call; SDK and MCP runtimes read their own process
 environment and need restarting after environment defaults change. Per-call
 overrides take effect immediately and do not require a runtime restart.

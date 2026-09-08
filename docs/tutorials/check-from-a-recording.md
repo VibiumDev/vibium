@@ -9,7 +9,8 @@ or ask your coding agent to use the `check` skill.
 ## Before you start
 
 Use the same Vibium binary and AI settings as Part 1. In a new terminal,
-load the settings before running the check:
+load the settings before running the check. If the file does not exist yet,
+`vibium config init` writes it:
 
 ```bash
 source ~/.config/vibium/ai.env

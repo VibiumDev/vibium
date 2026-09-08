@@ -26,3 +26,17 @@ have a connect path — vibium speaks the W3C standards.
 
 To test an app that isn't publicly reachable from a vendor's browser,
 see [testing private sites](../testing-private-sites.md).
+
+## Credentials
+
+`vibium config init cloud` writes a commented template listing every provider's
+variables to `~/.config/vibium/cloud-browser.env`, readable only by you:
+
+```
+$ vibium config init cloud
+Wrote /Users/you/.config/vibium/cloud-browser.env (0600) — credentials for cloud browser vendors
+Edit it, then: source /Users/you/.config/vibium/cloud-browser.env
+```
+
+Fill in the providers you use, delete the rest, and source it in the shell that
+runs vibium — the file is not loaded automatically.
