@@ -3,65 +3,18 @@ name: Test
 on:
   push:
     branches: [main]
-    paths-ignore:
-      # Documentation that nothing builds or tests reads. Deliberately NOT
-      # docs/tutorials/**: tests/py and tests/js extract code from those and
-      # run it, so editing one can break the suite. Also not skills/**, whose
-      # SKILL.md is copied into the binary by build-go, and not
-      # docs/reference/api.md, which the API drift check parses as its spec.
-      - 'docs/explanation/**'
-      - 'docs/how-to-guides/**'
-      - 'docs/images/**'
-      - 'docs/plans/**'
-      - 'docs/reference/WebDriver-Bidi-Spec.md'
-      - 'docs/reference/mac-system-requirements.md'
-      - 'docs/reference/recording-format.md'
-      - 'docs/reference/selectors.md'
-      - 'docs/reference/webdriver-bidi-overview.md'
-      - 'docs/reference/webdriver-classic.md'
-      - 'docs/specs/**'
-      - 'docs/trackers/**'
-      - 'docs/updates/**'
-      - 'docs/README.md'
-      # Root docs named individually. A bare glob's treatment of / is
-      # not worth guessing at here: if it matched recursively it would
-      # silently skip CI for skills/vibe-check/SKILL.md, which build-go
-      # compiles in, and for the tutorials, which tests execute.
-      - 'CLAUDE.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - 'README.md'
-      - 'ROADMAP.md'
   pull_request:
-    paths-ignore:
-      # Documentation that nothing builds or tests reads. Deliberately NOT
-      # docs/tutorials/**: tests/py and tests/js extract code from those and
-      # run it, so editing one can break the suite. Also not skills/**, whose
-      # SKILL.md is copied into the binary by build-go, and not
-      # docs/reference/api.md, which the API drift check parses as its spec.
-      - 'docs/explanation/**'
-      - 'docs/how-to-guides/**'
-      - 'docs/images/**'
-      - 'docs/plans/**'
-      - 'docs/reference/WebDriver-Bidi-Spec.md'
-      - 'docs/reference/mac-system-requirements.md'
-      - 'docs/reference/recording-format.md'
-      - 'docs/reference/selectors.md'
-      - 'docs/reference/webdriver-bidi-overview.md'
-      - 'docs/reference/webdriver-classic.md'
-      - 'docs/specs/**'
-      - 'docs/trackers/**'
-      - 'docs/updates/**'
-      - 'docs/README.md'
-      # Root docs named individually. A bare glob's treatment of / is
-      # not worth guessing at here: if it matched recursively it would
-      # silently skip CI for skills/vibe-check/SKILL.md, which build-go
-      # compiles in, and for the tutorials, which tests execute.
-      - 'CLAUDE.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - 'README.md'
-      - 'ROADMAP.md'
+
+# Deliberately no paths/paths-ignore. Branch protection requires the checks
+# this workflow reports, and a filter that skips the workflow also skips the
+# report, which deadlocked documentation-only PRs (#303 fallout). The docs
+# decision is made by the `changes` job below instead, so the check names
+# always report exactly once. A twin workflow filtered on the inverse paths
+# was tried and is worse: `paths` and `paths-ignore` both mean "any changed
+# file matches", so they are not complements — a PR touching docs *and* code
+# fires both, and the no-op twin reports the required `test` check green in
+# ten seconds while the real suite is still running. PR #484 merged on that
+# false green and left main red.
 
 # CI only reads the repo. Keeps the job's GITHUB_TOKEN read-only even if
 # the repo default is ever write.
@@ -78,8 +31,76 @@ env:
   VIBIUM_STDERR: 1
 
 jobs:
+  # Decides whether the browser suites apply. A markdown edit used to run the
+  # full Go, JS, Python and Java suite for about six minutes and roughly one
+  # commit in eight touches only documentation (#303), so those still skip —
+  # but the skip now happens here, inside the workflow that reports the
+  # required checks, instead of preventing it from running at all.
+  #
+  # Only pull requests are classified. A push to main always runs everything:
+  # main staying green is worth more than six minutes, and a push can carry
+  # commits a PR never saw.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Classify the diff
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Push build: running the full suite."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Documentation that nothing builds or tests reads. Deliberately NOT
+          # docs/tutorials/**: tests/py and tests/js extract code from those
+          # and run it, so editing one can break the suite. Also not skills/**,
+          # whose SKILL.md is copied into the binary by build-go, and not
+          # docs/reference/api.md, which the API drift check parses as its
+          # spec. Root docs are listed one by one rather than globbed, so a
+          # pattern can never quietly swallow a path that needs real CI.
+          docs='^(docs/(explanation|how-to-guides|images|plans|specs|trackers|updates)/
+          |docs/README\.md$
+          |docs/reference/(WebDriver-Bidi-Spec|mac-system-requirements|recording-format|selectors|webdriver-bidi-overview|webdriver-classic)\.md$
+          |CLAUDE\.md$
+          |CODE_OF_CONDUCT\.md$
+          |CONTRIBUTING\.md$
+          |README\.md$
+          |ROADMAP\.md$)'
+          # Written across lines for readability; the pattern itself has no
+          # whitespace, so folding it back is just deleting spaces and newlines.
+          docs=$(printf '%s' "$docs" | tr -d ' \n')
+
+          files=$(gh api --paginate \
+            "repos/${{ github.repository }}/pulls/${{ github.event.number }}/files" \
+            --jq '.[].filename')
+
+          echo "Changed files:"
+          printf '%s\n' "$files" | sed 's/^/  /'
+
+          # An empty file list is not a documentation change: say no and run
+          # the suite rather than waving through a diff we failed to read.
+          if [ -z "$files" ] || printf '%s\n' "$files" | grep -qvE "$docs"; then
+            echo "Code touched: running the full suite."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Documentation only: skipping the browser suites."
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
   chrome:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
 
@@ -167,6 +188,8 @@ jobs:
 
   firefox:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     timeout-minutes: 30
     env:
       VIBIUM_REQUIRE_FIREFOX: 1
@@ -238,10 +261,20 @@ jobs:
   # satisfied.
   test:
     runs-on: ubuntu-latest
-    needs: [chrome, firefox]
+    needs: [changes, chrome, firefox]
     if: always()
     steps:
       - name: All suites green
         run: |
+          # A classifier that failed leaves the engine jobs skipped for the
+          # wrong reason, which would otherwise read as a documentation-only
+          # pass. Fail instead of guessing.
+          test "${{ needs.changes.result }}" = "success"
+
+          if [ "${{ needs.changes.outputs.docs_only }}" = "true" ]; then
+            echo "Documentation-only change, browser suites not applicable."
+            exit 0
+          fi
+
           test "${{ needs.chrome.result }}" = "success"
           test "${{ needs.firefox.result }}" = "success"
