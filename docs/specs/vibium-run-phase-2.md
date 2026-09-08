@@ -780,7 +780,7 @@ acceptance remains incomplete; fixture success is not a substitute for it.
   actions, shared across surfaces.
 
 Real OpenAI Run and Check have previously been exercised, including the
-captured [meetup example](../presentations/run-check-meetup/README.md#what-was-actually-captured).
+captured [meetup example](../presentations/vibe-check/README.md#what-was-actually-captured).
 This review reruns deterministic tests, not real-model acceptance. The normal
 Run suite skips all five opt-in real cases, including OpenAI; that skip does
 not erase the earlier OpenAI results or validate the three pending providers.
