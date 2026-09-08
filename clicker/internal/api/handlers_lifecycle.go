@@ -415,8 +415,46 @@ func RequireFileInput(s Session, context string, ep ElementParams) error {
 	return nil
 }
 
+// validateUploadFiles rejects paths the engine cannot deliver. Without it,
+// what a bad path means depends on the engine: Chrome attaches a zero-byte
+// file named after a typo and reports success, Firefox rejects it (#480).
+//
+// Stat alone is not enough: it succeeds on a directory and on a file the
+// process cannot read, and both reach the page as bogus entries. Opening the
+// file is what answers "can this be uploaded".
+func validateUploadFiles(files []string) error {
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("upload: file does not exist: %s", f)
+			}
+			return fmt.Errorf("upload: cannot read %s: %v", f, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("upload: not a file: %s is a directory", f)
+		}
+		handle, err := os.Open(f)
+		if err != nil {
+			return fmt.Errorf("upload: cannot read %s: %v", f, err)
+		}
+		handle.Close()
+	}
+	return nil
+}
+
 // Upload sets files on an <input type="file"> element.
-func Upload(s Session, context string, ep ElementParams, files []string) error {
+//
+// remote reports whether the browser runs on another host, in which case the
+// local filesystem says nothing about the paths and validation is left to
+// the engine.
+func Upload(s Session, context string, ep ElementParams, files []string, remote bool) error {
+	if !remote {
+		if err := validateUploadFiles(files); err != nil {
+			return err
+		}
+	}
+
 	if err := RequireFileInput(s, context, ep); err != nil {
 		return err
 	}
@@ -426,14 +464,22 @@ func Upload(s Session, context string, ep ElementParams, files []string) error {
 		return err
 	}
 
-	_, err = s.SendBidiCommand("input.setFiles", map[string]interface{}{
+	resp, err := s.SendBidiCommand("input.setFiles", map[string]interface{}{
 		"context": context,
 		"element": map[string]interface{}{
 			"sharedId": sharedID,
 		},
 		"files": files,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// Through APISession, SendBidiCommand reports transport failures only:
+	// an engine-level rejection arrives as a normal response whose payload
+	// is an error, so without this the proxy answered "set": true for a
+	// file the browser refused and every client built on it reported
+	// success (#481). Through AgentSession this is a safe no-op.
+	return checkBidiError(resp)
 }
 
 // MouseMove moves the mouse to the given coordinates.
