@@ -150,14 +150,17 @@ func readyEnvNote() []string {
 	if err != nil {
 		return nil
 	}
-	path := tildePath(filepath.Join(dir, "ai.env"))
+	path := filepath.Join(dir, "ai.env")
+	// Stat the real path; show the documented ~/… form. Conflating the two
+	// statted a literal tilde, so the file was never found.
+	shown := tildePath(path)
 
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-		return []string{"Found " + path + "; Vibium does not load it automatically. Use export NAME=value assignments in that file. In Bash/Zsh, run: source " + path + "; then rerun readiness in the same shell."}
+		return []string{"Found " + shown + "; Vibium does not load it automatically. Use export NAME=value assignments in that file. In Bash/Zsh, run: source " + shown + "; then rerun readiness in the same shell."}
 	}
 	// No settings file yet: name the command that writes one, rather than
 	// leaving the reader to hand-roll a file the tutorial describes in prose.
-	return []string{"No AI settings file yet. Run: vibium config init; edit " + path + "; then, in Bash/Zsh: source " + path + " in the shell that runs vibium."}
+	return []string{"No AI settings file yet. Run: vibium config init; edit " + shown + "; then, in Bash/Zsh: source " + shown + " in the shell that runs vibium."}
 }
 
 func writeReadiness(cmd *cobra.Command, result setupResult) {
