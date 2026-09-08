@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, ENGINE } = require('../helpers');
 const exec = promisify(execFile);
 
 async function lifecycle(t, { status = 'passed', keepOpen = false, existing = false, idleDaemon = false, mismatch = false, record = true } = {}) {
@@ -31,8 +31,8 @@ async function lifecycle(t, { status = 'passed', keepOpen = false, existing = fa
   });
   await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
   const env = { ...process.env, VIBIUM_SESSION: `vl-${process.pid}`,
-    VIBIUM_ENGINE: process.env.VIBIUM_CHECK_ENGINE || 'chrome', VIBIUM_ENGINE_PATH: '',
-    VIBIUM_ENGINE_CHANNEL: process.env.VIBIUM_CHECK_ENGINE === 'firefox' ? 'beta' : '',
+    VIBIUM_ENGINE: ENGINE, VIBIUM_ENGINE_PATH: '',
+    VIBIUM_ENGINE_CHANNEL: ENGINE === 'firefox' ? 'beta' : '',
     VIBIUM_CONNECT_URL: '', VIBIUM_AI_PROVIDER: 'openai-compatible',
     VIBIUM_AI_MODEL: 'fixture', VIBIUM_AI_REASONING_EFFORT: '',
     VIBIUM_AI_BASE_URL: `http://127.0.0.1:${provider.address().port}/v1`, OPENAI_API_KEY: '' };
