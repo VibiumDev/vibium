@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -273,20 +273,12 @@ mtlshim:
 	clang -fno-objc-arc -dynamiclib -framework Metal -framework Foundation \
 		-o $(MTLSHIM) scripts/mtlshim.m
 
+# The full suite. CI runs the two halves below on separate runners to keep
+# wall time down (#513); locally this is still everything.
 test: build install-browser $(FAST_LAUNCH_DEP)
 	@START_TIME=$$(date +%s); \
-	"$(MAKE)" check-api-drift && \
-	"$(MAKE)" test-go && \
-	"$(MAKE)" test-cli test-cleanup && \
-	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
-	"$(MAKE)" test-cleanup && \
-	"$(MAKE)" test-browser-modes test-cleanup && \
-	"$(MAKE)" test-firefox test-cleanup && \
-	"$(MAKE)" test-daemon test-cleanup && \
-	"$(MAKE)" test-js-sync && \
-	"$(MAKE)" test-check && \
-	"$(MAKE)" test-run; \
+	"$(MAKE)" test-core-suites && \
+	"$(MAKE)" test-checkrun-suites; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
 	END_TIME=$$(date +%s); \
@@ -300,6 +292,39 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 		echo "--- Tests failed after $${MINS}m$${SECS}s ---"; \
 		exit $$EXIT; \
 	fi
+
+# CI shard entry points (#513). Each carries the same build prerequisites as
+# `test`, so a shard runs standalone on a fresh runner.
+test-core: build install-browser $(FAST_LAUNCH_DEP)
+	@"$(MAKE)" test-core-suites; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
+
+test-checkrun: build install-browser $(FAST_LAUNCH_DEP)
+	@"$(MAKE)" test-checkrun-suites; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
+
+# The suite chains. Internal: `test`, `test-core` and `test-checkrun` wrap
+# these with build deps and cleanup; the split exists so the Check and Run
+# suites, which stand alone, can shard to their own runner.
+test-core-suites:
+	@"$(MAKE)" check-api-drift && \
+	"$(MAKE)" test-go && \
+	"$(MAKE)" test-cli test-cleanup && \
+	"$(MAKE)" test-js-process test-cleanup && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" test-cleanup && \
+	"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-firefox test-cleanup && \
+	"$(MAKE)" test-daemon test-cleanup && \
+	"$(MAKE)" test-js-sync
+
+test-checkrun-suites:
+	@"$(MAKE)" test-check && \
+	"$(MAKE)" test-run
 
 # Kill any browser/driver processes left over from tests.
 # The bracketed characters stop Linux pkill from SIGKILLing the recipe's
