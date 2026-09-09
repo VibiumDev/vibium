@@ -4155,7 +4155,7 @@ func (h *Handlers) browserUpload(args map[string]interface{}) (*ToolsCallResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := api.Upload(s, ctx, elementParamsWithTimeout(selector, args), files); err != nil {
+	if err := api.Upload(s, ctx, elementParamsWithTimeout(selector, args), files, h.connectURL != ""); err != nil {
 		return nil, fmt.Errorf("failed to set files: %w", err)
 	}
 
