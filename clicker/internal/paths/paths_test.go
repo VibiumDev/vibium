@@ -132,6 +132,11 @@ func withCache(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	// These tests seed the default-channel layout, so the ambient channel
+	// must not redirect resolution to a channel subdirectory. The Beta
+	// Watch workflow exports VIBIUM_ENGINE_CHANNEL=beta job-wide, which
+	// failed every one of them regardless of the browser (#479).
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	dir, err := GetChromeForTestingDir()
 	if err != nil {
 		t.Fatalf("GetChromeForTestingDir: %v", err)

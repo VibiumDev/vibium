@@ -24,6 +24,10 @@ func installFakeChrome(t *testing.T, cacheDir string, segments ...string) {
 func TestResolveVersionDirHonorsPin(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	// Pin the channel: the ambient environment may carry
+	// VIBIUM_ENGINE_CHANNEL=beta (the Beta Watch workflow does), and this
+	// test seeds the default-channel layout (#479).
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	installFakeChrome(t, cache, "140.0.7000.10")
 	installFakeChrome(t, cache, "141.0.7100.20")
 
@@ -57,6 +61,10 @@ func TestResolveVersionDirHonorsPin(t *testing.T) {
 func TestChromeChannelDirsAreSeparate(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	// Pin the channel: the ambient environment may carry
+	// VIBIUM_ENGINE_CHANNEL=beta (the Beta Watch workflow does), and this
+	// test seeds the default-channel layout (#479).
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	installFakeChrome(t, cache, "141.0.7100.20")
 	// A beta with a higher version number than stable.
 	installFakeChrome(t, cache, "beta", "142.0.7200.5")
