@@ -63,8 +63,9 @@ func Run(ctx context.Context, req Request, tools verifier.ToolExecutor) (Result,
 	if outcome.LimitReached {
 		return Result{Status: "not_completed", Goal: req.Goal, Summary: "Run reached its action limit before completion could be established.", Evidence: []verifier.Evidence{}}, nil
 	}
+	content := verifier.StripJSONFence(outcome.Content)
 	var result Result
-	if len(outcome.Content) > verifier.MaxText || json.Unmarshal([]byte(outcome.Content), &result) != nil {
+	if len(content) > verifier.MaxText || json.Unmarshal([]byte(content), &result) != nil {
 		return Result{}, fmt.Errorf("run returned an invalid JSON result")
 	}
 	result.Goal = req.Goal
