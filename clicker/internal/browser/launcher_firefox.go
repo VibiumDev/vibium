@@ -51,7 +51,7 @@ var firefoxPrefs = map[string]interface{}{
 func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	log.Debug("launching firefox", "headless", opts.Headless)
 
-	channel := opts.FirefoxChannel
+	channel := opts.Channel
 	if channel == "" {
 		channel = paths.FirefoxChannel()
 	}

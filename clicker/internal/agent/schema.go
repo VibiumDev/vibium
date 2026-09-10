@@ -1,5 +1,11 @@
 package agent
 
+import (
+	"sort"
+
+	"github.com/vibium/clicker/internal/paths"
+)
+
 // noPageParam lists the tools that are not scoped to a page: session
 // lifecycle, page management, recording control, and plain waits. Every
 // other tool accepts an optional page argument (added in GetToolSchemas)
@@ -29,6 +35,26 @@ const (
 	ScrollAmountDesc   = "Number of scroll increments"
 )
 
+// channelEnum is browser_start's channel enum: every channel of every
+// engine, from the same table the CLI and the launch handler validate
+// against. The schema cannot express per-engine enums, so the handler does
+// that half; what matters here is that a real channel is never refused at
+// the schema and a removed one never lingers (#525).
+func channelEnum() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, channels := range paths.EngineChannels {
+		for _, c := range channels {
+			if !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
 	tools := []Tool{
@@ -53,8 +79,8 @@ func GetToolSchemas() []Tool {
 					},
 					"channel": map[string]interface{}{
 						"type":        "string",
-						"description": "Firefox release channel",
-						"enum":        []string{"release", "beta"},
+						"description": "Release channel of the selected engine; chrome: stable (default), beta, dev, canary; firefox: release (default), beta",
+						"enum":        channelEnum(),
 					},
 				},
 				"additionalProperties": false,

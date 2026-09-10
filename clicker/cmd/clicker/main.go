@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -116,16 +115,11 @@ func applyGlobalFlags(cmd *cobra.Command) error {
 		return fmt.Errorf("unsupported engine %q (supported: chrome, firefox)", engineName)
 	}
 	// Channels differ per engine: Mozilla's are release/beta, Chrome
-	// for Testing's are stable/beta/dev/canary.
-	if engineChannel != "" {
-		valid := map[string][]string{
-			"firefox": {"release", "beta"},
-			"chrome":  {"stable", "beta", "dev", "canary"},
-		}[engineName]
-		if !slices.Contains(valid, engineChannel) {
-			return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
-				engineChannel, engineName, strings.Join(valid, ", "))
-		}
+	// for Testing's are stable/beta/dev/canary. The table is shared with
+	// the MCP schema and the daemon's per-call validation (#525).
+	if !paths.ValidChannel(engineName, engineChannel) {
+		return fmt.Errorf("unsupported channel %q for %s (supported: %s)",
+			engineChannel, engineName, strings.Join(paths.EngineChannels[engineName], ", "))
 	}
 	// VIBIUM_ENGINE_PATH is an engine-neutral name but only Firefox
 	// implements it. Say so rather than accepting the setting and
