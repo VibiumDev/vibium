@@ -66,7 +66,10 @@ func newDaemonStartCmd() *cobra.Command {
 
   vibium --session projA daemon start
   # Isolated session "projA": own daemon, own browser, socket
-  # vibium-projA.sock; VIBIUM_SESSION=projA does the same`,
+  # vibium-projA.sock; VIBIUM_SESSION=projA does the same
+
+  vibium daemon start --json
+  # {"ok":true,"result":{"pid":79311,"running":true,"started":true}}`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !foreground && !internal {
 				// Daemonize: re-exec as detached child
@@ -96,8 +99,20 @@ func newDaemonStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the vibium daemon",
+		Example: `  vibium daemon stop
+  # Daemon stopped.
+
+  vibium daemon stop --json
+  # {"ok":true,"result":{"running":false,"stopped":true}}`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !daemon.IsRunning() {
+				if jsonOutput {
+					printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+						"running": false,
+						"stopped": false,
+					}})
+					return
+				}
 				fmt.Println("Daemon is not running.")
 				return
 			}
@@ -107,6 +122,13 @@ func newDaemonStopCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+					"running": false,
+					"stopped": true,
+				}})
+				return
+			}
 			fmt.Println("Daemon stopped.")
 		},
 	}
@@ -121,7 +143,11 @@ func newDaemonStatusCmd() *cobra.Command {
 				// Exit non-zero so `vibium daemon status` is usable in a
 				// conditional, and keep the human line out of --json output.
 				if jsonOutput {
+					// ok is true because the check ran; running says what it
+					// found. The keys stay top-level rather than moving under
+					// result so existing parsers of .running keep working.
 					printJSON(map[string]interface{}{
+						"ok":      true,
 						"running": false,
 					})
 				} else {
@@ -138,6 +164,7 @@ func newDaemonStatusCmd() *cobra.Command {
 
 			if jsonOutput {
 				printJSON(map[string]interface{}{
+					"ok":      true,
 					"running": true,
 					"version": status.Version,
 					"pid":     status.PID,
@@ -289,6 +316,13 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 	daemon.CleanStale()
 
 	if daemon.IsRunning() {
+		if jsonOutput {
+			printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+				"running": true,
+				"started": false,
+			}})
+			return
+		}
 		fmt.Println("Daemon is already running.")
 		return
 	}
@@ -338,6 +372,14 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		os.Exit(1)
 	}
 
+	if jsonOutput {
+		printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+			"running": true,
+			"started": true,
+			"pid":     cmd.Process.Pid,
+		}})
+		return
+	}
 	fmt.Printf("Daemon started (pid %d)\n", cmd.Process.Pid)
 }
 

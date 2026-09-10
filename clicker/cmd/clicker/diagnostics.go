@@ -18,7 +18,19 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the version number",
+		Example: `  vibium version
+  # vibium v26.8.21
+
+  vibium version --json
+  # {"ok":true,"result":{"name":"vibium","version":"26.8.21"}}`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]string{
+					"name":    filepath.Base(os.Args[0]),
+					"version": version,
+				}})
+				return
+			}
 			fmt.Printf("%s v%s\n", filepath.Base(os.Args[0]), version)
 		},
 	}
@@ -100,14 +112,29 @@ func newIsInstalledCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "is-installed",
 		Short: "Check if the selected browser is installed (exit 0 = yes, exit 1 = no)",
+		Example: `  vibium is-installed && echo yes
+  # yes
+
+  vibium is-installed --json
+  # {"ok":true,"result":{"engine":"chrome","installed":true}}`,
 		Run: func(cmd *cobra.Command, args []string) {
+			var installed bool
 			if engineName == "firefox" {
-				if !browser.IsFirefoxInstalled() {
-					os.Exit(1)
-				}
-				return
+				installed = browser.IsFirefoxInstalled()
+			} else {
+				installed = browser.IsInstalled()
 			}
-			if !browser.IsInstalled() {
+			// The exit code stays the contract: 1 means not installed even
+			// though the check itself ran fine, which is why ok is true in
+			// that case. --json adds an answer for callers that capture
+			// output instead of branching on the exit status.
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+					"engine":    engineName,
+					"installed": installed,
+				}})
+			}
+			if !installed {
 				os.Exit(1)
 			}
 		},
@@ -133,6 +160,13 @@ func newInstallCmd() *cobra.Command {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					os.Exit(1)
 				}
+				if jsonOutput {
+					printJSON(jsonEnvelope{OK: true, Result: map[string]string{
+						"engine":  "firefox",
+						"firefox": exePath,
+					}})
+					return
+				}
 				fmt.Println("Installation complete!")
 				fmt.Printf("Firefox: %s\n", exePath)
 				return
@@ -144,6 +178,15 @@ func newInstallCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]string{
+					"engine":       "chrome",
+					"chrome":       result.ChromePath,
+					"chromedriver": result.ChromedriverPath,
+					"version":      result.Version,
+				}})
+				return
+			}
 			fmt.Println("Installation complete!")
 			fmt.Printf("Chrome: %s\n", result.ChromePath)
 			fmt.Printf("Chromedriver: %s\n", result.ChromedriverPath)

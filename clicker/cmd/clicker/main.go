@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -91,6 +92,12 @@ func applyGlobalFlags(cmd *cobra.Command) error {
 	// Enable logging only if --verbose is used
 	if verbose {
 		log.Setup(log.LevelVerbose)
+	}
+	// The installer's commentary is progress, not result. Under --json it
+	// has to leave stdout, or `install --json` prints plain text on the
+	// lines before the envelope and nothing can parse the stream.
+	if jsonOutput {
+		browser.Progress = os.Stderr
 	}
 	// Bridge the flag to the env var so the paths package and any
 	// auto-started daemon child process resolve the same session.

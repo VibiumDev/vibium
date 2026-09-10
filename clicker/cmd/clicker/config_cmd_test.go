@@ -22,7 +22,7 @@ func TestConfigInitWritesOwnerOnly(t *testing.T) {
 
 	cmd := &cobra.Command{}
 	for _, tmpl := range configTemplates {
-		if err := writeConfigTemplate(cmd, tmpl, false); err != nil {
+		if _, err := writeConfigTemplate(cmd, tmpl, false); err != nil {
 			t.Fatalf("%s: %v", tmpl.name, err)
 		}
 		path := filepath.Join(dir, "vibium", tmpl.file)
@@ -46,7 +46,7 @@ func TestConfigInitRefusesToClobber(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
-	err := writeConfigTemplate(cmd, configTemplates[0], false)
+	_, err := writeConfigTemplate(cmd, configTemplates[0], false)
 	if err == nil {
 		t.Fatal("expected a refusal, got nil")
 	}
@@ -69,7 +69,7 @@ func TestConfigInitForceKeepsBackup(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
-	if err := writeConfigTemplate(cmd, configTemplates[0], true); err != nil {
+	if _, err := writeConfigTemplate(cmd, configTemplates[0], true); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(path + ".bak")
