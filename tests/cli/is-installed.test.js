@@ -19,7 +19,11 @@ function runIsInstalled(cacheDir) {
   try {
     execFileSync(VIBIUM, ['is-installed'], {
       timeout: 10000,
-      env: { ...process.env, VIBIUM_CACHE_DIR: cacheDir },
+      // Pin the channel: the fake cache seeds the default-channel layout,
+      // and the Beta Watch workflow exports VIBIUM_ENGINE_CHANNEL=beta
+      // job-wide, which sent resolution into a beta/ subdirectory nobody
+      // created. Same class as #479.
+      env: { ...process.env, VIBIUM_CACHE_DIR: cacheDir, VIBIUM_ENGINE_CHANNEL: '' },
     });
     return 0;
   } catch (err) {
