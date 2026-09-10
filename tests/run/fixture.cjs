@@ -28,11 +28,16 @@ function decode(body, url) {
 }
 function answer(res, family, step, result, index) {
   const text = JSON.stringify(result);
+  // Real Claude wraps the final verdict in a markdown fence behind a line of
+  // prose despite being told to return only JSON; the openai family answers
+  // bare. Each emulation matches its provider's observed behavior so parser
+  // regressions fail here instead of on the first live call (#506, #514).
+  const fenced = 'The evidence is clear. Here is the result:\n\n```json\n' + text + '\n```';
   res.setHeader('Content-Type', 'application/json');
   if (family === 'anthropic') {
     res.end(JSON.stringify({ stop_reason: step ? 'tool_use' : 'end_turn', content: step ? [
       { type: 'text', text: 'PRIVATE-REASONING' }, { type: 'tool_use', id: `tool-${index}`, name: step[0], input: step[1] },
-    ] : [{ type: 'text', text }] }));
+    ] : [{ type: 'text', text: fenced }] }));
   } else if (family === 'google') {
     res.end(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: step ? [
       { thought: true, text: 'PRIVATE-REASONING' }, { functionCall: { name: step[0], args: step[1], id: `tool-${index}` }, thoughtSignature: `opaque-${index}` },
