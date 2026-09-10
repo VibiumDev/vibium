@@ -20,6 +20,15 @@ var noPageParam = map[string]bool{
 	"browser_download_set_dir":   true,
 }
 
+// Descriptions shared between a cobra flag's help text and the MCP tool
+// schema live here, so the two surfaces cannot contradict each other again
+// the way scroll's --selector did (#445). Surface-specific detail is
+// appended at the use site, never restated.
+const (
+	ScrollSelectorDesc = "CSS selector for the element to scroll within"
+	ScrollAmountDesc   = "Number of scroll increments"
+)
+
 // GetToolSchemas returns the list of available MCP tools with their schemas.
 func GetToolSchemas() []Tool {
 	tools := []Tool{
@@ -393,12 +402,12 @@ func GetToolSchemas() []Tool {
 					},
 					"amount": map[string]interface{}{
 						"type":        "number",
-						"description": "Number of scroll increments (default: 3)",
+						"description": ScrollAmountDesc + " (default: 3)",
 						"default":     3,
 					},
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for the element to scroll within (optional; without it the page scrolls at the viewport center)",
+						"description": ScrollSelectorDesc + " (optional; without it the page scrolls at the viewport center)",
 					},
 				},
 				"additionalProperties": false,
