@@ -146,8 +146,20 @@ func applyGlobalFlags(cmd *cobra.Command) error {
 }
 
 func main() {
-	progName := filepath.Base(os.Args[0])
+	rootCmd, runCmd := newRootCmd(filepath.Base(os.Args[0]))
 
+	rootCmd.SetArgs(promptArgs(rootCmd, runCmd, os.Args[1:]))
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// newRootCmd builds the full command tree. Factored out of main so tests can
+// walk the real tree in-process (flagdrift_test.go) instead of parsing help
+// text from the binary.
+func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd := &cobra.Command{
 		Use: progName + " [command | \"<prompt>\"]",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -265,10 +277,5 @@ func main() {
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(progName + " v{{.Version}}\n")
 
-	rootCmd.SetArgs(promptArgs(rootCmd, runCmd, os.Args[1:]))
-
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return rootCmd, runCmd
 }

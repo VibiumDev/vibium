@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/agent"
 )
 
 func newScrollCmd() *cobra.Command {
@@ -47,8 +48,8 @@ func newScrollCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().Int("amount", 3, "Number of scroll increments")
-	cmd.Flags().String("selector", "", "CSS selector for the element to scroll within")
+	cmd.Flags().Int("amount", 3, agent.ScrollAmountDesc)
+	cmd.Flags().String("selector", "", agent.ScrollSelectorDesc)
 
 	var intoViewTimeout time.Duration
 	intoViewCmd := &cobra.Command{
