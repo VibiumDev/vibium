@@ -17,14 +17,7 @@ func newGeolocationCmd() *cobra.Command {
 
   vibium geolocation 51.5074 -0.1278 --accuracy 10
   # Set location to London with 10m accuracy`,
-		DisableFlagParsing: true,
-		Args:               cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			args, perr := parseFlagsAllowNegative(cmd, args)
-			if perr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", perr)
-				os.Exit(1)
-			}
 			if len(args) != 2 {
 				fmt.Fprintf(os.Stderr, "Error: accepts 2 arg(s), received %d\n", len(args))
 				os.Exit(1)
@@ -58,5 +51,6 @@ func newGeolocationCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Float64("accuracy", 0, "Accuracy in meters (default: 1)")
-	return cmd
+	// Western longitudes are negative: `geolocation 37.8 -122.4` (#179).
+	return lateParse(cmd)
 }
