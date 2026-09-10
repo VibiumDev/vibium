@@ -21,14 +21,7 @@ func newTypeCmd() *cobra.Command {
 
   vibium type https://the-internet.herokuapp.com/inputs "input" "12345" --timeout 5s
   # Custom timeout (5s, or 5000 for milliseconds)`,
-		DisableFlagParsing: true,
-		Args:               cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			args, perr := parseFlagsAllowNegative(cmd, args)
-			if perr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", perr)
-				os.Exit(1)
-			}
 			if len(args) < 2 || len(args) > 3 {
 				fmt.Fprintf(os.Stderr, "Error: accepts between 2 and 3 arg(s), received %d\n", len(args))
 				os.Exit(1)
@@ -63,5 +56,6 @@ func newTypeCmd() *cobra.Command {
 		},
 	}
 	addTimeoutFlag(cmd, &timeout)
-	return cmd
+	// Values like type "#x" "-2" must not be parsed as shorthand flags (#179).
+	return lateParse(cmd)
 }

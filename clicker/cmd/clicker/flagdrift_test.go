@@ -53,8 +53,8 @@ func TestNoLocalFlagShadowsRootPersistent(t *testing.T) {
 // The commands that disable cobra flag parsing re-run the global-flag bridge
 // themselves (parseFlagsAllowNegative), and get --help/--session/--channel
 // coverage from tests/cli/help-flags.test.js and global-flags.test.js. A new
-// member joins that contract deliberately: add it here and to those suites,
-// or it ships with #422/#423/#482 all over again.
+// member joins that contract deliberately: build it with lateParse, add it
+// here and to those suites, or it ships with #422/#423/#482 all over again.
 func TestDisableFlagParsingSetIsExact(t *testing.T) {
 	root, _ := newRootCmd("vibium")
 
@@ -63,6 +63,9 @@ func TestDisableFlagParsingSetIsExact(t *testing.T) {
 	walkCommands(root, func(path string, c *cobra.Command) {
 		if c.DisableFlagParsing {
 			got = append(got, path)
+			if !lateParseCommands[c.Name()] {
+				t.Errorf("%q sets DisableFlagParsing without lateParse, so it parses flags without the --help interception and the global-flag re-apply (#422/#482)", path)
+			}
 		}
 	})
 	sort.Strings(got)
