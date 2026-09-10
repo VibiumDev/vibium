@@ -12,14 +12,14 @@ import (
 func TestChromeStableChannelResolvesToBakedPin(t *testing.T) {
 	t.Setenv("VIBIUM_ENGINE_VERSION", "")
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
-	if got := chromeInstallVersion(); got != pinnedChromeVersion {
+	if got := chromeInstallVersion("stable"); got != pinnedChromeVersion {
 		t.Errorf("chromeInstallVersion() = %q, want the baked %q", got, pinnedChromeVersion)
 	}
 }
 
 func TestChromeVersionOverrideBeatsBakedPin(t *testing.T) {
 	t.Setenv("VIBIUM_ENGINE_VERSION", "140.0.7000.10")
-	if got := chromeInstallVersion(); got != "140.0.7000.10" {
+	if got := chromeInstallVersion("stable"); got != "140.0.7000.10" {
 		t.Errorf("chromeInstallVersion() = %q, want the override 140.0.7000.10", got)
 	}
 }
@@ -29,7 +29,7 @@ func TestChromeVersionOverrideBeatsBakedPin(t *testing.T) {
 func TestChromeBetaChannelSkipsBakedPin(t *testing.T) {
 	t.Setenv("VIBIUM_ENGINE_VERSION", "")
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
-	if got := chromeInstallVersion(); got != "" {
+	if got := chromeInstallVersion("beta"); got != "" {
 		t.Errorf("chromeInstallVersion() = %q, want \"\" so beta fetches its current version", got)
 	}
 }

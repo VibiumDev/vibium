@@ -55,3 +55,36 @@ func TestHandlersCaptureFirefoxChannelDefault(t *testing.T) {
 		t.Fatalf("firefoxChannel = %q, want captured default release", h.firefoxChannel)
 	}
 }
+
+func TestBrowserLaunchRejectsChromeChannelMismatch(t *testing.T) {
+	// The guard used to be gated on firefox, so a Chrome channel mismatch
+	// answered "already running" as a success (#525).
+	h := &Handlers{
+		client:          &bidi.Client{},
+		launchedEngine:  "chrome",
+		launchedChannel: "stable",
+	}
+	_, err := h.browserLaunch(map[string]interface{}{"engine": "chrome", "channel": "beta"})
+	if err == nil || !strings.Contains(err.Error(), "Chrome stable is already running; requested beta") {
+		t.Fatalf("browserLaunch() error = %v", err)
+	}
+}
+
+func TestBrowserLaunchValidatesChannelPerEngine(t *testing.T) {
+	// Validation happens before any install or launch, so no browser and no
+	// network is touched. Chrome used to skip it entirely and silently
+	// launch stable (#525).
+	cases := []struct {
+		engine, channel, want string
+	}{
+		{"chrome", "release", `unknown Chrome channel "release" (supported: stable, beta, dev, canary)`},
+		{"firefox", "canary", `unknown Firefox channel "canary" (supported: release, beta)`},
+	}
+	for _, c := range cases {
+		h := NewHandlers("", c.engine, true, "", nil, nil)
+		_, err := h.browserLaunch(map[string]interface{}{"engine": c.engine, "channel": c.channel})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("browserLaunch(%s, %s) error = %v, want %q", c.engine, c.channel, err, c.want)
+		}
+	}
+}

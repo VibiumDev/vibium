@@ -66,6 +66,9 @@ func requestedLaunchOptions() map[string]interface{} {
 		channel := engineChannel
 		if channel == "" {
 			channel = paths.FirefoxChannel()
+			if engineName != "firefox" {
+				channel = paths.ChromeChannel()
+			}
 		}
 		args["channel"] = channel
 	}

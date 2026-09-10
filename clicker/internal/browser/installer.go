@@ -55,17 +55,28 @@ type InstallResult struct {
 // Install downloads and installs Chrome for Testing and chromedriver.
 // Returns paths to the installed binaries. Skips download if already installed.
 func Install() (*InstallResult, error) {
+	return InstallForChannel("")
+}
+
+// InstallForChannel installs a specific Chrome release channel. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default. The daemon resolves a
+// per-call channel that need not match the environment (#525), so every
+// lookup below takes the channel explicitly instead of reading the env.
+func InstallForChannel(channel string) (*InstallResult, error) {
 	// Check for skip environment variable
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return nil, fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
+	if channel == "" {
+		channel = paths.ChromeChannel()
+	}
 
 	// Check if already installed
-	if IsInstalled() {
-		chromePath, _ := paths.GetChromeExecutable()
-		chromedriverPath, _ := paths.GetChromedriverPath()
+	if IsInstalledForChannel(channel) {
+		chromePath, _ := paths.GetChromeExecutableForChannel(channel)
+		chromedriverPath, _ := paths.GetChromedriverPathForChannel(channel)
 		// Extract version from path (e.g., .../chrome-for-testing/143.0.7499.192/...)
-		version := extractVersionFromPath(chromePath)
+		version := extractVersionFromPath(chromePath, channel)
 		progressf("Chrome for Testing v%s already installed.\n", version)
 		return &InstallResult{
 			ChromePath:       chromePath,
@@ -76,12 +87,11 @@ func Install() (*InstallResult, error) {
 
 	platform := paths.GetPlatformString()
 
-	versionInfo, err := resolveChromeVersionInfo()
+	versionInfo, err := resolveChromeVersionInfo(channel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch version info: %w", err)
 	}
 
-	channel := paths.ChromeChannel()
 	if channel == "stable" {
 		progressf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
 	} else {
@@ -89,7 +99,7 @@ func Install() (*InstallResult, error) {
 	}
 
 	// Create version directory
-	cftDir, err := paths.GetChromeChannelDir()
+	cftDir, err := paths.GetChromeChannelDirForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -122,12 +132,12 @@ func Install() (*InstallResult, error) {
 	}
 
 	// Get paths to installed binaries
-	chromePath, err := paths.GetChromeExecutable()
+	chromePath, err := paths.GetChromeExecutableForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("Chrome installed but not found: %w", err)
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("chromedriver installed but not found: %w", err)
 	}
@@ -166,22 +176,22 @@ var chromeChannelKeys = map[string]string{
 // there is no offline path even for a pinned version: Chrome for Testing
 // download URLs come from its versions JSON, not a constructible pattern.
 // But a pinned lookup can never resolve to an untested new release.
-func resolveChromeVersionInfo() (*VersionInfo, error) {
-	if v := chromeInstallVersion(); v != "" {
+func resolveChromeVersionInfo(channel string) (*VersionInfo, error) {
+	if v := chromeInstallVersion(channel); v != "" {
 		return fetchVersionInfoFor(v)
 	}
-	return fetchChannelVersion(paths.ChromeChannel())
+	return fetchChannelVersion(channel)
 }
 
 // chromeInstallVersion returns the exact version to install, or "" when the
 // channel's current version should be fetched instead. Beta, dev, and
 // canary track their moving edge on purpose: beta-watch needs the current
 // beta, and pinning a canary would defeat it entirely.
-func chromeInstallVersion() string {
+func chromeInstallVersion(channel string) string {
 	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
 		return v
 	}
-	if paths.ChromeChannel() == "stable" {
+	if channel == "stable" {
 		return pinnedChromeVersion
 	}
 	return ""
@@ -389,7 +399,13 @@ func extractZip(zipPath, destDir string) error {
 
 // IsInstalled checks if Chrome for Testing and chromedriver are both installed.
 func IsInstalled() bool {
-	chromePath, err := paths.GetChromeExecutable()
+	return IsInstalledForChannel("")
+}
+
+// IsInstalledForChannel checks a specific Chrome release channel. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default.
+func IsInstalledForChannel(channel string) bool {
+	chromePath, err := paths.GetChromeExecutableForChannel(channel)
 	if err != nil {
 		return false
 	}
@@ -397,7 +413,7 @@ func IsInstalled() bool {
 		return false
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(channel)
 	if err != nil {
 		return false
 	}
@@ -407,12 +423,15 @@ func IsInstalled() bool {
 
 // extractVersionFromPath extracts the version number from a Chrome path.
 // e.g., ".../chrome-for-testing/143.0.7499.192/..." -> "143.0.7499.192"
-func extractVersionFromPath(path string) string {
+func extractVersionFromPath(path, channel string) string {
+	if channel == "" {
+		channel = paths.ChromeChannel()
+	}
 	parts := strings.Split(path, string(os.PathSeparator))
 	for i, part := range parts {
 		if part == "chrome-for-testing" && i+1 < len(parts) {
 			// Non-stable channels nest their version dirs one level deeper.
-			if ch := paths.ChromeChannel(); ch != "stable" && parts[i+1] == ch && i+2 < len(parts) {
+			if channel != "stable" && parts[i+1] == channel && i+2 < len(parts) {
 				return parts[i+2]
 			}
 			return parts[i+1]

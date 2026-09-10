@@ -67,11 +67,11 @@ func (pw *prefixWriter) Write(p []byte) (n int, err error) {
 
 // LaunchOptions contains options for launching the browser.
 type LaunchOptions struct {
-	Engine         string // "chrome" (default) or "firefox"
-	FirefoxChannel string // "release" (default) or "beta"
-	Headless       bool
-	Port           int  // Chromedriver port, 0 = auto-select
-	Verbose        bool // Show browser/driver output
+	Engine   string // "chrome" (default) or "firefox"
+	Channel  string // engine release channel; "" means the VIBIUM_ENGINE_CHANNEL default
+	Headless bool
+	Port     int  // Chromedriver port, 0 = auto-select
+	Verbose  bool // Show browser/driver output
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -134,7 +134,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		return nil, err
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(opts.Channel)
 	if err != nil {
 		return nil, fmt.Errorf("chromedriver not found")
 	}
@@ -146,7 +146,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		process.ReapOrphans(cacheDir)
 	}
 
-	chromePath, err := paths.GetChromeExecutable()
+	chromePath, err := paths.GetChromeExecutableForChannel(opts.Channel)
 	if err != nil {
 		return nil, fmt.Errorf("Chrome not found")
 	}

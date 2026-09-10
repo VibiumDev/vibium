@@ -34,6 +34,7 @@ type Handlers struct {
 	screenshotDir  string
 	engine         string // "chrome" (default) or "firefox"
 	firefoxChannel string // daemon/session default; captured at construction
+	chromeChannel  string // daemon/session default; captured at construction
 	headless       bool
 	connectURL     string                       // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header                  // headers for remote WebSocket connection
@@ -77,8 +78,8 @@ type Handlers struct {
 	// launched with, same caveat as launchedHeadless.
 	launchedEngine string
 
-	// launchedChannel distinguishes separately installed Firefox channels.
-	// It is empty for Chrome and remote sessions.
+	// launchedChannel distinguishes separately installed release channels of
+	// either engine. It is empty for remote sessions.
 	launchedChannel string
 
 	// launchNotify, when set, is called once at the moment a tool call
@@ -114,6 +115,7 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 		screenshotDir:  screenshotDir,
 		engine:         engine,
 		firefoxChannel: paths.FirefoxChannel(),
+		chromeChannel:  paths.ChromeChannel(),
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
@@ -816,10 +818,10 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				"%s is already running; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
 				h.launchedEngine, want)
 		}
-		if want, ok := args["channel"].(string); ok && want != "" && h.launchedEngine == "firefox" && want != h.launchedChannel {
+		if want, ok := args["channel"].(string); ok && want != "" && h.launchedChannel != "" && want != h.launchedChannel {
 			return nil, fmt.Errorf(
-				"Firefox %s is already running; requested %s. Run `vibium stop` first, or use another --session",
-				h.launchedChannel, want)
+				"%s %s is already running; requested %s. Run `vibium stop` first, or use another --session",
+				engineTitle(h.launchedEngine), h.launchedChannel, want)
 		}
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -880,15 +882,20 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	if useEngine == "" {
 		useEngine = "chrome"
 	}
-	useChannel := ""
+	// The default channel is the daemon's, captured at construction; a
+	// per-call channel overrides it for either engine. Chrome used to read
+	// this argument only in the Firefox branch, silently launching stable
+	// no matter what the caller asked for (#525).
+	useChannel := h.chromeChannel
 	if useEngine == "firefox" {
 		useChannel = h.firefoxChannel
-		if val, ok := args["channel"].(string); ok && val != "" {
-			if val != "release" && val != "beta" {
-				return nil, fmt.Errorf("unknown Firefox channel %q (supported: release, beta)", val)
-			}
-			useChannel = val
+	}
+	if val, ok := args["channel"].(string); ok && val != "" {
+		if !paths.ValidChannel(useEngine, val) {
+			return nil, fmt.Errorf("unknown %s channel %q (supported: %s)",
+				engineTitle(useEngine), val, strings.Join(paths.EngineChannels[useEngine], ", "))
 		}
+		useChannel = val
 	}
 
 	// Install the engine if this machine has never had one. The client
@@ -907,7 +914,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{
-		Engine: useEngine, FirefoxChannel: useChannel, Headless: useHeadless,
+		Engine: useEngine, Channel: useChannel, Headless: useHeadless,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
@@ -949,6 +956,16 @@ func modeName(headless bool) string {
 		return "headless"
 	}
 	return "headed"
+}
+
+// engineTitle renders an engine name for error messages.
+func engineTitle(engine string) string {
+	switch engine {
+	case "firefox":
+		return "Firefox"
+	default:
+		return "Chrome"
+	}
 }
 
 // startPromptTracking subscribes to user-prompt events and keeps h.prompts in

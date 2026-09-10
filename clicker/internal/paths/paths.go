@@ -92,6 +92,29 @@ func GetChromeForTestingDir() (string, error) {
 	return filepath.Join(cacheDir, "chrome-for-testing"), nil
 }
 
+// EngineChannels is the canonical list of valid release channels per engine,
+// first entry the default. The CLI flag validation, the MCP browser_start
+// schema and the daemon's per-call validation all build from this table, so
+// the three surfaces cannot drift apart again (#525).
+var EngineChannels = map[string][]string{
+	"chrome":  {"stable", "beta", "dev", "canary"},
+	"firefox": {"release", "beta"},
+}
+
+// ValidChannel reports whether channel is valid for engine. An empty channel
+// means the engine's default and is always valid.
+func ValidChannel(engine, channel string) bool {
+	if channel == "" {
+		return true
+	}
+	for _, c := range EngineChannels[engine] {
+		if c == channel {
+			return true
+		}
+	}
+	return false
+}
+
 // ChromeChannel returns the Chrome release channel to install and run.
 // Defaults to "stable"; override with VIBIUM_ENGINE_CHANNEL (e.g. "beta").
 // The same variable steers the Firefox channel, so an engine-agnostic
@@ -103,18 +126,28 @@ func ChromeChannel() string {
 	return "stable"
 }
 
-// GetChromeChannelDir returns the directory holding the channel's version
-// dirs. Stable keeps the historical chrome-for-testing root so existing
-// caches stay valid; other channels nest one level deeper, which also keeps
-// a beta's higher version number from shadowing stable under the
-// newest-first resolution below.
+// GetChromeChannelDir returns the directory holding the version dirs of the
+// environment's channel.
 func GetChromeChannelDir() (string, error) {
+	return GetChromeChannelDirForChannel(ChromeChannel())
+}
+
+// GetChromeChannelDirForChannel returns the directory holding the channel's
+// version dirs. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
+// Stable keeps the historical chrome-for-testing root so existing caches
+// stay valid; other channels nest one level deeper, which also keeps a
+// beta's higher version number from shadowing stable under the newest-first
+// resolution below.
+func GetChromeChannelDirForChannel(channel string) (string, error) {
+	if channel == "" {
+		channel = ChromeChannel()
+	}
 	cftDir, err := GetChromeForTestingDir()
 	if err != nil {
 		return "", err
 	}
-	if ch := ChromeChannel(); ch != "stable" {
-		return filepath.Join(cftDir, ch), nil
+	if channel != "stable" {
+		return filepath.Join(cftDir, channel), nil
 	}
 	return cftDir, nil
 }
@@ -132,8 +165,8 @@ func GetChromeChannelDir() (string, error) {
 // VIBIUM_ENGINE_VERSION pins the choice: the pinned version must also be
 // what launches, or newest-cached would silently run a different Chrome
 // than the pin installed.
-func resolveVersionDir() (string, error) {
-	cftDir, err := GetChromeChannelDir()
+func resolveVersionDir(channel string) (string, error) {
+	cftDir, err := GetChromeChannelDirForChannel(channel)
 	if err != nil {
 		return "", err
 	}
@@ -203,7 +236,13 @@ func compareVersions(a, b string) int {
 // GetChromeExecutable returns the path to Chrome for Testing executable.
 // Only checks Vibium cache - does not fall back to system Chrome.
 func GetChromeExecutable() (string, error) {
-	dir, err := resolveVersionDir()
+	return GetChromeExecutableForChannel("")
+}
+
+// GetChromeExecutableForChannel resolves the executable of a specific
+// channel. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
+func GetChromeExecutableForChannel(channel string) (string, error) {
+	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
 	}
@@ -214,7 +253,13 @@ func GetChromeExecutable() (string, error) {
 // from the same version directory as GetChromeExecutable, so the two always
 // match.
 func GetChromedriverPath() (string, error) {
-	dir, err := resolveVersionDir()
+	return GetChromedriverPathForChannel("")
+}
+
+// GetChromedriverPathForChannel resolves the chromedriver of a specific
+// channel, from the same version directory as the executable.
+func GetChromedriverPathForChannel(channel string) (string, error) {
+	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
 	}
