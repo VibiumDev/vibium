@@ -66,7 +66,7 @@ func Install() (*InstallResult, error) {
 		chromedriverPath, _ := paths.GetChromedriverPath()
 		// Extract version from path (e.g., .../chrome-for-testing/143.0.7499.192/...)
 		version := extractVersionFromPath(chromePath)
-		fmt.Printf("Chrome for Testing v%s already installed.\n", version)
+		progressf("Chrome for Testing v%s already installed.\n", version)
 		return &InstallResult{
 			ChromePath:       chromePath,
 			ChromedriverPath: chromedriverPath,
@@ -83,9 +83,9 @@ func Install() (*InstallResult, error) {
 
 	channel := paths.ChromeChannel()
 	if channel == "stable" {
-		fmt.Printf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
+		progressf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
 	} else {
-		fmt.Printf("Installing Chrome for Testing v%s (%s channel)...\n", versionInfo.Version, channel)
+		progressf("Installing Chrome for Testing v%s (%s channel)...\n", versionInfo.Version, channel)
 	}
 
 	// Create version directory
@@ -105,7 +105,7 @@ func Install() (*InstallResult, error) {
 		return nil, fmt.Errorf("no Chrome download available for platform %s", platform)
 	}
 
-	fmt.Printf("Downloading Chrome from %s...\n", chromeURL)
+	progressf("Downloading Chrome from %s...\n", chromeURL)
 	if err := downloadAndExtract(chromeURL, versionDir); err != nil {
 		return nil, fmt.Errorf("failed to install Chrome: %w", err)
 	}
@@ -116,7 +116,7 @@ func Install() (*InstallResult, error) {
 		return nil, fmt.Errorf("no chromedriver download available for platform %s", platform)
 	}
 
-	fmt.Printf("Downloading chromedriver from %s...\n", chromedriverURL)
+	progressf("Downloading chromedriver from %s...\n", chromedriverURL)
 	if err := downloadAndExtract(chromedriverURL, versionDir); err != nil {
 		return nil, fmt.Errorf("failed to install chromedriver: %w", err)
 	}
@@ -287,7 +287,7 @@ func downloadAndExtract(url, destDir string) error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: progressOut()}
 	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		return err
@@ -301,8 +301,9 @@ func downloadAndExtract(url, destDir string) error {
 // progressWriter wraps a download destination and prints coarse progress
 // lines while bytes flow: one line per 10% step when the total is known, one
 // line per 25 MB when the server sends no Content-Length. Progress goes to
-// out (os.Stdout for the install command; pipe mode redirects that to stderr
-// so the protocol stream stays clean and clients see download liveness).
+// out (progressOut(): stdout for the install command, stderr under --json so
+// the envelope has the stream to itself, and stderr in pipe mode so the
+// protocol stream stays clean and clients still see download liveness).
 type progressWriter struct {
 	dst     io.Writer
 	out     io.Writer

@@ -75,14 +75,14 @@ func InstallFirefoxForChannel(channel string) (string, error) {
 	exePath := paths.FirefoxPathInVersion(versionDir)
 
 	if _, err := os.Stat(exePath); err == nil {
-		fmt.Printf("Firefox v%s already installed.\n", version)
+		progressf("Firefox v%s already installed.\n", version)
 		return exePath, nil
 	}
 
-	fmt.Printf("Installing Firefox v%s (%s channel)...\n", version, channel)
+	progressf("Installing Firefox v%s (%s channel)...\n", version, channel)
 
 	downloadURL := firefoxDownloadURL(version)
-	fmt.Printf("Downloading Firefox from %s...\n", downloadURL)
+	progressf("Downloading Firefox from %s...\n", downloadURL)
 
 	pattern := "firefox-*.tar.xz"
 	if runtime.GOOS == "darwin" {
@@ -239,7 +239,7 @@ func verifyFirefoxArchive(archivePath, version string) error {
 	if err := verifyArchiveAgainstSums(archivePath, sums, relPath); err != nil {
 		return err
 	}
-	fmt.Printf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
+	progressf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
 	return nil
 }
 
@@ -321,7 +321,7 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 	}
 	tmpPath := tmpFile.Name()
 
-	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: progressOut()}
 	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)

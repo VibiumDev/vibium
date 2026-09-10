@@ -73,6 +73,15 @@ func installSkill(name, content string) error {
 		return fmt.Errorf("could not write SKILL.md: %w", err)
 	}
 
+	if jsonOutput {
+		printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+			"skill": name,
+			"dir":   skillDir,
+			"files": []string{skillPath},
+		}})
+		return nil
+	}
+
 	fmt.Printf("Installed Vibium skill to %s\n", skillDir)
 	fmt.Println("Files:")
 	fmt.Printf("  %s\n", skillPath)

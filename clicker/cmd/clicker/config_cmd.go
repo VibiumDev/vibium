@@ -97,10 +97,19 @@ you want in the shell that runs vibium.`,
 				}
 				return nil
 			}
+			var written []string
 			for _, t := range chosen {
-				if err := writeConfigTemplate(cmd, t, force); err != nil {
+				path, err := writeConfigTemplate(cmd, t, force)
+				if err != nil {
 					return err
 				}
+				written = append(written, path)
+			}
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+					"written": written,
+					"mode":    "0600",
+				}})
 			}
 			return nil
 		},
@@ -113,38 +122,46 @@ you want in the shell that runs vibium.`,
 // writeConfigTemplate lays down one template at 0600. These files hold API
 // keys, so the mode is the point: a world-readable copy is how a key leaks to
 // anything else running as another user on the machine.
-func writeConfigTemplate(cmd *cobra.Command, t configTemplate, force bool) error {
+func writeConfigTemplate(cmd *cobra.Command, t configTemplate, force bool) (string, error) {
 	dir, err := paths.GetConfigDir()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("could not create %s: %w", dir, err)
+		return "", fmt.Errorf("could not create %s: %w", dir, err)
 	}
 	path := filepath.Join(dir, t.file)
 
 	if _, err := os.Stat(path); err == nil {
 		if !force {
 			// Never clobber real credentials on a bare `config init`.
-			return fmt.Errorf("%s already exists; edit it, or pass --force to replace it (a .bak is kept)", path)
+			return "", fmt.Errorf("%s already exists; edit it, or pass --force to replace it (a .bak is kept)", path)
 		}
 		if err := os.Rename(path, path+".bak"); err != nil {
-			return fmt.Errorf("could not back up %s: %w", path, err)
+			return "", fmt.Errorf("could not back up %s: %w", path, err)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Kept the previous file as %s.bak\n", tildePath(path))
+		if !jsonOutput {
+			fmt.Fprintf(cmd.OutOrStdout(), "Kept the previous file as %s.bak\n", tildePath(path))
+		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("could not check %s: %w", path, err)
+		return "", fmt.Errorf("could not check %s: %w", path, err)
 	}
 
 	if err := os.WriteFile(path, []byte(*t.content), 0600); err != nil {
-		return fmt.Errorf("could not write %s: %w", path, err)
+		return "", fmt.Errorf("could not write %s: %w", path, err)
 	}
 	// WriteFile respects umask, so an inherited one can widen the mode.
 	if err := os.Chmod(path, 0600); err != nil {
-		return fmt.Errorf("could not set permissions on %s: %w", path, err)
+		return "", fmt.Errorf("could not set permissions on %s: %w", path, err)
+	}
+
+	// Under --json the caller reports every file in one envelope, so the
+	// per-file lines stay quiet.
+	if jsonOutput {
+		return path, nil
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s (0600) — %s\n", tildePath(path), t.what)
 	fmt.Fprintf(cmd.OutOrStdout(), "Edit it, then: source %s\n", tildePath(path))
-	return nil
+	return path, nil
 }
