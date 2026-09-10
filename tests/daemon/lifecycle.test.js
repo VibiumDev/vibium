@@ -180,8 +180,9 @@ describe('Daemon: status exit code', () => {
       assert.fail('daemon status should exit non-zero when nothing is running');
     } catch (err) {
       // The human-readable line used to be printed alongside the JSON, which
-      // broke any consumer piping this to a parser.
-      assert.deepStrictEqual(JSON.parse(err.stdout.trim()), { running: false });
+      // broke any consumer piping this to a parser. ok arrived with #517:
+      // true because the check ran, beside the old keys, not around them.
+      assert.deepStrictEqual(JSON.parse(err.stdout.trim()), { ok: true, running: false });
     }
   });
 
