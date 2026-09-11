@@ -51,6 +51,10 @@ type Handlers struct {
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
 	activeContext  string       // last page context switched to or created
+	// activeFrameParent is the page context that activeContext's frame
+	// belongs to, or "" when activeContext is a page rather than a frame.
+	// It lets navigation leave a frame it was never asked to stay in (#510).
+	activeFrameParent string
 	// pageOverride pins the current call to one browsing context: callers
 	// multiplexed over a single connection (concurrent MCP subagents) pass a
 	// page id so their commands stop landing on whatever page is globally
@@ -120,6 +124,27 @@ func NewHandlers(screenshotDir string, engine string, headless bool, connectURL 
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
 		connectCaps:    connectCaps,
+	}
+}
+
+// leaveActiveFrame returns the ambient context to the page a frame belongs
+// to, if the active context is currently a frame. Navigation calls this so a
+// frame entered by browser_frame does not trap every later command inside it
+// (#510). A no-op when the active context is already a page.
+func (h *Handlers) leaveActiveFrame() {
+	if h.activeFrameParent != "" {
+		h.activeContext = h.activeFrameParent
+		h.activeFrameParent = ""
+	}
+}
+
+// clearFrameIfContextClosed drops the frame state when the closed context is
+// the frame's page (the frame dies with it) — keeping either would leave
+// later commands pointed at a dead frame (#510).
+func (h *Handlers) clearFrameIfContextClosed(closed string) {
+	if h.activeFrameParent == closed {
+		h.activeContext = ""
+		h.activeFrameParent = ""
 	}
 }
 
@@ -746,6 +771,7 @@ func (h *Handlers) Close() {
 	h.ownsRemote = false
 	h.ownedUserContexts = nil
 	h.activeContext = ""
+	h.activeFrameParent = ""
 	h.refMaps = nil
 	h.lastMaps = nil
 	recorder := h.recorder
@@ -1021,6 +1047,15 @@ func (h *Handlers) browserNavigate(args map[string]interface{}) (*ToolsCallResul
 	url, ok := args["url"].(string)
 	if !ok || url == "" {
 		return nil, fmt.Errorf("url is required")
+	}
+
+	// Navigating leaves a frame. Without this the frame context set by
+	// browser_frame is still current, so `go` replaces the iframe's document
+	// and every later command stays trapped inside it (#510). A pinned call
+	// targets its own page and leaves the ambient frame state alone.
+	if h.activeFrameParent != "" && h.pageOverride == "" {
+		h.activeContext = h.activeFrameParent
+		h.activeFrameParent = ""
 	}
 
 	s := h.newSession()
@@ -1660,6 +1695,7 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 		return nil, fmt.Errorf("failed to activate new page: %w", err)
 	}
 	h.activeContext = contextID
+	h.activeFrameParent = ""
 
 	// The id lets a caller pin later calls to this page (#383).
 	kind := "page"
@@ -1751,6 +1787,7 @@ func (h *Handlers) browserSwitchPage(args map[string]interface{}) (*ToolsCallRes
 		return nil, err
 	}
 	h.activeContext = contextID
+	h.activeFrameParent = ""
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -1811,7 +1848,10 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 	}
 	if h.activeContext == closedContext {
 		h.activeContext = ""
+		h.activeFrameParent = ""
 	}
+	// Closing the page a frame lives in kills the frame with it.
+	h.clearFrameIfContextClosed(closedContext)
 
 	// Closing the last page of an isolated context removes the context too,
 	// so its storage partition does not outlive its pages.
@@ -3042,6 +3082,7 @@ func (h *Handlers) discardSession() {
 	h.refMaps = nil
 	h.lastMaps = nil
 	h.activeContext = ""
+	h.activeFrameParent = ""
 	h.ownedUserContexts = nil
 }
 
@@ -4123,6 +4164,12 @@ func (h *Handlers) browserFrame(args map[string]interface{}) (*ToolsCallResult, 
 
 	// The daemon is the only thing that survives between CLI invocations, so
 	// without this the frame is forgotten before the next command runs.
+	// Remember the page it belongs to as well, so a later navigation can
+	// leave the frame instead of navigating inside it (#510). On nested
+	// frame calls ctx is itself a frame, so keep the first recorded page.
+	if h.activeFrameParent == "" {
+		h.activeFrameParent = ctx
+	}
 	h.activeContext = frame.Context
 
 	result, _ := json.Marshal(frame)

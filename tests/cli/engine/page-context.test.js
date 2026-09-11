@@ -176,4 +176,49 @@ describe('CLI: active context reaches script-backed commands', () => {
     }).trim();
     assert.strictEqual(inner, 'inner', 'eval should run inside the switched frame');
   });
+
+  test('go leaves the frame instead of navigating inside it (#510)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/frames`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} frame myframe`, { encoding: 'utf-8', timeout: 30000 });
+
+    // The #205 contract still holds: we are inside the frame now.
+    const inFrame = execSync(`${VIBIUM} eval "window.top !== window.self"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(inFrame, 'true', 'setup: frame switch should stick (#205)');
+
+    // Navigating must return to the top-level document. Before the fix this
+    // loaded the page into the iframe, so window.top !== window.self stayed
+    // true and every later command was trapped in the frame's geometry.
+    execSync(`${VIBIUM} go ${baseURL}/frames`, { encoding: 'utf-8', timeout: 30000 });
+    const afterGo = execSync(`${VIBIUM} eval "window.top !== window.self"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(afterGo, 'false', 'go should leave the frame, not navigate inside it');
+
+    const outerId = execSync(`${VIBIUM} eval "document.querySelector('h1').id"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(outerId, 'outer', 'after go the top-level document is active again');
+  });
+
+  test('closing the page a frame lives in does not trap the next command (#510)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} page new ${baseURL}/frames`, { encoding: 'utf-8', timeout: 30000 });
+    execSync(`${VIBIUM} frame myframe`, { encoding: 'utf-8', timeout: 30000 });
+
+    // Close the framed page by index, without switching away first — a switch
+    // would clear the frame state on its own. The frame dies with its page,
+    // and the surviving page 0 must not inherit the dead frame's context.
+    execSync(`${VIBIUM} page close 1`, { encoding: 'utf-8', timeout: 30000 });
+
+    const trapped = execSync(`${VIBIUM} eval "window.top !== window.self"`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    }).trim();
+    assert.strictEqual(trapped, 'false', 'closing the framed page should clear the frame context');
+  });
 });
