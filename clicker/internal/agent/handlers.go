@@ -2004,24 +2004,6 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		return nil, err
 	}
 
-	// Determine scroll target coordinates
-	x, y := 0, 0
-	if selector, ok := args["selector"].(string); ok && selector != "" {
-		selector = h.resolveSelector(selector)
-		info, err := api.ResolveElement(s, ctx, api.ElementParams{Selector: selector})
-		if err != nil {
-			return nil, err
-		}
-		x = int(info.Box.X + info.Box.Width/2)
-		y = int(info.Box.Y + info.Box.Height/2)
-	} else {
-		var err error
-		x, y, err = api.ViewportCenter(s, ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find viewport center: %w", err)
-		}
-	}
-
 	// Map direction to deltas (120 pixels per scroll "notch")
 	deltaX, deltaY := 0, 0
 	pixels := amount * 120
@@ -2038,8 +2020,29 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		return nil, fmt.Errorf("invalid direction: %q (use up, down, left, right)", direction)
 	}
 
-	if err := api.ScrollWheel(s, ctx, x, y, deltaX, deltaY); err != nil {
-		return nil, fmt.Errorf("failed to scroll: %w", err)
+	// A selector aims the wheel at that element's center; a bare directional
+	// scroll moves the active document, which DirectionalScroll does with the
+	// mechanism that reaches it even inside a frame or right after a
+	// navigation (#511).
+	if selector, ok := args["selector"].(string); ok && selector != "" {
+		selector = h.resolveSelector(selector)
+		info, err := api.ResolveElement(s, ctx, api.ElementParams{Selector: selector})
+		if err != nil {
+			return nil, err
+		}
+		x := int(info.Box.X + info.Box.Width/2)
+		y := int(info.Box.Y + info.Box.Height/2)
+		if err := api.ScrollWheel(s, ctx, x, y, deltaX, deltaY); err != nil {
+			return nil, fmt.Errorf("failed to scroll: %w", err)
+		}
+	} else {
+		x, y, err := api.ViewportCenter(s, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find viewport center: %w", err)
+		}
+		if err := api.DirectionalScroll(s, ctx, x, y, deltaX, deltaY); err != nil {
+			return nil, fmt.Errorf("failed to scroll: %w", err)
+		}
 	}
 
 	return &ToolsCallResult{

@@ -1070,6 +1070,85 @@ func ScrollWheel(s Session, context string, x, y, deltaX, deltaY int) error {
 	return err
 }
 
+// DirectionalScroll scrolls the active context by the given deltas, picking
+// the mechanism that actually moves the intended document (#511).
+//
+// A synthesized wheel is dispatched in top-level viewport coordinates, so in a
+// subframe the (x, y) taken from the frame's own viewport center lands on the
+// page behind the frame: Chrome scrolls the wrong document, Firefox drops the
+// event, and the frame never moves. Inside a subframe we therefore scroll
+// programmatically in the frame's own context, which is coordinate-free and
+// cannot touch the parent.
+//
+// At the top level the wheel is kept — a page may drive behaviour off real
+// wheel events — but verified rather than assumed: the first wheel after a
+// navigation arrives before the new document can be hit-tested and is dropped,
+// while the command still reports success. When the offset did not move we
+// fall back to a programmatic scroll, so "scrolled" means it scrolled.
+func DirectionalScroll(s Session, context string, x, y, deltaX, deltaY int) error {
+	if inSubframe(s, context) {
+		return scrollContextBy(s, context, deltaX, deltaY)
+	}
+
+	beforeY, beforeX, haveBefore := documentScrollOffset(s, context)
+	if err := ScrollWheel(s, context, x, y, deltaX, deltaY); err != nil {
+		return err
+	}
+	if haveBefore {
+		afterY, afterX, ok := documentScrollOffset(s, context)
+		if ok && afterX == beforeX && afterY == beforeY {
+			return scrollContextBy(s, context, deltaX, deltaY)
+		}
+	}
+	return nil
+}
+
+// inSubframe reports whether the context is a nested browsing context. The
+// reference comparison never touches a cross-origin property, so it does not
+// throw; on any error we assume top-level and keep the wheel path.
+func inSubframe(s Session, context string) bool {
+	resp, err := CallScript(s, context, `() => String(window !== window.top)`, []map[string]interface{}{})
+	if err != nil {
+		return false
+	}
+	val, err := parseScriptResult(resp)
+	return err == nil && val == "true"
+}
+
+// documentScrollOffset returns the active context's scroll offsets (top, left).
+func documentScrollOffset(s Session, context string) (top, left int, ok bool) {
+	resp, err := CallScript(s, context,
+		`() => { const e = document.scrollingElement || document.documentElement;
+			return JSON.stringify({ top: Math.round(e.scrollTop), left: Math.round(e.scrollLeft) }); }`,
+		[]map[string]interface{}{})
+	if err != nil {
+		return 0, 0, false
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return 0, 0, false
+	}
+	var off struct {
+		Top  int `json:"top"`
+		Left int `json:"left"`
+	}
+	if err := json.Unmarshal([]byte(val), &off); err != nil {
+		return 0, 0, false
+	}
+	return off.Top, off.Left, true
+}
+
+// scrollContextBy scrolls the active context's own window by the given deltas.
+func scrollContextBy(s Session, context string, deltaX, deltaY int) error {
+	_, err := CallScript(s, context,
+		`(dx, dy) => { window.scrollBy(dx, dy); return 'ok'; }`,
+		[]map[string]interface{}{
+			{"type": "number", "value": deltaX},
+			{"type": "number", "value": deltaY},
+		})
+	return err
+}
+
 // --- Script builders for JS-based interactions ---
 
 // buildIsCheckedScript builds a JS function to check if an element is checked.

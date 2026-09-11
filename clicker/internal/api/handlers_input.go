@@ -316,25 +316,6 @@ func (r *Router) handlePageScroll(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	// Determine scroll target coordinates
-	var x, y int
-	if selector, ok := cmd.Params["selector"].(string); ok && selector != "" {
-		// Scroll at element center
-		info, err := r.resolveElement(session, context, ElementParams{Selector: selector})
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-		x, y = pointerTarget(info)
-	} else {
-		var err error
-		x, y, err = ViewportCenter(NewAPISession(r, session, context), context)
-		if err != nil {
-			r.sendError(session, cmd.ID, err)
-			return
-		}
-	}
-
 	// Map direction to deltas (120 pixels per scroll "notch")
 	deltaX, deltaY := 0, 0
 	pixels := amount * 120
@@ -352,28 +333,33 @@ func (r *Router) handlePageScroll(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	wheelParams := map[string]interface{}{
-		"context": context,
-		"actions": []map[string]interface{}{
-			{
-				"type": "wheel",
-				"id":   "wheel",
-				"actions": []map[string]interface{}{
-					{
-						"type":   "scroll",
-						"x":      x,
-						"y":      y,
-						"deltaX": deltaX,
-						"deltaY": deltaY,
-					},
-				},
-			},
-		},
-	}
+	apiSession := NewAPISession(r, session, context)
 
-	if _, err := r.sendInternalCommand(session, "input.performActions", wheelParams); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
+	// A selector aims the wheel at that element's center; a bare directional
+	// scroll moves the active document, which DirectionalScroll does with the
+	// mechanism that reaches it even inside a frame or right after a
+	// navigation (#511).
+	if selector, ok := cmd.Params["selector"].(string); ok && selector != "" {
+		info, err := r.resolveElement(session, context, ElementParams{Selector: selector})
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		x, y := pointerTarget(info)
+		if err := ScrollWheel(apiSession, context, x, y, deltaX, deltaY); err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+	} else {
+		x, y, err := ViewportCenter(apiSession, context)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		if err := DirectionalScroll(apiSession, context, x, y, deltaX, deltaY); err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
 	}
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"scrolled": true})
