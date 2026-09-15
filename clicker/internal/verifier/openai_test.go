@@ -96,6 +96,48 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 		}
 	}
 }
+// A final message that fails the strict parse gets one corrective turn
+// instead of discarding the completed verification; a repeated failure
+// keeps the original error.
+func TestInvalidVerdictGetsOneRepairTurn(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body struct {
+			Messages []message `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if requests == 1 {
+			answer(w, "The evidence is clear: "+verdict, nil)
+			return
+		}
+		last := body.Messages[len(body.Messages)-1]
+		content, _ := last.Content.(string)
+		prior := body.Messages[len(body.Messages)-2]
+		priorContent, _ := prior.Content.(string)
+		if last.Role != "user" || !strings.Contains(content, "JSON object") || prior.Role != "assistant" || !strings.Contains(priorContent, "The evidence is clear") {
+			t.Errorf("corrective turn malformed: prior=%+v last=%+v", prior, last)
+		}
+		answer(w, verdict, nil)
+	}))
+	defer server.Close()
+	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+}
+func TestPersistentInvalidVerdictStillErrors(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		answer(w, "still not the JSON you asked for", nil)
+	}))
+	defer server.Close()
+	_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	if err == nil || !strings.Contains(err.Error(), "invalid JSON verdict") || requests != 2 {
+		t.Fatalf("err=%v requests=%d", err, requests)
+	}
+}
 func TestProviderErrorsAndVerdicts(t *testing.T) {
 	for _, tc := range []struct {
 		name, content string

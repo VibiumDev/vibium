@@ -20,6 +20,26 @@ func (f *fixtureTools) Execute(_ context.Context, name string, args map[string]i
 	f.calls++
 	return verifier.Observation{Text: "goal observed"}, nil
 }
+// The repair turn is wired for Run too: a result wrapped in prose gets one
+// corrective turn and the retried JSON parses.
+func TestRunRepairsInvalidResult(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []verifier.Evidence{{Type: "observation", Summary: "Goal observed"}}})
+		content := string(result)
+		if requests == 1 {
+			content = "Here is the result: " + content
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": "stop", "message": map[string]interface{}{"role": "assistant", "content": content}}}})
+	}))
+	defer server.Close()
+	req := Request{Goal: "the real goal", Config: verifier.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
+	result, err := Run(context.Background(), req, &fixtureTools{})
+	if err != nil || result.Status != "completed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+}
 func TestRunContractAndLimits(t *testing.T) {
 	for _, scenario := range []string{"completed", "not_completed", "wrong verdict", "no evidence", "limit", "fresh"} {
 		t.Run(scenario, func(t *testing.T) {

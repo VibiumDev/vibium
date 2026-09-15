@@ -13,6 +13,11 @@ type Operation struct {
 	Instruction  string
 	Input        string
 	InitialTools []string
+	// ValidateResult reports whether final content parses as the operation's
+	// result. On the first failure the loop sends one corrective turn asking
+	// for the JSON object again; a repeated failure returns the content so
+	// the caller fails exactly as it would without the retry.
+	ValidateResult func(content string) error
 }
 type LoopResult struct {
 	Content      string
@@ -41,6 +46,7 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 		functions = append(functions, map[string]interface{}{"type": "function", "function": tool})
 	}
 	actions := 0
+	repaired := false
 	for turn := 0; turn <= MaxActions; turn++ {
 		if err := ctx.Err(); err != nil {
 			return LoopResult{}, fmt.Errorf("verification timeout: %w", err)
@@ -53,6 +59,13 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 			content, ok := msg.Content.(string)
 			if !ok {
 				return LoopResult{}, fmt.Errorf("model returned no structured result")
+			}
+			if op.ValidateResult != nil && !repaired && op.ValidateResult(content) != nil {
+				repaired = true
+				messages = append(messages,
+					message{Role: "assistant", Content: content},
+					message{Role: "user", Content: "Your last message was not the required JSON object. Return ONLY the JSON object with the required fields and no other text."})
+				continue
 			}
 			return LoopResult{Content: content}, nil
 		}

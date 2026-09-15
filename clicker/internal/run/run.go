@@ -56,19 +56,29 @@ func Run(ctx context.Context, req Request, tools verifier.ToolExecutor) (Result,
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}
-	outcome, err := (&verifier.Model{}).Run(ctx, req.Config, verifier.Operation{Instruction: instruction, Input: req.Goal, InitialTools: []string{"browser_get_url", "browser_map", "browser_a11y_tree"}}, tools)
+	op := verifier.Operation{Instruction: instruction, Input: req.Goal, InitialTools: []string{"browser_get_url", "browser_map", "browser_a11y_tree"}}
+	op.ValidateResult = func(content string) error {
+		_, err := parse(content, req.Goal)
+		return err
+	}
+	outcome, err := (&verifier.Model{}).Run(ctx, req.Config, op, tools)
 	if err != nil {
 		return Result{}, err
 	}
 	if outcome.LimitReached {
 		return Result{Status: "not_completed", Goal: req.Goal, Summary: "Run reached its action limit before completion could be established.", Evidence: []verifier.Evidence{}}, nil
 	}
-	content := verifier.StripJSONFence(outcome.Content)
+	return parse(outcome.Content, req.Goal)
+}
+
+// parse validates the structured result without exposing model content.
+func parse(content, goal string) (Result, error) {
+	content = verifier.StripJSONFence(content)
 	var result Result
 	if len(content) > verifier.MaxText || json.Unmarshal([]byte(content), &result) != nil {
 		return Result{}, fmt.Errorf("run returned an invalid JSON result")
 	}
-	result.Goal = req.Goal
+	result.Goal = goal
 	if result.Evidence == nil {
 		result.Evidence = []verifier.Evidence{}
 	}

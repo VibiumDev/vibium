@@ -42,7 +42,12 @@ func (v *OpenAI) Check(ctx context.Context, req Request, executor ToolExecutor) 
 		instruction = traceInstruction
 		initial = []string{"trace_summary"}
 	}
-	outcome, err := v.Run(ctx, req.Config, Operation{Instruction: instruction, Input: req.Claim, InitialTools: initial}, executor)
+	op := Operation{Instruction: instruction, Input: req.Claim, InitialTools: initial}
+	op.ValidateResult = func(content string) error {
+		_, err := parseResult(message{Content: content}, req.Claim)
+		return err
+	}
+	outcome, err := v.Run(ctx, req.Config, op, executor)
 	if err != nil {
 		return Result{}, err
 	}
