@@ -89,6 +89,9 @@ const CLASSES = {
   'is-installed': 'envelope',
   'keys': 'usage-error',
   'launch-test': 'exempt', // runs until Ctrl+C
+  'login status': 'envelope',
+  'login xai': 'exempt', // RFC 8628 device-code against auth.x.ai
+  'logout xai': 'envelope',
   'map': 'envelope',
   'mcp': 'exempt', // server: banner on stderr, exits when stdin closes
   'media': 'usage-error',

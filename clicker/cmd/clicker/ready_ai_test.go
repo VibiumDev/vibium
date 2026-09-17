@@ -100,6 +100,52 @@ func TestReadyAIRequiresProviderBeforeAssessingDependentSettings(t *testing.T) {
 	}
 }
 
+func TestReadyAIXAIOauthCheckNameAndAuthFix(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("VIBIUM_CONFIG_DIR", t.TempDir())
+	t.Setenv("XAI_API_KEY", "")
+	missing := checkVerifierSetup(context.Background(), verifier.Config{Provider: "xai", Model: "grok-4"}, func(context.Context, verifier.Config) error {
+		t.Fatal("probed without credentials")
+		return nil
+	})
+	found := false
+	for _, check := range missing.Checks {
+		if check.Name == "XAI_API_KEY" {
+			t.Fatal("missing xAI oauth still named XAI_API_KEY")
+		}
+		if check.Name == "Grok login" {
+			found = check.Status == "failed" && strings.Contains(check.Fix, "vibium login xai") && strings.Contains(check.Fix, "XAI_API_KEY")
+		}
+	}
+	if missing.Ready || !found {
+		t.Fatalf("missing oauth report: %+v", missing)
+	}
+
+	oauth := verifier.Config{Provider: "xai", Model: "grok-4", APIKey: "oauth-token", CredentialSource: verifier.CredentialOAuth}
+	passed := checkVerifierSetup(context.Background(), oauth, func(context.Context, verifier.Config) error { return nil })
+	namedKey := false
+	namedLogin := false
+	for _, check := range passed.Checks {
+		if check.Name == "XAI_API_KEY" {
+			namedKey = true
+		}
+		if check.Name == "Grok login" && check.Status == "passed" && strings.Contains(check.Message, "not displayed") {
+			namedLogin = true
+		}
+	}
+	if namedKey || !namedLogin || !passed.Ready {
+		t.Fatalf("oauth ready report: %+v", passed)
+	}
+
+	denied := checkVerifierSetup(context.Background(), oauth, func(context.Context, verifier.Config) error {
+		return errors.New("verifier provider returned HTTP 401")
+	})
+	fix := denied.Checks[len(denied.Checks)-1].Fix
+	if denied.Ready || !strings.Contains(fix, "vibium login xai") || !strings.Contains(fix, "XAI_API_KEY") {
+		t.Fatalf("401 fix: %s", fix)
+	}
+}
+
 func TestReadyAIStillReportsMalformedSettingsWithoutProvider(t *testing.T) {
 	result := checkVerifierSetup(context.Background(), verifier.Config{BaseURL: "not-a-url", ReasoningEffort: "invalid"}, func(context.Context, verifier.Config) error {
 		t.Fatal("contacted provider with malformed settings")

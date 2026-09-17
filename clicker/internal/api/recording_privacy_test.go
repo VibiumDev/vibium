@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +80,50 @@ func TestRecordingRedactsEarlierObservationsAndOmitsSensitiveVisuals(t *testing.
 		}
 		if file.Name == "trace.trace" && (!bytes.Contains(contents, []byte("vibiumPrivacy")) || !bytes.Contains(contents, []byte(`"status":"passed"`))) {
 			t.Fatal("lost privacy marker or result schema")
+		}
+	}
+}
+
+func TestRecordingRedactsXAIOauthTokensFromAuthFiles(t *testing.T) {
+	home := t.TempDir()
+	configDir := filepath.Join(home, "vibium")
+	t.Setenv("HOME", home)
+	t.Setenv("VIBIUM_CONFIG_DIR", configDir)
+	t.Setenv("XAI_API_KEY", "")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "xai-auth.json"), []byte(`{"access_token":"VIBIUM-OAUTH-SENTINEL","refresh_token":"VIBIUM-REFRESH-SENTINEL"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	grokDir := filepath.Join(home, ".grok")
+	if err := os.MkdirAll(grokDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(grokDir, "auth.json"), []byte(`{"https://auth.x.ai::x":{"key":"GROK-OAUTH-SENTINEL","refresh_token":"GROK-REFRESH-SENTINEL"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRecorder()
+	r.Start(RecordingStartOptions{}, nil)
+	r.mu.Lock()
+	r.events = append(r.events, recordEvent{"type": "after", "observation": "VIBIUM-OAUTH-SENTINEL GROK-OAUTH-SENTINEL VIBIUM-REFRESH-SENTINEL GROK-REFRESH-SENTINEL"})
+	r.mu.Unlock()
+	data, err := r.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range z.File {
+		reader, _ := file.Open()
+		contents, _ := io.ReadAll(reader)
+		reader.Close()
+		for _, secret := range []string{"VIBIUM-OAUTH-SENTINEL", "GROK-OAUTH-SENTINEL", "VIBIUM-REFRESH-SENTINEL", "GROK-REFRESH-SENTINEL"} {
+			if bytes.Contains(contents, []byte(secret)) {
+				t.Fatalf("%s leaked %s", file.Name, secret)
+			}
 		}
 	}
 }

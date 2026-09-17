@@ -61,6 +61,14 @@ func ResolveConfig(role string, overrides Overrides) (Config, error) {
 		c.ReasoningEffort = *overrides.ReasoningEffort
 	}
 	c.APIKey = os.Getenv(c.CredentialVariable())
+	if c.Provider == "xai" {
+		if err := applyXAICredentials(&c); err != nil {
+			if providerChanged && overrides.Model == nil {
+				return c, fmt.Errorf("%w; changing provider requires an explicit model override (--model in CLI)", err)
+			}
+			return c, err
+		}
+	}
 	err := c.Validate()
 	if err != nil && providerChanged && overrides.Model == nil {
 		return c, fmt.Errorf("%w; changing provider requires an explicit model override (--model in CLI)", err)
