@@ -16,7 +16,7 @@ and `local`. Provider credentials use their native environment variables:
 | Provider | Credential | Default API base URL |
 |----------|------------|----------------------|
 | `openai` | `OPENAI_API_KEY`, required | `https://api.openai.com/v1` |
-| `xai` | `XAI_API_KEY`, required | `https://api.x.ai/v1` |
+| `xai` | `XAI_API_KEY`, or `vibium login xai` / existing Grok CLI login; API key wins | `https://api.x.ai/v1` |
 | `anthropic` | `ANTHROPIC_API_KEY`, required | `https://api.anthropic.com/v1` |
 | `google` | `GOOGLE_API_KEY`, required | `https://generativelanguage.googleapis.com/v1beta` |
 | `openai-compatible` | `OPENAI_API_KEY`, optional | Explicit base URL required |
@@ -135,12 +135,16 @@ export VIBIUM_AI_REASONING_EFFORT=none
 vibium ready ai
 ```
 
-xAI (Grok) uses the same Chat Completions protocol with `XAI_API_KEY`:
+xAI (Grok) uses the same Chat Completions protocol. Set `XAI_API_KEY`, or sign
+in with `vibium login xai`. An existing Grok CLI session in `~/.grok/auth.json`
+is read when the API key is unset. Token refresh copies into
+`~/.config/vibium/xai-auth.json` and does not write the Grok file. The API key
+wins when both are present.
 
 ```bash
 export VIBIUM_AI_PROVIDER=xai
 export VIBIUM_AI_MODEL=grok-4
-unset VIBIUM_AI_BASE_URL
+unset VIBIUM_AI_BASE_URL XAI_API_KEY
 vibium ready ai
 ```
 

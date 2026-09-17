@@ -53,7 +53,7 @@ func newReadyCmd() *cobra.Command {
 	ai := &cobra.Command{
 		Use: "ai [provider]", Short: "Test AI configuration and a provider tool round-trip without a browser",
 		Long:      "Require valid AI configuration and test authentication, model access, tool calling, and a structured response.\nMakes up to two model requests (API charges may apply). Does not launch a browser or load env files.\nChanging provider requires --model; per-call options do not change defaults.",
-		Example:   "  vibium ready ai\n  # Tests the configured provider and model.\n  vibium ready ai anthropic --model your-model\n  # Tests Anthropic with the supplied model and ANTHROPIC_API_KEY.\n  vibium ready ai xai --model grok-4\n  # Tests xAI with the supplied model and XAI_API_KEY.\n  vibium ready ai --json\n  # Prints the provider checks as JSON.",
+		Example:   "  vibium ready ai\n  # Tests the configured provider and model.\n  vibium ready ai anthropic --model your-model\n  # Tests Anthropic with the supplied model and ANTHROPIC_API_KEY.\n  vibium ready ai xai --model grok-4\n  # Tests xAI with grok-4 using XAI_API_KEY or a Grok login.\n  vibium ready ai --json\n  # Prints the provider checks as JSON.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"openai", "xai", "anthropic", "google", "openai-compatible", "local"},
 	}

@@ -239,6 +239,8 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newSleepCmd())
 	rootCmd.AddCommand(newSkillCmd())
 	rootCmd.AddCommand(newConfigCmd())
+	rootCmd.AddCommand(newLoginCmd())
+	rootCmd.AddCommand(newLogoutCmd())
 	rootCmd.AddCommand(newMapCmd())
 	rootCmd.AddCommand(newDiffCmd())
 	rootCmd.AddCommand(newPDFCmd())

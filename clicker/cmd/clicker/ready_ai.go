@@ -15,6 +15,7 @@ func checkVerifierSetup(ctx context.Context, config verifier.Config, probe func(
 		prefix + "PROVIDER":         "Export " + prefix + "PROVIDER as openai, xai, anthropic, google, openai-compatible, or local.",
 		prefix + "MODEL":            "Set a tool-capable model with --model or export " + prefix + "MODEL. When changing provider, supply --model explicitly.",
 		config.CredentialVariable(): "Export " + config.CredentialVariable() + " in the shell running the command; keep its value out of chat and logs.",
+		"Grok login":                "Run vibium login xai, or export XAI_API_KEY.",
 		prefix + "BASE_URL":         "Export " + prefix + "BASE_URL as the server's API base URL, such as http://localhost:1234/v1.",
 		prefix + "REASONING_EFFORT": "Unset " + prefix + "REASONING_EFFORT for Anthropic/Google, or choose an effort supported by your OpenAI-compatible model.",
 	}
@@ -27,7 +28,7 @@ func checkVerifierSetup(ctx context.Context, config verifier.Config, probe func(
 	}
 	// Present prerequisites before settings that depend on them. Keep shared
 	// validation unchanged for Run and Check.
-	order := map[string]int{prefix + "PROVIDER": 0, prefix + "MODEL": 1, config.CredentialVariable(): 2, prefix + "BASE_URL": 3, prefix + "REASONING_EFFORT": 4}
+	order := map[string]int{prefix + "PROVIDER": 0, prefix + "MODEL": 1, config.CredentialVariable(): 2, "Grok login": 2, prefix + "BASE_URL": 3, prefix + "REASONING_EFFORT": 4}
 	slices.SortStableFunc(checks, func(a, b verifier.ConfigCheck) int { return order[a.Variable] - order[b.Variable] })
 	for _, check := range checks {
 		item := setupCheck{Name: check.Variable, Status: "passed", Message: "Configuration valid (value not displayed)."}
@@ -85,6 +86,9 @@ func providerSetupFix(err error) string {
 
 func providerSetupFixForConfig(err error, config verifier.Config) string {
 	fix := strings.ReplaceAll(providerSetupFix(err), "VIBIUM_AI_", config.Prefix())
+	if config.Provider == "xai" && (strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403")) {
+		return "Run vibium login xai, or export XAI_API_KEY."
+	}
 	if config.Provider == "anthropic" || config.Provider == "google" {
 		if strings.Contains(fix, "Chat Completions") {
 			return "Check that the endpoint and model support native tool calling and image input. Leave " + config.Prefix() + "REASONING_EFFORT unset."
