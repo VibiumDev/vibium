@@ -34,6 +34,7 @@ function run(args, extraEnv = {}) {
     env: {
       ...process.env,
       HOME: tmpHome,
+      GROK_HOME: path.join(tmpHome, 'grok'),
       VIBIUM_CONFIG_DIR: path.join(tmpHome, 'config'),
       VIBIUM_CACHE_DIR: shortCache,
       VIBIUM_SESSION: SESSION,
@@ -149,13 +150,20 @@ describe('CLI: --json envelope on no-browser commands (#517)', () => {
   });
 
   test('add-skill --json wraps the install location', () => {
-    const result = run(['--json', 'add-skill']);
+    // --agent all pins both installs; the default depends on detected agents.
+    const result = run(['--json', 'add-skill', '--agent', 'all']);
     assert.strictEqual(result.status, 0);
     const env = parseEnvelope(result);
     assert.strictEqual(env.ok, true);
     assert.strictEqual(env.result.skill, 'browser');
     assert.ok(env.result.dir.startsWith(tmpHome), 'dir should be inside the sandbox HOME');
-    assert.strictEqual(env.result.files.length, 1);
+    assert.strictEqual(env.result.files.length, 2);
+    assert.strictEqual(env.result.dirs.length, 2);
+    for (const file of env.result.files) {
+      assert.ok(fs.existsSync(file), `reported file missing: ${file}`);
+    }
+    assert.ok(env.result.dir.includes(`${path.sep}.claude${path.sep}skills${path.sep}`),
+      'dir stays the Claude path for existing parsers');
   });
 
   test('config init --json reports the files written', () => {

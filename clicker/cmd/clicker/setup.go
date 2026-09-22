@@ -23,6 +23,7 @@ type setupSection struct {
 	Path    string   `json:"path,omitempty"`
 	Paths   []string `json:"paths,omitempty"`
 	Agent   string   `json:"agent,omitempty"`
+	Agents  []string `json:"agents,omitempty"`
 }
 
 type setupCommandResult struct {
@@ -357,14 +358,16 @@ func setupAI(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 }
 
 func setupSkills(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
-	found := setupSkillAgentList()
+	// Same detection as add-skill --agent auto, so the wizard and the
+	// standalone command install to the same places.
+	found := presentSkillAgents()
 	if !ui.interactive && len(found) == 0 {
 		ui.skip("Skipped skills: no ~/.grok or ~/.claude directory.")
 		return setupSection{Name: "skills", Status: "skipped", Message: "No ~/.grok or ~/.claude directory; skills were not installed."}
 	}
 	targets := found
 	if len(targets) == 0 {
-		targets = []string{defaultSkillAgent()}
+		targets = []string{"claude"}
 	}
 	if quick {
 		var missing []string
@@ -376,7 +379,7 @@ func setupSkills(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 		if len(missing) == 0 {
 			agent := strings.Join(targets, ",")
 			ui.skip("Skills already installed for %s; skipping (--quick).", agent)
-			return setupSection{Name: "skills", Status: "skipped", Message: "Skills already installed.", Agent: agent}
+			return setupSection{Name: "skills", Status: "skipped", Message: "Skills already installed.", Agent: agent, Agents: targets}
 		}
 		targets = missing
 	} else if ui.interactive && len(found) > 1 {
@@ -401,7 +404,7 @@ func setupSkills(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 		}
 		if !ok {
 			ui.skip("Skipped skills.")
-			return setupSection{Name: "skills", Status: "skipped", Message: "Skills install declined.", Agent: agent}
+			return setupSection{Name: "skills", Status: "skipped", Message: "Skills install declined.", Agent: agent, Agents: targets}
 		}
 	}
 
@@ -410,13 +413,13 @@ func setupSkills(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 		for _, name := range []string{"browser", "check"} {
 			dir, skillPath, err := setupWriteSkill(name, target)
 			if err != nil {
-				return setupSection{Name: "skills", Status: "failed", Message: err.Error(), Agent: agent, Paths: paths}
+				return setupSection{Name: "skills", Status: "failed", Message: err.Error(), Agent: agent, Agents: targets, Paths: paths}
 			}
 			paths = append(paths, skillPath)
 			ui.ok("Installed %s skill to %s.", name, dir)
 		}
 	}
-	return setupSection{Name: "skills", Status: "done", Message: "Installed browser and check skills.", Agent: agent, Paths: paths}
+	return setupSection{Name: "skills", Status: "done", Message: "Installed browser and check skills.", Agent: agent, Agents: targets, Paths: paths}
 }
 
 func skillsSectionError(err error, agent string) setupSection {
@@ -575,48 +578,12 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func defaultSkillAgent() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "claude"
-	}
-	if isDir(filepath.Join(home, ".grok")) {
-		return "grok"
-	}
-	return "claude"
-}
-
-func setupSkillAgentList() []string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	var agents []string
-	for _, a := range []string{"grok", "claude"} {
-		if isDir(filepath.Join(home, "."+a)) {
-			agents = append(agents, a)
-		}
-	}
-	return agents
-}
-
 func aiEnvPath() (string, error) {
 	dir, err := paths.GetConfigDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "ai.env"), nil
-}
-
-func setupSkillRel(agent string) (string, error) {
-	switch agent {
-	case "claude":
-		return filepath.Join(".claude", "skills"), nil
-	case "grok":
-		return filepath.Join(".grok", "skills"), nil
-	default:
-		return "", fmt.Errorf("unknown agent %q; choose claude or grok", agent)
-	}
 }
 
 func setupWriteSkill(name, agent string) (string, string, error) {
@@ -628,15 +595,10 @@ func setupWriteSkill(name, agent string) (string, string, error) {
 	default:
 		return "", "", fmt.Errorf("unknown skill %q; choose browser or check", name)
 	}
-	rel, err := setupSkillRel(agent)
+	skillDir, err := agentSkillDir(agent, name)
 	if err != nil {
 		return "", "", err
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", "", fmt.Errorf("could not find home directory: %w", err)
-	}
-	skillDir := filepath.Join(home, rel, name)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return "", "", fmt.Errorf("could not create skill directory: %w", err)
 	}
@@ -648,16 +610,12 @@ func setupWriteSkill(name, agent string) (string, string, error) {
 }
 
 func skillsPresent(agent string) bool {
-	rel, err := setupSkillRel(agent)
-	if err != nil {
-		return false
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
 	for _, name := range []string{"browser", "check"} {
-		if _, err := os.Stat(filepath.Join(home, rel, name, "SKILL.md")); err != nil {
+		dir, err := agentSkillDir(agent, name)
+		if err != nil {
+			return false
+		}
+		if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
 			return false
 		}
 	}

@@ -7,6 +7,8 @@
 const { test, describe, before, after } = require("../../helpers/capabilities").suite("core");
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('path');
 const { VIBIUM } = require("../../helpers");
 
@@ -50,13 +52,22 @@ describe('CLI: Input Tools', () => {
     assert.match(result, /vibium keys/, 'Should list keys');
   });
 
-  test('skill command installs to ~/.claude/skills/', () => {
-    const result = execSync(`${VIBIUM} add-skill`, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    assert.match(result, /Installed Vibium skill/, 'Should confirm install');
-    assert.match(result, /SKILL\.md/, 'Should mention SKILL.md');
+  test('skill command installs for detected agents', () => {
+    // GROK_HOME marks Grok as present; the host's real HOME decides Claude,
+    // so only the Grok expectation is deterministic here.
+    const grokHome = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-home-'));
+    try {
+      const result = execSync(`${VIBIUM} add-skill`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        env: { ...process.env, GROK_HOME: grokHome },
+      });
+      assert.match(result, /Installed Vibium skill/, 'Should confirm install');
+      assert.match(result, /SKILL\.md/, 'Should mention SKILL.md');
+      assert.ok(result.includes(grokHome), 'Should install for Grok under GROK_HOME');
+    } finally {
+      fs.rmSync(grokHome, { recursive: true, force: true });
+    }
   });
 });
 

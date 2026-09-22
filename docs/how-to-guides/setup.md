@@ -44,9 +44,11 @@ the commented template. Values are never printed.
 
 ## Skills
 
-If `~/.grok` exists, setup installs the `browser` and `check` skills under
-`~/.grok/skills`; otherwise `~/.claude/skills`. Non-interactive setup
-installs skills only when one of those directories already exists.
+Setup installs the `browser` and `check` skills for each agent already
+present: `~/.claude/skills` when `~/.claude` exists, and `~/.grok/skills`
+(or `$GROK_HOME/skills`) when `~/.grok` exists or `GROK_HOME` is set. This
+matches `vibium add-skill`. Non-interactive setup installs skills only when
+at least one agent is present.
 
 ## Browser
 
