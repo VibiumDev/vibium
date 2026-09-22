@@ -19,12 +19,15 @@ const MaxImage = 2 * 1024 * 1024
 const MaxClaim = 4000
 
 type Config struct {
-	Role            string `json:"role,omitempty"` // empty means verifier; both roles share AI defaults
-	Provider        string `json:"provider"`
-	Model           string `json:"model"`
-	BaseURL         string `json:"baseURL"`
-	APIKey          string `json:"apiKey,omitempty"`
-	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	Role     string `json:"role,omitempty"` // empty means verifier; both roles share AI defaults
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	BaseURL  string `json:"baseURL"`
+	APIKey   string `json:"apiKey,omitempty"`
+	// CredentialSource says where APIKey came from (api_key, grok_session,
+	// grok_expired). Never serialized; recordings must not learn it.
+	CredentialSource string `json:"-"`
+	ReasoningEffort  string `json:"reasoningEffort,omitempty"`
 }
 
 func ConfigFromEnv() (Config, error) { return ConfigForRole("check") }
@@ -91,8 +94,8 @@ func (c Config) Checks() []ConfigCheck {
 	check(prefix+"REASONING_EFFORT", validEffort, "invalid "+prefix+"REASONING_EFFORT")
 	check(prefix+"PROVIDER", c.Provider == "openai" || c.Provider == "xai" || c.Provider == "openai-compatible" || c.Provider == "local" || c.Provider == "anthropic" || c.Provider == "google", "set "+prefix+"PROVIDER to openai, xai, anthropic, google, openai-compatible, or local")
 	check(prefix+"MODEL", strings.TrimSpace(c.Model) != "", prefix+"MODEL is required")
-	requiresKey := c.Provider == "openai" || c.Provider == "xai" || c.Provider == "anthropic" || c.Provider == "google"
-	check(c.CredentialVariable(), !requiresKey || strings.TrimSpace(c.APIKey) != "", c.CredentialVariable()+" is required")
+	credName, credProblem := c.credentialCheck()
+	check(credName, credProblem == "", credProblem)
 	endpointProblem := ""
 	if c.Provider == "openai-compatible" && c.BaseURL == "" {
 		endpointProblem = prefix + "BASE_URL is required for openai-compatible"
@@ -105,6 +108,29 @@ func (c Config) Checks() []ConfigCheck {
 	}
 	check(prefix+"BASE_URL", endpointProblem == "", endpointProblem)
 	return checks
+}
+
+// credentialCheck names the credential in use. A borrowed Grok session is
+// reported as "Grok login" so ready output matches what the user set up.
+func (c Config) credentialCheck() (name, problem string) {
+	name = c.CredentialVariable()
+	if c.Provider == "xai" {
+		switch c.CredentialSource {
+		case CredentialGrokSession:
+			return "Grok login", ""
+		case credentialGrokExpired:
+			return "Grok login", "the Grok CLI login has expired; run grok login again, or export XAI_API_KEY"
+		}
+		if strings.TrimSpace(c.APIKey) == "" {
+			return name, "XAI_API_KEY is required; a Grok CLI login (grok login) also works"
+		}
+		return name, ""
+	}
+	requiresKey := c.Provider == "openai" || c.Provider == "anthropic" || c.Provider == "google"
+	if requiresKey && strings.TrimSpace(c.APIKey) == "" {
+		return name, name + " is required"
+	}
+	return name, ""
 }
 
 func (c Config) Validate() error {
@@ -201,6 +227,7 @@ func ResultToolSchema(statuses ...string) map[string]interface{} {
 		"required": []string{"status", "summary"},
 	}
 }
+
 type Observation struct {
 	Text  string
 	Image string // base64 PNG, only when explicitly requested

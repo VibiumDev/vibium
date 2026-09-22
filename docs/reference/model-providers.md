@@ -16,7 +16,7 @@ and `local`. Provider credentials use their native environment variables:
 | Provider | Credential | Default API base URL |
 |----------|------------|----------------------|
 | `openai` | `OPENAI_API_KEY`, required | `https://api.openai.com/v1` |
-| `xai` | `XAI_API_KEY`, required | `https://api.x.ai/v1` |
+| `xai` | `XAI_API_KEY`, or a signed-in Grok CLI session | `https://api.x.ai/v1` |
 | `anthropic` | `ANTHROPIC_API_KEY`, required | `https://api.anthropic.com/v1` |
 | `google` | `GOOGLE_API_KEY`, required | `https://generativelanguage.googleapis.com/v1beta` |
 | `openai-compatible` | `OPENAI_API_KEY`, optional | Explicit base URL required |
@@ -145,6 +145,12 @@ vibium ready ai
 ```
 
 `vibium ready ai xai --model grok-4` selects the same provider for one call.
+
+When `XAI_API_KEY` is unset, Vibium reuses a signed-in Grok CLI session:
+it reads the access token from `~/.grok/auth.json` (or `$GROK_HOME/auth.json`)
+and uses it while it is valid. Vibium never refreshes, stores, or rewrites
+that login. When the session expires, run `grok login` again or export
+`XAI_API_KEY`. `vibium ready ai` reports this credential as `Grok login`.
 
 Use different providers for individual calls without changing the shared defaults:
 

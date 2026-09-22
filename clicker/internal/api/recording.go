@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/verifier"
 )
 
 // RecordingStartOptions configures how recording behaves.
@@ -285,6 +286,9 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 		if value := os.Getenv(key); value != "" {
 			t.secrets[value] = true
 		}
+	}
+	for _, value := range verifier.XAIAuthSecrets() {
+		t.secrets[value] = true
 	}
 	t.options = opts
 	t.events = nil
