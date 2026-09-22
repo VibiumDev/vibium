@@ -17,6 +17,9 @@ var aiEnvTemplate string
 //go:embed CLOUD_ENV_TEMPLATE
 var cloudEnvTemplate string
 
+//go:embed LINEAR_ENV_TEMPLATE
+var linearEnvTemplate string
+
 // tildePath renders a path the way the docs and tutorials write it. Paths
 // outside home (VIBIUM_CONFIG_DIR, XDG_CONFIG_HOME) print in full, because a
 // ~/ prefix would name a file that isn't there.
@@ -42,6 +45,7 @@ type configTemplate struct {
 var configTemplates = []configTemplate{
 	{"ai", "ai.env", &aiEnvTemplate, "provider, model and API key for run and check"},
 	{"cloud", "cloud-browser.env", &cloudEnvTemplate, "credentials for cloud browser vendors"},
+	{"linear", "linear.env", &linearEnvTemplate, "Linear API key and team for signed issue reports"},
 }
 
 func newConfigCmd() *cobra.Command {
@@ -57,7 +61,7 @@ func newConfigInitCmd() *cobra.Command {
 	var force, stdout bool
 
 	cmd := &cobra.Command{
-		Use:   "init [ai|cloud|all]",
+		Use:   "init [ai|cloud|linear|all]",
 		Short: "Write a starter settings file to ~/.config/vibium",
 		Long: `Write a commented settings file to the Vibium config directory.
 
@@ -76,7 +80,7 @@ Nonempty process environment still wins. Set VIBIUM_LOAD_AI_ENV=0 to skip.`,
   vibium config init ai --stdout
   # Print the template instead of writing it`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"ai", "cloud", "all"},
+		ValidArgs: []string{"ai", "cloud", "linear", "all"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			which := "ai"
 			if len(args) == 1 {
@@ -89,7 +93,7 @@ Nonempty process environment still wins. Set VIBIUM_LOAD_AI_ENV=0 to skip.`,
 				}
 			}
 			if len(chosen) == 0 {
-				return fmt.Errorf("unknown settings file %q; choose ai, cloud or all", which)
+				return fmt.Errorf("unknown settings file %q; choose ai, cloud, linear or all", which)
 			}
 			if stdout {
 				for _, t := range chosen {

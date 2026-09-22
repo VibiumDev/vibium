@@ -26,6 +26,11 @@ var allowed = map[string]bool{
 	"GOOGLE_API_KEY":             true,
 	"GEMINI_API_KEY":             true,
 	"XAI_API_KEY":                true,
+	"LINEAR_API_KEY":             true,
+	"VIBIUM_LINEAR_API_KEY":      true,
+	"VIBIUM_LINEAR_TEAM":         true,
+	"VIBIUM_LINEAR_TEAM_ID":      true,
+	"VIBIUM_LINEAR_ENDPOINT":     true,
 }
 
 // LoadAIEnv applies unset AI settings from the config-dir ai.env file.
@@ -39,6 +44,45 @@ func LoadAIEnv() error {
 		return nil
 	}
 	path := filepath.Join(dir, "ai.env")
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if ok, _ := eligibleMode(info.Mode()); !ok {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	vars := Parse(string(raw))
+	for name, value := range vars {
+		if strings.TrimSpace(os.Getenv(name)) != "" {
+			continue
+		}
+		if err := os.Setenv(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const linearDisableVar = "VIBIUM_LOAD_LINEAR_ENV"
+
+// LoadLinearEnv applies unset Linear settings from config-dir linear.env.
+func LoadLinearEnv() error {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(linearDisableVar))) {
+	case "0", "false", "no", "off":
+		return nil
+	}
+	dir, err := paths.GetConfigDir()
+	if err != nil {
+		return nil
+	}
+	path := filepath.Join(dir, "linear.env")
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {

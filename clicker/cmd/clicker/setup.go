@@ -34,11 +34,11 @@ func newSetupCmd() *cobra.Command {
 	var nonInteractive, quick bool
 	cmd := &cobra.Command{
 		Annotations: map[string]string{"standalone": "true"},
-		Use:         "setup [browser|ai|skills]",
-		Short:       "Configure browser, AI, and agent skills",
-		Long: `Interactive setup for AI settings, agent skills, and the local browser.
+		Use:         "setup [browser|ai|skills|tasks]",
+		Short:       "Configure browser, AI, agent skills, and optional task management",
+		Long: `Interactive setup for AI settings, agent skills, optional Linear, and the local browser.
 
-Sections can be run on their own: vibium setup browser|ai|skills.
+Sections can be run on their own: vibium setup browser|ai|skills|tasks.
 Prompts come first; the browser install runs after them.
 --non-interactive never prompts (CI, agents).
 --quick fills only what is missing.
@@ -55,9 +55,12 @@ variables from ai.env automatically.`,
   # Only fill what is missing.
 
   vibium setup ai
-  # Provider, model, and API key only.`,
+  # Provider, model, and API key only.
+
+  vibium setup tasks
+  # Optional Linear API key and team, for signed issue reports.`,
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"browser", "ai", "skills"},
+		ValidArgs: []string{"browser", "ai", "skills", "tasks"},
 		Run: func(cmd *cobra.Command, args []string) {
 			section := ""
 			if len(args) == 1 {
@@ -78,10 +81,10 @@ func runSetup(cmd *cobra.Command, section string, nonInteractive, quick bool) {
 	ui := newSetupUI(cmd, interactive)
 	ui.banner()
 
-	want := map[string]bool{"browser": true, "ai": true, "skills": true}
+	want := map[string]bool{"browser": true, "ai": true, "skills": true, "tasks": true}
 	if section != "" {
-		if section != "browser" && section != "ai" && section != "skills" {
-			err := fmt.Errorf("unknown setup section %q; choose browser, ai, or skills", section)
+		if section != "browser" && section != "ai" && section != "skills" && section != "tasks" {
+			err := fmt.Errorf("unknown setup section %q; choose browser, ai, skills, or tasks", section)
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: false, Error: err.Error()})
 			} else {
@@ -112,6 +115,10 @@ func runSetup(cmd *cobra.Command, section string, nonInteractive, quick bool) {
 		ui.heading("Skills")
 		addSection(setupSkills(cmd, ui, quick))
 	}
+	if want["tasks"] {
+		ui.heading("Tasks")
+		result.Sections = append(result.Sections, setupTasks(cmd, ui, quick))
+	}
 	if want["browser"] {
 		ui.heading("Browser")
 		addSection(setupBrowser(cmd, ui, quick))
@@ -124,6 +131,8 @@ func runSetup(cmd *cobra.Command, section string, nonInteractive, quick bool) {
 	case "ai":
 		readyScope = "ai"
 	case "skills":
+		readyScope = ""
+	case "tasks":
 		readyScope = ""
 	}
 	if readyScope != "" {

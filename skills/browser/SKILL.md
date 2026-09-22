@@ -82,6 +82,11 @@ provider, supply a model explicitly; inherited endpoint and effort settings
 are cleared. Credentials remain in the provider's environment variable.
 Use the project's chosen provider rather than silently switching it.
 
+Optional Linear: `vibium setup tasks`, then `vibium report linear <pack-dir>`
+or `vibium run "<goal>" -o pack/run.zip --report linear`. Issues are signed
+by Vibium with absolute artifact paths. Do not put API keys in the issue body.
+Do not mark Linear Done from `completed`.
+
 ## Command Chaining
 
 Chain commands with `&&` to run them sequentially. The chain stops on first error:

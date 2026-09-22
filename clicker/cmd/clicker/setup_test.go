@@ -18,7 +18,7 @@ func setupTestEnv(t *testing.T) string {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("VIBIUM_CACHE_DIR", filepath.Join(home, "cache"))
 	t.Setenv("VIBIUM_CONFIG_DIR", "")
-	for _, key := range []string{"VIBIUM_AI_PROVIDER", "VIBIUM_AI_MODEL", "VIBIUM_AI_BASE_URL", "VIBIUM_AI_REASONING_EFFORT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "VIBIUM_ENGINE", "VIBIUM_ENGINE_CHANNEL", "VIBIUM_ENGINE_PATH", "VIBIUM_SKIP_BROWSER_DOWNLOAD"} {
+	for _, key := range []string{"VIBIUM_AI_PROVIDER", "VIBIUM_AI_MODEL", "VIBIUM_AI_BASE_URL", "VIBIUM_AI_REASONING_EFFORT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "VIBIUM_LINEAR_API_KEY", "LINEAR_API_KEY", "VIBIUM_LINEAR_TEAM", "VIBIUM_ENGINE", "VIBIUM_ENGINE_CHANNEL", "VIBIUM_ENGINE_PATH", "VIBIUM_SKIP_BROWSER_DOWNLOAD"} {
 		t.Setenv(key, "")
 	}
 	oldJSON, oldEngine, oldChannel := jsonOutput, engineName, engineChannel
@@ -86,6 +86,34 @@ func TestSetupAINonInteractiveSkipsWhenMissingAndDoesNotOverwrite(t *testing.T) 
 	}
 	if _, err := os.Stat(path + ".bak"); err == nil {
 		t.Fatal("unexpected backup")
+	}
+}
+
+func TestSetupTasksNonInteractiveSkips(t *testing.T) {
+	home := setupTestEnv(t)
+	cmd := &cobra.Command{}
+	sec := setupTasks(cmd, quietUI(), false)
+	if sec.Status != "skipped" {
+		t.Fatalf("missing file: %+v", sec)
+	}
+	path := filepath.Join(home, ".config", "vibium", "linear.env")
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("non-interactive setup wrote linear.env")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := "export VIBIUM_LINEAR_TEAM=ENG\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sec = setupTasks(cmd, quietUI(), false)
+	if sec.Status != "skipped" {
+		t.Fatalf("existing: %+v", sec)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != original {
+		t.Fatalf("rewrote linear.env: %q", got)
 	}
 }
 

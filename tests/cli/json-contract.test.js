@@ -114,6 +114,7 @@ const CLASSES = {
   'record start': 'envelope',
   'record stop': 'envelope',
   'reload': 'envelope',
+  'report linear': 'usage-error',
   'run': 'usage-error',
   'screenshot': 'envelope',
   'scroll': 'envelope',

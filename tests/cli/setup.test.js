@@ -51,12 +51,13 @@ test('setup --non-interactive --json with a seeded browser cache returns an ok e
   assert.equal(result.code, 0, result.stdout + result.stderr);
   const body = JSON.parse(result.stdout);
   assert.equal(body.ok, true);
-  assert.deepEqual(body.result.sections.map(s => s.name), ['ai', 'skills', 'browser'],
+  assert.deepEqual(body.result.sections.map(s => s.name), ['ai', 'skills', 'tasks', 'browser'],
     'prompt-driven sections must run before the browser download');
   const sections = Object.fromEntries(body.result.sections.map(s => [s.name, s]));
   assert.equal(sections.browser.status, 'done');
   assert.equal(sections.ai.status, 'skipped');
   assert.equal(sections.skills.status, 'skipped');
+  assert.equal(sections.tasks.status, 'skipped');
   assert.equal(fs.existsSync(env.READY_LAUNCH_MARKER), false, 'launched a browser');
 });
 

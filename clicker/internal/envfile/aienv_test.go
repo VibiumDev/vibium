@@ -24,6 +24,13 @@ PATH=/tmp
 	}
 }
 
+func TestParseLinearKeys(t *testing.T) {
+	got := Parse("export VIBIUM_LINEAR_API_KEY=lin_api_x\nexport VIBIUM_LINEAR_TEAM=ENG\nexport LINEAR_API_KEY=lin_api_y\n")
+	if got["VIBIUM_LINEAR_API_KEY"] != "lin_api_x" || got["VIBIUM_LINEAR_TEAM"] != "ENG" || got["LINEAR_API_KEY"] != "lin_api_y" {
+		t.Fatalf("%v", got)
+	}
+}
+
 func TestParseSkipsCommandSubstitution(t *testing.T) {
 	got := Parse("export OPENAI_API_KEY=$(cat /secret)\nexport ANTHROPIC_API_KEY=`cat /secret`\nexport GOOGLE_API_KEY=plain\n")
 	if _, ok := got["OPENAI_API_KEY"]; ok {

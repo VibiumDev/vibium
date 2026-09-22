@@ -23,6 +23,7 @@ vibium setup --non-interactive
 vibium setup browser
 vibium setup ai
 vibium setup skills
+vibium setup tasks
 ```
 
 ## AI
@@ -47,6 +48,13 @@ the commented template. Values are never printed.
 If `~/.grok` exists, setup installs the `browser` and `check` skills under
 `~/.grok/skills`; otherwise `~/.claude/skills`. Non-interactive setup
 installs skills only when one of those directories already exists.
+
+## Tasks
+
+Optional. Linear files Run results as signed issues with artifact filepaths.
+See [File Run results to Linear](linear.md). Full setup asks whether to
+configure Linear (default no). `vibium setup tasks` is the section on its
+own. `--non-interactive` skips it.
 
 ## Browser
 

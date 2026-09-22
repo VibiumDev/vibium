@@ -172,6 +172,9 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 			if err := envfile.LoadAIEnv(); err != nil {
 				return err
 			}
+			if err := envfile.LoadLinearEnv(); err != nil {
+				return err
+			}
 			if isReadyCommand(cmd) {
 				return nil
 			}
@@ -208,6 +211,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newCheckCmd())
 	runCmd := newRunCmd()
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(newReportCmd())
 	rootCmd.AddCommand(newReadyCmd())
 	rootCmd.AddCommand(newScreenshotCmd())
 	rootCmd.AddCommand(newEvalCmd())
