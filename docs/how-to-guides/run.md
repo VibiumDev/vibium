@@ -38,6 +38,25 @@ vibium go http://localhost:3000/account
 vibium run "change my timezone to America/Chicago and save it"
 ```
 
+## Playbooks
+
+Named subcommands are fixed goals. Use them when the job is a repeatable
+audit rather than a one-off instruction. Freeform `run "<goal>"` still works.
+
+```bash
+vibium go http://localhost:3000
+vibium run inspect -o inspect.zip --keep-open
+# Header lockup, KPI or empty state, login wall. Does not navigate.
+
+vibium run walk -o walk.zip --keep-open
+# Tours in-app nav (max 8 routes). Reports WORKS, BROKEN, and CSS SHELL.
+```
+
+`inspect` does not click away from the current page. `walk` clicks nav on the
+same hostname and skips identity-provider and cross-host links. Neither signs
+in or fills forms. JSON `result.goal` is the full playbook text; human output
+prints the playbook name.
+
 Example result:
 
 ```text

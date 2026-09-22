@@ -19,6 +19,7 @@ func TestPromptShorthand(t *testing.T) {
 		{"known command", []string{"stop"}, false},
 		{"known command arguments", []string{"check", "a claim"}, false},
 		{"explicit one word", []string{"run", "stop"}, false},
+		{"run playbook", []string{"run", "walk"}, false},
 		{"removed command", []string{"perform", "a goal"}, false},
 		{"typo", []string{"staart"}, false},
 		{"unquoted words", []string{"open", "the", "page"}, false},

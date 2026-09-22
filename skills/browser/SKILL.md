@@ -62,7 +62,13 @@ With a settings page already open:
 
 ```sh
 vibium run "Change the timezone to America/Chicago and save it" --json -o browser-run.zip
+vibium run inspect --json -o inspect.zip --keep-open
+vibium run walk --json -o walk.zip --keep-open
 ```
+
+`vibium run inspect` records header lockup and the primary KPI without
+navigating. `vibium run walk` tours in-app nav and reports WORKS / BROKEN /
+CSS SHELL. Both are fixed goals; quoted sentences remain custom Run goals.
 
 `vibium "<multiword goal>"` is shorthand for Run. Use explicit `run` in scripts
 or when the prompt could be mistaken for a command.

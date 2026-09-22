@@ -10,14 +10,36 @@ import (
 	"github.com/vibium/clicker/internal/verifier"
 )
 
+func addRunFlags(cmd *cobra.Command, output *string, keepOpen *bool) {
+	cmd.Flags().StringVarP(output, "output", "o", "", "Save a new live recording ZIP; an active recording exports its current chunk without continuous video")
+	cmd.Flags().BoolVar(keepOpen, "keep-open", false, "Keep a browser started by Run open after saving evidence")
+	addModelFlags(cmd)
+}
+
+func printRunResult(label string, result *runop.Result, output string) {
+	if jsonOutput {
+		printJSON(jsonEnvelope{OK: true, Result: result})
+		return
+	}
+	fmt.Printf("RUN: %s\n\n%s\n\n%s\n", label, result.Verdict(), result.Summary)
+	for _, e := range result.Evidence {
+		fmt.Printf("- %s\n", e.Summary)
+	}
+	if output != "" {
+		fmt.Printf("Recording saved to %s\n", output)
+	}
+}
+
 func newRunCmd() *cobra.Command {
 	var output string
 	var keepOpen bool
 	cmd := &cobra.Command{
-		Use: `run "<goal>"`, Short: "Accomplish a goal in the live browser with configured model tools",
-		Long: "Accomplish a live browser goal using VIBIUM_AI_* configuration.\nReturns completed or not_completed with evidence. Check setup with vibium ready ai.\nCloses only a browser it starts, after saving evidence; --keep-open preserves it.",
+		Use: `run ["<goal>" | playbook]`, Short: "Accomplish a goal in the live browser with configured model tools",
+		Long: "Accomplish a live browser goal using VIBIUM_AI_* configuration.\nReturns completed or not_completed with evidence. Check setup with vibium ready ai.\nCloses only a browser it starts, after saving evidence; --keep-open preserves it.\n\nNamed playbooks (inspect, walk) are fixed goals. A quoted sentence is still a custom goal.",
 		Example: `  vibium run "change my timezone to America/Chicago"
   # Accomplishes the goal in the existing browser and reports its result.
+  vibium run walk -o walk.zip --keep-open
+  # Tours in-app navigation with the walk playbook and saves a recording.
   vibium run "open https://example.com" -o run.zip --keep-open
   # Saves the live recording and leaves a newly started browser open.`,
 		Args: cobra.ExactArgs(1),
@@ -27,22 +49,11 @@ func newRunCmd() *cobra.Command {
 				printError(err)
 				return
 			}
-			if jsonOutput {
-				printJSON(jsonEnvelope{OK: true, Result: result})
-				return
-			}
-			fmt.Printf("RUN: %s\n\n%s\n\n%s\n", result.Goal, result.Verdict(), result.Summary)
-			for _, e := range result.Evidence {
-				fmt.Printf("- %s\n", e.Summary)
-			}
-			if output != "" {
-				fmt.Printf("Recording saved to %s\n", output)
-			}
+			printRunResult(result.Goal, result, output)
 		},
 	}
-	cmd.Flags().StringVarP(&output, "output", "o", "", "Save a new live recording ZIP; an active recording exports its current chunk without continuous video")
-	cmd.Flags().BoolVar(&keepOpen, "keep-open", false, "Keep a browser started by Run open after saving evidence")
-	addModelFlags(cmd)
+	addRunFlags(cmd, &output, &keepOpen)
+	addRunPlaybooks(cmd)
 	return cmd
 }
 func runGoal(cmd *cobra.Command, goal, output string, keepOpen bool) (*runop.Result, error) {
