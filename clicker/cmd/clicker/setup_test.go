@@ -18,7 +18,7 @@ func setupTestEnv(t *testing.T) string {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("VIBIUM_CACHE_DIR", filepath.Join(home, "cache"))
 	t.Setenv("VIBIUM_CONFIG_DIR", "")
-	for _, key := range []string{"VIBIUM_AI_PROVIDER", "VIBIUM_AI_MODEL", "VIBIUM_AI_BASE_URL", "VIBIUM_AI_REASONING_EFFORT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "VIBIUM_ENGINE", "VIBIUM_ENGINE_CHANNEL", "VIBIUM_ENGINE_PATH", "VIBIUM_SKIP_BROWSER_DOWNLOAD"} {
+	for _, key := range []string{"VIBIUM_AI_PROVIDER", "VIBIUM_AI_MODEL", "VIBIUM_AI_BASE_URL", "VIBIUM_AI_REASONING_EFFORT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GROK_HOME", "VIBIUM_ENGINE", "VIBIUM_ENGINE_CHANNEL", "VIBIUM_ENGINE_PATH", "VIBIUM_SKIP_BROWSER_DOWNLOAD"} {
 		t.Setenv(key, "")
 	}
 	oldJSON, oldEngine, oldChannel := jsonOutput, engineName, engineChannel
@@ -112,6 +112,29 @@ func TestSetupSkillsOnlyWhenAgentDirExists(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".grok", "skills", "check", "SKILL.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The wizard shares detection with add-skill: a machine with both agent
+// directories gets skills for both, not just the first match.
+func TestSetupSkillsInstallsForAllDetectedAgents(t *testing.T) {
+	home := setupTestEnv(t)
+	for _, dir := range []string{".grok", ".claude"} {
+		if err := os.MkdirAll(filepath.Join(home, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sec := setupSkills(&cobra.Command{}, quietUI(), false)
+	if sec.Status != "done" || len(sec.Agents) != 2 {
+		t.Fatalf("%+v", sec)
+	}
+	for _, p := range []string{
+		filepath.Join(home, ".claude", "skills", "browser", "SKILL.md"),
+		filepath.Join(home, ".grok", "skills", "check", "SKILL.md"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

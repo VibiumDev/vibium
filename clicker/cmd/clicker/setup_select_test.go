@@ -188,7 +188,7 @@ func TestSetupSkillsAsksWhichAgentWhenBothExist(t *testing.T) {
 	in := bytes.NewBufferString("3\ny\n")
 	ui := &setupUI{in: in, out: ioDiscard(), err: ioDiscard(), interactive: true}
 	sec := setupSkills(&cobra.Command{}, ui, false)
-	if sec.Status != "done" || sec.Agent != "grok,claude" {
+	if sec.Status != "done" || sec.Agent != "claude,grok" {
 		t.Fatalf("%+v", sec)
 	}
 	for _, d := range []string{".grok", ".claude"} {
