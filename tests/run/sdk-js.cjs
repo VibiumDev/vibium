@@ -24,7 +24,7 @@ const { browser } = require('../../clients/javascript/dist/' + (process.env.RUN_
     assert.equal(await page.evaluate("sessionStorage.getItem('builder')"), 'preserved');
     assert.equal(await (await other.find('#name')).value(), 'Other');
     assert.equal((await page.check('the name persisted')).status, 'passed');
-    const overrides = { provider: process.env.VIBIUM_AI_PROVIDER === 'anthropic' ? 'google' : 'anthropic', model: 'run-model', baseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' };
+    const overrides = { provider: process.env.VIBIUM_AI_PROVIDER === 'anthropic' ? 'google' : 'anthropic', model: 'run-model', aiBaseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' };
     assert.equal((await page.run('change name', overrides)).status, 'completed');
     assert.equal((await page.check('the name persisted', { ...overrides, model: 'check-model' })).status, 'passed');
     assert.equal((await bro('not possible')).status, 'not_completed');
