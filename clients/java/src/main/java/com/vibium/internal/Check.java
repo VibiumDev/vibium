@@ -12,6 +12,7 @@ public final class Check {
         JsonObject params = new JsonObject();
         ModelSettings.apply(params, options);
         params.addProperty("claim", claim);
+        if (options != null && options.baseURL() != null) params.addProperty("baseURL", options.baseURL());
         if (options != null && options.record() != null) {
             if (options.record().toString().isEmpty()) throw new IllegalArgumentException("record must be a nonempty path");
             params.addProperty("record", options.record().toAbsolutePath().normalize().toString());

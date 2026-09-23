@@ -1647,6 +1647,7 @@ func GetToolSchemas() []Tool {
 	for i := range tools {
 		if tools[i].Name == "vibium_check" || tools[i].Name == "vibium_run" {
 			props := tools[i].InputSchema["properties"].(map[string]interface{})
+			props["baseURL"] = map[string]interface{}{"type": "string", "description": "Site under test: opened first unless the current page already shares its origin, and relative browser_navigate paths resolve against it. Not the AI provider endpoint; that is aiBaseURL."}
 			for _, name := range []string{"provider", "model", "aiBaseURL", "reasoningEffort"} {
 				description := "Per-call model setting override. Changing provider clears inherited model, endpoint, and reasoning effort. Credentials come from the runtime environment."
 				if name == "aiBaseURL" {

@@ -26,16 +26,16 @@ class Browser:
     def __repr__(self) -> str:
         return "Browser(connected=True)"
 
-    def __call__(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
-        return self.run(goal, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+    def __call__(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return self.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
 
-    def run(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+    def run(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
         """Accomplish a live goal; the existing runtime owns the model loop."""
-        return self._loop.run(self._async.run(goal, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
+        return self._loop.run(self._async.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
 
-    def check(self, claim: str, *, record: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+    def check(self, claim: str, *, record: Optional[str] = None, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Independently verify live behavior, or inspect a read-only archive."""
-        return self._loop.run(self._async.check(claim, record=record, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
+        return self._loop.run(self._async.check(claim, record=record, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
 
 
     def page(self) -> Page:

@@ -42,7 +42,9 @@ func newRunCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Save a new live recording ZIP; an active recording exports its current chunk without continuous video")
 	cmd.Flags().BoolVar(&keepOpen, "keep-open", false, "Keep a browser started by Run open after saving evidence")
+	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
 	addModelFlags(cmd)
+	cmd.Example += "\n  vibium run \"add a battery pack to the cart\" --base-url http://localhost:3000\n  # Accomplishes the goal against that site; a page already on its origin keeps its state."
 	return cmd
 }
 func runGoal(cmd *cobra.Command, goal, output string, keepOpen bool) (*runop.Result, error) {
@@ -54,7 +56,8 @@ func runGoal(cmd *cobra.Command, goal, output string, keepOpen bool) (*runop.Res
 	if err != nil {
 		return nil, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
-	req := runop.Request{Goal: goal, Output: files.output, Config: config}
+	baseSite, _ := cmd.Flags().GetString("base-url")
+	req := runop.Request{Goal: goal, Output: files.output, BaseSite: baseSite, Config: config}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}

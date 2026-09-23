@@ -146,6 +146,9 @@ type Request struct {
 	Claim  string `json:"claim"`
 	Record string `json:"record,omitempty"` // explicit archive on the runtime host
 	Output string `json:"output,omitempty"` // optional new live recording on the runtime host
+	// BaseSite is the site under test (#575), distinct from the AI provider
+	// endpoint in Config.BaseURL.
+	BaseSite string `json:"baseURL,omitempty"`
 	// Configuration is transmitted only over the existing private daemon socket.
 	// Never pass it to the recorder, tool executor, or provider messages.
 	Config Config `json:"config"`
@@ -154,6 +157,14 @@ type Request struct {
 func (r Request) Validate() error {
 	if r.Record != "" && r.Output != "" {
 		return fmt.Errorf("input archive and live recording output cannot be combined")
+	}
+	if r.BaseSite != "" {
+		if r.Record != "" {
+			return fmt.Errorf("a saved-recording check has no live site to open; record and a site under test cannot be combined")
+		}
+		if _, err := ParseSiteURL(r.BaseSite); err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(r.Claim) == "" || len(r.Claim) > MaxClaim {
 		return fmt.Errorf("check requires a nonempty claim of at most %d bytes", MaxClaim)

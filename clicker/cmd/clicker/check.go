@@ -88,7 +88,9 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&files.output, "output", "o", "", "Save a new recording ZIP of live verification; an active recording is exported without stopping it (current chunk, no video)")
 	cmd.Flags().StringVar(&files.report, "report", "", "Save the verdict and concise evidence as a new JSON file")
 	cmd.Flags().Bool("keep-open", false, "Leave a browser started by Check open after the run (existing browsers are always preserved)")
+	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
 	addModelFlags(cmd)
+	cmd.Example += "\n  vibium check \"checkout completes\" --base-url http://localhost:3000\n  # Verifies the claim against that site; a page already on its origin keeps its state."
 	return cmd
 }
 
@@ -106,7 +108,8 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *v
 	if err != nil {
 		return result, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
-	req := verifier.Request{Claim: claim, Record: files.input, Output: files.output, Config: config}
+	baseSite, _ := cmd.Flags().GetString("base-url")
+	req := verifier.Request{Claim: claim, Record: files.input, Output: files.output, BaseSite: baseSite, Config: config}
 	if err = req.Validate(); err != nil {
 		return
 	}
