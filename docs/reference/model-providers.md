@@ -18,11 +18,12 @@ and `local`. Provider credentials use their native environment variables:
 | `openai` | `OPENAI_API_KEY`, required | `https://api.openai.com/v1` |
 | `xai` | `XAI_API_KEY`, or a signed-in Grok CLI session | `https://api.x.ai/v1` |
 | `anthropic` | `ANTHROPIC_API_KEY`, required | `https://api.anthropic.com/v1` |
-| `google` | `GOOGLE_API_KEY`, required | `https://generativelanguage.googleapis.com/v1beta` |
+| `google` | `GOOGLE_API_KEY`, or `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta` |
 | `openai-compatible` | `OPENAI_API_KEY`, optional | Explicit base URL required |
 | `local` | `OPENAI_API_KEY`, optional | `http://127.0.0.1:8080/v1` |
 
-`GOOGLE_API_KEY` is the canonical Google variable; `GEMINI_API_KEY` is not read.
+`GOOGLE_API_KEY` is the canonical Google variable; `GEMINI_API_KEY` (the name
+Google's own SDKs use) is read when `GOOGLE_API_KEY` is unset.
 If an optional key is configured, it is sent to the configured endpoint.
 Base URLs must be HTTP(S), without embedded credentials, query, or fragment.
 Native base URL overrides use the provider's API version prefix, not the full

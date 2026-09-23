@@ -369,3 +369,31 @@ func TestConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestUnparseableProviderResponseNamesContentAndSetting(t *testing.T) {
+	for _, tc := range []struct{ name, contentType, body, want string }{
+		{name: "html page", contentType: "text/html; charset=utf-8", body: "<!doctype html><title>welcome</title>", want: "AI provider returned text/html, not JSON; check --base-url / VIBIUM_AI_BASE_URL"},
+		{name: "unrecognized type", contentType: "application/x-mystery", body: "junk-body", want: "AI provider returned a non-JSON content type"},
+		{name: "json wrong shape", contentType: "application/json", body: `{"ok":true}`, want: "AI provider returned JSON that is not a chat-completions message"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q in error, got: %v", tc.want, err)
+			}
+			for _, leak := range []string{"welcome", "junk-body", `"ok"`} {
+				if strings.Contains(err.Error(), leak) {
+					t.Fatal("leaked provider body")
+				}
+			}
+		})
+	}
+	if err := invalidProviderResponse(Config{Provider: "openai"}, "text/html", "a chat-completions message"); strings.Contains(err.Error(), "--base-url") {
+		t.Fatal("hint should name the override only when one is in effect")
+	}
+}
