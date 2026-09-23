@@ -110,6 +110,10 @@ func (c Config) Checks() []ConfigCheck {
 	return checks
 }
 
+// credentialGeminiKey marks a google key read from GEMINI_API_KEY, the name
+// Google's own SDKs use, so ready output names the variable in effect.
+const credentialGeminiKey = "gemini_api_key"
+
 // credentialCheck names the credential in use. A borrowed Grok session is
 // reported as "Grok login" so ready output matches what the user set up.
 func (c Config) credentialCheck() (name, problem string) {
@@ -126,7 +130,16 @@ func (c Config) credentialCheck() (name, problem string) {
 		}
 		return name, ""
 	}
-	requiresKey := c.Provider == "openai" || c.Provider == "anthropic" || c.Provider == "google"
+	if c.Provider == "google" {
+		if c.CredentialSource == credentialGeminiKey {
+			return "GEMINI_API_KEY", ""
+		}
+		if strings.TrimSpace(c.APIKey) == "" {
+			return name, "GOOGLE_API_KEY is required; GEMINI_API_KEY also works"
+		}
+		return name, ""
+	}
+	requiresKey := c.Provider == "openai" || c.Provider == "anthropic"
 	if requiresKey && strings.TrimSpace(c.APIKey) == "" {
 		return name, name + " is required"
 	}
