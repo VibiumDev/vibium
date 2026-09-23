@@ -42,6 +42,34 @@ func TestSharedConfigurationAndLocalAlias(t *testing.T) {
 	}
 }
 
+func TestGoogleGeminiKeyFallback(t *testing.T) {
+	for _, key := range []string{"VIBIUM_AI_PROVIDER", "VIBIUM_AI_MODEL", "VIBIUM_AI_BASE_URL", "VIBIUM_AI_REASONING_EFFORT", "GOOGLE_API_KEY", "GEMINI_API_KEY"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("VIBIUM_AI_PROVIDER", "google")
+	t.Setenv("VIBIUM_AI_MODEL", "gemini-2.5-pro")
+	_, err := ConfigForRole("run")
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_API_KEY") || !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Fatalf("missing google key should name both variables: %v", err)
+	}
+	t.Setenv("GEMINI_API_KEY", "gemini-secret")
+	c, err := ConfigForRole("run")
+	if err != nil || c.APIKey != "gemini-secret" {
+		t.Fatalf("GEMINI_API_KEY fallback not applied: %v", err)
+	}
+	if name, problem := c.credentialCheck(); name != "GEMINI_API_KEY" || problem != "" {
+		t.Fatalf("fallback should be reported as GEMINI_API_KEY: %q %q", name, problem)
+	}
+	t.Setenv("GOOGLE_API_KEY", "google-secret")
+	c, err = ConfigForRole("run")
+	if err != nil || c.APIKey != "google-secret" {
+		t.Fatalf("GOOGLE_API_KEY should win over GEMINI_API_KEY: %v", err)
+	}
+	if name, problem := c.credentialCheck(); name != "GOOGLE_API_KEY" || problem != "" {
+		t.Fatalf("canonical key should be reported as GOOGLE_API_KEY: %q %q", name, problem)
+	}
+}
+
 func TestXAINativeDefaults(t *testing.T) {
 	c := Config{Provider: "xai", Model: "grok-4", APIKey: "k"}
 	if c.Endpoint() != "https://api.x.ai/v1" || c.CredentialVariable() != "XAI_API_KEY" {
