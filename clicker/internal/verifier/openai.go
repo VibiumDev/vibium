@@ -85,7 +85,7 @@ func (v *Model) completeOpenAI(ctx context.Context, config Config, messages []me
 	if config.APIKey != "" {
 		headers["Authorization"] = "Bearer " + config.APIKey
 	}
-	data, err := v.post(ctx, base+"/chat/completions", payload, headers)
+	data, contentType, err := v.post(ctx, base+"/chat/completions", payload, headers)
 	if err != nil {
 		return message{}, err
 	}
@@ -96,7 +96,7 @@ func (v *Model) completeOpenAI(ctx context.Context, config Config, messages []me
 		} `json:"choices"`
 	}
 	if json.Unmarshal(data, &completion) != nil || len(completion.Choices) != 1 {
-		return message{}, fmt.Errorf("invalid verifier provider response")
+		return message{}, invalidProviderResponse(config, contentType, "a chat-completions message")
 	}
 	choice := completion.Choices[0]
 	if choice.FinishReason != "stop" && choice.FinishReason != "tool_calls" {
