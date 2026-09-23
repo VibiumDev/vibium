@@ -199,7 +199,7 @@ test('ready ai provider selection overrides defaults and ignores broken browser 
   const env = environment(t, { VIBIUM_AI_PROVIDER: 'anthropic', VIBIUM_AI_MODEL: 'old-model',
     VIBIUM_AI_BASE_URL: 'http://127.0.0.1:1', VIBIUM_AI_REASONING_EFFORT: 'invalid',
     VIBIUM_ENGINE: 'invalid-browser', VIBIUM_ENGINE_CHANNEL: 'invalid-channel', VIBIUM_ENGINE_PATH: '/does-not-exist' });
-  const args = ['ready', 'ai', 'local', '--model', 'selected-model', '--base-url', fixture.url, '--json'];
+  const args = ['ready', 'ai', 'local', '--model', 'selected-model', '--ai-base-url', fixture.url, '--json'];
   assert.equal((await run(env, args)).code, 0);
   assert.equal(fixture.requests(), 2);
   assert.equal((await run(env, ['ready', 'ai', 'local', '--json'])).code, 1, 'provider change must require model');

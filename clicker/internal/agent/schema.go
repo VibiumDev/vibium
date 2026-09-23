@@ -1647,8 +1647,12 @@ func GetToolSchemas() []Tool {
 	for i := range tools {
 		if tools[i].Name == "vibium_check" || tools[i].Name == "vibium_run" {
 			props := tools[i].InputSchema["properties"].(map[string]interface{})
-			for _, name := range []string{"provider", "model", "baseURL", "reasoningEffort"} {
-				props[name] = map[string]interface{}{"type": "string", "description": "Per-call model setting override. Changing provider clears inherited model, endpoint, and reasoning effort. Credentials come from the runtime environment."}
+			for _, name := range []string{"provider", "model", "aiBaseURL", "reasoningEffort"} {
+				description := "Per-call model setting override. Changing provider clears inherited model, endpoint, and reasoning effort. Credentials come from the runtime environment."
+				if name == "aiBaseURL" {
+					description = "Per-call override for the AI provider's API base URL (the model endpoint, not the site under test). Changing provider clears it. Credentials come from the runtime environment."
+				}
+				props[name] = map[string]interface{}{"type": "string", "description": description}
 			}
 		}
 	}

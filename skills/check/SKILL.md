@@ -50,10 +50,10 @@ Check verdict. Check never inherits Run's conversation. For guidance on Run
 and general browser automation, use the `browser` skill if installed.
 
 For a user-requested provider comparison or eval, pass `--provider`, `--model`,
-`--base-url`, and `--reasoning-effort` per invocation. Pass the same overrides
+`--ai-base-url`, and `--reasoning-effort` per invocation. Pass the same overrides
 to `vibium ready ai`. Changing provider clears the inherited model, endpoint, and
 effort, so supply a model and any custom endpoint explicitly. Same-provider
-calls keep unspecified defaults; use `--base-url ""` or `--reasoning-effort ""`
+calls keep unspecified defaults; use `--ai-base-url ""` or `--reasoning-effort ""`
 to reset them. Credentials stay in the runtime environment. Overrides do not
 change later calls or weaken Check's independence.
 

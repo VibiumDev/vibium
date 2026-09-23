@@ -76,7 +76,7 @@ Run and Check. They make at most two model requests with a 60-second budget;
 API charges may apply. Invalid settings skip the provider request.
 
 Use [per-call model options](model-providers.md#override-settings-for-one-call)
-with `ready` or `ready ai`: `--provider`, `--model`, `--base-url`, and
+with `ready` or `ready ai`: `--provider`, `--model`, `--ai-base-url`, and
 `--reasoning-effort`. `ready ai <provider>` is equivalent to selecting that
 provider with `--provider`. Changing provider requires an explicit model and
 clears inherited endpoint/effort defaults. A conflicting provider argument

@@ -19,7 +19,7 @@ async def run_async():
         assert await page.evaluate("sessionStorage.getItem('builder')") == 'preserved'
         assert await (await other.find('#name')).value() == 'Other'
         assert (await page.check('the name persisted'))['status'] == 'passed'
-        overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
+        overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', ai_base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
         assert (await page.run('change name', **overrides))['status'] == 'completed'
         overrides['model'] = 'check-model'
         assert (await page.check('the name persisted', **overrides))['status'] == 'passed'
@@ -46,7 +46,7 @@ def run_sync():
         assert page.evaluate("sessionStorage.getItem('builder')") == 'preserved'
         assert other.find('#name').value() == 'Other'
         assert page.check('the name persisted')['status'] == 'passed'
-        overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
+        overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', ai_base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
         assert (page.run('change name', **overrides))['status'] == 'completed'
         overrides['model'] = 'check-model'
         assert (page.check('the name persisted', **overrides))['status'] == 'passed'

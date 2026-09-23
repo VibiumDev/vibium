@@ -5,7 +5,7 @@ import java.nio.file.Path;
 class CheckSDK {
     static void check(boolean condition) { if (!condition) throw new AssertionError("Check SDK acceptance failed"); }
     public static void main(String[] args) {
-        CheckOptions archive = CheckOptions.builder().provider("local").model("archive-override").baseURL(System.getenv("VIBIUM_AI_BASE_URL")).reasoningEffort("").record(Path.of(System.getenv("CHECK_TEST_INPUT"))).build();
+        CheckOptions archive = CheckOptions.builder().provider("local").model("archive-override").aiBaseURL(System.getenv("VIBIUM_AI_BASE_URL")).reasoningEffort("").record(Path.of(System.getenv("CHECK_TEST_INPUT"))).build();
         if ("1".equals(System.getenv("CHECK_TEST_ARCHIVE_ONLY"))) {
             check(Vibium.check("archive evidence", archive).status().equals("inconclusive"));
             return;

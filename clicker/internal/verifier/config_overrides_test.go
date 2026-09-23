@@ -29,14 +29,14 @@ func TestPerCallConfigResolution(t *testing.T) {
 				{"native switch", map[string]interface{}{"provider": "anthropic", "model": "claude"}, "anthropic", "claude", "https://api.anthropic.com/v1", "", "anthropic-key", false},
 				{"xai switch", map[string]interface{}{"provider": "xai", "model": "grok-4"}, "xai", "grok-4", "https://api.x.ai/v1", "", "xai-key", false},
 				{"local switch", map[string]interface{}{"provider": "local", "model": "local-model"}, "local", "local-model", "http://127.0.0.1:8080/v1", "", "original-key", false},
-				{"empty resets", map[string]interface{}{"baseURL": "", "reasoningEffort": ""}, "openai", "original-model", "https://api.openai.com/v1", "", "original-key", false},
+				{"empty resets", map[string]interface{}{"aiBaseURL": "", "reasoningEffort": ""}, "openai", "original-model", "https://api.openai.com/v1", "", "original-key", false},
 				{name: "switch needs model", params: map[string]interface{}{"provider": "anthropic"}, fails: true},
 				{name: "compatible needs endpoint", params: map[string]interface{}{"provider": "openai-compatible", "model": "other"}, fails: true},
 				{name: "empty model", params: map[string]interface{}{"model": ""}, fails: true},
 				{name: "invalid provider", params: map[string]interface{}{"provider": "PRIVATE-SETTING"}, fails: true},
 				{name: "null model", params: map[string]interface{}{"model": nil}, fails: true},
-				{name: "numeric endpoint", params: map[string]interface{}{"baseURL": 123}, fails: true},
-				{name: "credentials in endpoint", params: map[string]interface{}{"baseURL": "https://user:PRIVATE-SETTING@example.com"}, fails: true},
+				{name: "numeric endpoint", params: map[string]interface{}{"aiBaseURL": 123}, fails: true},
+				{name: "credentials in endpoint", params: map[string]interface{}{"aiBaseURL": "https://user:PRIVATE-SETTING@example.com"}, fails: true},
 			}
 			for _, row := range cases {
 				t.Run(row.name, func(t *testing.T) {

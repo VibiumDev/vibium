@@ -77,7 +77,7 @@ stopping it. A browser that Run starts closes afterward unless `--keep-open`
 is set; a browser already open stays open. Run can change application state.
 
 Run and Check share `VIBIUM_AI_*` defaults. Per-call `--provider`, `--model`,
-`--base-url`, and `--reasoning-effort` also work with `vibium ready ai`. When changing
+`--ai-base-url`, and `--reasoning-effort` also work with `vibium ready ai`. When changing
 provider, supply a model explicitly; inherited endpoint and effort settings
 are cleared. Credentials remain in the provider's environment variable.
 Use the project's chosen provider rather than silently switching it.

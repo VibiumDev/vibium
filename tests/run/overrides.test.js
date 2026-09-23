@@ -13,7 +13,7 @@ test('CLI overrides are per call across Run, Check, archives, and ready ai', { t
   const f = await fixture(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-overrides-'));
   const env = { ...process.env, ...f.env, VIBIUM_SESSION: `overrides-${process.pid}`, VIBIUM_ENGINE: 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_CONNECT_URL: '', VIBIUM_AI_MODEL: 'error-model' };
   const cli = async (...args) => JSON.parse((await exec(VIBIUM, ['--headless', '--json', ...args], { env, timeout: 90000, maxBuffer: 8*1024*1024 })).stdout).result;
-  const options = (provider, model) => ['--provider', provider, '--model', model, '--base-url', f.endpoint + '/v1', '--reasoning-effort', ''];
+  const options = (provider, model) => ['--provider', provider, '--model', model, '--ai-base-url', f.endpoint + '/v1', '--reasoning-effort', ''];
   try {
     for (const cmd of ['run', 'check']) await assert.rejects(cli(cmd, 'claim', '--provider', 'anthropic'), err => /MODEL is required/.test(err.stdout));
     assert.match(await cli('stop'), /No browser session/);
@@ -37,7 +37,7 @@ test('CLI overrides are per call across Run, Check, archives, and ready ai', { t
     const parents = trace.trim().split('\n').map(JSON.parse).filter(e => e.type === 'before' && e.params?.modelConfig);
     assert.deepEqual(parents.slice(0, 2).map(e => e.params.modelConfig.provider), ['anthropic', 'google']);
     assert.deepEqual(parents.slice(0, 2).map(e => e.params.modelConfig.model), ['run-model', 'check-model']);
-    assert.ok(parents.every(e => e.params.modelConfig.apiKey === undefined && e.params.modelConfig.baseURL === undefined));
+    assert.ok(parents.every(e => e.params.modelConfig.apiKey === undefined && e.params.modelConfig.baseURL === undefined && e.params.modelConfig.aiBaseURL === undefined));
     assert.ok(!trace.includes('native-key'));
   } finally {
     await exec(VIBIUM, ['daemon', 'stop'], { env }).catch(() => {});
