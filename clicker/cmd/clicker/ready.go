@@ -56,7 +56,7 @@ func newReadyCmd() *cobra.Command {
 		Long:      "Require valid AI configuration and test authentication, model access, tool calling, and a structured response.\nMakes up to two model requests (API charges may apply). Does not launch a browser.\nChanging provider requires --model; per-call options do not change defaults.",
 		Example:   "  vibium ready ai\n  # Tests the configured provider and model.\n  vibium ready ai anthropic --model your-model\n  # Tests Anthropic with the supplied model and ANTHROPIC_API_KEY.\n  vibium ready ai xai --model grok-4\n  # Tests xAI with the supplied model and XAI_API_KEY.\n  vibium ready ai --json\n  # Prints the provider checks as JSON.",
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"openai", "xai", "anthropic", "google", "openai-compatible", "local"},
+		ValidArgs: verifier.ProviderNames(),
 	}
 	browserCmd := &cobra.Command{
 		Use: "browser [engine]", Short: "Check installed browser executable files without launching them",
