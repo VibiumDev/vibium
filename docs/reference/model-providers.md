@@ -37,7 +37,7 @@ Run, live Check, saved-input Check, and AI readiness accept the same overrides:
 |----------|-------------------------------|----------------|
 | `--provider` | `provider` | `provider` |
 | `--model` | `model` | `model` |
-| `--base-url` | `baseURL` | `base_url` |
+| `--ai-base-url` | `aiBaseURL` | `ai_base_url` |
 | `--reasoning-effort` | `reasoningEffort` | `reasoning_effort` |
 
 Explicit options override the shared AI environment for this invocation only.
@@ -46,7 +46,7 @@ selected provider's environment variable; there is no API-key option.
 
 When the provider changes, supply the model explicitly. Vibium clears the old
 provider's model, endpoint, and reasoning effort before applying your options.
-The new provider's default endpoint is used, or supply `baseURL` for a custom
+The new provider's default endpoint is used, or supply `aiBaseURL` for a custom
 endpoint. `openai-compatible` always requires an explicit endpoint after a
 provider change. If the provider stays the same, omitted options retain the
 shared AI defaults.
@@ -69,7 +69,7 @@ vibium check "the saved timezone is America/Chicago after refresh" \
 
 vibium check "the order confirmation was shown" -i record.zip \
   --provider local --model your-loaded-model \
-  --base-url http://127.0.0.1:8080/v1 --reasoning-effort ""
+  --ai-base-url http://127.0.0.1:8080/v1 --reasoning-effort ""
 # Checks saved evidence using the specified local server and its default effort.
 ```
 

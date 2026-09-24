@@ -89,7 +89,7 @@ func invalidProviderResponse(config Config, contentType, want string) error {
 	}
 	hint := ""
 	if config.BaseURL != "" {
-		hint = "; check --base-url / VIBIUM_AI_BASE_URL"
+		hint = "; check --ai-base-url / VIBIUM_AI_BASE_URL"
 	}
 	return fmt.Errorf("AI provider returned %s%s", got, hint)
 }

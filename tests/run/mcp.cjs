@@ -34,7 +34,7 @@ const { once } = require('node:events');
     const result = JSON.parse(await tool('vibium_run', { goal: 'change name', page }));
     assert.equal(result.status, 'completed'); assert.equal(result.goal, 'change name');
     assert.equal(JSON.parse(await tool('vibium_check', { claim: 'the name persisted', page })).status, 'passed');
-    const overrides = { provider: 'google', model: 'run-model', baseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' };
+    const overrides = { provider: 'google', model: 'run-model', aiBaseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' };
     assert.equal(JSON.parse(await tool('vibium_run', { goal: 'change name', page, ...overrides })).status, 'completed');
     assert.equal(JSON.parse(await tool('vibium_check', { claim: 'the name persisted', page, ...overrides, model: 'check-model' })).status, 'passed');
     assert.equal(JSON.parse(await tool('vibium_run', { goal: 'not possible' })).status, 'not_completed');

@@ -8,16 +8,18 @@ import (
 
 // Overrides are public per-invocation options. Credentials are deliberately absent.
 // Pointers distinguish omission from an explicit empty endpoint/effort reset.
+// The wire name is aiBaseURL so plain baseURL stays free for the site under
+// test (#575); the internal field keeps the VIBIUM_AI_BASE_URL pairing.
 type Overrides struct {
 	Provider        *string `json:"provider,omitempty"`
 	Model           *string `json:"model,omitempty"`
-	BaseURL         *string `json:"baseURL,omitempty"`
+	BaseURL         *string `json:"aiBaseURL,omitempty"`
 	ReasoningEffort *string `json:"reasoningEffort,omitempty"`
 }
 
 func IsOverride(name string) bool {
 	switch name {
-	case "provider", "model", "baseURL", "reasoningEffort":
+	case "provider", "model", "aiBaseURL", "reasoningEffort":
 		return true
 	}
 	return false
@@ -25,7 +27,7 @@ func IsOverride(name string) bool {
 
 func ConfigFromParams(role string, params map[string]interface{}) (Config, error) {
 	var overrides Overrides
-	for name, target := range map[string]**string{"provider": &overrides.Provider, "model": &overrides.Model, "baseURL": &overrides.BaseURL, "reasoningEffort": &overrides.ReasoningEffort} {
+	for name, target := range map[string]**string{"provider": &overrides.Provider, "model": &overrides.Model, "aiBaseURL": &overrides.BaseURL, "reasoningEffort": &overrides.ReasoningEffort} {
 		if value, exists := params[name]; exists {
 			text, ok := value.(string)
 			if !ok {

@@ -37,6 +37,7 @@ test('Run surfaces share tools, recording, and shared AI configuration', { timeo
       assert.equal(configs[0].maxActions, 24);
       assert.equal(configs[0].apiKey, undefined);
       assert.equal(configs[0].baseURL, undefined);
+      assert.equal(configs[0].aiBaseURL, undefined);
       if (!name.includes('privacy')) {
         assert.equal(configs[1].provider, provider === 'anthropic' ? 'google' : 'anthropic');
         assert.equal(configs.at(-1).provider, provider); // Override did not mutate runtime defaults.

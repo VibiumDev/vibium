@@ -17,7 +17,7 @@ async function acceptance(t, existing) {
   const env = { ...process.env, VIBIUM_SESSION: `run-live-${process.pid}`, VIBIUM_ENGINE: 'chrome', VIBIUM_ENGINE_PATH: '', VIBIUM_ENGINE_CHANNEL: '', VIBIUM_CONNECT_URL: '' };
   const overrides = process.env.VIBIUM_AI_LIVE_OVERRIDES === '1' ? [
     '--provider', env.VIBIUM_AI_PROVIDER, '--model', env.VIBIUM_AI_MODEL,
-    '--base-url', env.VIBIUM_AI_BASE_URL || '', '--reasoning-effort', env.VIBIUM_AI_REASONING_EFFORT || '',
+    '--ai-base-url', env.VIBIUM_AI_BASE_URL || '', '--reasoning-effort', env.VIBIUM_AI_REASONING_EFFORT || '',
   ] : [];
   if (overrides.length) {
     env.VIBIUM_AI_PROVIDER = 'invalid-default';

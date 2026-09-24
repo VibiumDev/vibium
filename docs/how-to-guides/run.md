@@ -25,7 +25,7 @@ Wait for READY. For Anthropic, Google, or a local server, see
 loaded automatically; source a file containing exported assignments in the
 same shell that runs Vibium.
 
-For one run, use `--provider`, `--model`, `--base-url`, and `--reasoning-effort`
+For one run, use `--provider`, `--model`, `--ai-base-url`, and `--reasoning-effort`
 instead of changing environment defaults. These options also work with
 `ready` and `ready ai`. See [per-call settings](../reference/model-providers.md#override-settings-for-one-call).
 

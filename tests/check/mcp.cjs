@@ -35,7 +35,7 @@ const { once } = require('node:events');
       assert.equal(result.status, 'passed');
       await tool('browser_record_stop', {});
     }
-    const result = JSON.parse(await tool('vibium_check', { claim: 'archive evidence', record: process.env.CHECK_TEST_INPUT, provider: 'local', model: 'archive-override', baseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' }));
+    const result = JSON.parse(await tool('vibium_check', { claim: 'archive evidence', record: process.env.CHECK_TEST_INPUT, provider: 'local', model: 'archive-override', aiBaseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' }));
     assert.equal(result.status, 'inconclusive');
   } finally {
     proc.stdin.end();

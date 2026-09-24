@@ -48,7 +48,7 @@ and the `local` alias. See [model providers](model-providers.md) for native
 credentials, endpoint defaults, and shared AI settings. The examples
 below retain the OpenAI setup.
 
-Per-call overrides are available as `--provider`, `--model`, `--base-url`, and
+Per-call overrides are available as `--provider`, `--model`, `--ai-base-url`, and
 `--reasoning-effort` for live and saved-input checks, and for AI readiness.
 SDKs and MCP accept equivalent options. See
 [override settings for one call](model-providers.md#override-settings-for-one-call).

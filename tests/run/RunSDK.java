@@ -20,8 +20,8 @@ class RunSDK {
             check(page.check("the name persisted").status().equals("passed"));
             String provider = System.getenv("VIBIUM_AI_PROVIDER").equals("anthropic") ? "google" : "anthropic";
             String endpoint = System.getenv("VIBIUM_AI_BASE_URL");
-            check(page.run("change name", RunOptions.builder().provider(provider).model("run-model").baseURL(endpoint).reasoningEffort("").build()).status().equals("completed"));
-            check(page.check("the name persisted", CheckOptions.builder().provider(provider).model("check-model").baseURL(endpoint).reasoningEffort("").build()).status().equals("passed"));
+            check(page.run("change name", RunOptions.builder().provider(provider).model("run-model").aiBaseURL(endpoint).reasoningEffort("").build()).status().equals("completed"));
+            check(page.check("the name persisted", CheckOptions.builder().provider(provider).model("check-model").aiBaseURL(endpoint).reasoningEffort("").build()).status().equals("passed"));
             check(bro.run("not possible").status().equals("not_completed"));
             page.context().recording().stop();
         } finally { bro.stop(); }

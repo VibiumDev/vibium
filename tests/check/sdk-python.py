@@ -7,7 +7,7 @@ claim = "changing my display name persists after refresh"
 async def run_async():
     from vibium.async_api import browser
     if os.environ["CHECK_TEST_ARCHIVE_ONLY"] == "1":
-        result = await browser.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")
+        result = await browser.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")
         assert result["status"] == "inconclusive"
         return
     bro = await browser.start(headless=True, engine=os.environ.get("CHECK_TEST_ENGINE", "chrome"), channel="beta" if os.environ.get("CHECK_TEST_ENGINE") == "firefox" else None)
@@ -25,14 +25,14 @@ async def run_async():
         assert await page.evaluate("sessionStorage.getItem('builder')") == "preserved"
         assert await (await other.find("#name")).value() == "Other"
         await page.context.recording.stop()
-        assert (await bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort=""))["status"] == "inconclusive"
+        assert (await bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort=""))["status"] == "inconclusive"
     finally:
         await bro.stop()
 
 def run_sync():
     from vibium import browser
     if os.environ["CHECK_TEST_ARCHIVE_ONLY"] == "1":
-        assert browser.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")["status"] == "inconclusive"
+        assert browser.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")["status"] == "inconclusive"
         return
     bro = browser.start(headless=True)
     try:
@@ -48,7 +48,7 @@ def run_sync():
         assert page.evaluate("sessionStorage.getItem('builder')") == "preserved"
         assert other.find("#name").value() == "Other"
         page.context.recording.stop()
-        assert bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")["status"] == "inconclusive"
+        assert bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")["status"] == "inconclusive"
     finally:
         bro.stop()
 
