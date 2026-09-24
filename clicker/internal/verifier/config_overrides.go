@@ -3,6 +3,7 @@ package verifier
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Overrides are public per-invocation options. Credentials are deliberately absent.
@@ -65,6 +66,11 @@ func ResolveConfig(role string, overrides Overrides) (Config, error) {
 	c.APIKey = os.Getenv(c.CredentialVariable())
 	if c.Provider == "xai" {
 		applyXAICredentials(&c)
+	}
+	if c.Provider == "google" && strings.TrimSpace(c.APIKey) == "" {
+		if key := os.Getenv("GEMINI_API_KEY"); strings.TrimSpace(key) != "" {
+			c.APIKey, c.CredentialSource = key, credentialGeminiKey
+		}
 	}
 	err := c.Validate()
 	if err != nil && providerChanged && overrides.Model == nil {

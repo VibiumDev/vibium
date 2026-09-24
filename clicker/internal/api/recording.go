@@ -282,7 +282,7 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.recording = true
 	t.secrets = map[string]bool{}
 	t.omitVisuals = false
-	for _, key := range []string{"OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
+	for _, key := range []string{"OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
 		if value := os.Getenv(key); value != "" {
 			t.secrets[value] = true
 		}

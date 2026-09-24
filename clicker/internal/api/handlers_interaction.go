@@ -127,11 +127,7 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-	if err := caretToEnd(s, context, ep); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if err := TypeText(s, context, text); err != nil {
+	if err := typeIntoFocused(s, context, ep, text); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -162,7 +158,7 @@ func (r *Router) handleVibiumPress(session *BrowserSession, cmd bidiCommand) {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-	if err := caretToEnd(s, context, ep); err != nil {
+	if _, err := caretToEnd(s, context, ep); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -839,6 +835,15 @@ func Fill(s Session, context string, ep ElementParams, value string) error {
 	return nil
 }
 
+// Caret modes reported by caretToEnd. Anything else means the caret is placed.
+const (
+	// caretModeSegmented prefixes a date/time control: the value is a set of
+	// segments rather than text, so there is nothing to append to.
+	caretModeSegmented = "segmented"
+	// caretModeNoCaret means the caret could not be placed at all.
+	caretModeNoCaret = "nocaret"
+)
+
 // caretToEnd moves the caret past the element's existing content, ignoring
 // elements that cannot carry one.
 //
@@ -850,14 +855,43 @@ func Fill(s Session, context string, ep ElementParams, value string) error {
 // depended on CSS width, font metrics and engine (#488). Collapsing the
 // caret to the end afterwards restores the documented "appends to existing
 // content" contract.
-func caretToEnd(s Session, context string, ep ElementParams) error {
+func caretToEnd(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElActionScript(ep, nil, nil, `
+			// setSelectionRange exists on every HTMLInputElement but throws on
+			// types that do not support selection, so its presence is not a
+			// test for one. These two lists name the types that reach that
+			// throw and still hold something a caller can edit.
+			const appendable = ['number', 'email'];
+			const segmented = ['date', 'time', 'month', 'week', 'datetime-local'];
+			const tag = el.tagName ? el.tagName.toLowerCase() : '';
+			const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : '';
+			if (segmented.indexOf(inputType) !== -1) {
+				return 'segmented:' + inputType;
+			}
 			const n = el.value !== undefined && el.value !== null ? String(el.value).length : null;
 			if (n !== null && typeof el.setSelectionRange === 'function') {
-				// setSelectionRange throws on input types that do not support
-				// selection (number, email, date). Those cannot hold a caret
-				// mid-value anyway, so leaving them alone is correct.
-				try { el.setSelectionRange(n, n); } catch (e) {}
+				try {
+					el.setSelectionRange(n, n);
+				} catch (e) {
+					// No selection API on this type. The same element does have
+					// one while its type is text, and the value survives the
+					// round trip, so borrow it: the caret placed as text is
+					// still there when the type is restored. Keeping real key
+					// events is what this buys over writing the value directly,
+					// and maxlength and readonly keep working by themselves.
+					// Everything else that throws here — checkbox, color, file,
+					// the buttons — has no text to put a caret in front of, so
+					// it is left exactly as it was.
+					if (appendable.indexOf(inputType) !== -1) {
+						try {
+							el.type = 'text';
+							el.setSelectionRange(n, n);
+							el.type = inputType;
+						} catch (e2) {
+							return 'nocaret';
+						}
+					}
+				}
 			} else if (el.isContentEditable) {
 				const r = document.createRange();
 				r.selectNodeContents(el);
@@ -866,10 +900,30 @@ func caretToEnd(s Session, context string, ep ElementParams) error {
 				sel.removeAllRanges();
 				sel.addRange(r);
 			}
-			return 'ok';
+			return 'caret';
 		`)
-	_, err := CallScript(s, context, script, args)
-	return err
+	resp, err := CallScript(s, context, script, args)
+	if err != nil {
+		return "", err
+	}
+	return parseScriptResult(resp)
+}
+
+// typeIntoFocused types into an element that has already been focused, refusing
+// the cases where appending is not defined rather than typing into them blind.
+func typeIntoFocused(s Session, context string, ep ElementParams, text string) error {
+	mode, err := caretToEnd(s, context, ep)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(mode, caretModeSegmented+":") {
+		return fmt.Errorf("type: input[type=%s] holds segments rather than text, so there is nothing to append to; use fill to set it",
+			strings.TrimPrefix(mode, caretModeSegmented+":"))
+	}
+	if mode == caretModeNoCaret {
+		return fmt.Errorf("type: this element cannot hold a caret, so typing would land at an arbitrary position; use fill to set it")
+	}
+	return TypeText(s, context, text)
 }
 
 // TypeInto resolves an element with actionability checks, clicks to focus, and types text.
@@ -881,10 +935,7 @@ func TypeInto(s Session, context string, ep ElementParams, text string) error {
 	if err := ClickAtCenter(s, context, info); err != nil {
 		return err
 	}
-	if err := caretToEnd(s, context, ep); err != nil {
-		return err
-	}
-	return TypeText(s, context, text)
+	return typeIntoFocused(s, context, ep, text)
 }
 
 // PressOn resolves an element with actionability checks, clicks to focus, and presses a key.
@@ -896,7 +947,7 @@ func PressOn(s Session, context string, ep ElementParams, key string) error {
 	if err := ClickAtCenter(s, context, info); err != nil {
 		return err
 	}
-	if err := caretToEnd(s, context, ep); err != nil {
+	if _, err := caretToEnd(s, context, ep); err != nil {
 		return err
 	}
 	return PressKey(s, context, key)

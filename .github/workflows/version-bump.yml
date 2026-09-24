@@ -6,8 +6,13 @@
 # users stay on the old pin, and the breakage has a one-line repro diff.
 #
 # Bump PRs lag upstream security releases by however long they sit, so
-# treat them as priority review. A PR opened with the workflow token does
-# not start the pull_request checks; close and reopen it to run them.
+# treat them as priority review.
+#
+# The PR step prefers the VERSION_BUMP_TOKEN secret (a fine-grained PAT
+# with contents and pull-requests write) because the org blocks the
+# workflow token from creating pull requests (#565). A PAT also starts
+# the pull_request checks on the PR it opens; the workflow token does
+# not, and its PRs must be closed and reopened to run them.
 name: Version Bump
 
 on:
@@ -159,7 +164,8 @@ jobs:
 
       - name: Open the bump PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN || github.token }}
+          HAS_PAT: ${{ secrets.VERSION_BUMP_TOKEN != '' }}
           NEW_VERSION: ${{ needs.drift.outputs.chrome }}
           OLD_VERSION: ${{ needs.drift.outputs.chrome_pin }}
         run: |
@@ -172,17 +178,24 @@ jobs:
           git commit -m "Bump the pinned Chrome for Testing version to $NEW_VERSION"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          note=""
+          if [ "$HAS_PAT" != "true" ]; then
+            note="A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging."
+          fi
           body=$(cat <<EOF
           Moves the Chrome pin from $OLD_VERSION to $NEW_VERSION (#470).
 
           The full Chrome suite passed against $NEW_VERSION before this PR was opened: $run_url
 
-          Opened by version-bump.yml. A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging.
+          Opened by version-bump.yml. $note
           EOF
           )
-          gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
             --title "Bump the pinned Chrome for Testing version to $NEW_VERSION" \
-            --body "$body"
+            --body "$body"; then
+            echo "::error::Could not open the bump PR. If the error above says GitHub Actions is not permitted to create pull requests, allow that under Settings > Actions > General, or add a VERSION_BUMP_TOKEN secret (fine-grained PAT, contents and pull-requests write). The branch $branch is pushed and the PR can be opened by hand meanwhile (#565)."
+            exit 1
+          fi
 
       - name: Clean up zombie processes
         if: always()
@@ -266,7 +279,8 @@ jobs:
 
       - name: Open the bump PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN || github.token }}
+          HAS_PAT: ${{ secrets.VERSION_BUMP_TOKEN != '' }}
           NEW_VERSION: ${{ needs.drift.outputs.firefox }}
           OLD_VERSION: ${{ needs.drift.outputs.firefox_pin }}
         run: |
@@ -279,17 +293,24 @@ jobs:
           git commit -m "Bump the pinned Firefox version to $NEW_VERSION"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          note=""
+          if [ "$HAS_PAT" != "true" ]; then
+            note="A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging."
+          fi
           body=$(cat <<EOF
           Moves the Firefox pin from $OLD_VERSION to $NEW_VERSION (#469).
 
           The Firefox suite passed against $NEW_VERSION before this PR was opened: $run_url
 
-          Opened by version-bump.yml. A PR opened with the workflow token does not start the pull_request checks; close and reopen it to run them before merging.
+          Opened by version-bump.yml. $note
           EOF
           )
-          gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" \
             --title "Bump the pinned Firefox version to $NEW_VERSION" \
-            --body "$body"
+            --body "$body"; then
+            echo "::error::Could not open the bump PR. If the error above says GitHub Actions is not permitted to create pull requests, allow that under Settings > Actions > General, or add a VERSION_BUMP_TOKEN secret (fine-grained PAT, contents and pull-requests write). The branch $branch is pushed and the PR can be opened by hand meanwhile (#565)."
+            exit 1
+          fi
 
       - name: Clean up zombie processes
         if: always()
