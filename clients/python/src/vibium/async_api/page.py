@@ -203,16 +203,16 @@ class Page:
 
     # --- Navigation ---
 
-    async def __call__(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
-        return await self.run(goal, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+    async def __call__(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return await self.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
 
-    async def run(self, goal: str, *, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+    async def run(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
         """Accomplish a goal in the live browser using the configured runtime."""
-        return await send_run(self._client, goal, self._context_id, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+        return await send_run(self._client, goal, self._context_id, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
 
-    async def check(self, claim: str, *, record: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+    async def check(self, claim: str, *, record: Optional[str] = None, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Independently verify live behavior, or inspect a read-only archive."""
-        return await send_check(self._client, claim, record, self._context_id, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+        return await send_check(self._client, claim, record, self._context_id, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
 
 
     async def go(self, url: str) -> None:

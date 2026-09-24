@@ -124,7 +124,7 @@ func (h *Handlers) runLiveOperation(label, method, inputKey, input, output strin
 
 func (h *Handlers) checkMCP(args map[string]interface{}) (*ToolsCallResult, error) {
 	for key := range args {
-		if key != "claim" && key != "record" && key != "page" && !verifier.IsOverride(key) {
+		if key != "claim" && key != "record" && key != "page" && key != "baseURL" && !verifier.IsOverride(key) {
 			return nil, fmt.Errorf("unsupported verification argument %s", key)
 		}
 	}
@@ -149,11 +149,18 @@ func (h *Handlers) checkMCP(args map[string]interface{}) (*ToolsCallResult, erro
 			return nil, fmt.Errorf("record and live page selection cannot be combined")
 		}
 	}
+	baseSite := ""
+	if v, exists := args["baseURL"]; exists {
+		var ok bool
+		if baseSite, ok = v.(string); !ok || baseSite == "" {
+			return nil, fmt.Errorf("baseURL must be a nonempty site URL")
+		}
+	}
 	config, err := verifier.ConfigFromParams("check", args)
 	if err != nil {
 		return nil, err
 	}
-	req := verifier.Request{Claim: claim, Record: record, Config: config}
+	req := verifier.Request{Claim: claim, Record: record, BaseSite: baseSite, Config: config}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}

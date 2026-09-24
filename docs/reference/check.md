@@ -53,6 +53,25 @@ Per-call overrides are available as `--provider`, `--model`, `--ai-base-url`, an
 SDKs and MCP accept equivalent options. See
 [override settings for one call](model-providers.md#override-settings-for-one-call).
 
+## Site under test
+
+`--base-url` names the site a live check runs against, so one claim works in
+any environment:
+
+```bash
+vibium check "checkout completes" --base-url http://localhost:3000
+vibium check "checkout completes" --base-url "$PREVIEW_URL"
+```
+
+The site is opened first unless the current page already shares its origin,
+so checking a browser you just used keeps its state. Relative navigation
+targets resolve against it, and the model receives it as a trusted line kept
+apart from page observations. Navigation is not locked to the origin; login
+and payment flows cross domains. SDKs and MCP accept it as `baseURL`
+(`base_url` in Python). It cannot be combined with `--input`: a saved
+recording has no live site to open. The AI provider endpoint is the separate
+`--ai-base-url`.
+
 For OpenAI, export the provider, a model that supports Chat Completions function tools, and
 your API key in the terminal running the CLI. For example, with a key already
 available as `OPENAI_API_KEY`:

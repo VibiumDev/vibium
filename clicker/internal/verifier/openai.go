@@ -43,6 +43,17 @@ func (v *OpenAI) Check(ctx context.Context, req Request, executor ToolExecutor) 
 		initial = []string{"trace_summary"}
 	}
 	op := Operation{Instruction: instruction, Input: req.Claim, InitialTools: initial}
+	if req.BaseSite != "" {
+		base, err := ParseSiteURL(req.BaseSite)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := OpenSite(ctx, executor, base); err != nil {
+			return Result{}, err
+		}
+		executor = WithSite(executor, base)
+		op.Input += "\n\nSite under test: " + base.String() + " (trusted; relative navigation paths resolve against it)"
+	}
 	op.ValidateResult = func(content string) error {
 		_, err := parseResult(message{Content: content}, req.Claim)
 		return err

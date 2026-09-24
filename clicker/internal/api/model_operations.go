@@ -85,7 +85,7 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 		label, method, inputKey, role = "Run", runop.Method, "goal", "run"
 	}
 	for k := range cmd.Params {
-		if k != inputKey && k != "context" && !verifier.IsOverride(k) {
+		if k != inputKey && k != "context" && k != "baseURL" && !verifier.IsOverride(k) {
 			r.sendError(session, cmd.ID, fmt.Errorf("unsupported %s argument", label))
 			return
 		}
@@ -93,6 +93,14 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 	if v, exists := cmd.Params["context"]; exists {
 		if c, ok := v.(string); !ok || c == "" {
 			r.sendError(session, cmd.ID, fmt.Errorf("context must be a nonempty page ID"))
+			return
+		}
+	}
+	baseSite := ""
+	if v, exists := cmd.Params["baseURL"]; exists {
+		var ok bool
+		if baseSite, ok = v.(string); !ok || baseSite == "" {
+			r.sendError(session, cmd.ID, fmt.Errorf("baseURL must be a nonempty site URL"))
 			return
 		}
 	}
@@ -112,7 +120,7 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 	}
 	var run func(context.Context, verifier.ToolExecutor) (verifier.RecordedResult, error)
 	if isRun {
-		req := runop.Request{Goal: claim, Config: config}
+		req := runop.Request{Goal: claim, BaseSite: baseSite, Config: config}
 		if err := req.Validate(); err != nil {
 			r.sendError(session, cmd.ID, err)
 			return
@@ -121,7 +129,7 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 			return runop.Run(ctx, req, tools)
 		}
 	} else {
-		req := verifier.Request{Claim: claim, Config: config}
+		req := verifier.Request{Claim: claim, BaseSite: baseSite, Config: config}
 		if err := req.Validate(); err != nil {
 			r.sendError(session, cmd.ID, err)
 			return

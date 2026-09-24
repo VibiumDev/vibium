@@ -29,6 +29,14 @@ For one run, use `--provider`, `--model`, `--ai-base-url`, and `--reasoning-effo
 instead of changing environment defaults. These options also work with
 `ready` and `ready ai`. See [per-call settings](../reference/model-providers.md#override-settings-for-one-call).
 
+`--base-url` names the site under test: it is opened first unless the current
+page already shares its origin, and relative navigation targets resolve
+against it. Not the AI provider endpoint; that is `--ai-base-url`.
+
+```bash
+vibium run "add a battery pack to the cart" --base-url http://localhost:3000
+```
+
 ## Accomplish the goal
 
 Navigate to your app, then describe the change you want:

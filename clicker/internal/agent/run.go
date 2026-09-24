@@ -29,7 +29,7 @@ func (h *Handlers) Run(req runop.Request) (runop.Result, error) {
 }
 func (h *Handlers) runMCP(args map[string]interface{}) (*ToolsCallResult, error) {
 	for key := range args {
-		if key != "goal" && key != "page" && !verifier.IsOverride(key) {
+		if key != "goal" && key != "page" && key != "baseURL" && !verifier.IsOverride(key) {
 			return nil, fmt.Errorf("unsupported run argument")
 		}
 	}
@@ -37,11 +37,18 @@ func (h *Handlers) runMCP(args map[string]interface{}) (*ToolsCallResult, error)
 	if !ok {
 		return nil, fmt.Errorf("goal is required")
 	}
+	baseSite := ""
+	if v, exists := args["baseURL"]; exists {
+		var ok bool
+		if baseSite, ok = v.(string); !ok || baseSite == "" {
+			return nil, fmt.Errorf("baseURL must be a nonempty site URL")
+		}
+	}
 	config, err := verifier.ConfigFromParams("run", args)
 	if err != nil {
 		return nil, err
 	}
-	req := runop.Request{Goal: goal, Config: config}
+	req := runop.Request{Goal: goal, BaseSite: baseSite, Config: config}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}

@@ -12,6 +12,7 @@ public final class Run {
         JsonObject params = new JsonObject();
         ModelSettings.apply(params, options);
         params.addProperty("goal", goal);
+        if (options != null && options.baseURL() != null) params.addProperty("baseURL", options.baseURL());
         if (context != null) params.addProperty("context", context);
         return new Gson().fromJson(client.send("vibium:run.run", params, 210_000), RunResult.class);
     }

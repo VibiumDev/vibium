@@ -10,8 +10,10 @@ class RunResult(TypedDict):
     summary: str
     evidence: List[CheckEvidence]
 
-async def send_run(client: BiDiClient, goal: str, context: Optional[str] = None, *, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+async def send_run(client: BiDiClient, goal: str, context: Optional[str] = None, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
     params = {"goal": goal, **model_params(provider, model, ai_base_url, reasoning_effort)}
+    if base_url is not None:
+        params["baseURL"] = base_url
     if context:
         params["context"] = context
     return await client.send("vibium:run.run", params, timeout=210)
