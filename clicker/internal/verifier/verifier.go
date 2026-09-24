@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -28,6 +29,57 @@ type Config struct {
 	// grok_expired). Never serialized; recordings must not learn it.
 	CredentialSource string `json:"-"`
 	ReasoningEffort  string `json:"reasoningEffort,omitempty"`
+}
+
+// Provider describes a supported AI provider. ModelsURL is empty for servers
+// that choose their own model names.
+type Provider struct {
+	Name            string
+	ModelsURL       string
+	ReasoningEffort bool
+}
+
+// Providers is the one list of supported AI providers, in display order.
+var Providers = []Provider{
+	{Name: "openai", ModelsURL: "https://developers.openai.com/api/docs/models", ReasoningEffort: true},
+	{Name: "xai", ModelsURL: "https://docs.x.ai/developers/models", ReasoningEffort: true},
+	{Name: "anthropic", ModelsURL: "https://platform.claude.com/docs/en/models/overview"},
+	{Name: "google", ModelsURL: "https://ai.google.dev/gemini-api/docs/models"},
+	{Name: "openai-compatible", ReasoningEffort: true},
+	{Name: "local", ReasoningEffort: true},
+}
+
+// ReasoningEfforts lists the accepted reasoning efforts; empty means the model default.
+var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+func ProviderNames() []string {
+	names := make([]string, len(Providers))
+	for i, p := range Providers {
+		names[i] = p.Name
+	}
+	return names
+}
+
+func lookupProvider(name string) (Provider, bool) {
+	for _, p := range Providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return Provider{}, false
+}
+
+// OrList joins items as "a, b, or c".
+func OrList(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	case 2:
+		return items[0] + " or " + items[1]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + ", or " + items[len(items)-1]
 }
 
 func ConfigFromEnv() (Config, error) { return ConfigForRole("check") }
@@ -83,16 +135,13 @@ func (c Config) Checks() []ConfigCheck {
 		}
 		checks = append(checks, ConfigCheck{Variable: variable, Error: problem})
 	}
-	validEffort := false
-	switch c.ReasoningEffort {
-	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-		validEffort = true
-	}
-	if (c.Provider == "anthropic" || c.Provider == "google") && c.ReasoningEffort != "" {
+	provider, knownProvider := lookupProvider(c.Provider)
+	validEffort := c.ReasoningEffort == "" || slices.Contains(ReasoningEfforts, c.ReasoningEffort)
+	if knownProvider && !provider.ReasoningEffort && c.ReasoningEffort != "" {
 		validEffort = false
 	}
 	check(prefix+"REASONING_EFFORT", validEffort, "invalid "+prefix+"REASONING_EFFORT")
-	check(prefix+"PROVIDER", c.Provider == "openai" || c.Provider == "xai" || c.Provider == "openai-compatible" || c.Provider == "local" || c.Provider == "anthropic" || c.Provider == "google", "set "+prefix+"PROVIDER to openai, xai, anthropic, google, openai-compatible, or local")
+	check(prefix+"PROVIDER", knownProvider, "set "+prefix+"PROVIDER to "+OrList(ProviderNames()))
 	check(prefix+"MODEL", strings.TrimSpace(c.Model) != "", prefix+"MODEL is required")
 	credName, credProblem := c.credentialCheck()
 	check(credName, credProblem == "", credProblem)

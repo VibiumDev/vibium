@@ -14,7 +14,7 @@ import (
 	"github.com/vibium/clicker/internal/verifier"
 )
 
-var setupProviders = []string{"openai", "xai", "anthropic", "google", "openai-compatible", "local"}
+var setupProviders = verifier.ProviderNames()
 
 type setupSection struct {
 	Name    string   `json:"name"`
