@@ -26,7 +26,7 @@ const (
 // (#470). Bumping it also renews test.yml's Chrome cache key, which hashes
 // this file, so the bump PR installs the new version instead of a cached
 // old one.
-const pinnedChromeVersion = "153.0.8010.52"
+const pinnedChromeVersion = "154.0.8037.57"
 
 // VersionInfo represents the Chrome for Testing version information.
 type VersionInfo struct {
