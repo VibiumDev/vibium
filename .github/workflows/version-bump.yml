@@ -57,8 +57,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          chrome_pin=$(sed -n 's/^const PinnedChromeVersion = "\(.*\)"$/\1/p' clicker/internal/paths/paths.go)
-          firefox_pin=$(sed -n 's/^const pinnedFirefoxVersion = "\(.*\)"$/\1/p' clicker/internal/browser/installer_firefox.go)
+          chrome_pin=$(jq -er '.chrome // empty' clicker/internal/paths/browsers.json)
+          firefox_pin=$(jq -er '.firefox // empty' clicker/internal/paths/browsers.json)
           test -n "$chrome_pin"
           test -n "$firefox_pin"
 
@@ -106,10 +106,11 @@ jobs:
           NEW_VERSION: ${{ needs.drift.outputs.chrome }}
         run: |
           set -euo pipefail
-          sed -i "s/^const PinnedChromeVersion = \".*\"\$/const PinnedChromeVersion = \"$NEW_VERSION\"/" \
-            clicker/internal/paths/paths.go
+          pins=clicker/internal/paths/browsers.json
+          jq --arg v "$NEW_VERSION" '.chrome = $v' "$pins" > "$pins.tmp"
+          mv "$pins.tmp" "$pins"
           if git diff --quiet; then
-            echo "sed did not change the pin" >&2
+            echo "the bump did not change the pin" >&2
             exit 1
           fi
 
@@ -174,7 +175,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="bump/chrome-$NEW_VERSION"
           git checkout -b "$branch"
-          git add clicker/internal/paths/paths.go
+          git add clicker/internal/paths/browsers.json
           git commit -m "Bump the pinned Chrome for Testing version to $NEW_VERSION"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -221,10 +222,11 @@ jobs:
           NEW_VERSION: ${{ needs.drift.outputs.firefox }}
         run: |
           set -euo pipefail
-          sed -i "s/^const pinnedFirefoxVersion = \".*\"\$/const pinnedFirefoxVersion = \"$NEW_VERSION\"/" \
-            clicker/internal/browser/installer_firefox.go
+          pins=clicker/internal/paths/browsers.json
+          jq --arg v "$NEW_VERSION" '.firefox = $v' "$pins" > "$pins.tmp"
+          mv "$pins.tmp" "$pins"
           if git diff --quiet; then
-            echo "sed did not change the pin" >&2
+            echo "the bump did not change the pin" >&2
             exit 1
           fi
 
@@ -289,7 +291,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="bump/firefox-$NEW_VERSION"
           git checkout -b "$branch"
-          git add clicker/internal/browser/installer_firefox.go
+          git add clicker/internal/paths/browsers.json
           git commit -m "Bump the pinned Firefox version to $NEW_VERSION"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$branch"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

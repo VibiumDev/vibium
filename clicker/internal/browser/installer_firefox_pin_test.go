@@ -1,6 +1,10 @@
 package browser
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/vibium/clicker/internal/paths"
+)
 
 // With no override, the release channel installs the baked known-good
 // version, offline (#469). Firefox 155 broke every fresh install on its
@@ -12,8 +16,8 @@ func TestFirefoxReleaseChannelResolvesToBakedPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveFirefoxVersion(release) error = %v", err)
 	}
-	if v != pinnedFirefoxVersion {
-		t.Errorf("resolveFirefoxVersion(release) = %q, want the baked %q", v, pinnedFirefoxVersion)
+	if v != paths.PinnedFirefoxVersion {
+		t.Errorf("resolveFirefoxVersion(release) = %q, want the baked %q", v, paths.PinnedFirefoxVersion)
 	}
 }
 

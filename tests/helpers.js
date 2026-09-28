@@ -20,11 +20,10 @@ const ENGINE_CHANNEL = process.env.VIBIUM_ENGINE_CHANNEL || '';
 // Read from the source of truth rather than duplicated, so a pin bump
 // cannot strand the fixtures.
 function pinnedChromeVersion() {
-  const src = fs.readFileSync(
-    path.join(__dirname, '../clicker/internal/paths/paths.go'), 'utf8');
-  const m = src.match(/^const PinnedChromeVersion = "([^"]+)"$/m);
-  if (!m) throw new Error('PinnedChromeVersion not found in paths.go');
-  return m[1];
+  const pins = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../clicker/internal/paths/browsers.json'), 'utf8'));
+  if (!pins.chrome) throw new Error('browsers.json does not pin chrome');
+  return pins.chrome;
 }
 
 module.exports = { VIBIUM, ENGINE, ENGINE_CHANNEL, pinnedChromeVersion };

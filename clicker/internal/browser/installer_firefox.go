@@ -19,14 +19,6 @@ import (
 
 const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 
-// pinnedFirefoxVersion is the known-good Firefox version release-channel
-// installs default to. CI tests exactly this version; the version-bump
-// workflow opens a tested PR when Mozilla ships a new release (#469).
-// Bumping it also renews test.yml's Firefox cache key, which hashes this
-// file, so the bump PR installs the new version instead of a cached old
-// one.
-const pinnedFirefoxVersion = "155.0.1"
-
 // InstallFirefox downloads Firefox for the VIBIUM_ENGINE_CHANNEL channel
 // (default "release"; "beta" for pre-release testing).
 func InstallFirefox() (string, error) {
@@ -157,7 +149,7 @@ func resolveFirefoxVersion(channel string) (string, error) {
 		return v, nil
 	}
 	if channel == "release" {
-		return pinnedFirefoxVersion, nil
+		return paths.PinnedFirefoxVersion, nil
 	}
 	return fetchLatestFirefoxVersion(channel)
 }
