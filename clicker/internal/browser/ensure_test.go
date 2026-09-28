@@ -108,7 +108,7 @@ func TestEngineInstalledForChannelIgnoresEnvironmentChannel(t *testing.T) {
 	t.Setenv("VIBIUM_ENGINE_PATH", "")
 	t.Setenv("VIBIUM_ENGINE_VERSION", "")
 
-	exe := paths.FirefoxPathInVersion(filepath.Join(cache, "firefox", "release", "155.0.1"))
+	exe := paths.FirefoxPathInVersion(filepath.Join(cache, "firefox", "release", paths.PinnedFirefoxVersion))
 	if err := os.MkdirAll(filepath.Dir(exe), 0755); err != nil {
 		t.Fatal(err)
 	}
