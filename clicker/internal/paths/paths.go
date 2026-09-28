@@ -152,13 +152,6 @@ func GetChromeChannelDirForChannel(channel string) (string, error) {
 	return cftDir, nil
 }
 
-// PinnedChromeVersion is the known-good Chrome for Testing version the
-// stable channel installs and launches. CI tests exactly this version; the
-// version-bump workflow opens a tested PR when Google ships a new Stable
-// (#470). Bumping it also renews test.yml's Chrome cache key, so the bump
-// PR installs the new version instead of a cached old one.
-const PinnedChromeVersion = "153.0.8010.52"
-
 // resolveVersionDir returns the cached version directory containing BOTH
 // Chrome and chromedriver: the pinned version for the stable channel, the
 // newest cached version for the moving channels (beta, dev, canary).
