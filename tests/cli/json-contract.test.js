@@ -33,7 +33,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 
 // Short session and cache names: the daemon socket path must stay under the
 // 103-byte macOS unix-socket limit.
@@ -178,7 +178,7 @@ const ENV_OVERRIDES = {
 };
 
 function seedFakeChromeCache(cacheDir) {
-  const versionDir = path.join(cacheDir, 'chrome-for-testing', '999.0.0.0');
+  const versionDir = path.join(cacheDir, 'chrome-for-testing', pinnedChromeVersion());
   let chromePath;
   if (process.platform === 'darwin') {
     chromePath = path.join(versionDir, 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');

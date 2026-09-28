@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const path = require('node:path');
 const EXE = process.platform === 'win32' ? '.exe' : '';
 const VIBIUM = path.join(__dirname, '../clicker/bin/vibium') + EXE;
@@ -14,4 +15,16 @@ const ENGINE = process.env.VIBIUM_ENGINE || 'chrome';
 // browser it never installed.
 const ENGINE_CHANNEL = process.env.VIBIUM_ENGINE_CHANNEL || '';
 
-module.exports = { VIBIUM, ENGINE, ENGINE_CHANNEL };
+// The baked Chrome pin. Stable-channel resolution requires exactly this
+// version (#579), so fixtures that seed a fake stable install must use it.
+// Read from the source of truth rather than duplicated, so a pin bump
+// cannot strand the fixtures.
+function pinnedChromeVersion() {
+  const src = fs.readFileSync(
+    path.join(__dirname, '../clicker/internal/paths/paths.go'), 'utf8');
+  const m = src.match(/^const PinnedChromeVersion = "([^"]+)"$/m);
+  if (!m) throw new Error('PinnedChromeVersion not found in paths.go');
+  return m[1];
+}
+
+module.exports = { VIBIUM, ENGINE, ENGINE_CHANNEL, pinnedChromeVersion };
