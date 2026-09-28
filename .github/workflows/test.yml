@@ -145,12 +145,13 @@ jobs:
       - name: Configure kernel for Chrome sandbox
         run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
 
-      # Keyed on installer.go so installer changes fetch a fresh Chrome.
+      # Keyed on browsers.json so pin bumps fetch a fresh browser and
+      # unrelated installer changes keep the cache (#580).
       - name: Cache Chrome for Testing
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/paths.go') }}
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-chrome-
 
@@ -242,7 +243,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/paths.go') }}
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-chrome-
 
@@ -306,7 +307,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/firefox
-          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/browser/installer_firefox.go') }}
+          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-firefox-
 
@@ -317,7 +318,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/paths.go') }}
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-chrome-
 
@@ -395,7 +396,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/firefox
-          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/browser/installer_firefox.go') }}
+          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-firefox-
 
@@ -406,7 +407,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/paths.go') }}
+          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
             ${{ runner.os }}-chrome-
 

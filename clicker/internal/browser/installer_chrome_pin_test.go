@@ -42,8 +42,8 @@ func TestBakedPinsAreExactReleaseVersions(t *testing.T) {
 	if !regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(paths.PinnedChromeVersion) {
 		t.Errorf("paths.PinnedChromeVersion = %q, want four dotted numbers", paths.PinnedChromeVersion)
 	}
-	if !regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`).MatchString(pinnedFirefoxVersion) {
-		t.Errorf("pinnedFirefoxVersion = %q, want a release version, not a beta", pinnedFirefoxVersion)
+	if !regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`).MatchString(paths.PinnedFirefoxVersion) {
+		t.Errorf("paths.PinnedFirefoxVersion = %q, want a release version, not a beta", paths.PinnedFirefoxVersion)
 	}
 }
 
