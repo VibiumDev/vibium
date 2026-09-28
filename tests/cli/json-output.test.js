@@ -19,7 +19,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 
 // Short on purpose: the daemon socket lands under the cache dir, and unix
 // socket paths are capped at 103 bytes on macOS.
@@ -62,7 +62,7 @@ function parseEnvelope(result) {
 // Chrome fake cache in the platform layout paths.GetChromeExecutable expects,
 // same shape as is-installed.test.js.
 function seedFakeChromeCache(cacheDir) {
-  const versionDir = path.join(cacheDir, 'chrome-for-testing', '999.0.0.0');
+  const versionDir = path.join(cacheDir, 'chrome-for-testing', pinnedChromeVersion());
   let chromePath;
   if (process.platform === 'darwin') {
     chromePath = path.join(versionDir, 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');

@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/vibium/clicker/internal/paths"
 )
 
 // With no override, stable installs the baked known-good version instead of
@@ -12,8 +14,8 @@ import (
 func TestChromeStableChannelResolvesToBakedPin(t *testing.T) {
 	t.Setenv("VIBIUM_ENGINE_VERSION", "")
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
-	if got := chromeInstallVersion("stable"); got != pinnedChromeVersion {
-		t.Errorf("chromeInstallVersion() = %q, want the baked %q", got, pinnedChromeVersion)
+	if got := chromeInstallVersion("stable"); got != paths.PinnedChromeVersion {
+		t.Errorf("chromeInstallVersion() = %q, want the baked %q", got, paths.PinnedChromeVersion)
 	}
 }
 
@@ -37,8 +39,8 @@ func TestChromeBetaChannelSkipsBakedPin(t *testing.T) {
 // The version-bump workflow rewrites the pins mechanically; this catches a
 // bad write (a "null" from jq, a beta like 156.0b3) before it can ship.
 func TestBakedPinsAreExactReleaseVersions(t *testing.T) {
-	if !regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(pinnedChromeVersion) {
-		t.Errorf("pinnedChromeVersion = %q, want four dotted numbers", pinnedChromeVersion)
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(paths.PinnedChromeVersion) {
+		t.Errorf("paths.PinnedChromeVersion = %q, want four dotted numbers", paths.PinnedChromeVersion)
 	}
 	if !regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`).MatchString(pinnedFirefoxVersion) {
 		t.Errorf("pinnedFirefoxVersion = %q, want a release version, not a beta", pinnedFirefoxVersion)

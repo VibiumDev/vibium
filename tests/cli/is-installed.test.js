@@ -9,7 +9,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 
 /**
  * Run `vibium is-installed` with VIBIUM_CACHE_DIR pointing to a custom dir.
@@ -36,7 +36,7 @@ function runIsInstalled(cacheDir) {
  */
 function createFakeCacheDir(opts = {}) {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-test-'));
-  const versionDir = path.join(cacheDir, 'chrome-for-testing', '999.0.0.0');
+  const versionDir = path.join(cacheDir, 'chrome-for-testing', pinnedChromeVersion());
 
   if (opts.chrome) {
     let chromePath;

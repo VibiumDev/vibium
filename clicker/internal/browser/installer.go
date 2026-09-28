@@ -20,14 +20,6 @@ const (
 	lastKnownGoodURL     = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
 )
 
-// pinnedChromeVersion is the known-good Chrome for Testing version
-// stable-channel installs default to. CI tests exactly this version; the
-// version-bump workflow opens a tested PR when Google ships a new Stable
-// (#470). Bumping it also renews test.yml's Chrome cache key, which hashes
-// this file, so the bump PR installs the new version instead of a cached
-// old one.
-const pinnedChromeVersion = "153.0.8010.52"
-
 // VersionInfo represents the Chrome for Testing version information.
 type VersionInfo struct {
 	Version   string                `json:"version"`
@@ -192,7 +184,7 @@ func chromeInstallVersion(channel string) string {
 		return v
 	}
 	if channel == "stable" {
-		return pinnedChromeVersion
+		return paths.PinnedChromeVersion
 	}
 	return ""
 }

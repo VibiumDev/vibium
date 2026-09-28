@@ -149,8 +149,12 @@ func withCache(t *testing.T) string {
 
 // A cache holding Chrome under one version and chromedriver under another used
 // to resolve to a mismatched pair, which IsInstalled() then certified (#265).
+// Runs on the beta channel: stable now resolves its baked pin exactly
+// (#579), so newest-complete selection only applies to moving channels.
 func TestResolvesChromeAndDriverAsAPair(t *testing.T) {
 	cft := withCache(t)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	cft = filepath.Join(cft, "beta")
 	seedVersion(t, cft, "146.0.7000.10", true, false) // chrome only
 	seedVersion(t, cft, "147.0.8000.20", false, true) // driver only
 	seedVersion(t, cft, "145.0.6000.30", true, true)  // the only complete pair
@@ -174,6 +178,8 @@ func TestResolvesChromeAndDriverAsAPair(t *testing.T) {
 
 func TestPrefersNewestCompleteVersion(t *testing.T) {
 	cft := withCache(t)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	cft = filepath.Join(cft, "beta")
 	seedVersion(t, cft, "99.0.1000.1", true, true)
 	seedVersion(t, cft, "100.0.1000.1", true, true)
 
@@ -190,6 +196,8 @@ func TestPrefersNewestCompleteVersion(t *testing.T) {
 
 func TestNoCompleteVersionIsNotFound(t *testing.T) {
 	cft := withCache(t)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	cft = filepath.Join(cft, "beta")
 	seedVersion(t, cft, "146.0.7000.10", true, false)
 
 	if _, err := GetChromeExecutable(); err == nil {

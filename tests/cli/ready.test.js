@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 const exec = promisify(execFile);
 
 function environment(t, extra = {}) {
@@ -233,7 +233,7 @@ test('plain ready reports browser and AI failures together', async t => {
 // These executables are intentionally harmless traps. A launch regression fails
 // the check (and writes a marker on Unix) without ever starting a real browser.
 function installedBrowsers(env) {
-  const version = path.join(env.VIBIUM_CACHE_DIR, 'chrome-for-testing', '150.0.0.1');
+  const version = path.join(env.VIBIUM_CACHE_DIR, 'chrome-for-testing', pinnedChromeVersion());
   const chrome = path.join(version, process.platform === 'darwin'
     ? 'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
     : process.platform === 'win32' ? 'chrome.exe' : 'chrome');
