@@ -6,7 +6,7 @@ const { promisify } = require('node:util');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 const exec = promisify(execFile);
 
 function environment(t, extra = {}) {
@@ -31,7 +31,7 @@ async function run(env, args) {
 }
 
 function seedChrome(env) {
-  const version = path.join(env.VIBIUM_CACHE_DIR, 'chrome-for-testing', '150.0.0.1');
+  const version = path.join(env.VIBIUM_CACHE_DIR, 'chrome-for-testing', pinnedChromeVersion());
   const chrome = path.join(version, process.platform === 'darwin'
     ? 'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
     : process.platform === 'win32' ? 'chrome.exe' : 'chrome');
