@@ -21,7 +21,41 @@ func installFakeChrome(t *testing.T, cacheDir string, segments ...string) {
 	}
 }
 
-func TestResolveVersionDirHonorsPin(t *testing.T) {
+// Stable resolves the baked pin even when a newer version is cached. The
+// newest-cached rule meant a pin bump never installed (any cached Chrome
+// satisfied IsInstalled) and a pin rollback never launched (#579).
+func TestResolveVersionDirStableHonorsBakedPin(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	installFakeChrome(t, cache, PinnedChromeVersion)
+	installFakeChrome(t, cache, "999.0.0.0")
+
+	dir, err := resolveVersionDir("")
+	if err != nil {
+		t.Fatalf("resolveVersionDir() error = %v", err)
+	}
+	if got := filepath.Base(dir); got != PinnedChromeVersion {
+		t.Errorf("stable resolveVersionDir() = %s, want the baked %s", got, PinnedChromeVersion)
+	}
+}
+
+// A stable cache without the pinned version fails instead of launching
+// whatever is newest; the ensure-install path then downloads the pin (#579).
+func TestResolveVersionDirStableRequiresBakedPin(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	installFakeChrome(t, cache, "150.0.7000.10")
+
+	if _, err := resolveVersionDir(""); err == nil {
+		t.Error("resolveVersionDir() without the pinned version cached: want error, got nil")
+	}
+}
+
+func TestResolveVersionDirHonorsEnvPin(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cache)
 	// Pin the channel: the ambient environment may carry
@@ -29,20 +63,11 @@ func TestResolveVersionDirHonorsPin(t *testing.T) {
 	// test seeds the default-channel layout (#479).
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	installFakeChrome(t, cache, "140.0.7000.10")
-	installFakeChrome(t, cache, "141.0.7100.20")
+	installFakeChrome(t, cache, PinnedChromeVersion)
 
-	// Unpinned picks the newest complete version.
-	dir, err := resolveVersionDir("")
-	if err != nil {
-		t.Fatalf("resolveVersionDir() error = %v", err)
-	}
-	if got := filepath.Base(dir); got != "141.0.7100.20" {
-		t.Errorf("unpinned resolveVersionDir() = %s, want 141.0.7100.20", got)
-	}
-
-	// A pin selects that version even with a newer one cached.
+	// The env pin beats both the baked pin and anything newer cached.
 	t.Setenv("VIBIUM_ENGINE_VERSION", "140.0.7000.10")
-	dir, err = resolveVersionDir("")
+	dir, err := resolveVersionDir("")
 	if err != nil {
 		t.Fatalf("pinned resolveVersionDir() error = %v", err)
 	}
@@ -58,6 +83,24 @@ func TestResolveVersionDirHonorsPin(t *testing.T) {
 	}
 }
 
+// Moving channels have no baked pin and keep resolving newest-cached.
+func TestResolveVersionDirBetaPicksNewest(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	installFakeChrome(t, cache, "beta", "141.0.7100.20")
+	installFakeChrome(t, cache, "beta", "142.0.7200.5")
+
+	dir, err := resolveVersionDir("")
+	if err != nil {
+		t.Fatalf("beta resolveVersionDir() error = %v", err)
+	}
+	if got := filepath.Base(dir); got != "142.0.7200.5" {
+		t.Errorf("beta resolveVersionDir() = %s, want 142.0.7200.5", got)
+	}
+}
+
 func TestChromeChannelDirsAreSeparate(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cache)
@@ -65,17 +108,18 @@ func TestChromeChannelDirsAreSeparate(t *testing.T) {
 	// VIBIUM_ENGINE_CHANNEL=beta (the Beta Watch workflow does), and this
 	// test seeds the default-channel layout (#479).
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
-	installFakeChrome(t, cache, "141.0.7100.20")
-	// A beta with a higher version number than stable.
-	installFakeChrome(t, cache, "beta", "142.0.7200.5")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	installFakeChrome(t, cache, PinnedChromeVersion)
+	// A beta with a higher version number than stable's pin.
+	installFakeChrome(t, cache, "beta", "999.0.7200.5")
 
 	// Stable resolution must not pick up the beta despite its higher version.
 	dir, err := resolveVersionDir("")
 	if err != nil {
 		t.Fatalf("stable resolveVersionDir() error = %v", err)
 	}
-	if got := filepath.Base(dir); got != "141.0.7100.20" {
-		t.Errorf("stable resolveVersionDir() = %s, want 141.0.7100.20", got)
+	if got := filepath.Base(dir); got != PinnedChromeVersion {
+		t.Errorf("stable resolveVersionDir() = %s, want %s", got, PinnedChromeVersion)
 	}
 
 	// Beta resolution sees only the beta subdirectory.
@@ -84,8 +128,8 @@ func TestChromeChannelDirsAreSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("beta resolveVersionDir() error = %v", err)
 	}
-	if got := filepath.Base(dir); got != "142.0.7200.5" {
-		t.Errorf("beta resolveVersionDir() = %s, want 142.0.7200.5", got)
+	if got := filepath.Base(dir); got != "999.0.7200.5" {
+		t.Errorf("beta resolveVersionDir() = %s, want 999.0.7200.5", got)
 	}
 	if got := filepath.Base(filepath.Dir(dir)); got != "beta" {
 		t.Errorf("beta version dir parent = %s, want beta", got)
@@ -110,7 +154,8 @@ func TestResolveVersionDirExplicitChannelBeatsEnv(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cache)
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
-	installFakeChrome(t, cache, "141.0.7100.20")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	installFakeChrome(t, cache, PinnedChromeVersion)
 	installFakeChrome(t, cache, "beta", "142.0.7200.5")
 
 	dir, err := resolveVersionDir("beta")
@@ -127,8 +172,8 @@ func TestResolveVersionDirExplicitChannelBeatsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`resolveVersionDir("stable") error = %v`, err)
 	}
-	if got := filepath.Base(dir); got != "141.0.7100.20" {
-		t.Errorf(`resolveVersionDir("stable") = %s, want 141.0.7100.20`, got)
+	if got := filepath.Base(dir); got != PinnedChromeVersion {
+		t.Errorf(`resolveVersionDir("stable") = %s, want %s`, got, PinnedChromeVersion)
 	}
 }
 

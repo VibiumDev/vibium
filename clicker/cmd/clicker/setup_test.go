@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/paths"
 )
 
 func setupTestEnv(t *testing.T) string {
@@ -30,7 +31,8 @@ func setupTestEnv(t *testing.T) string {
 func seedChrome(t *testing.T, home string) {
 	t.Helper()
 	cache := filepath.Join(home, "cache")
-	version := filepath.Join(cache, "chrome-for-testing", "999.0.0.0")
+	// Stable resolution requires the baked pin exactly (#579).
+	version := filepath.Join(cache, "chrome-for-testing", paths.PinnedChromeVersion)
 	chrome := filepath.Join(version, "chrome")
 	if runtime.GOOS == "darwin" {
 		chrome = filepath.Join(version, "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing")

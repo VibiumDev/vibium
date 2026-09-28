@@ -152,27 +152,46 @@ func GetChromeChannelDirForChannel(channel string) (string, error) {
 	return cftDir, nil
 }
 
-// resolveVersionDir returns the newest cached version directory containing BOTH
-// Chrome and chromedriver.
+// PinnedChromeVersion is the known-good Chrome for Testing version the
+// stable channel installs and launches. CI tests exactly this version; the
+// version-bump workflow opens a tested PR when Google ships a new Stable
+// (#470). Bumping it also renews test.yml's Chrome cache key, so the bump
+// PR installs the new version instead of a cached old one.
+const PinnedChromeVersion = "153.0.8010.52"
+
+// resolveVersionDir returns the cached version directory containing BOTH
+// Chrome and chromedriver: the pinned version for the stable channel, the
+// newest cached version for the moving channels (beta, dev, canary).
 //
-// They used to be resolved independently, each taking the first directory that
-// held its own binary, so a cache with Chrome under 146.x and chromedriver under
-// 147.x produced a mismatched pair that IsInstalled() certified as fine — the
-// failure surfaced later as chromedriver's "only supports Chrome version N"
-// (#265). Newest-first also replaces os.ReadDir's lexical order, under which
-// "99.0" sorts above "100.0".
+// The two binaries used to be resolved independently, each taking the first
+// directory that held its own binary, so a cache with Chrome under 146.x and
+// chromedriver under 147.x produced a mismatched pair that IsInstalled()
+// certified as fine — the failure surfaced later as chromedriver's "only
+// supports Chrome version N" (#265). Newest-first also replaces os.ReadDir's
+// lexical order, under which "99.0" sorts above "100.0".
 //
-// VIBIUM_ENGINE_VERSION pins the choice: the pinned version must also be
-// what launches, or newest-cached would silently run a different Chrome
-// than the pin installed.
+// A pin (VIBIUM_ENGINE_VERSION, or the baked PinnedChromeVersion on stable)
+// selects exactly that version or fails. Stable used to fall back to
+// newest-cached, which meant a pin bump never installed on a machine with
+// any older Chrome cached — IsInstalled() blessed the old directory and the
+// bump was skipped — and lowering the pin to roll back never took effect
+// (#579). Failing here is what makes the ensure-install path download the
+// pinned version.
 func resolveVersionDir(channel string) (string, error) {
+	if channel == "" {
+		channel = ChromeChannel()
+	}
 	cftDir, err := GetChromeChannelDirForChannel(channel)
 	if err != nil {
 		return "", err
 	}
 
-	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
-		dir := filepath.Join(cftDir, v)
+	pin := os.Getenv("VIBIUM_ENGINE_VERSION")
+	if pin == "" && channel == "stable" {
+		pin = PinnedChromeVersion
+	}
+	if pin != "" {
+		dir := filepath.Join(cftDir, pin)
 		if _, err := os.Stat(getChromePathInVersion(dir)); err != nil {
 			return "", err
 		}
