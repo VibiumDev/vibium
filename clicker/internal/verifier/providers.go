@@ -193,7 +193,22 @@ func (v *Model) completeAnthropic(ctx context.Context, c Config, messages []mess
 	if force != "" {
 		choice = map[string]interface{}{"type": "tool", "name": force, "disable_parallel_tool_use": true}
 	}
-	data, contentType, err := v.post(ctx, c.Endpoint()+"/messages", map[string]interface{}{"model": c.Model, "system": system, "messages": history, "tools": tools, "max_tokens": MaxOutputTokens, "tool_choice": choice}, map[string]string{"x-api-key": c.APIKey, "anthropic-version": "2023-06-01"})
+	// Prompt caching: the marker on the system block caches tools and system,
+	// the one on the conversation's final block makes this turn's full history
+	// the next turn's cached prefix. History blocks are rebuilt on every call,
+	// so markers never accumulate across turns.
+	ephemeral := map[string]string{"type": "ephemeral"}
+	var systemBlocks interface{} = system
+	if system != "" {
+		systemBlocks = []interface{}{map[string]interface{}{"type": "text", "text": system, "cache_control": ephemeral}}
+	}
+	if len(history) > 0 {
+		content := history[len(history)-1].Content
+		if len(content) > 0 {
+			content[len(content)-1]["cache_control"] = ephemeral
+		}
+	}
+	data, contentType, err := v.post(ctx, c.Endpoint()+"/messages", map[string]interface{}{"model": c.Model, "system": systemBlocks, "messages": history, "tools": tools, "max_tokens": MaxOutputTokens, "tool_choice": choice}, map[string]string{"x-api-key": c.APIKey, "anthropic-version": "2023-06-01"})
 	if err != nil {
 		return message{}, err
 	}
