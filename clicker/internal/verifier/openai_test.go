@@ -347,6 +347,30 @@ func TestScreenshotMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestScreenshotPruning(t *testing.T) {
+	n := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n <= 4 {
+			answer(w, nil, calls("browser_map", 1))
+			return
+		}
+		var body map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&body)
+		data, _ := json.Marshal(body)
+		if got := strings.Count(string(data), "data:image/png;base64,cG5n"); got != 2 {
+			t.Errorf("final request carries %d screenshots, want 2", got)
+		}
+		if got := strings.Count(string(data), "superseded"); got != 2 {
+			t.Errorf("final request carries %d placeholders, want 2", got)
+		}
+		answer(w, verdict, nil)
+	}))
+	defer server.Close()
+	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
+		t.Fatal(err)
+	}
+}
 func TestConfiguration(t *testing.T) {
 	t.Setenv("VIBIUM_AI_PROVIDER", "openai")
 	t.Setenv("VIBIUM_AI_MODEL", "")
