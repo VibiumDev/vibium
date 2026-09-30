@@ -87,9 +87,13 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 					corrective = "Your last message did not deliver the result. Call " + op.ResultTool.Name + " with the required fields."
 					force = op.ResultTool.Name
 				}
-				messages = append(messages,
-					message{Role: "assistant", Content: content},
-					message{Role: "user", Content: corrective})
+				// An empty final message (a response of only dropped thinking
+				// blocks) must not be echoed: Anthropic rejects empty text
+				// blocks, and the echo carries nothing the corrective lacks.
+				if content != "" {
+					messages = append(messages, message{Role: "assistant", Content: content})
+				}
+				messages = append(messages, message{Role: "user", Content: corrective})
 				continue
 			}
 			return LoopResult{Content: content}, nil
