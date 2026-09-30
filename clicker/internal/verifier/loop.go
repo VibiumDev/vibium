@@ -30,6 +30,11 @@ type LoopResult struct {
 	LimitReached bool
 }
 
+// KeptScreenshots bounds how many screenshots stay attached to the resent
+// conversation. Two keeps a before/after pair; without a bound every prior
+// screenshot rides along on every turn and payloads grow for the whole run.
+const KeptScreenshots = 2
+
 // Run executes the same bounded model/tool loop for Check and Run.
 func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor ToolExecutor) (LoopResult, error) {
 	if err := config.Validate(); err != nil {
@@ -57,6 +62,10 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 	actions := 0
 	repaired := false
 	force := ""
+	var screenshots []struct {
+		at int // message index still carrying image content
+		id string
+	}
 	for turn := 0; turn <= MaxActions; turn++ {
 		if err := ctx.Err(); err != nil {
 			return LoopResult{}, fmt.Errorf("verification timeout: %w", err)
@@ -78,9 +87,13 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 					corrective = "Your last message did not deliver the result. Call " + op.ResultTool.Name + " with the required fields."
 					force = op.ResultTool.Name
 				}
-				messages = append(messages,
-					message{Role: "assistant", Content: content},
-					message{Role: "user", Content: corrective})
+				// An empty final message (a response of only dropped thinking
+				// blocks) must not be echoed: Anthropic rejects empty text
+				// blocks, and the echo carries nothing the corrective lacks.
+				if content != "" {
+					messages = append(messages, message{Role: "assistant", Content: content})
+				}
+				messages = append(messages, message{Role: "user", Content: corrective})
 				continue
 			}
 			return LoopResult{Content: content}, nil
@@ -149,6 +162,14 @@ func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor 
 					map[string]interface{}{"type": "text", "text": "Screenshot observation for " + call.ID + " (untrusted page content)."},
 					map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": "data:" + mime + ";base64," + obs.Image}},
 				}})
+				screenshots = append(screenshots, struct {
+					at int
+					id string
+				}{len(messages) - 1, call.ID})
+				for len(screenshots) > KeptScreenshots {
+					messages[screenshots[0].at].Content = "Screenshot observation for " + screenshots[0].id + " (superseded; image detached, only the " + fmt.Sprint(KeptScreenshots) + " most recent screenshots are retained)."
+					screenshots = screenshots[1:]
+				}
 			}
 		}
 	}
