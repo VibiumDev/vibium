@@ -105,7 +105,7 @@ func TestNativeProviderProbeAndFreshCheck(t *testing.T) {
 					if r.URL.Path != "/v1/messages" || r.Header.Get("x-api-key") != "provider-secret" || r.Header.Get("anthropic-version") != "2023-06-01" {
 						t.Error("wrong Anthropic transport")
 					}
-					if _, ok := body["system"].(string); !ok {
+					if blocks, ok := body["system"].([]interface{}); !ok || len(blocks) != 1 || blocks[0].(map[string]interface{})["text"] == "" {
 						t.Error("missing system instructions")
 					}
 					tools := body["tools"].([]interface{})
@@ -213,7 +213,7 @@ func TestNativeProviderProbeAndFreshCheck(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				tools := &fakeTools{}
 				result, err := (&Model{}).Check(context.Background(), Request{Claim: "fresh native claim", Config: config}, tools)
-				if err != nil || result.Status != "passed" || len(tools.calls) != 4 {
+				if err != nil || result.Status != "passed" || len(tools.calls) != 5 {
 					t.Fatalf("native Check: %+v %v", result, err)
 				}
 			}
@@ -250,6 +250,44 @@ func TestNativeProviderErrorsAreBoundedAndSecretSafe(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestAnthropicPromptCaching(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		body, _ := io.ReadAll(r.Body)
+		if got := strings.Count(string(body), `"cache_control"`); got != 2 {
+			t.Errorf("request %d carries %d cache_control markers, want 2", requests, got)
+		}
+		var payload struct {
+			System []struct {
+				CacheControl *struct{ Type string } `json:"cache_control"`
+			} `json:"system"`
+			Messages []struct {
+				Content []map[string]interface{} `json:"content"`
+			} `json:"messages"`
+		}
+		if json.Unmarshal(body, &payload) != nil || len(payload.System) != 1 || payload.System[0].CacheControl == nil {
+			t.Errorf("request %d: system block not cache marked", requests)
+		}
+		last := payload.Messages[len(payload.Messages)-1].Content
+		if len(last) == 0 || last[len(last)-1]["cache_control"] == nil {
+			t.Errorf("request %d: final conversation block not cache marked", requests)
+		}
+		if requests == 1 {
+			fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"browser_map","input":{}}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"v1","name":"return_verdict","input":`+verdict+`}]}`)
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "anthropic"
+	result, err := (&OpenAI{}).Check(context.Background(), req, &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
 }
 

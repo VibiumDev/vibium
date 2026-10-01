@@ -28,7 +28,7 @@ test('Check SDK and MCP surfaces share the native runtime', { timeout: 300000 },
       } else {
         assert.ok(!raw.includes('BUILDER-TRANSCRIPT'));
         if (!obs.length) {
-          assert.equal(body.messages.length, 5);
+          assert.equal(body.messages.length, 6);
           assert.ok(raw.includes('Account'), 'Initial observation must use the pinned page');
           assert.ok(!raw.includes('Other page'), 'Other page must not leak into pinned context');
         }

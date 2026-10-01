@@ -37,7 +37,10 @@ func (v *OpenAI) Check(ctx context.Context, req Request, executor ToolExecutor) 
 		return Result{}, err
 	}
 	instruction := systemInstruction
-	initial := []string{"browser_get_url", "browser_map", "browser_a11y_tree"}
+	// browser_get_text supplies the visible text the accessibility tree
+	// prunes, so the first model turn can act instead of screenshotting to
+	// see what the page says (#593).
+	initial := []string{"browser_get_url", "browser_map", "browser_a11y_tree", "browser_get_text"}
 	if req.Record != "" {
 		instruction = traceInstruction
 		initial = []string{"trace_summary"}
