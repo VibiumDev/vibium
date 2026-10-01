@@ -14,7 +14,8 @@ function decode(body, url) {
     };
   }
   if (body.system) {
-    return { family: 'anthropic', model: body.model, system: body.system,
+    return { family: 'anthropic', model: body.model,
+      system: Array.isArray(body.system) ? body.system.map(b => b.text || '').join('') : body.system,
       input: body.messages[0].content[0].text, tools: body.tools.map(t => t.name),
       observations: body.messages.flatMap(m => m.content.filter(p => p.type === 'tool_result').map(p => p.content)),
       ping: body.tools[0].name === 'verifier_ping' ? body.messages.flatMap(m => m.content.filter(p => p.type === 'tool_result').map(p => p.content)) : [],
