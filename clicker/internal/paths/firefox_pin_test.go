@@ -60,21 +60,59 @@ func TestFirefoxExecutableMissingPinnedVersionErrors(t *testing.T) {
 	}
 }
 
-// Without a pin the newest cached version wins, as before.
-func TestFirefoxExecutableUnpinnedPicksNewest(t *testing.T) {
+// Release resolves the baked pin even when a newer version is cached. The
+// newest-cached rule meant a pin bump never installed (any cached Firefox
+// satisfied IsFirefoxInstalled) and a pin rollback never launched (#584).
+func TestFirefoxExecutableReleaseHonorsBakedPin(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
 	t.Setenv("VIBIUM_ENGINE_PATH", "")
 	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
 	t.Setenv("VIBIUM_ENGINE_VERSION", "")
-	fakeFirefoxInstall(t, cacheDir, "release", "153.0.4")
-	fakeFirefoxInstall(t, cacheDir, "release", "154.0")
+	fakeFirefoxInstall(t, cacheDir, "release", PinnedFirefoxVersion)
+	fakeFirefoxInstall(t, cacheDir, "release", "999.0")
 
 	got, err := GetFirefoxExecutable()
 	if err != nil {
 		t.Fatalf("GetFirefoxExecutable() error = %v", err)
 	}
-	want := FirefoxPathInVersion(filepath.Join(cacheDir, "firefox", "release", "154.0"))
+	want := FirefoxPathInVersion(filepath.Join(cacheDir, "firefox", "release", PinnedFirefoxVersion))
+	if got != want {
+		t.Errorf("GetFirefoxExecutable() = %q, want the baked pin %q", got, want)
+	}
+}
+
+// A release cache without the pinned version fails instead of launching
+// whatever is newest; the ensure-install path then downloads the pin (#584).
+func TestFirefoxExecutableReleaseRequiresBakedPin(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	fakeFirefoxInstall(t, cacheDir, "release", "150.0")
+
+	if _, err := GetFirefoxExecutable(); err == nil {
+		t.Error("GetFirefoxExecutable() without the pinned version cached: want error, got nil")
+	}
+}
+
+// Beta has no baked pin and keeps resolving newest-cached: a pinned beta
+// would blind beta-watch.
+func TestFirefoxExecutableBetaPicksNewest(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+	fakeFirefoxInstall(t, cacheDir, "beta", "154.0b3")
+	fakeFirefoxInstall(t, cacheDir, "beta", "154.0b6")
+
+	got, err := GetFirefoxExecutable()
+	if err != nil {
+		t.Fatalf("GetFirefoxExecutable() error = %v", err)
+	}
+	want := FirefoxPathInVersion(filepath.Join(cacheDir, "firefox", "beta", "154.0b6"))
 	if got != want {
 		t.Errorf("GetFirefoxExecutable() = %q, want the newest %q", got, want)
 	}
