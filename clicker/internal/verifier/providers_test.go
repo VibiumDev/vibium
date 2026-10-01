@@ -213,7 +213,7 @@ func TestNativeProviderProbeAndFreshCheck(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				tools := &fakeTools{}
 				result, err := (&Model{}).Check(context.Background(), Request{Claim: "fresh native claim", Config: config}, tools)
-				if err != nil || result.Status != "passed" || len(tools.calls) != 4 {
+				if err != nil || result.Status != "passed" || len(tools.calls) != 5 {
 					t.Fatalf("native Check: %+v %v", result, err)
 				}
 			}

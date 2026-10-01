@@ -60,7 +60,7 @@ async function acceptance(t, broken = false) {
       assert.ok(!data.includes('builder-conversation-marker'));
       assert.ok(!data.includes('PRIVATE-REASONING-MARKER'));
       if (modelRequests === 0) {
-        assert.equal(body.messages.length, 5);
+        assert.equal(body.messages.length, 6);
         assert.equal(body.messages[0].role, 'system');
         assert.equal(body.messages[1].content, claim);
         assert.ok(data.includes(base));
