@@ -22,6 +22,10 @@ type Connection struct {
 	mu     sync.Mutex
 	closed atomic.Bool
 	done   chan struct{} // closed on Close() to stop the ping loop
+
+	// writeDeadline bounds a single Send. A field, not a const, so tests can
+	// shorten it; ConnectWithHeaders sets the default.
+	writeDeadline time.Duration
 }
 
 // readDeadline is the timeout for each WebSocket read operation.
@@ -30,6 +34,17 @@ const readDeadline = 120 * time.Second
 
 // pingInterval is how often we send WebSocket pings to keep the connection alive.
 const pingInterval = 30 * time.Second
+
+// defaultWriteDeadline bounds how long a Send may block. A healthy local
+// socket write completes in microseconds; this only fires when the browser
+// has stopped draining its socket — CPU starvation on a loaded CI runner,
+// which stalls the write forever (#397). Without a deadline the single stdin
+// scanner goroutine blocks inside the forward at router.go, wedging all
+// command intake for the session, and sendInternalCommand blocks before its
+// own timeout is ever reached. Generous enough that no healthy write trips
+// it, bounded so a wedge fails fast and names the stuck command instead of
+// hanging past every client timeout.
+const defaultWriteDeadline = 60 * time.Second
 
 // Connect establishes a WebSocket connection to the given URL.
 func Connect(url string) (*Connection, error) {
@@ -66,8 +81,9 @@ func ConnectWithHeaders(url string, headers http.Header) (*Connection, error) {
 	})
 
 	c := &Connection{
-		conn: conn,
-		done: make(chan struct{}),
+		conn:          conn,
+		done:          make(chan struct{}),
+		writeDeadline: defaultWriteDeadline,
 	}
 	go c.pingLoop()
 	return c, nil
@@ -98,6 +114,16 @@ func (c *Connection) pingLoop() {
 }
 
 // Send sends a text message over the WebSocket.
+//
+// The write is bounded by writeDeadline: a browser that has stopped draining
+// its socket would otherwise block the caller forever. Many callers run on
+// goroutines that can afford to wait, but the standard-command forward runs on
+// the single stdin scanner goroutine, so one stalled write freezes all command
+// intake for the session (#397). A write that fails (deadline or otherwise)
+// leaves the WebSocket framing unusable, so the connection is failed closed:
+// the blocked reader in Receive unblocks, the routing goroutine runs session
+// teardown, and the client's pending commands get a prompt error instead of
+// each waiting out its own timeout against a dead connection.
 func (c *Connection) Send(msg string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -106,7 +132,26 @@ func (c *Connection) Send(msg string) error {
 		return fmt.Errorf("connection closed")
 	}
 
-	return c.conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	if c.writeDeadline > 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.writeDeadline))
+	}
+	err := c.conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	if err != nil {
+		c.failClosed()
+	}
+	return err
+}
+
+// failClosed tears the connection down after a fatal write. The caller holds
+// c.mu. Closing the underlying socket unblocks a reader parked in ReadMessage
+// (a frozen browser never trips the read deadline on its own), and closing
+// done stops the ping loop. Guarded by the same CompareAndSwap as Close so a
+// later Close is a no-op and done is closed once.
+func (c *Connection) failClosed() {
+	if c.closed.CompareAndSwap(false, true) {
+		close(c.done)
+		c.conn.Close()
+	}
 }
 
 // Receive receives a text message from the WebSocket.
