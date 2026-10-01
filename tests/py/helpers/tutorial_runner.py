@@ -120,11 +120,22 @@ def start_tutorial_server(routes, default_body=""):
     Unmatched paths return *default_body* as ``text/html``.
 
     Returns ``(server, base_url)``.  Caller must call ``server.shutdown()``.
+
+    Uses ThreadingHTTPServer for the same reason test_server.py does: a
+    single-threaded HTTPServer serializes connections, so while it drains or
+    sits on one of the several parallel connections Chrome opens during a
+    page load, the main-document request waits behind it and the navigate
+    wedges until the client's 60s timeout (#605, part of the #397 flake
+    family). The handler timeout is the backstop for a connection Chrome
+    opened and never speaks on: without it, that thread blocks on the
+    request line forever.
     """
     import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = 30
+
         def do_GET(self):
             if self.path in routes:
                 status, headers, body = routes[self.path]
@@ -146,7 +157,7 @@ def start_tutorial_server(routes, default_body=""):
         def log_message(self, format, *args):
             pass
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
