@@ -400,6 +400,35 @@ func TestScreenshotPruning(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An empty final message gets the corrective turn without echoing the empty
+// content back, which Anthropic would reject as an empty text block (#595).
+func TestEmptyFinalMessageNotEchoedInRepair(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			answer(w, "", nil)
+			return
+		}
+		var body struct {
+			Messages []message `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		for _, m := range body.Messages {
+			if m.Role == "assistant" && len(m.ToolCalls) == 0 && m.Content == "" {
+				t.Error("empty assistant message echoed into the repair turn")
+			}
+		}
+		answer(w, nil, verdictCall("v1", verdict))
+	}))
+	defer server.Close()
+	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+}
+
 func TestConfiguration(t *testing.T) {
 	t.Setenv("VIBIUM_AI_PROVIDER", "openai")
 	t.Setenv("VIBIUM_AI_MODEL", "")
