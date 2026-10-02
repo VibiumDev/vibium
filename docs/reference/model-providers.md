@@ -11,7 +11,7 @@ conversation; the operation selects its instructions and tool permissions.
 | Optional OpenAI reasoning effort | `VIBIUM_AI_REASONING_EFFORT` |
 
 Both operations support `openai`, `xai`, `anthropic`, `google`, `openai-compatible`,
-and `local`. Provider credentials use their native environment variables:
+`local`, and `openrouter`. Provider credentials use their native environment variables:
 
 | Provider | Credential | Default API base URL |
 |----------|------------|----------------------|
@@ -21,6 +21,7 @@ and `local`. Provider credentials use their native environment variables:
 | `google` | `GOOGLE_API_KEY`, or `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta` |
 | `openai-compatible` | `OPENAI_API_KEY`, optional | Explicit base URL required |
 | `local` | `OPENAI_API_KEY`, optional | `http://127.0.0.1:8080/v1` |
+| `openrouter` | `OPENROUTER_API_KEY`, required | `https://openrouter.ai/api/v1` |
 
 `GOOGLE_API_KEY` is the canonical Google variable; `GEMINI_API_KEY` (the name
 Google's own SDKs use) is read when `GOOGLE_API_KEY` is unset.

@@ -89,7 +89,7 @@ func (v *Model) complete(ctx context.Context, config Config, messages []message,
 func (v *Model) completeOpenAI(ctx context.Context, config Config, messages []message, functions []interface{}, force string) (message, error) {
 	base := config.Endpoint()
 	payload := map[string]interface{}{"model": config.Model, "messages": messages, "tools": functions, "parallel_tool_calls": false, "max_completion_tokens": MaxOutputTokens}
-	if force != "" && (config.Provider == "openai" || config.Provider == "xai") {
+	if force != "" && (config.Provider == "openai" || config.Provider == "xai" || config.Provider == "openrouter") {
 		payload["tool_choice"] = map[string]interface{}{"type": "function", "function": map[string]string{"name": force}}
 	}
 	if config.ReasoningEffort != "" {
