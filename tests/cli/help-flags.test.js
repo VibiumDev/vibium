@@ -1,10 +1,11 @@
 /**
  * CLI Tests: -h/--help on commands that disable cobra flag parsing
  *
- * fill, type, geolocation, and sleep set DisableFlagParsing to support
- * negative-number positionals, which also bypasses cobra's built-in help
- * interception. Regression tests for #422 (bare --help returned an arity
- * error) and #423 (--help alongside positionals executed the command).
+ * fill, type, geolocation, sleep, mouse click, mouse move, and window set
+ * DisableFlagParsing to support negative-number positionals, which also
+ * bypasses cobra's built-in help interception. Regression tests for #422
+ * (bare --help returned an arity error) and #423 (--help alongside
+ * positionals executed the command).
  *
  * All cases must short-circuit before any daemon call, so no browser or
  * daemon is needed.
@@ -26,10 +27,15 @@ function run(args) {
 }
 
 const COMMANDS = {
-  fill: { short: 'Clear an input field', executed: /Filled/ },
-  type: { short: 'Type text into an element', executed: /Typed/ },
-  geolocation: { short: 'Override the browser geolocation', executed: /Geolocation set/ },
-  sleep: { short: 'Pause execution', executed: /Slept/ },
+  fill: { argv: ['fill'], short: 'Clear an input field', executed: /Filled/ },
+  type: { argv: ['type'], short: 'Type text into an element', executed: /Typed/ },
+  geolocation: { argv: ['geolocation'], short: 'Override the browser geolocation', executed: /Geolocation set/ },
+  sleep: { argv: ['sleep'], short: 'Pause execution', executed: /Slept/ },
+  // The daemon-backed commands print a JSON result on execution; help text
+  // never starts a line with '{'.
+  'mouse click': { argv: ['mouse', 'click'], short: 'Click at coordinates or current position', executed: /^\{/m },
+  'mouse move': { argv: ['mouse', 'move'], short: 'Move the mouse to coordinates', executed: /^\{/m },
+  window: { argv: ['window'], short: 'Get or set the OS browser window size, position, or state', executed: /^\{/m },
 };
 
 function assertHelp(result, cmd, invocation) {
@@ -46,7 +52,7 @@ describe('CLI: help flags on DisableFlagParsing commands', () => {
   for (const cmd of Object.keys(COMMANDS)) {
     for (const flag of ['-h', '--help']) {
       test(`${cmd} ${flag} prints help`, () => {
-        assertHelp(run([cmd, flag]), cmd, `${cmd} ${flag}`);
+        assertHelp(run([...COMMANDS[cmd].argv, flag]), cmd, `${cmd} ${flag}`);
       });
     }
   }
@@ -72,12 +78,36 @@ describe('CLI: help flags on DisableFlagParsing commands', () => {
     assertHelp(run(['geolocation', '37', '-122', '--help']), 'geolocation', 'geolocation 37 -122 --help');
   });
 
+  test('mouse click 100 200 --help prints help without clicking', () => {
+    assertHelp(run(['mouse', 'click', '100', '200', '--help']), 'mouse click', 'mouse click 100 200 --help');
+  });
+
+  test('window 1920 1080 --help prints help without resizing', () => {
+    assertHelp(run(['window', '1920', '1080', '--help']), 'window', 'window 1920 1080 --help');
+  });
+
   // Guardrails: the behaviors DisableFlagParsing exists for must survive the fix
   test('negative numbers still parse as positionals, not flags', () => {
     const result = run(['geolocation', '-122']);
     assert.strictEqual(result.status, 1);
     assert.match(result.stderr, /accepts 2 arg\(s\), received 1/);
     assert.doesNotMatch(result.stderr, /unknown flag/);
+  });
+
+  // Both fail on arity before any daemon call, proving the negative token
+  // was consumed as a positional rather than a flag.
+  test('mouse move parses a negative coordinate as a positional', () => {
+    const result = run(['mouse', 'move', '-50']);
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /accepts 2 arg\(s\), received 1/);
+    assert.doesNotMatch(result.stderr, /unknown (shorthand )?flag/);
+  });
+
+  test('window parses a negative position as a positional', () => {
+    const result = run(['window', '1920', '1080', '-1920']);
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /provide both width and height/);
+    assert.doesNotMatch(result.stderr, /unknown (shorthand )?flag/);
   });
 
   test('unknown flags are still rejected', () => {

@@ -1,11 +1,11 @@
 /**
  * CLI Tests: global flags on commands that disable cobra flag parsing
  *
- * fill, type, geolocation, and sleep parse their flags inside Run, after the
- * root's PersistentPreRunE has already read them as unset. Regression tests
- * for #482: --session and --channel were accepted and silently ignored, so
- * the command targeted the default session and --channel validation (#314)
- * never ran.
+ * fill, type, geolocation, sleep, mouse click, mouse move, and window parse
+ * their flags inside Run, after the root's PersistentPreRunE has already
+ * read them as unset. Regression tests for #482: --session and --channel
+ * were accepted and silently ignored, so the command targeted the default
+ * session and --channel validation (#314) never ran.
  *
  * All cases must short-circuit on validation before any daemon call, so no
  * browser or daemon is needed.
@@ -26,21 +26,24 @@ function run(args) {
   return result;
 }
 
-// Arguments that would be valid if the flag under test were honored.
+// Full invocations that would be valid if the flag under test were honored.
 const COMMANDS = {
-  fill: ['#a', 'x'],
-  type: ['#a', 'x'],
-  geolocation: ['37.8', '-122.4'],
-  sleep: ['100'],
+  fill: ['fill', '#a', 'x'],
+  type: ['type', '#a', 'x'],
+  geolocation: ['geolocation', '37.8', '-122.4'],
+  sleep: ['sleep', '100'],
+  'mouse click': ['mouse', 'click', '100', '200'],
+  'mouse move': ['mouse', 'move', '100', '200'],
+  window: ['window', '1280', '720'],
 };
 
 describe('CLI: late-parsed commands honor global flag validation (#482)', () => {
   // --channel validation lives in the global-flag bridge; before the fix it
   // ran against an unset value on these four commands, so a bogus channel
   // was accepted and the setting dropped.
-  for (const [cmd, args] of Object.entries(COMMANDS)) {
+  for (const [cmd, argv] of Object.entries(COMMANDS)) {
     test(`${cmd} rejects --channel bogus like every other command`, () => {
-      const result = run([cmd, ...args, '--channel', 'bogus']);
+      const result = run([...argv, '--channel', 'bogus']);
       assert.strictEqual(result.status, 1, `expected exit 1, got ${result.status}\nstdout: ${result.stdout}`);
       assert.match(result.stderr, /unsupported channel "bogus"/);
     });
@@ -65,6 +68,12 @@ describe('CLI: late-parsed commands honor global flag validation (#482)', () => 
   test('geolocation with a negative positional still reaches channel validation', () => {
     const result = run(['geolocation', '37.8', '-122.4', '--channel', 'bogus']);
     assert.doesNotMatch(result.stderr, /accepts 2 arg\(s\)/);
+    assert.match(result.stderr, /unsupported channel "bogus"/);
+  });
+
+  test('window with a negative position still reaches channel validation', () => {
+    const result = run(['window', '1920', '1080', '-1920', '25', '--channel', 'bogus']);
+    assert.doesNotMatch(result.stderr, /provide both width and height|unknown (shorthand )?flag/);
     assert.match(result.stderr, /unsupported channel "bogus"/);
   });
 });
