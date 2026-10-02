@@ -26,6 +26,7 @@ var allowed = map[string]bool{
 	"GOOGLE_API_KEY":             true,
 	"GEMINI_API_KEY":             true,
 	"XAI_API_KEY":                true,
+	"OPENROUTER_API_KEY":         true,
 }
 
 // LoadAIEnv applies unset AI settings from the config-dir ai.env file.

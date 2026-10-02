@@ -13,7 +13,7 @@ func TestProviderAndEffortChecks(t *testing.T) {
 		t.Fatalf("no %s check", variable)
 		return ""
 	}
-	if got, want := problem(Config{Provider: "nope"}, "VIBIUM_AI_PROVIDER"), "set VIBIUM_AI_PROVIDER to openai, xai, anthropic, google, openai-compatible, or local"; got != want {
+	if got, want := problem(Config{Provider: "nope"}, "VIBIUM_AI_PROVIDER"), "set VIBIUM_AI_PROVIDER to openai, openrouter, xai, anthropic, google, openai-compatible, or local"; got != want {
 		t.Errorf("provider problem %q, want %q", got, want)
 	}
 	for _, p := range Providers {

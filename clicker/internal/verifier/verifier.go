@@ -42,6 +42,7 @@ type Provider struct {
 // Providers is the one list of supported AI providers, in display order.
 var Providers = []Provider{
 	{Name: "openai", ModelsURL: "https://developers.openai.com/api/docs/models", ReasoningEffort: true},
+	{Name: "openrouter", ModelsURL: "https://openrouter.ai/models", ReasoningEffort: true},
 	{Name: "xai", ModelsURL: "https://docs.x.ai/developers/models", ReasoningEffort: true},
 	{Name: "anthropic", ModelsURL: "https://platform.claude.com/docs/en/models/overview"},
 	{Name: "google", ModelsURL: "https://ai.google.dev/gemini-api/docs/models"},
@@ -96,6 +97,8 @@ func (c Config) CredentialVariable() string {
 		return "GOOGLE_API_KEY"
 	case "xai":
 		return "XAI_API_KEY"
+	case "openrouter":
+		return "OPENROUTER_API_KEY"
 	default:
 		return "OPENAI_API_KEY"
 	}
@@ -113,6 +116,8 @@ func (c Config) Endpoint() string {
 		return "http://127.0.0.1:8080/v1"
 	case "xai":
 		return "https://api.x.ai/v1"
+	case "openrouter":
+		return "https://openrouter.ai/api/v1"
 	default:
 		return "https://api.openai.com/v1"
 	}
@@ -188,7 +193,7 @@ func (c Config) credentialCheck() (name, problem string) {
 		}
 		return name, ""
 	}
-	requiresKey := c.Provider == "openai" || c.Provider == "anthropic"
+	requiresKey := c.Provider == "openai" || c.Provider == "anthropic" || c.Provider == "openrouter"
 	if requiresKey && strings.TrimSpace(c.APIKey) == "" {
 		return name, name + " is required"
 	}
