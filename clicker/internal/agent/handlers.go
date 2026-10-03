@@ -1304,6 +1304,11 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		script := findBySemanticScript()
 		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title}, timeout)
 		if err != nil {
+			// A rejected selector (e.g. a malformed xpath) is a syntax error,
+			// not a missing element: surface it verbatim (#616).
+			if isInvalidSelector(err) {
+				return nil, err
+			}
 			desc := ""
 			for _, pair := range []struct{ k, v string }{
 				{"role", role}, {"text", text}, {"label", label}, {"placeholder", placeholder},
@@ -1365,6 +1370,9 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 	// @e1 ref, so `find` reported "@e1 <nil>" with exit 0.
 	labelResult, err := pollCallFunction(h, labelScript, []interface{}{selector}, timeout)
 	if err != nil {
+		if isInvalidSelector(err) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
 	}
 
@@ -2543,6 +2551,35 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 }
 
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
+// invalidSelector marks a selector the browser rejected as unparseable. It is
+// a distinct type so a find handler can tell it apart from a genuine miss and
+// report the syntax error rather than "element not found" (#616).
+type invalidSelector struct{ text string }
+
+func (e *invalidSelector) Error() string { return "invalid selector: " + e.text }
+
+// invalidSelectorError returns an *invalidSelector if err is the exception the
+// browser throws for a malformed CSS selector or XPath, or nil otherwise. Both
+// engines phrase these "is not a valid selector" / "is not a valid XPath
+// expression"; any other exception is transient and keeps the caller's retry
+// behavior.
+func invalidSelectorError(err error) error {
+	var se *bidi.ScriptException
+	if !errors.As(err, &se) {
+		return nil
+	}
+	if strings.Contains(se.Text, "is not a valid selector") || strings.Contains(se.Text, "is not a valid XPath expression") {
+		return &invalidSelector{text: se.Text}
+	}
+	return nil
+}
+
+// isInvalidSelector reports whether err is an *invalidSelector.
+func isInvalidSelector(err error) bool {
+	var ie *invalidSelector
+	return errors.As(err, &ie)
+}
+
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
@@ -2551,6 +2588,12 @@ func pollCallFunction(h *Handlers, script string, args []interface{}, timeout ti
 		result, err := h.client.CallFunction(h.currentContext(), script, args)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, err
+		}
+		// A selector the browser rejects as malformed can never match, so no
+		// amount of polling will help: fail now with the syntax error instead
+		// of retrying into a misleading "timeout"/"element not found" (#616).
+		if invErr := invalidSelectorError(err); invErr != nil {
+			return nil, invErr
 		}
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)

@@ -413,6 +413,38 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
+// invalidSelectorError marks a selector the browser rejected as unparseable.
+// It can never match, so the polling loops return it immediately instead of
+// retrying until the timeout and misreporting "element not found" — which is
+// what `find "@Our approach"` did for the discussion #104 user (#616).
+type invalidSelectorError struct{ text string }
+
+func (e *invalidSelectorError) Error() string { return "invalid selector: " + e.text }
+
+// checkInvalidSelector inspects a script.callFunction response for the
+// exception querySelectorAll or document.evaluate throws on a malformed
+// selector. Chrome and Firefox both phrase CSS rejections "is not a valid
+// selector" and XPath rejections "is not a valid XPath expression"; any
+// other exception returns nil so the caller's retry behavior is unchanged.
+func checkInvalidSelector(resp json.RawMessage) error {
+	var r struct {
+		Result struct {
+			Type             string `json:"type"`
+			ExceptionDetails struct {
+				Text string `json:"text"`
+			} `json:"exceptionDetails"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(resp, &r) != nil || r.Result.Type != "exception" {
+		return nil
+	}
+	text := r.Result.ExceptionDetails.Text
+	if strings.Contains(text, "is not a valid selector") || strings.Contains(text, "is not a valid XPath expression") {
+		return &invalidSelectorError{text: text}
+	}
+	return nil
+}
+
 // staleIndexHint explains a not-found error for an index-addressed element:
 // those come from findAll handles, so "not found" can mean the page changed
 // after findAll rather than a selector that never matched, and the two read
@@ -449,6 +481,9 @@ func ResolveElementRef(s Session, context string, ep ElementParams) (string, err
 			return "", err
 		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return "", invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
@@ -485,6 +520,9 @@ func WaitForElementWithScript(s Session, context, script string, args []map[stri
 			return nil, err
 		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return nil, invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
