@@ -1098,8 +1098,12 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
 		session.navigations.Observe([]byte(msg))
-		// Track downloads before the forward: a client can only learn a
-		// navigation id from the willBegin event, so by the time it can send
+		// Chrome 156 nulls navigation on link-click downloads (#604);
+		// backfill it with the download id so shipped clients still get a
+		// usable await handle off the event they are about to receive.
+		msg = normalizeDownloadEvent(msg)
+		// Track downloads before the forward: a client can only learn its
+		// await handle from the willBegin event, so by the time it can send
 		// download.await the registry has the entry.
 		session.downloads.Observe(msg)
 
