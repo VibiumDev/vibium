@@ -409,6 +409,11 @@ func (r *Router) waitForElements(session *BrowserSession, context, script string
 
 		resp, err := r.sendInternalCommand(session, "script.callFunction", params)
 		if err == nil {
+			// A malformed selector can never match, so fail now instead of
+			// polling it into an empty result for the whole timeout (#616).
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return nil, invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {

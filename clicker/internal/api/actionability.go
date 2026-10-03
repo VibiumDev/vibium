@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -268,6 +269,9 @@ func callActionableScript(s Session, context, script string, args []map[string]i
 	if err != nil {
 		return nil, err
 	}
+	if invErr := checkInvalidSelector(resp); invErr != nil {
+		return nil, invErr
+	}
 
 	val, err := parseScriptResult(resp)
 	if err != nil {
@@ -305,6 +309,10 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 	for {
 		result, err := callActionableScript(s, context, script, args)
 		if commandCanceled(err) {
+			return nil, err
+		}
+		var invErr *invalidSelectorError
+		if errors.As(err, &invErr) {
 			return nil, err
 		}
 		if err == nil {
