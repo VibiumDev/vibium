@@ -136,7 +136,7 @@ jobs:
             packages/python/vibium_linux_x64/pyproject.toml
 
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: '21'
           distribution: temurin
@@ -252,7 +252,7 @@ jobs:
             packages/python/vibium_linux_x64/pyproject.toml
 
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           java-version: '21'
           distribution: temurin
@@ -264,9 +264,11 @@ jobs:
           npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
       # The pin-format guard in the Go tests catches a bad sed before the
-      # suite spends half an hour on it.
+      # suite spends half an hour on it. Via make so the gitignored embed
+      # files exist first — a bare `go test` on a fresh checkout fails with
+      # "pattern AI_ENV_TEMPLATE: no matching files found".
       - name: Go unit tests
-        run: cd clicker && go test ./...
+        run: make test-go
 
       - name: Build and install the new Firefox
         run: |
