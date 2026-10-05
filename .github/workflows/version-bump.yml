@@ -264,9 +264,11 @@ jobs:
           npm install --no-save @rollup/rollup-linux-x64-gnu@$(node -p "require('rollup/package.json').version")
 
       # The pin-format guard in the Go tests catches a bad sed before the
-      # suite spends half an hour on it.
+      # suite spends half an hour on it. Via make so the gitignored embed
+      # files exist first — a bare `go test` on a fresh checkout fails with
+      # "pattern AI_ENV_TEMPLATE: no matching files found".
       - name: Go unit tests
-        run: cd clicker && go test ./...
+        run: make test-go
 
       - name: Build and install the new Firefox
         run: |
