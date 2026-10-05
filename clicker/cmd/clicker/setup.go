@@ -334,6 +334,11 @@ func setupAI(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 		if effort == "" && provider == "openai" {
 			effort = "none"
 		}
+		// Say what gets written; a silent default sends users debugging the
+		// provider when the model rejects it (#621).
+		if effort != "" {
+			ui.println("Reasoning effort: %s (writes VIBIUM_AI_REASONING_EFFORT; override with --reasoning-effort or by editing ai.env).", effort)
+		}
 	}
 
 	kv := map[string]string{
