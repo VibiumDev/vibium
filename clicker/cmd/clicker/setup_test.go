@@ -240,6 +240,36 @@ func TestSetupAIModelDefaultsPerProvider(t *testing.T) {
 	}
 }
 
+// The openai default writes VIBIUM_AI_REASONING_EFFORT=none; the wizard must
+// say so instead of configuring it silently (#621).
+func TestSetupAIAnnouncesReasoningEffort(t *testing.T) {
+	home := setupTestEnv(t)
+	oldJSON := jsonOutput
+	jsonOutput = false
+	t.Cleanup(func() { jsonOutput = oldJSON })
+	t.Setenv("VIBIUM_AI_PROVIDER", "")
+	t.Setenv("VIBIUM_AI_MODEL", "")
+
+	// Provider 1 (openai), Enter through the model default, Enter to skip the key.
+	in := bytes.NewBufferString("1\n\n\n")
+	out := &bytes.Buffer{}
+	ui := &setupUI{in: in, out: out, err: out, interactive: true}
+	sec := setupAI(&cobra.Command{}, ui, false)
+	if sec.Status != "done" {
+		t.Fatalf("%+v", sec)
+	}
+	if !strings.Contains(out.String(), "Reasoning effort: none") {
+		t.Fatalf("wizard did not announce the reasoning effort:\n%s", out.String())
+	}
+	body, err := os.ReadFile(filepath.Join(home, ".config", "vibium", "ai.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "export VIBIUM_AI_REASONING_EFFORT='none'") {
+		t.Fatalf("effort not written: %s", body)
+	}
+}
+
 func TestParseSelectChoice(t *testing.T) {
 	// Digits map onto setupProviders; the accepted range must follow the
 	// list so adding a provider never silently truncates the menu.

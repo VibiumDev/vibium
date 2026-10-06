@@ -253,6 +253,42 @@ func TestNativeProviderErrorsAreBoundedAndSecretSafe(t *testing.T) {
 	}
 }
 
+// Auto turns leave Anthropic parallel tool use enabled; the forced verdict
+// turn disables it to get exactly one result call (#594).
+func TestAnthropicParallelToolUsePolicy(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body struct {
+			ToolChoice struct {
+				Type            string `json:"type"`
+				Name            string `json:"name"`
+				DisableParallel *bool  `json:"disable_parallel_tool_use"`
+			} `json:"tool_choice"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		switch requests {
+		case 1:
+			if body.ToolChoice.Type != "auto" || body.ToolChoice.DisableParallel != nil {
+				t.Errorf("auto turn tool_choice = %+v, want auto without disable_parallel_tool_use", body.ToolChoice)
+			}
+			fmt.Fprint(w, `{"stop_reason":"end_turn","content":[{"type":"text","text":"BROKEN"}]}`)
+		default:
+			if body.ToolChoice.Type != "tool" || body.ToolChoice.Name != "return_verdict" || body.ToolChoice.DisableParallel == nil || !*body.ToolChoice.DisableParallel {
+				t.Errorf("forced turn tool_choice = %+v, want forced single return_verdict", body.ToolChoice)
+			}
+			fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"v1","name":"return_verdict","input":`+verdict+`}]}`)
+		}
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "anthropic"
+	result, err := (&OpenAI{}).Check(context.Background(), req, &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+}
+
 func TestAnthropicPromptCaching(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

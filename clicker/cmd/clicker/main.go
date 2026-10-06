@@ -80,11 +80,11 @@ func defaultEngine() string {
 // booleans, the log level, the env-var bridges for --session and --channel,
 // and the engine, channel and session validation.
 //
-// It runs from the root's PersistentPreRunE, and again from
-// parseFlagsAllowNegative for the commands that set DisableFlagParsing. Those
-// parse their flags inside Run, after PersistentPreRunE has already read them
-// as unset, so without the second pass --session and --channel are accepted
-// and silently ignored (#482).
+// It runs from the root's PersistentPreRunE, except for the commands that set
+// DisableFlagParsing: those parse their flags inside Run, so PersistentPreRunE
+// would read them as unset — accepting and ignoring --session and --channel
+// (#482), and failing validations against the defaults instead of what the
+// user passed (#620). They run it from parseFlagsAllowNegative instead.
 func applyGlobalFlags(cmd *cobra.Command) error {
 	headlessSet = cmd.Flags().Changed("headless")
 	engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
@@ -173,6 +173,14 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 				return err
 			}
 			if isReadyCommand(cmd) {
+				return nil
+			}
+			// Late-parsed commands apply the globals themselves once their
+			// own flag parse has run (#482). Applying them here too would
+			// validate the defaults instead of what the user passed: with
+			// VIBIUM_ENGINE_PATH set, --engine firefox was rejected against
+			// the default "chrome" before the flag was ever parsed (#620).
+			if cmd.DisableFlagParsing {
 				return nil
 			}
 			return applyGlobalFlags(cmd)

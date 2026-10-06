@@ -189,7 +189,10 @@ func (v *Model) completeAnthropic(ctx context.Context, c Config, messages []mess
 	for _, t := range toolDefinitions(functions) {
 		tools = append(tools, map[string]interface{}{"name": t.Name, "description": t.Description, "input_schema": t.Parameters})
 	}
-	choice := map[string]interface{}{"type": "auto", "disable_parallel_tool_use": true}
+	// Parallel tool use stays enabled on auto turns; the loop executes a
+	// turn's calls sequentially in request order (#594). The forced verdict
+	// turn disables it because it must produce exactly one result call.
+	choice := map[string]interface{}{"type": "auto"}
 	if force != "" {
 		choice = map[string]interface{}{"type": "tool", "name": force, "disable_parallel_tool_use": true}
 	}

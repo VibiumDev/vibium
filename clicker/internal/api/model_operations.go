@@ -256,8 +256,14 @@ func (v *apiModelTools) Execute(ctx context.Context, name string, args map[strin
 			}
 		} else {
 			n, ok := x.(float64)
-			if !ok || n < 0 || n > 10 {
-				return verifier.Observation{}, fmt.Errorf("invalid scroll amount")
+			if !ok {
+				return verifier.Observation{}, fmt.Errorf("invalid verifier argument")
+			}
+			if n < 0 || n > 10 {
+				// Model-correctable, so a tool result rather than a fatal
+				// error: the model retries with a smaller amount instead of
+				// the whole check aborting (#619).
+				return verifier.Observation{}, &verifier.ActionError{Err: fmt.Errorf("scroll amount %v is outside 0 to 10; scroll again with a smaller amount, repeating the call if needed", n)}
 			}
 		}
 		params[k] = x

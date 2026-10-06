@@ -16,11 +16,11 @@ const assert = require('node:assert');
 const { spawnSync } = require('node:child_process');
 const { VIBIUM } = require('../helpers');
 
-function run(args) {
+function run(args, env = {}) {
   const result = spawnSync(VIBIUM, args, {
     encoding: 'utf-8',
     timeout: 30000,
-    env: { ...process.env, VIBIUM_SESSION: `global-flags-test-${process.pid}` },
+    env: { ...process.env, VIBIUM_SESSION: `global-flags-test-${process.pid}`, ...env },
   });
   assert.strictEqual(result.error, undefined, `spawn failed: ${result.error}`);
   return result;
@@ -66,5 +66,31 @@ describe('CLI: late-parsed commands honor global flag validation (#482)', () => 
     const result = run(['geolocation', '37.8', '-122.4', '--channel', 'bogus']);
     assert.doesNotMatch(result.stderr, /accepts 2 arg\(s\)/);
     assert.match(result.stderr, /unsupported channel "bogus"/);
+  });
+
+  // #620: the first applyGlobalFlags pass ran before the late parse, so the
+  // VIBIUM_ENGINE_PATH check saw the default engine and rejected a command
+  // that passed --engine firefox. --channel bogus keeps the case
+  // short-circuiting before any daemon call.
+  test('fill honors --engine firefox with VIBIUM_ENGINE_PATH set', () => {
+    const result = run(['fill', '#a', 'x', '--engine', 'firefox', '--channel', 'bogus'],
+      { VIBIUM_ENGINE_PATH: '/tmp/fakefox' });
+    assert.doesNotMatch(result.stderr, /VIBIUM_ENGINE_PATH is not supported/);
+    assert.match(result.stderr, /unsupported channel "bogus" for firefox/);
+  });
+
+  // The engine-path rejection itself must survive the fix.
+  test('fill still rejects VIBIUM_ENGINE_PATH for chrome', () => {
+    const result = run(['fill', '#a', 'x', '--engine', 'chrome'],
+      { VIBIUM_ENGINE_PATH: '/tmp/fakefox' });
+    assert.strictEqual(result.status, 1, `expected exit 1, got ${result.status}\nstdout: ${result.stdout}`);
+    assert.match(result.stderr, /VIBIUM_ENGINE_PATH is not supported for engine "chrome"/);
+  });
+
+  // Engine validation now runs only on the late pass; it must still run.
+  test('sleep rejects an unsupported --engine', () => {
+    const result = run(['sleep', '100', '--engine', 'bogus']);
+    assert.strictEqual(result.status, 1, `expected exit 1, got ${result.status}\nstdout: ${result.stdout}`);
+    assert.match(result.stderr, /unsupported engine "bogus"/);
   });
 });
