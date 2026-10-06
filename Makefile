@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -90,12 +90,20 @@ all: build
 # Build everything (Go + JS + Java)
 build: build-go build-js build-java
 
-# Build vibium binary
-build-go: deps
+# The files go:embed'ed into cmd/clicker that live elsewhere in the repo:
+# skills/ and config/ are the sources of truth, so the copies are gitignored
+# and exist only after this target runs. Anything that compiles the clicker
+# module (go build / go test / go vet) must run this first, or a fresh
+# checkout fails with "pattern AI_ENV_TEMPLATE: no matching files found"
+# (the Version Bump bump-firefox job hit exactly that).
+embeds:
 	cp skills/browser/SKILL.md clicker/cmd/clicker/SKILL.md
 	cp skills/check/SKILL.md clicker/cmd/clicker/CHECK_SKILL.md
 	cp config/ai.env clicker/cmd/clicker/AI_ENV_TEMPLATE
 	cp config/cloud-browser.env clicker/cmd/clicker/CLOUD_ENV_TEMPLATE
+
+# Build vibium binary
+build-go: deps embeds
 	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
@@ -113,12 +121,8 @@ build-js: deps
 
 # Cross-compile vibium for all platforms (static binaries)
 # Output: clicker/bin/vibium-{os}-{arch}[.exe]
-build-go-all:
+build-go-all: embeds
 	@echo "Cross-compiling vibium for all platforms..."
-	cp skills/browser/SKILL.md clicker/cmd/clicker/SKILL.md
-	cp skills/check/SKILL.md clicker/cmd/clicker/CHECK_SKILL.md
-	cp config/ai.env clicker/cmd/clicker/AI_ENV_TEMPLATE
-	cp config/cloud-browser.env clicker/cmd/clicker/CLOUD_ENV_TEMPLATE
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker
@@ -347,7 +351,7 @@ test-cleanup:
 	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run Go unit tests (no browser, no daemon — seconds, so run them first)
-test-go:
+test-go: embeds
 	@echo "--- Go Unit Tests ---"
 	cd clicker && go test ./...
 
