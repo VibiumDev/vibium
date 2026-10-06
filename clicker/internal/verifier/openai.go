@@ -88,9 +88,14 @@ func (v *Model) complete(ctx context.Context, config Config, messages []message,
 
 func (v *Model) completeOpenAI(ctx context.Context, config Config, messages []message, functions []interface{}, force string) (message, error) {
 	base := config.Endpoint()
-	payload := map[string]interface{}{"model": config.Model, "messages": messages, "tools": functions, "parallel_tool_calls": false, "max_completion_tokens": MaxOutputTokens}
+	// Parallel tool calls keep the provider default (enabled): the loop
+	// executes a turn's calls one at a time in request order, so a batch of
+	// observations saves round trips without reordering effects (#594). A
+	// forced turn must deliver exactly one result call, so it disables them.
+	payload := map[string]interface{}{"model": config.Model, "messages": messages, "tools": functions, "max_completion_tokens": MaxOutputTokens}
 	if force != "" && (config.Provider == "openai" || config.Provider == "xai") {
 		payload["tool_choice"] = map[string]interface{}{"type": "function", "function": map[string]string{"name": force}}
+		payload["parallel_tool_calls"] = false
 	}
 	if config.ReasoningEffort != "" {
 		payload["reasoning_effort"] = config.ReasoningEffort
