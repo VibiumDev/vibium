@@ -118,11 +118,11 @@ func parseFlagsAllowNegative(cmd *cobra.Command, raw []string) ([]string, error)
 		os.Exit(0)
 	}
 
-	// The root's PersistentPreRunE ran before this parse, so it computed the
-	// *Set booleans, the validations and the env-var bridges from unset
-	// values. Re-apply them now that the flags hold what the user passed;
-	// otherwise --session and --channel are accepted and silently ignored on
-	// every command that reaches this helper (#482).
+	// The root's PersistentPreRunE skips applyGlobalFlags for late-parsed
+	// commands (it would see every flag as unset: #482 silently dropped
+	// --session/--channel, #620 rejected --engine firefox against the
+	// default). This is the one place it runs for them, now that the flags
+	// hold what the user passed.
 	if err := applyGlobalFlags(cmd); err != nil {
 		return nil, err
 	}
