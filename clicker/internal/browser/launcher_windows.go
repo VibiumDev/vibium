@@ -36,6 +36,16 @@ func killByPid(pid int) {
 	exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid)).Run()
 }
 
+// killBrowserProfileProcesses terminates the Firefox processes started against
+// this session's profile dir. taskkill /T on the launched PID misses them
+// because the Windows launcher process re-parents the real browser out of our
+// tree (#622); matching on the unique profile instead is parentage-independent
+// and leaves the user's own Firefox untouched.
+func killBrowserProfileProcesses(profileDir string) {
+	script := firefoxProfileKillScript(profileDir)
+	exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Run()
+}
+
 // waitForProcessDead polls until the given PID has exited or timeout is reached.
 func waitForProcessDead(pid int, timeout time.Duration) {
 	// Brief initial sleep to let the OS reap process table entries

@@ -82,6 +82,9 @@ type LaunchResult struct {
 	BrowserCmd   *exec.Cmd
 	Port         int
 	UserDataDir  string // Chrome temp profile dir — cleaned up on Close()
+	// Engine is "firefox" or "chrome"/"" so Close can apply the Firefox-only
+	// Windows profile sweep (#622) without reaching for the global engine flag.
+	Engine string
 }
 
 // sessionRequest is the payload for creating a new session.
@@ -466,6 +469,18 @@ func (r *LaunchResult) Close() error {
 		process.Untrack(r.BrowserCmd)
 	}
 
+	// Firefox on Windows is not reached by the kill above: the firefox.exe we
+	// launch is a launcher-process stub that starts the real browser as a
+	// separate, re-parented process and exits, so taskkill /T on our PID finds
+	// an empty tree and the browser (plus its ~10 content/GPU processes)
+	// survives, piling up across runs (#622). The Unix orphan sweep uses
+	// pgrep/ps and never runs on Windows. Kill by the unique per-session
+	// profile dir instead, which does not depend on process parentage and
+	// cannot touch the user's own Firefox windows (a different profile).
+	if r.Engine == "firefox" && r.UserDataDir != "" {
+		killBrowserProfileProcesses(r.UserDataDir)
+	}
+
 	// Clean up the Chrome temp profile directory for THIS session only.
 	// Do not glob-clean other Chrome temp dirs here: under parallel test runs
 	// (e.g. node --test --test-concurrency=4) every test file spawns its own
@@ -479,6 +494,24 @@ func (r *LaunchResult) Close() error {
 	}
 
 	return nil
+}
+
+// firefoxProfileKillScript returns the PowerShell that terminates every
+// firefox.exe whose command line references this session's profile directory.
+// The match is scoped to the profile so it can never kill the user's own
+// Firefox (which runs a different profile), and it does not depend on process
+// parentage, which the Windows launcher process breaks (#622). The basename
+// (vibium-firefox-profile-NNNN) is used rather than the full path: it is
+// unique per session and contains only characters safe to embed in the
+// -like pattern, so there is nothing to escape.
+func firefoxProfileKillScript(profileDir string) string {
+	base := filepath.Base(profileDir)
+	return fmt.Sprintf(
+		`Get-CimInstance Win32_Process -Filter "Name='firefox.exe'" | `+
+			`Where-Object { $_.CommandLine -like '*%s*' } | `+
+			`ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+		base,
+	)
 }
 
 // killProcessTree kills a process and all its descendants using process group kill.
