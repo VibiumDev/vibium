@@ -122,7 +122,7 @@ def start_tutorial_server(routes, default_body=""):
     Returns ``(server, base_url)``.  Caller must call ``server.shutdown()``.
     """
     import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -146,7 +146,10 @@ def start_tutorial_server(routes, default_body=""):
         def log_message(self, format, *args):
             pass
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
+    # One thread per connection: a serial server wedges the whole page load
+    # when the browser parks an extra connection it never sends a request on,
+    # because the blocked read starves the accept queue (#605).
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

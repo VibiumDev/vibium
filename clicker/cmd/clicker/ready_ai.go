@@ -76,7 +76,7 @@ func providerSetupFix(err error) string {
 	case strings.Contains(text, "HTTP 429"):
 		return "Check API quota, billing, and rate limits before retrying."
 	case strings.Contains(text, "reasoning_effort"):
-		return "Choose a reasoning effort supported by the model's function tools; gpt-5.6-sol requires VIBIUM_AI_REASONING_EFFORT=none."
+		return "Choose a reasoning effort the configured model supports for function tools (VIBIUM_AI_REASONING_EFFORT); gpt-5 models need none, others may need it unset."
 	case strings.Contains(text, "connectivity"), strings.Contains(text, "timeout"):
 		return "Check endpoint connectivity and retry when the provider is available."
 	default:
@@ -86,6 +86,11 @@ func providerSetupFix(err error) string {
 
 func providerSetupFixForConfig(err error, config verifier.Config) string {
 	fix := strings.ReplaceAll(providerSetupFix(err), "VIBIUM_AI_", config.Prefix())
+	// Name the model the user actually configured; a hint that always names
+	// the wizard default reads as wrong advice for every other model (#621).
+	if config.Model != "" {
+		fix = strings.ReplaceAll(fix, "the configured model", config.Model)
+	}
 	if config.Provider == "xai" && (strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403")) {
 		if config.CredentialSource == verifier.CredentialGrokSession {
 			return "Run grok login to renew the Grok CLI session, or export XAI_API_KEY."

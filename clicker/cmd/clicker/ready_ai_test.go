@@ -42,7 +42,9 @@ func TestReadyAIProviderOutcomeAndFixes(t *testing.T) {
 		{"", ""}, {"verifier provider returned HTTP 401", "API key"},
 		{"verifier provider returned HTTP 429 (insufficient_quota)", "billing"},
 		{"verifier provider returned HTTP 404 (model_not_found)", "model access"},
-		{"verifier provider returned HTTP 400 in reasoning_effort", "=none"},
+		// The hint names the configured model, not the wizard default (#621).
+		{"verifier provider returned HTTP 400 in reasoning_effort", "test-model"},
+		{"verifier provider returned HTTP 400 (unsupported_value) in reasoning_effort", "none"},
 		{"verification timeout", "connectivity"}, {"invalid JSON verdict", "function tools"},
 	} {
 		t.Run(tc.problem, func(t *testing.T) {
