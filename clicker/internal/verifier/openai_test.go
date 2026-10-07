@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,6 +97,64 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 		}
 	}
 }
+// Auto turns leave parallel tool calls at the provider default so one
+// response can batch observations; the forced result turn pins them off to
+// get exactly one verdict call. The loop executes a batch in order (#594).
+func TestParallelToolCallsAllowedOutsideForcedTurns(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		raw, _ := io.ReadAll(r.Body)
+		var body struct {
+			Parallel   *bool `json:"parallel_tool_calls"`
+			ToolChoice *struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tool_choice"`
+			Messages []message `json:"messages"`
+		}
+		json.Unmarshal(raw, &body)
+		switch requests {
+		case 1:
+			if body.Parallel != nil {
+				t.Error("auto turn constrains parallel tool calls")
+			}
+			answer(w, nil, calls("browser_map", 2))
+		case 2:
+			if body.Parallel != nil {
+				t.Error("auto turn constrains parallel tool calls")
+			}
+			results := 0
+			for _, m := range body.Messages {
+				if m.Role == "tool" {
+					results++
+				}
+			}
+			if results != 2 {
+				t.Errorf("parallel batch produced %d tool results, want 2", results)
+			}
+			answer(w, "BROKEN", nil)
+		default:
+			if body.Parallel == nil || *body.Parallel || body.ToolChoice == nil || body.ToolChoice.Function.Name != "return_verdict" {
+				t.Error("forced turn must pin a single return_verdict call")
+			}
+			answer(w, nil, verdictCall("v1", verdict))
+		}
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "openai"
+	tools := &fakeTools{}
+	result, err := (&OpenAI{}).Check(context.Background(), req, tools)
+	if err != nil || result.Status != "passed" || requests != 3 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+	if len(tools.calls) != 6 || tools.calls[4] != "browser_map" || tools.calls[5] != "browser_map" {
+		t.Fatalf("parallel batch not executed in order after the 4 initial observations: %v", tools.calls)
+	}
+}
+
 // The initial observations include the page's visible text, so the first
 // model turn can act on page content instead of fetching it (#593).
 func TestInitialObservationsIncludeVisibleText(t *testing.T) {
