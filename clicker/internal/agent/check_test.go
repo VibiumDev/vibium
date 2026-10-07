@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"github.com/vibium/clicker/internal/api"
 	"github.com/vibium/clicker/internal/verifier"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +38,41 @@ func TestVerifierToolBoundary(t *testing.T) {
 		if tool.Name == "browser_screenshot" {
 			if _, ok := tool.InputSchema["properties"].(map[string]interface{})["filename"]; !ok {
 				t.Fatal("mutated shared schema")
+			}
+		}
+	}
+}
+
+// A scroll past the per-call cap is model-correctable, so it must come back
+// as an ActionError the loop feeds to the model, not a fatal error that
+// aborts the whole check (#619).
+func TestScrollLimitIsRecoverable(t *testing.T) {
+	v := &modelTools{h: &Handlers{}}
+	_, err := v.Execute(context.Background(), "browser_scroll", map[string]interface{}{"amount": float64(50)})
+	var action *verifier.ActionError
+	if !errors.As(err, &action) {
+		t.Fatalf("got %v, want ActionError", err)
+	}
+	if !strings.Contains(err.Error(), "10") {
+		t.Fatalf("error should name the cap: %v", err)
+	}
+
+	// The schema the verifier presents states the cap; the model should not
+	// have to learn it from the error.
+	for _, tool := range v.Tools() {
+		if tool.Name == "browser_scroll" {
+			amount := tool.Parameters["properties"].(map[string]interface{})["amount"].(map[string]interface{})
+			if amount["maximum"] != 10 || !strings.Contains(amount["description"].(string), "maximum: 10") {
+				t.Fatalf("verifier scroll schema must state the cap, got %v", amount)
+			}
+		}
+	}
+	// The cap is verifier-only; the shared MCP schema keeps its own wording.
+	for _, tool := range GetToolSchemas() {
+		if tool.Name == "browser_scroll" {
+			amount := tool.InputSchema["properties"].(map[string]interface{})["amount"].(map[string]interface{})
+			if _, capped := amount["maximum"]; capped {
+				t.Fatalf("shared MCP schema mutated: %v", amount)
 			}
 		}
 	}

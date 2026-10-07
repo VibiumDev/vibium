@@ -213,6 +213,14 @@ func (v *modelTools) Tools() []verifier.Tool {
 			delete(props, "annotate")
 			delete(props, "fullPage")
 		}
+		// The verifier caps scroll increments at 10 per call. Say so in the
+		// schema the model gets, instead of letting it find out from the
+		// error (#619).
+		if t.Name == "browser_scroll" {
+			amount := props["amount"].(map[string]interface{})
+			amount["description"] = ScrollAmountDesc + " (default: 3, maximum: 10 per call; repeat the call to scroll further)"
+			amount["maximum"] = 10
+		}
 		result = append(result, verifier.Tool{Name: t.Name, Description: t.Description, Parameters: t.InputSchema})
 	}
 	for _, kind := range []string{"console", "network"} {
@@ -283,7 +291,10 @@ func (v *modelTools) Execute(ctx context.Context, name string, args map[string]i
 	}
 	if name == "browser_scroll" {
 		if n, ok := clean["amount"].(float64); ok && n > 10 {
-			return verifier.Observation{}, fmt.Errorf("verifier scroll amount exceeds 10")
+			// Model-correctable, so a tool result rather than a fatal error:
+			// the model retries with a smaller amount instead of the whole
+			// check aborting (#619).
+			return verifier.Observation{}, &verifier.ActionError{Err: fmt.Errorf("scroll amount %v exceeds the maximum of 10; scroll again with a smaller amount, repeating the call if needed", n)}
 		}
 	}
 	if _, ok := props["timeout"]; ok {

@@ -105,7 +105,7 @@ func TestNativeProviderProbeAndFreshCheck(t *testing.T) {
 					if r.URL.Path != "/v1/messages" || r.Header.Get("x-api-key") != "provider-secret" || r.Header.Get("anthropic-version") != "2023-06-01" {
 						t.Error("wrong Anthropic transport")
 					}
-					if _, ok := body["system"].(string); !ok {
+					if blocks, ok := body["system"].([]interface{}); !ok || len(blocks) != 1 || blocks[0].(map[string]interface{})["text"] == "" {
 						t.Error("missing system instructions")
 					}
 					tools := body["tools"].([]interface{})
@@ -213,7 +213,7 @@ func TestNativeProviderProbeAndFreshCheck(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				tools := &fakeTools{}
 				result, err := (&Model{}).Check(context.Background(), Request{Claim: "fresh native claim", Config: config}, tools)
-				if err != nil || result.Status != "passed" || len(tools.calls) != 4 {
+				if err != nil || result.Status != "passed" || len(tools.calls) != 5 {
 					t.Fatalf("native Check: %+v %v", result, err)
 				}
 			}
@@ -250,6 +250,80 @@ func TestNativeProviderErrorsAreBoundedAndSecretSafe(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Auto turns leave Anthropic parallel tool use enabled; the forced verdict
+// turn disables it to get exactly one result call (#594).
+func TestAnthropicParallelToolUsePolicy(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var body struct {
+			ToolChoice struct {
+				Type            string `json:"type"`
+				Name            string `json:"name"`
+				DisableParallel *bool  `json:"disable_parallel_tool_use"`
+			} `json:"tool_choice"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		switch requests {
+		case 1:
+			if body.ToolChoice.Type != "auto" || body.ToolChoice.DisableParallel != nil {
+				t.Errorf("auto turn tool_choice = %+v, want auto without disable_parallel_tool_use", body.ToolChoice)
+			}
+			fmt.Fprint(w, `{"stop_reason":"end_turn","content":[{"type":"text","text":"BROKEN"}]}`)
+		default:
+			if body.ToolChoice.Type != "tool" || body.ToolChoice.Name != "return_verdict" || body.ToolChoice.DisableParallel == nil || !*body.ToolChoice.DisableParallel {
+				t.Errorf("forced turn tool_choice = %+v, want forced single return_verdict", body.ToolChoice)
+			}
+			fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"v1","name":"return_verdict","input":`+verdict+`}]}`)
+		}
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "anthropic"
+	result, err := (&OpenAI{}).Check(context.Background(), req, &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+}
+
+func TestAnthropicPromptCaching(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		body, _ := io.ReadAll(r.Body)
+		if got := strings.Count(string(body), `"cache_control"`); got != 2 {
+			t.Errorf("request %d carries %d cache_control markers, want 2", requests, got)
+		}
+		var payload struct {
+			System []struct {
+				CacheControl *struct{ Type string } `json:"cache_control"`
+			} `json:"system"`
+			Messages []struct {
+				Content []map[string]interface{} `json:"content"`
+			} `json:"messages"`
+		}
+		if json.Unmarshal(body, &payload) != nil || len(payload.System) != 1 || payload.System[0].CacheControl == nil {
+			t.Errorf("request %d: system block not cache marked", requests)
+		}
+		last := payload.Messages[len(payload.Messages)-1].Content
+		if len(last) == 0 || last[len(last)-1]["cache_control"] == nil {
+			t.Errorf("request %d: final conversation block not cache marked", requests)
+		}
+		if requests == 1 {
+			fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"browser_map","input":{}}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"v1","name":"return_verdict","input":`+verdict+`}]}`)
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "anthropic"
+	result, err := (&OpenAI{}).Check(context.Background(), req, &fakeTools{})
+	if err != nil || result.Status != "passed" || requests != 2 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
 }
 

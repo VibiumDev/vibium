@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -73,12 +74,12 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 			t.Error("model/instructions not applied")
 		}
 		if requests%2 == 1 {
-			if len(body.Messages) != 5 {
+			if len(body.Messages) != 6 {
 				t.Errorf("new verification inherited messages: %d", len(body.Messages))
 			}
 			answer(w, "DO NOT PERSIST", calls("browser_map", 1))
 		} else {
-			if body.Messages[5].Content != nil || body.Messages[6].Role != "tool" {
+			if body.Messages[6].Content != nil || body.Messages[7].Role != "tool" {
 				t.Error("tool conversation malformed")
 			}
 			answer(w, verdict, nil)
@@ -91,11 +92,98 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 		req := testRequest(server.URL)
 		req.Config.ReasoningEffort = "none"
 		result, err := adapter.Check(context.Background(), req, tools)
-		if err != nil || result.Status != "passed" || result.Claim != "name persists" || len(tools.calls) != 4 {
+		if err != nil || result.Status != "passed" || result.Claim != "name persists" || len(tools.calls) != 5 {
 			t.Fatalf("result=%+v err=%v calls=%v", result, err, tools.calls)
 		}
 	}
 }
+// Auto turns leave parallel tool calls at the provider default so one
+// response can batch observations; the forced result turn pins them off to
+// get exactly one verdict call. The loop executes a batch in order (#594).
+func TestParallelToolCallsAllowedOutsideForcedTurns(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		raw, _ := io.ReadAll(r.Body)
+		var body struct {
+			Parallel   *bool `json:"parallel_tool_calls"`
+			ToolChoice *struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tool_choice"`
+			Messages []message `json:"messages"`
+		}
+		json.Unmarshal(raw, &body)
+		switch requests {
+		case 1:
+			if body.Parallel != nil {
+				t.Error("auto turn constrains parallel tool calls")
+			}
+			answer(w, nil, calls("browser_map", 2))
+		case 2:
+			if body.Parallel != nil {
+				t.Error("auto turn constrains parallel tool calls")
+			}
+			results := 0
+			for _, m := range body.Messages {
+				if m.Role == "tool" {
+					results++
+				}
+			}
+			if results != 2 {
+				t.Errorf("parallel batch produced %d tool results, want 2", results)
+			}
+			answer(w, "BROKEN", nil)
+		default:
+			if body.Parallel == nil || *body.Parallel || body.ToolChoice == nil || body.ToolChoice.Function.Name != "return_verdict" {
+				t.Error("forced turn must pin a single return_verdict call")
+			}
+			answer(w, nil, verdictCall("v1", verdict))
+		}
+	}))
+	defer server.Close()
+	req := testRequest(server.URL)
+	req.Config.Provider = "openai"
+	tools := &fakeTools{}
+	result, err := (&OpenAI{}).Check(context.Background(), req, tools)
+	if err != nil || result.Status != "passed" || requests != 3 {
+		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
+	}
+	if len(tools.calls) != 6 || tools.calls[4] != "browser_map" || tools.calls[5] != "browser_map" {
+		t.Fatalf("parallel batch not executed in order after the 4 initial observations: %v", tools.calls)
+	}
+}
+
+// The initial observations include the page's visible text, so the first
+// model turn can act on page content instead of fetching it (#593).
+func TestInitialObservationsIncludeVisibleText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []message `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		found := false
+		for _, m := range body.Messages {
+			if content, ok := m.Content.(string); ok && strings.HasPrefix(content, "browser_get_text observation") {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("visible page text missing from initial observations")
+		}
+		answer(w, nil, verdictCall("v1", verdict))
+	}))
+	defer server.Close()
+	tools := &fakeTools{}
+	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools); err != nil {
+		t.Fatal(err)
+	}
+	if len(tools.calls) < 4 || tools.calls[3] != "browser_get_text" {
+		t.Errorf("browser_get_text not executed before the first turn: %v", tools.calls)
+	}
+}
+
 func verdictCall(id, arguments string) []interface{} {
 	return []interface{}{map[string]interface{}{"id": id, "type": "function", "function": map[string]string{"name": "return_verdict", "arguments": arguments}}}
 }
@@ -263,7 +351,7 @@ func TestProviderErrorsAndVerdicts(t *testing.T) {
 			if err != nil && (strings.Contains(err.Error(), "test-secret") || strings.Contains(err.Error(), "DO NOT PERSIST")) {
 				t.Fatal("leaked provider body")
 			}
-			if tc.tool != "" && len(tools.calls) != 3 {
+			if tc.tool != "" && len(tools.calls) != 4 {
 				t.Fatal("executed denied tool")
 			}
 		})
@@ -289,8 +377,8 @@ func TestActionErrorReturnedToModel(t *testing.T) {
 		answer(w, verdict, nil)
 	}))
 	defer server.Close()
-	// The 3 initial observations succeed; the model's own call fails.
-	tools := &fakeTools{err: &ActionError{Err: fmt.Errorf("failed to click: element not found")}, errAfter: 3}
+	// The 4 initial observations succeed; the model's own call fails.
+	tools := &fakeTools{err: &ActionError{Err: fmt.Errorf("failed to click: element not found")}, errAfter: 4}
 	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
 	if err != nil || result.Status != "passed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
@@ -301,7 +389,7 @@ func TestNonActionErrorStaysFatal(t *testing.T) {
 		answer(w, nil, calls("browser_map", 1))
 	}))
 	defer server.Close()
-	tools := &fakeTools{err: fmt.Errorf("browser connection lost"), errAfter: 3}
+	tools := &fakeTools{err: fmt.Errorf("browser connection lost"), errAfter: 4}
 	_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
 	if err == nil || !strings.Contains(err.Error(), "verifier browser action") {
 		t.Fatalf("expected fatal browser action error, got: %v", err)
@@ -312,7 +400,7 @@ func TestActionBudget(t *testing.T) {
 	defer server.Close()
 	tools := &fakeTools{}
 	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
-	if err != nil || result.Status != "inconclusive" || len(tools.calls) != MaxActions+3 {
+	if err != nil || result.Status != "inconclusive" || len(tools.calls) != MaxActions+4 {
 		t.Fatalf("%+v %v %d", result, err, len(tools.calls))
 	}
 }
