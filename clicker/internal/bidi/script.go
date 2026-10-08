@@ -3,6 +3,7 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // RealmInfo represents information about a JavaScript realm.
@@ -82,6 +83,25 @@ func (e *ScriptException) Error() string {
 		return "script threw an exception"
 	}
 	return "script exception: " + e.Text
+}
+
+// InvalidSelectorError marks a selector the browser rejected as unparseable.
+// It can never match, so polling loops return it immediately instead of
+// retrying until the timeout and misreporting "element not found" (#616).
+type InvalidSelectorError struct{ Text string }
+
+func (e *InvalidSelectorError) Error() string { return "invalid selector: " + e.Text }
+
+// AsInvalidSelector returns an *InvalidSelectorError if text is the exception
+// querySelectorAll or document.evaluate throws on a malformed selector, or
+// nil otherwise. Chrome and Firefox both phrase CSS rejections "is not a
+// valid selector" and XPath rejections "is not a valid XPath expression";
+// any other exception is transient and keeps the caller's retry behavior.
+func AsInvalidSelector(text string) *InvalidSelectorError {
+	if strings.Contains(text, "is not a valid selector") || strings.Contains(text, "is not a valid XPath expression") {
+		return &InvalidSelectorError{Text: text}
+	}
+	return nil
 }
 
 // ParseScriptResult decodes the payload of a script.evaluate or
