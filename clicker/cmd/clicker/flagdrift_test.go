@@ -63,7 +63,7 @@ func TestDisableFlagParsingSetIsExact(t *testing.T) {
 	walkCommands(root, func(path string, c *cobra.Command) {
 		if c.DisableFlagParsing {
 			got = append(got, path)
-			if !lateParseCommands[c.Name()] {
+			if !lateParseCommands[c] {
 				t.Errorf("%q sets DisableFlagParsing without lateParse, so it parses flags without the --help interception and the global-flag re-apply (#422/#482)", path)
 			}
 		}

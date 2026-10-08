@@ -22,7 +22,7 @@ func printCheck(name string, passed bool) {
 // drift test compares it against the commands that disable flag parsing, so
 // setting DisableFlagParsing by hand, without the parse and global-flag
 // re-apply that must come with it (#482), fails the build.
-var lateParseCommands = map[string]bool{}
+var lateParseCommands = map[*cobra.Command]bool{}
 
 // lateParse converts a command to late flag parsing, for positionals that can
 // be negative numbers (`sleep -5`, `geolocation 37.8 -122.4`), which pflag
@@ -43,7 +43,7 @@ func lateParse(cmd *cobra.Command) *cobra.Command {
 		}
 		inner(c, args)
 	}
-	lateParseCommands[cmd.Name()] = true
+	lateParseCommands[cmd] = true
 	return cmd
 }
 
