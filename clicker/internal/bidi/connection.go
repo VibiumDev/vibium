@@ -21,7 +21,7 @@ type Connection struct {
 	conn   *websocket.Conn
 	mu     sync.Mutex
 	closed atomic.Bool
-	done   chan struct{} // closed on Close() to stop the ping loop
+	done   chan struct{} // closed on Close() or a failed write, stops the ping loop
 
 	// writeDeadline bounds a single Send. A field, not a const, so tests can
 	// shorten it; ConnectWithHeaders sets the default.

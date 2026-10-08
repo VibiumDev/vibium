@@ -3,7 +3,6 @@ package bidi
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -144,8 +143,7 @@ func TestSendSucceedsWhenBrowserReads(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	u, _ := url.Parse(srv.URL)
-	conn, err := Connect("ws://" + u.Host)
+	conn, err := Connect("ws://" + strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
