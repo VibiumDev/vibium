@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/vibium/clicker/internal/bidi"
 )
 
 // ActionCheck represents a specific actionability check.
@@ -311,7 +313,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 		if commandCanceled(err) {
 			return nil, err
 		}
-		var invErr *invalidSelectorError
+		var invErr *bidi.InvalidSelectorError
 		if errors.As(err, &invErr) {
 			return nil, err
 		}

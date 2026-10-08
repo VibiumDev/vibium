@@ -413,19 +413,13 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
-// invalidSelectorError marks a selector the browser rejected as unparseable.
-// It can never match, so the polling loops return it immediately instead of
-// retrying until the timeout and misreporting "element not found" — which is
-// what `find "@Our approach"` did for the discussion #104 user (#616).
-type invalidSelectorError struct{ text string }
-
-func (e *invalidSelectorError) Error() string { return "invalid selector: " + e.text }
-
 // checkInvalidSelector inspects a script.callFunction response for the
 // exception querySelectorAll or document.evaluate throws on a malformed
-// selector. Chrome and Firefox both phrase CSS rejections "is not a valid
-// selector" and XPath rejections "is not a valid XPath expression"; any
-// other exception returns nil so the caller's retry behavior is unchanged.
+// selector, returned as a *bidi.InvalidSelectorError: it can never match, so
+// the polling loops return it immediately instead of retrying until the
+// timeout and misreporting "element not found" — which is what
+// `find "@Our approach"` did for the discussion #104 user (#616). Any other
+// response returns nil so the caller's retry behavior is unchanged.
 func checkInvalidSelector(resp json.RawMessage) error {
 	var r struct {
 		Result struct {
@@ -438,9 +432,8 @@ func checkInvalidSelector(resp json.RawMessage) error {
 	if json.Unmarshal(resp, &r) != nil || r.Result.Type != "exception" {
 		return nil
 	}
-	text := r.Result.ExceptionDetails.Text
-	if strings.Contains(text, "is not a valid selector") || strings.Contains(text, "is not a valid XPath expression") {
-		return &invalidSelectorError{text: text}
+	if ise := bidi.AsInvalidSelector(r.Result.ExceptionDetails.Text); ise != nil {
+		return ise
 	}
 	return nil
 }

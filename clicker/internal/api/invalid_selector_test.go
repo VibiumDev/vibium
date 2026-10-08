@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/vibium/clicker/internal/bidi"
 )
 
 // A selector the browser rejected can never match, so the polling loops must
@@ -22,9 +24,9 @@ func TestCheckInvalidSelectorDetectsSyntaxErrors(t *testing.T) {
 			},
 		})
 		err := checkInvalidSelector(resp)
-		var invErr *invalidSelectorError
+		var invErr *bidi.InvalidSelectorError
 		if !errors.As(err, &invErr) {
-			t.Errorf("%s: expected invalidSelectorError, got %v", name, err)
+			t.Errorf("%s: expected InvalidSelectorError, got %v", name, err)
 		}
 	}
 }
