@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/toolschema"
 )
 
 // JSON-RPC 2.0 request structure
@@ -93,11 +94,9 @@ type ToolsListResult struct {
 	Tools []Tool `json:"tools"`
 }
 
-type Tool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"inputSchema"`
-}
+// Tool moved to toolschema so every surface shares one definition (#571);
+// the alias keeps agent's MCP wire types reading naturally.
+type Tool = toolschema.Tool
 
 type ToolsCallParams struct {
 	Name      string                 `json:"name"`
