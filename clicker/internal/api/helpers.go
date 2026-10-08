@@ -413,6 +413,31 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
+// checkInvalidSelector inspects a script.callFunction response for the
+// exception querySelectorAll or document.evaluate throws on a malformed
+// selector, returned as a *bidi.InvalidSelectorError: it can never match, so
+// the polling loops return it immediately instead of retrying until the
+// timeout and misreporting "element not found" — which is what
+// `find "@Our approach"` did for the discussion #104 user (#616). Any other
+// response returns nil so the caller's retry behavior is unchanged.
+func checkInvalidSelector(resp json.RawMessage) error {
+	var r struct {
+		Result struct {
+			Type             string `json:"type"`
+			ExceptionDetails struct {
+				Text string `json:"text"`
+			} `json:"exceptionDetails"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(resp, &r) != nil || r.Result.Type != "exception" {
+		return nil
+	}
+	if ise := bidi.AsInvalidSelector(r.Result.ExceptionDetails.Text); ise != nil {
+		return ise
+	}
+	return nil
+}
+
 // staleIndexHint explains a not-found error for an index-addressed element:
 // those come from findAll handles, so "not found" can mean the page changed
 // after findAll rather than a selector that never matched, and the two read
@@ -449,6 +474,9 @@ func ResolveElementRef(s Session, context string, ep ElementParams) (string, err
 			return "", err
 		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return "", invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
@@ -485,6 +513,9 @@ func WaitForElementWithScript(s Session, context, script string, args []map[stri
 			return nil, err
 		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return nil, invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
