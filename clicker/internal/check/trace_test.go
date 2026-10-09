@@ -1,6 +1,8 @@
-package verifier
+package check
 
 import (
+	"github.com/vibium/clicker/internal/ai"
+
 	"archive/zip"
 	"bytes"
 	"context"
@@ -58,7 +60,7 @@ func TestTraceReadOnlyTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	run := func(name string, args map[string]interface{}) Observation {
+	run := func(name string, args map[string]interface{}) ai.Observation {
 		t.Helper()
 		obs, err := s.Execute(context.Background(), name, args)
 		if err != nil {
@@ -107,9 +109,10 @@ func TestTraceReadOnlyTools(t *testing.T) {
 		t.Fatal("modified input")
 	}
 }
+
 // A wrong event ID is a model guess about what to inspect, the archive-mode
 // version of a guessed selector, so the loop must receive it as an
-// ActionError and return it to the model. Argument-shape and policy errors
+// ai.ActionError and return it to the model. Argument-shape and policy errors
 // stay fatal.
 func TestTraceIDErrorsAreActionErrors(t *testing.T) {
 	s, err := OpenTrace(context.Background(), archive(t, map[string]string{"trace.trace": traceFixture}))
@@ -128,13 +131,13 @@ func TestTraceIDErrorsAreActionErrors(t *testing.T) {
 		{"not a screenshot", "trace_inspect_screenshot", ids["before"]},
 	} {
 		_, err := s.Execute(context.Background(), tc.tool, map[string]interface{}{"id": tc.id})
-		var action *ActionError
+		var action *ai.ActionError
 		if !errors.As(err, &action) {
-			t.Errorf("%s: got %v, want ActionError", tc.name, err)
+			t.Errorf("%s: got %v, want ai.ActionError", tc.name, err)
 		}
 	}
 	_, err = s.Execute(context.Background(), "trace_inspect_action", map[string]interface{}{"id": 5.0})
-	if err == nil || errors.As(err, new(*ActionError)) {
+	if err == nil || errors.As(err, new(*ai.ActionError)) {
 		t.Errorf("invalid argument type: got %v, want a fatal non-action error", err)
 	}
 }
@@ -157,7 +160,7 @@ func TestRecordedVerifierLoop(t *testing.T) {
 		var body struct {
 			Messages []message `json:"messages"`
 			Tools    []struct {
-				Function Tool `json:"function"`
+				Function ai.Tool `json:"function"`
 			} `json:"tools"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)

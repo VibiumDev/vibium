@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 // #581: every command with AI flags lists their values under AI Flags and
@@ -23,7 +23,7 @@ func TestAIFlagHelp(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no AI Flags section:\n%s", path, usage)
 		}
-		ai, models, ok := strings.Cut(rest, "\nModel IDs:\n")
+		aiFlags, models, ok := strings.Cut(rest, "\nModel IDs:\n")
 		if !ok {
 			t.Fatalf("%s: no Model IDs section:\n%s", path, usage)
 		}
@@ -31,16 +31,16 @@ func TestAIFlagHelp(t *testing.T) {
 			if strings.Contains(flags, name) {
 				t.Errorf("%s: %s listed under Flags", path, name)
 			}
-			if !strings.Contains(ai, name) {
+			if !strings.Contains(aiFlags, name) {
 				t.Errorf("%s: %s missing from AI Flags", path, name)
 			}
 		}
-		for _, want := range []string{verifier.OrList(verifier.ProviderNames()), verifier.OrList(verifier.ReasoningEfforts), "env: VIBIUM_AI_PROVIDER", "env: VIBIUM_AI_MODEL"} {
-			if !strings.Contains(ai, want) {
+		for _, want := range []string{ai.OrList(ai.ProviderNames()), ai.OrList(ai.ReasoningEfforts), "env: VIBIUM_AI_PROVIDER", "env: VIBIUM_AI_MODEL"} {
+			if !strings.Contains(aiFlags, want) {
 				t.Errorf("%s: AI Flags missing %q", path, want)
 			}
 		}
-		for _, p := range verifier.Providers {
+		for _, p := range ai.Providers {
 			if !strings.Contains(models, p.Name) || (p.ModelsURL != "" && !strings.Contains(models, p.ModelsURL)) {
 				t.Errorf("%s: Model IDs missing %s", path, p.Name)
 			}
@@ -52,8 +52,8 @@ func TestAIFlagHelp(t *testing.T) {
 		t.Errorf("ready browser has no AI flags but shows their sections:\n%s", usage)
 	}
 
-	ai, _, _ := root.Find([]string{"ready", "ai"})
-	if !slices.Equal(ai.ValidArgs, verifier.ProviderNames()) {
-		t.Errorf("ready ai ValidArgs %v, want %v", ai.ValidArgs, verifier.ProviderNames())
+	aiFlags, _, _ := root.Find([]string{"ready", "ai"})
+	if !slices.Equal(aiFlags.ValidArgs, ai.ProviderNames()) {
+		t.Errorf("ready ai ValidArgs %v, want %v", aiFlags.ValidArgs, ai.ProviderNames())
 	}
 }

@@ -1,4 +1,4 @@
-package verifier
+package ai
 
 import (
 	"context"
@@ -14,7 +14,7 @@ const ProbeTimeout = 60 * time.Second
 // Probe checks the real provider protocol with a synthetic, side-effect-free
 // tool. It uses the same request transport and verdict parser as Check, but
 // never observes a browser, opens an archive, or inherits builder context.
-func (v *OpenAI) Probe(ctx context.Context, config Config) error {
+func (v *Model) Probe(ctx context.Context, config Config) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}

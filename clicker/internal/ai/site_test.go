@@ -1,4 +1,4 @@
-package verifier
+package ai
 
 import (
 	"context"
@@ -109,18 +109,5 @@ func TestParseSiteURLRules(t *testing.T) {
 		if _, err := ParseSiteURL(invalid); err == nil {
 			t.Fatalf("%s accepted", invalid)
 		}
-	}
-}
-
-func TestCheckRequestSiteValidation(t *testing.T) {
-	config := Config{Provider: "local", Model: "m"}
-	if err := (Request{Claim: "c", Record: "trace.zip", BaseSite: "http://localhost:3000", Config: config}).Validate(); err == nil {
-		t.Fatal("record combined with a site under test was accepted")
-	}
-	if err := (Request{Claim: "c", BaseSite: "not a url", Config: config}).Validate(); err == nil {
-		t.Fatal("invalid site URL was accepted")
-	}
-	if err := (Request{Claim: "c", BaseSite: "http://localhost:3000", Config: config}).Validate(); err != nil {
-		t.Fatal(err)
 	}
 }

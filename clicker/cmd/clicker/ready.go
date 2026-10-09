@@ -11,9 +11,9 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/envfile"
 	"github.com/vibium/clicker/internal/paths"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 type setupCheck struct {
@@ -51,12 +51,12 @@ func newReadyCmd() *cobra.Command {
 		Example: "  vibium ready\n  # Checks browser installation and configured AI; reports fixes or READY.\n  vibium ready --json\n  # Structured readiness results; exit 0 when requested checks pass, otherwise 1.",
 		Args:    cobra.NoArgs,
 	}
-	ai := &cobra.Command{
+	aiCmd := &cobra.Command{
 		Use: "ai [provider]", Short: "Test AI configuration and a provider tool round-trip without a browser",
 		Long:      "Require valid AI configuration and test authentication, model access, tool calling, and a structured response.\nMakes up to two model requests (API charges may apply). Does not launch a browser.\nChanging provider requires --model; per-call options do not change defaults.",
 		Example:   "  vibium ready ai\n  # Tests the configured provider and model.\n  vibium ready ai anthropic --model your-model\n  # Tests Anthropic with the supplied model and ANTHROPIC_API_KEY.\n  vibium ready ai xai --model grok-4\n  # Tests xAI with the supplied model and XAI_API_KEY.\n  vibium ready ai --json\n  # Prints the provider checks as JSON.",
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: verifier.ProviderNames(),
+		ValidArgs: ai.ProviderNames(),
 	}
 	browserCmd := &cobra.Command{
 		Use: "browser [engine]", Short: "Check installed browser executable files without launching them",
@@ -64,15 +64,15 @@ func newReadyCmd() *cobra.Command {
 		Example: "  vibium ready browser\n  # Checks the default/selected installation; other discovered installations are informational.\n  vibium ready browser firefox --channel beta\n  # Checks Firefox beta installation without launching it or changing defaults.\n  vibium ready browser chrome --json\n  # Structured installation results; browser connection is reported as skipped.",
 		Args:    cobra.MaximumNArgs(1), ValidArgs: []string{"chrome", "firefox"},
 	}
-	root.AddCommand(ai, browserCmd)
+	root.AddCommand(aiCmd, browserCmd)
 	addModelFlags(root)
-	addModelFlags(ai)
-	for _, cmd := range []*cobra.Command{root, ai, browserCmd} {
+	addModelFlags(aiCmd)
+	for _, cmd := range []*cobra.Command{root, aiCmd, browserCmd} {
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			cmd.SetContext(ctx)
-			result := runReadiness(cmd, args, (&verifier.Model{}).Probe)
+			result := runReadiness(cmd, args, (&ai.Model{}).Probe)
 			writeReadiness(cmd, result)
 			if !result.Ready {
 				os.Exit(1)
@@ -82,7 +82,7 @@ func newReadyCmd() *cobra.Command {
 	return root
 }
 
-func runReadiness(cmd *cobra.Command, args []string, aiProbe func(context.Context, verifier.Config) error) setupResult {
+func runReadiness(cmd *cobra.Command, args []string, aiProbe func(context.Context, ai.Config) error) setupResult {
 	scope := cmd.Name()
 	if scope == "ready" {
 		scope = "all"
@@ -112,7 +112,7 @@ func runReadiness(cmd *cobra.Command, args []string, aiProbe func(context.Contex
 			aiRequested = aiRequested || os.Getenv("VIBIUM_AI_"+key) != ""
 		}
 		if aiRequested {
-			config, _ := verifier.ResolveConfig("check", overrides)
+			config, _ := ai.ResolveConfig("check", overrides)
 			if config.Validate() == nil && !jsonOutput {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Testing AI provider (up to two model requests)...")
 			}

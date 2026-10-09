@@ -8,17 +8,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 type fixtureTools struct{ calls int }
 
-func (f *fixtureTools) Tools() []verifier.Tool {
-	return []verifier.Tool{{Name: "browser_click", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}}}
+func (f *fixtureTools) Tools() []ai.Tool {
+	return []ai.Tool{{Name: "browser_click", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}}}
 }
-func (f *fixtureTools) Execute(_ context.Context, name string, args map[string]interface{}) (verifier.Observation, error) {
+func (f *fixtureTools) Execute(_ context.Context, name string, args map[string]interface{}) (ai.Observation, error) {
 	f.calls++
-	return verifier.Observation{Text: "goal observed"}, nil
+	return ai.Observation{Text: "goal observed"}, nil
 }
 // The result arrives as a return_result tool call and its arguments are the
 // result; no free-text JSON parse is involved.
@@ -26,12 +26,12 @@ func TestRunResultViaToolCall(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []verifier.Evidence{{Type: "observation", Summary: "Goal observed"}}})
+		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []ai.Evidence{{Type: "observation", Summary: "Goal observed"}}})
 		call := map[string]interface{}{"id": "r1", "type": "function", "function": map[string]interface{}{"name": "return_result", "arguments": string(result)}}
 		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": "tool_calls", "message": map[string]interface{}{"role": "assistant", "tool_calls": []interface{}{call}}}}})
 	}))
 	defer server.Close()
-	req := Request{Goal: "the real goal", Config: verifier.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
+	req := Request{Goal: "the real goal", Config: ai.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
 	result, err := Run(context.Background(), req, &fixtureTools{})
 	if err != nil || result.Status != "completed" || result.Goal != req.Goal || requests != 1 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
@@ -44,7 +44,7 @@ func TestRunRepairsInvalidResult(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []verifier.Evidence{{Type: "observation", Summary: "Goal observed"}}})
+		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []ai.Evidence{{Type: "observation", Summary: "Goal observed"}}})
 		content := string(result)
 		if requests == 1 {
 			content = "Here is the result: " + content
@@ -52,7 +52,7 @@ func TestRunRepairsInvalidResult(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": "stop", "message": map[string]interface{}{"role": "assistant", "content": content}}}})
 	}))
 	defer server.Close()
-	req := Request{Goal: "the real goal", Config: verifier.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
+	req := Request{Goal: "the real goal", Config: ai.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
 	result, err := Run(context.Background(), req, &fixtureTools{})
 	if err != nil || result.Status != "completed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
@@ -87,9 +87,9 @@ func TestRunContractAndLimits(t *testing.T) {
 					if scenario == "wrong verdict" {
 						status = "passed"
 					}
-					evidence := []verifier.Evidence{}
+					evidence := []ai.Evidence{}
 					if scenario != "no evidence" {
-						evidence = append(evidence, verifier.Evidence{Type: "observation", Summary: "Goal observed"})
+						evidence = append(evidence, ai.Evidence{Type: "observation", Summary: "Goal observed"})
 					}
 					result, _ := json.Marshal(Result{Status: status, Goal: "invented", Summary: "Fixture result", Evidence: evidence})
 					message["content"] = string(result)
@@ -97,7 +97,7 @@ func TestRunContractAndLimits(t *testing.T) {
 				json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": reason, "message": message}}})
 			}))
 			defer server.Close()
-			req := Request{Goal: "the real goal", Config: verifier.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
+			req := Request{Goal: "the real goal", Config: ai.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
 			tools := &fixtureTools{}
 			result, err := Run(context.Background(), req, tools)
 			if scenario == "wrong verdict" || scenario == "no evidence" {
@@ -109,7 +109,7 @@ func TestRunContractAndLimits(t *testing.T) {
 			if err != nil || result.Goal != req.Goal {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
-			if scenario == "limit" && (result.Status != "not_completed" || tools.calls != verifier.MaxActions+3) {
+			if scenario == "limit" && (result.Status != "not_completed" || tools.calls != ai.MaxActions+3) {
 				t.Fatal("action limit not enforced")
 			}
 			if scenario == "fresh" {
@@ -123,19 +123,19 @@ func TestRunContractAndLimits(t *testing.T) {
 
 type siteTools struct{ calls []map[string]interface{} }
 
-func (f *siteTools) Tools() []verifier.Tool {
-	return []verifier.Tool{{Name: "browser_navigate", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"url": map[string]interface{}{"type": "string"}}}}}
+func (f *siteTools) Tools() []ai.Tool {
+	return []ai.Tool{{Name: "browser_navigate", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"url": map[string]interface{}{"type": "string"}}}}}
 }
-func (f *siteTools) Execute(_ context.Context, name string, args map[string]interface{}) (verifier.Observation, error) {
+func (f *siteTools) Execute(_ context.Context, name string, args map[string]interface{}) (ai.Observation, error) {
 	call := map[string]interface{}{"name": name}
 	for k, v := range args {
 		call[k] = v
 	}
 	f.calls = append(f.calls, call)
 	if name == "browser_get_url" {
-		return verifier.Observation{Text: "https://elsewhere.example/"}, nil
+		return ai.Observation{Text: "https://elsewhere.example/"}, nil
 	}
-	return verifier.Observation{Text: "ok"}, nil
+	return ai.Observation{Text: "ok"}, nil
 }
 
 // A declared site under test is opened first, carried as a trusted input
@@ -162,13 +162,13 @@ func TestRunUsesTheSiteUnderTest(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": "tool_calls", "message": map[string]interface{}{"role": "assistant", "tool_calls": []interface{}{call}}}}})
 			return
 		}
-		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []verifier.Evidence{{Type: "observation", Summary: "Cart reached"}}})
+		result, _ := json.Marshal(Result{Status: "completed", Summary: "Fixture result", Evidence: []ai.Evidence{{Type: "observation", Summary: "Cart reached"}}})
 		call := map[string]interface{}{"id": "r1", "type": "function", "function": map[string]interface{}{"name": "return_result", "arguments": string(result)}}
 		json.NewEncoder(w).Encode(map[string]interface{}{"choices": []interface{}{map[string]interface{}{"finish_reason": "tool_calls", "message": map[string]interface{}{"role": "assistant", "tool_calls": []interface{}{call}}}}})
 	}))
 	defer server.Close()
 	tools := &siteTools{}
-	req := Request{Goal: "reach the cart", BaseSite: "http://site.example:3000", Config: verifier.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
+	req := Request{Goal: "reach the cart", BaseSite: "http://site.example:3000", Config: ai.Config{Role: "run", Provider: "local", Model: "fixture", BaseURL: server.URL}}
 	result, err := Run(context.Background(), req, tools)
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("result=%+v err=%v", result, err)

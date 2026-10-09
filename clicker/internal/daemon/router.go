@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/ai"
+	"github.com/vibium/clicker/internal/check"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
 	runop "github.com/vibium/clicker/internal/run"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 // StatusResult is returned by daemon/status.
@@ -151,7 +152,7 @@ func (d *Daemon) route(req agent.Request, notify func(method string)) (interface
 			return nil, &agent.Error{Code: agent.InternalError, Message: err.Error()}
 		}
 		return result, nil
-	case verifier.Method:
+	case check.Method:
 		var p checkParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return nil, &agent.Error{Code: agent.InvalidParams, Message: "Invalid verification request"}
@@ -159,7 +160,7 @@ func (d *Daemon) route(req agent.Request, notify func(method string)) (interface
 		d.mu.Lock()
 		d.handlers.SetLaunchNotify(func() { notify(launchingBrowserMethod) })
 		d.handlers.SetInstallNotify(func() { notify(installingBrowserMethod) })
-		var result verifier.Result
+		var result ai.Result
 		var err error
 		if p.CLI != nil {
 			result, err = d.handlers.CheckCLI(p.Request, *p.CLI)

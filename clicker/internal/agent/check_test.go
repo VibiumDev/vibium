@@ -3,8 +3,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/api"
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/check"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestVerifierToolBoundary(t *testing.T) {
-	v := verifier.NewModelToolExecutor(&modelTools{h: &Handlers{}}, verifier.ToolPolicy{}, true)
+	v := ai.NewModelToolExecutor(&modelTools{h: &Handlers{}}, ai.ToolPolicy{}, true)
 	for _, tc := range []struct {
 		name string
 		args map[string]interface{}
@@ -47,9 +48,9 @@ func TestVerifierToolBoundary(t *testing.T) {
 // as an ActionError the loop feeds to the model, not a fatal error that
 // aborts the whole check (#619).
 func TestScrollLimitIsRecoverable(t *testing.T) {
-	v := verifier.NewModelToolExecutor(&modelTools{h: &Handlers{}}, verifier.ToolPolicy{}, true)
+	v := ai.NewModelToolExecutor(&modelTools{h: &Handlers{}}, ai.ToolPolicy{}, true)
 	_, err := v.Execute(context.Background(), "browser_scroll", map[string]interface{}{"amount": float64(50)})
-	var action *verifier.ActionError
+	var action *ai.ActionError
 	if !errors.As(err, &action) {
 		t.Fatalf("got %v, want ActionError", err)
 	}
@@ -123,8 +124,8 @@ func TestCheckRecordingPreservesActiveRecorder(t *testing.T) {
 }
 
 func TestCheckCLIRejectsInvalidSetupBeforeLaunch(t *testing.T) {
-	config := verifier.Config{Provider: "openai", Model: "model", APIKey: "key"}
-	for _, req := range []verifier.Request{
+	config := ai.Config{Provider: "openai", Model: "model", APIKey: "key"}
+	for _, req := range []check.Request{
 		{Claim: "claim"},
 		{Claim: "", Config: config},
 		{Claim: "claim", Record: "record.zip", Config: config},

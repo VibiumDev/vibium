@@ -1,4 +1,4 @@
-package verifier
+package ai
 
 import (
 	"context"
@@ -53,10 +53,10 @@ func TestProbeFreshToolRoundTrip(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	config := testRequest(server.URL).Config
+	config := testConfig(server.URL)
 	config.ReasoningEffort = "none"
 	for i := 0; i < 2; i++ {
-		if err := (&OpenAI{}).Probe(context.Background(), config); err != nil {
+		if err := (&Model{}).Probe(context.Background(), config); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -110,7 +110,7 @@ func TestProbeRejectsFalseReadiness(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			err := (&OpenAI{}).Probe(context.Background(), testRequest(server.URL).Config)
+			err := (&Model{}).Probe(context.Background(), testConfig(server.URL))
 			if err == nil || strings.Contains(err.Error(), "test-secret") {
 				t.Fatalf("unsafe or absent error: %v", err)
 			}
@@ -126,7 +126,7 @@ func TestProbeCancellation(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	if err := (&OpenAI{}).Probe(ctx, testRequest(server.URL).Config); err == nil {
+	if err := (&Model{}).Probe(ctx, testConfig(server.URL)); err == nil {
 		t.Fatal("accepted timeout")
 	}
 }

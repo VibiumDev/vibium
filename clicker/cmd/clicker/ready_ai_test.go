@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 func TestReadyAIReportsAllConfigurationProblemsWithoutProbing(t *testing.T) {
 	secret := "secret-do-not-print"
-	config := verifier.Config{Provider: "openai", BaseURL: "https://user:" + secret + "@example.test", ReasoningEffort: secret}
-	result := checkVerifierSetup(context.Background(), config, func(context.Context, verifier.Config) error {
+	config := ai.Config{Provider: "openai", BaseURL: "https://user:" + secret + "@example.test", ReasoningEffort: secret}
+	result := checkVerifierSetup(context.Background(), config, func(context.Context, ai.Config) error {
 		t.Fatal("contacted provider with invalid configuration")
 		return nil
 	})
@@ -48,9 +48,9 @@ func TestReadyAIProviderOutcomeAndFixes(t *testing.T) {
 		{"verification timeout", "connectivity"}, {"invalid JSON verdict", "function tools"},
 	} {
 		t.Run(tc.problem, func(t *testing.T) {
-			config := verifier.Config{Provider: "openai", Model: "test-model", APIKey: "secret"}
+			config := ai.Config{Provider: "openai", Model: "test-model", APIKey: "secret"}
 			called := false
-			result := checkVerifierSetup(context.Background(), config, func(_ context.Context, received verifier.Config) error {
+			result := checkVerifierSetup(context.Background(), config, func(_ context.Context, received ai.Config) error {
 				called = true
 				if received != config {
 					t.Error("configuration changed")
@@ -71,8 +71,8 @@ func TestReadyAIProviderOutcomeAndFixes(t *testing.T) {
 func TestReadyAIRequiresProviderBeforeAssessingDependentSettings(t *testing.T) {
 	for _, provider := range []string{"", "unsupported-secret-provider"} {
 		for _, key := range []string{"", "secret-key"} {
-			config := verifier.Config{Provider: provider, APIKey: key}
-			result := checkVerifierSetup(context.Background(), config, func(context.Context, verifier.Config) error {
+			config := ai.Config{Provider: provider, APIKey: key}
+			result := checkVerifierSetup(context.Background(), config, func(context.Context, ai.Config) error {
 				t.Fatal("contacted provider without prerequisites")
 				return nil
 			})
@@ -103,7 +103,7 @@ func TestReadyAIRequiresProviderBeforeAssessingDependentSettings(t *testing.T) {
 }
 
 func TestReadyAIStillReportsMalformedSettingsWithoutProvider(t *testing.T) {
-	result := checkVerifierSetup(context.Background(), verifier.Config{BaseURL: "not-a-url", ReasoningEffort: "invalid"}, func(context.Context, verifier.Config) error {
+	result := checkVerifierSetup(context.Background(), ai.Config{BaseURL: "not-a-url", ReasoningEffort: "invalid"}, func(context.Context, ai.Config) error {
 		t.Fatal("contacted provider with malformed settings")
 		return nil
 	})

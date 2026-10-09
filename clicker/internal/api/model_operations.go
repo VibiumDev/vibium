@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vibium/clicker/internal/ai"
+	"github.com/vibium/clicker/internal/check"
 	runop "github.com/vibium/clicker/internal/run"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 type modelReply struct {
@@ -30,7 +31,7 @@ func (s *BrowserSession) replyToModel(id int, result interface{}, err error) boo
 // therefore service an archive without owning or launching a browser.
 func (r *Router) handleRecordedCheck(client ClientTransport, raw string) bool {
 	var cmd bidiCommand
-	if json.Unmarshal([]byte(raw), &cmd) != nil || cmd.Method != verifier.Method {
+	if json.Unmarshal([]byte(raw), &cmd) != nil || cmd.Method != check.Method {
 		return false
 	}
 	if _, exists := cmd.Params["record"]; !exists {
@@ -50,25 +51,25 @@ func (r *Router) handleRecordedCheck(client ClientTransport, raw string) bool {
 	}()
 	return true
 }
-func recordedCheck(params map[string]interface{}) (verifier.Result, error) {
+func recordedCheck(params map[string]interface{}) (ai.Result, error) {
 	for k := range params {
-		if k != "claim" && k != "record" && !verifier.IsOverride(k) {
-			return verifier.Result{}, fmt.Errorf("record cannot be combined with live session selection or other options")
+		if k != "claim" && k != "record" && !ai.IsOverride(k) {
+			return ai.Result{}, fmt.Errorf("record cannot be combined with live session selection or other options")
 		}
 	}
 	claim, ok := params["claim"].(string)
 	if !ok {
-		return verifier.Result{}, fmt.Errorf("claim is required")
+		return ai.Result{}, fmt.Errorf("claim is required")
 	}
 	record, ok := params["record"].(string)
 	if !ok || record == "" {
-		return verifier.Result{}, fmt.Errorf("record must be a nonempty path")
+		return ai.Result{}, fmt.Errorf("record must be a nonempty path")
 	}
-	config, err := verifier.ConfigFromParams("check", params)
+	config, err := ai.ConfigFromParams("check", params)
 	if err != nil {
-		return verifier.Result{}, err
+		return ai.Result{}, err
 	}
-	return verifier.CheckRecord(context.Background(), verifier.Request{Claim: claim, Record: record, Config: config})
+	return check.CheckRecord(context.Background(), check.Request{Claim: claim, Record: record, Config: config})
 }
 
 func (r *Router) handleCheck(session *BrowserSession, cmd bidiCommand) {
@@ -79,12 +80,12 @@ func (r *Router) handleRun(session *BrowserSession, cmd bidiCommand) {
 }
 
 func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, isRun bool) {
-	label, method, inputKey, role := "Check", verifier.Method, "claim", "check"
+	label, method, inputKey, role := "Check", check.Method, "claim", "check"
 	if isRun {
 		label, method, inputKey, role = "Run", runop.Method, "goal", "run"
 	}
 	for k := range cmd.Params {
-		if k != inputKey && k != "context" && k != "baseURL" && !verifier.IsOverride(k) {
+		if k != inputKey && k != "context" && k != "baseURL" && !ai.IsOverride(k) {
 			r.sendError(session, cmd.ID, fmt.Errorf("unsupported %s argument", label))
 			return
 		}
@@ -112,36 +113,36 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 		r.sendError(session, cmd.ID, fmt.Errorf("live %s requires a local browser", label))
 		return
 	}
-	config, err := verifier.ConfigFromParams(role, cmd.Params)
+	config, err := ai.ConfigFromParams(role, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-	var run func(context.Context, verifier.ToolExecutor) (verifier.RecordedResult, error)
+	var run func(context.Context, ai.ToolExecutor) (ai.RecordedResult, error)
 	if isRun {
 		req := runop.Request{Goal: claim, BaseSite: baseSite, Config: config}
 		if err := req.Validate(); err != nil {
 			r.sendError(session, cmd.ID, err)
 			return
 		}
-		run = func(ctx context.Context, tools verifier.ToolExecutor) (verifier.RecordedResult, error) {
+		run = func(ctx context.Context, tools ai.ToolExecutor) (ai.RecordedResult, error) {
 			return runop.Run(ctx, req, tools)
 		}
 	} else {
-		req := verifier.Request{Claim: claim, BaseSite: baseSite, Config: config}
+		req := check.Request{Claim: claim, BaseSite: baseSite, Config: config}
 		if err := req.Validate(); err != nil {
 			r.sendError(session, cmd.ID, err)
 			return
 		}
-		run = func(ctx context.Context, tools verifier.ToolExecutor) (verifier.RecordedResult, error) {
-			return (&verifier.Model{}).Check(ctx, req, tools)
+		run = func(ctx context.Context, tools ai.ToolExecutor) (ai.RecordedResult, error) {
+			return check.Check(ctx, req, tools)
 		}
 	}
 	session.modelMu.Lock()
 	defer session.modelMu.Unlock()
 	session.dispatchMu.Lock()
 	defer session.dispatchMu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), verifier.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ai.Timeout)
 	defer cancel()
 	session.mu.Lock()
 	session.modelContext = ctx
@@ -166,7 +167,7 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 		group = recorder.StartGroup(label + ": " + claim)
 		recorder.SetGroupParams(group, map[string]interface{}{"name": label + ": " + claim, "method": method, "modelConfig": config.RecordingMetadata(), inputKey: claim})
 	}
-	executor := verifier.NewModelToolExecutor(&apiModelTools{r: r, session: session, page: page, recorder: recorder}, verifier.ToolPolicy{CredentialInput: isRun}, false)
+	executor := ai.NewModelToolExecutor(&apiModelTools{r: r, session: session, page: page, recorder: recorder}, ai.ToolPolicy{CredentialInput: isRun}, false)
 	result, err := run(ctx, executor)
 	if group != "" {
 		recorder.StopGroup()
@@ -206,7 +207,7 @@ type apiModelTools struct {
 func (v *apiModelTools) ProbeSecret(ctx context.Context, selector, name string) (bool, error) {
 	// CallScript returns strings, so the shared bool-returning probe is
 	// wrapped in String().
-	script := `(selector) => String((` + verifier.SecretProbeJS(PierceQueryJS()) + `)(selector))`
+	script := `(selector) => String((` + ai.SecretProbeJS(PierceQueryJS()) + `)(selector))`
 	data, err := CallScript(NewAPISession(v.r, v.session, v.page), v.page, script, []map[string]interface{}{{"type": "string", "value": selector}})
 	if err != nil {
 		return false, err
@@ -218,7 +219,7 @@ func (v *apiModelTools) ProbeSecret(ctx context.Context, selector, name string) 
 	return secret == "true", nil
 }
 
-func (v *apiModelTools) Dispatch(ctx context.Context, name string, args map[string]interface{}) (verifier.Observation, error) {
+func (v *apiModelTools) Dispatch(ctx context.Context, name string, args map[string]interface{}) (ai.Observation, error) {
 	params := map[string]interface{}{"context": v.page}
 	for k, x := range args {
 		params[k] = x
@@ -311,20 +312,20 @@ func (v *apiModelTools) Dispatch(ctx context.Context, name string, args map[stri
 			v.recorder.RecordCallOutcome(callID, map[string]interface{}{"observation": "Screenshot captured"}, reply.err)
 		} else {
 			data, _ := json.Marshal(reply.result)
-			v.recorder.RecordCallOutcome(callID, map[string]interface{}{"observation": verifier.Clip(string(data))}, reply.err)
+			v.recorder.RecordCallOutcome(callID, map[string]interface{}{"observation": ai.Clip(string(data))}, reply.err)
 		}
 	}
 	if reply.err != nil {
-		return verifier.Observation{}, &verifier.ActionError{Err: reply.err}
+		return ai.Observation{}, &ai.ActionError{Err: reply.err}
 	}
 	if name == "browser_screenshot" {
 		m, _ := reply.result.(map[string]interface{})
 		data, _ := m["data"].(string)
-		if len(data) > verifier.MaxImage {
-			return verifier.Observation{Text: "Screenshot exceeds payload limit"}, nil
+		if len(data) > ai.MaxImage {
+			return ai.Observation{Text: "Screenshot exceeds payload limit"}, nil
 		}
-		return verifier.Observation{Text: "Screenshot captured", Image: data}, nil
+		return ai.Observation{Text: "Screenshot captured", Image: data}, nil
 	}
 	data, _ := json.Marshal(reply.result)
-	return verifier.Observation{Text: verifier.Clip(string(data))}, nil
+	return ai.Observation{Text: ai.Clip(string(data))}, nil
 }

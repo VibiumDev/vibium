@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/daemon"
 	runop "github.com/vibium/clicker/internal/run"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 func newRunCmd() *cobra.Command {
@@ -52,7 +52,7 @@ func runGoal(cmd *cobra.Command, goal, output string, keepOpen bool) (*runop.Res
 	if err := files.validate(cmd); err != nil {
 		return nil, err
 	}
-	config, err := verifier.ResolveConfig("run", modelOverrides(cmd))
+	config, err := ai.ResolveConfig("run", modelOverrides(cmd))
 	if err != nil {
 		return nil, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
