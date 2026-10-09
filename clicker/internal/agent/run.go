@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/vibium/clicker/internal/ai"
 	runop "github.com/vibium/clicker/internal/run"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 func (h *Handlers) RunCLI(req runop.Request, options OperationCLIOptions) (runop.Result, error) {
@@ -19,7 +19,7 @@ func (h *Handlers) Run(req runop.Request) (runop.Result, error) {
 	if err := req.Validate(); err != nil {
 		return runop.Result{}, err
 	}
-	result, err := h.runLiveOperation("Run", runop.Method, "goal", req.Goal, req.Output, req.Config, verifier.ToolPolicy{CredentialInput: true}, func(ctx context.Context, tools verifier.ToolExecutor) (verifier.RecordedResult, error) {
+	result, err := h.runLiveOperation("Run", runop.Method, "goal", req.Goal, req.Output, req.Config, ai.ToolPolicy{CredentialInput: true}, func(ctx context.Context, tools ai.ToolExecutor) (ai.RecordedResult, error) {
 		return runop.Run(ctx, req, tools)
 	})
 	if err != nil {
@@ -29,7 +29,7 @@ func (h *Handlers) Run(req runop.Request) (runop.Result, error) {
 }
 func (h *Handlers) runMCP(args map[string]interface{}) (*ToolsCallResult, error) {
 	for key := range args {
-		if key != "goal" && key != "page" && key != "baseURL" && !verifier.IsOverride(key) {
+		if key != "goal" && key != "page" && key != "baseURL" && !ai.IsOverride(key) {
 			return nil, fmt.Errorf("unsupported run argument")
 		}
 	}
@@ -44,7 +44,7 @@ func (h *Handlers) runMCP(args map[string]interface{}) (*ToolsCallResult, error)
 			return nil, fmt.Errorf("baseURL must be a nonempty site URL")
 		}
 	}
-	config, err := verifier.ConfigFromParams("run", args)
+	config, err := ai.ConfigFromParams("run", args)
 	if err != nil {
 		return nil, err
 	}

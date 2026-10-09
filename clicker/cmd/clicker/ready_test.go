@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 func readyTestCommand(t *testing.T, scope string) *cobra.Command {
@@ -43,7 +43,7 @@ func TestReadyOptionalAIAndRequiredScopes(t *testing.T) {
 	for _, scope := range []string{"all", "browser", "ai"} {
 		t.Run(scope, func(t *testing.T) {
 			cmd := readyTestCommand(t, scope)
-			result := runReadiness(cmd, nil, func(context.Context, verifier.Config) error { t.Fatal("unconfigured AI was contacted"); return nil })
+			result := runReadiness(cmd, nil, func(context.Context, ai.Config) error { t.Fatal("unconfigured AI was contacted"); return nil })
 			if result.Ready != (scope != "ai") {
 				t.Fatalf("unexpected readiness: %+v", result)
 			}
@@ -68,7 +68,7 @@ func TestReadyReportsBrowserFailureAndStillProbesConfiguredAI(t *testing.T) {
 	t.Setenv("VIBIUM_AI_MODEL", "fixture")
 	t.Setenv("VIBIUM_ENGINE_PATH", filepath.Join(t.TempDir(), "missing-firefox"))
 	called := false
-	result := runReadiness(cmd, nil, func(context.Context, verifier.Config) error { called = true; return nil })
+	result := runReadiness(cmd, nil, func(context.Context, ai.Config) error { called = true; return nil })
 	if result.Ready || !called {
 		t.Fatalf("unexpected readiness: %+v", result)
 	}
@@ -90,7 +90,7 @@ func TestReadyProviderSelectionDoesNotMutateDefaults(t *testing.T) {
 	if err := cmd.ParseFlags([]string{"--model", "selected-model"}); err != nil {
 		t.Fatal(err)
 	}
-	result := runReadiness(cmd, []string{"local"}, func(_ context.Context, c verifier.Config) error {
+	result := runReadiness(cmd, []string{"local"}, func(_ context.Context, c ai.Config) error {
 		if c.Provider != "local" || c.Model != "selected-model" {
 			t.Fatal("provider override lost")
 		}

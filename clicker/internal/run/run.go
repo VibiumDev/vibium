@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 const Method = "vibium:run.run"
@@ -19,16 +19,16 @@ type Request struct {
 	Output string `json:"output,omitempty"`
 	// BaseSite is the site under test (#575), distinct from the AI provider
 	// endpoint in Config.BaseURL.
-	BaseSite string          `json:"baseURL,omitempty"`
-	Config   verifier.Config `json:"config"`
+	BaseSite string    `json:"baseURL,omitempty"`
+	Config   ai.Config `json:"config"`
 }
 
 func (r Request) Validate() error {
-	if strings.TrimSpace(r.Goal) == "" || len(r.Goal) > verifier.MaxClaim {
-		return fmt.Errorf("run requires a nonempty goal of at most %d bytes", verifier.MaxClaim)
+	if strings.TrimSpace(r.Goal) == "" || len(r.Goal) > ai.MaxClaim {
+		return fmt.Errorf("run requires a nonempty goal of at most %d bytes", ai.MaxClaim)
 	}
 	if r.BaseSite != "" {
-		if _, err := verifier.ParseSiteURL(r.BaseSite); err != nil {
+		if _, err := ai.ParseSiteURL(r.BaseSite); err != nil {
 			return err
 		}
 	}
@@ -36,14 +36,14 @@ func (r Request) Validate() error {
 }
 
 type Result struct {
-	Status   string              `json:"status"`
-	Goal     string              `json:"goal"`
-	Summary  string              `json:"summary"`
-	Evidence []verifier.Evidence `json:"evidence"`
+	Status   string        `json:"status"`
+	Goal     string        `json:"goal"`
+	Summary  string        `json:"summary"`
+	Evidence []ai.Evidence `json:"evidence"`
 }
 
 func (r Result) Verdict() string { return strings.ToUpper(r.Status) }
-func (r Result) RecordingSummary() (string, string, []verifier.Evidence) {
+func (r Result) RecordingSummary() (string, string, []ai.Evidence) {
 	return r.Verdict(), r.Summary, r.Evidence
 }
 func (r Result) Validate() error {
@@ -55,52 +55,52 @@ func (r Result) Validate() error {
 	if r.Status == "completed" {
 		status = "passed"
 	}
-	if err := (verifier.Result{Status: status, Summary: r.Summary, Evidence: r.Evidence}).Validate(); err != nil {
+	if err := (ai.Result{Status: status, Summary: r.Summary, Evidence: r.Evidence}).Validate(); err != nil {
 		return fmt.Errorf("invalid run summary or evidence")
 	}
 	return nil
 }
-func Run(ctx context.Context, req Request, tools verifier.ToolExecutor) (Result, error) {
+func Run(ctx context.Context, req Request, tools ai.ToolExecutor) (Result, error) {
 	if err := req.Validate(); err != nil {
 		return Result{}, err
 	}
-	op := verifier.Operation{Instruction: instruction, Input: req.Goal, InitialTools: []string{"browser_get_url", "browser_map", "browser_a11y_tree"}}
+	op := ai.Operation{Instruction: instruction, Input: req.Goal, InitialTools: []string{"browser_get_url", "browser_map", "browser_a11y_tree"}}
 	if req.BaseSite != "" {
-		base, err := verifier.ParseSiteURL(req.BaseSite)
+		base, err := ai.ParseSiteURL(req.BaseSite)
 		if err != nil {
 			return Result{}, err
 		}
-		if err := verifier.OpenSite(ctx, tools, base); err != nil {
+		if err := ai.OpenSite(ctx, tools, base); err != nil {
 			return Result{}, err
 		}
-		tools = verifier.WithSite(tools, base)
+		tools = ai.WithSite(tools, base)
 		op.Input += "\n\nSite under test: " + base.String() + " (trusted; relative navigation paths resolve against it)"
 	}
 	op.ValidateResult = func(content string) error {
 		_, err := parse(content, req.Goal)
 		return err
 	}
-	op.ResultTool = verifier.Tool{Name: "return_result", Description: "Deliver the final result for the goal. Call exactly once, when finished.", Parameters: verifier.ResultToolSchema("completed", "not_completed")}
-	outcome, err := (&verifier.Model{}).Run(ctx, req.Config, op, tools)
+	op.ResultTool = ai.Tool{Name: "return_result", Description: "Deliver the final result for the goal. Call exactly once, when finished.", Parameters: ai.ResultToolSchema("completed", "not_completed")}
+	outcome, err := (&ai.Model{}).Run(ctx, req.Config, op, tools)
 	if err != nil {
 		return Result{}, err
 	}
 	if outcome.LimitReached {
-		return Result{Status: "not_completed", Goal: req.Goal, Summary: "Run reached its action limit before completion could be established.", Evidence: []verifier.Evidence{}}, nil
+		return Result{Status: "not_completed", Goal: req.Goal, Summary: "Run reached its action limit before completion could be established.", Evidence: []ai.Evidence{}}, nil
 	}
 	return parse(outcome.Content, req.Goal)
 }
 
 // parse validates the structured result without exposing model content.
 func parse(content, goal string) (Result, error) {
-	content = verifier.StripJSONFence(content)
+	content = ai.StripJSONFence(content)
 	var result Result
-	if len(content) > verifier.MaxText || json.Unmarshal([]byte(content), &result) != nil {
+	if len(content) > ai.MaxText || json.Unmarshal([]byte(content), &result) != nil {
 		return Result{}, fmt.Errorf("run returned an invalid JSON result")
 	}
 	result.Goal = goal
 	if result.Evidence == nil {
-		result.Evidence = []verifier.Evidence{}
+		result.Evidence = []ai.Evidence{}
 	}
 	if err := result.Validate(); err != nil {
 		return Result{}, err

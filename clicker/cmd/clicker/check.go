@@ -8,8 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/ai"
+	"github.com/vibium/clicker/internal/check"
 	"github.com/vibium/clicker/internal/daemon"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 type operationFiles struct{ input, output, report string }
@@ -96,7 +97,7 @@ func newCheckCmd() *cobra.Command {
 
 // Return errors before printing them so all artifact cleanup runs before the
 // CLI's printError exits the process.
-func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *verifier.Result, err error) {
+func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *ai.Result, err error) {
 	if err = files.validate(cmd); err != nil {
 		return
 	}
@@ -104,12 +105,12 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *v
 	if files.input != "" && cmd.Flags().Changed("keep-open") {
 		return nil, fmt.Errorf("--keep-open only applies to live verification; it cannot be combined with --input")
 	}
-	config, err := verifier.ResolveConfig("check", modelOverrides(cmd))
+	config, err := ai.ResolveConfig("check", modelOverrides(cmd))
 	if err != nil {
 		return result, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
 	baseSite, _ := cmd.Flags().GetString("base-url")
-	req := verifier.Request{Claim: claim, Record: files.input, Output: files.output, BaseSite: baseSite, Config: config}
+	req := check.Request{Claim: claim, Record: files.input, Output: files.output, BaseSite: baseSite, Config: config}
 	if err = req.Validate(); err != nil {
 		return
 	}
@@ -131,7 +132,7 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *v
 	}
 	// Keep browser startup and cleanup inside the daemon's serialized Check
 	// request. A separate browser_start call cannot safely establish ownership.
-	run := func() (*verifier.Result, error) {
+	run := func() (*ai.Result, error) {
 		if files.input == "" {
 			return daemon.CheckWithBrowser(req, agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
 		}

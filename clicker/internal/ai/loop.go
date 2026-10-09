@@ -1,4 +1,4 @@
-package verifier
+package ai
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type LoopResult struct {
 const KeptScreenshots = 2
 
 // Run executes the same bounded model/tool loop for Check and Run.
-func (v *OpenAI) Run(ctx context.Context, config Config, op Operation, executor ToolExecutor) (LoopResult, error) {
+func (v *Model) Run(ctx context.Context, config Config, op Operation, executor ToolExecutor) (LoopResult, error) {
 	if err := config.Validate(); err != nil {
 		return LoopResult{}, err
 	}

@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/paths"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
-var setupProviders = verifier.ProviderNames()
+var setupProviders = ai.ProviderNames()
 
 type setupSection struct {
 	Name    string   `json:"name"`
@@ -293,9 +293,9 @@ func setupAI(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 		return setupSection{Name: "ai", Status: "failed", Message: "A model is required."}
 	}
 
-	credVar := verifier.Config{Provider: provider}.CredentialVariable()
+	credVar := ai.Config{Provider: provider}.CredentialVariable()
 	existingKey := os.Getenv(credVar)
-	// Matches verifier.Config.Checks. When Grok subscription login lands,
+	// Matches ai.Config.Checks. When Grok subscription login lands,
 	// xai becomes key-or-login here rather than key-required.
 	needsKey := provider == "openai" || provider == "xai" || provider == "anthropic" || provider == "google"
 	key := existingKey
@@ -444,10 +444,10 @@ func runSetupReadiness(cmd *cobra.Command, scope string) setupResult {
 		}
 	}
 	target.SetContext(cmd.Context())
-	probe := (&verifier.Model{}).Probe
-	config, _ := verifier.ResolveConfig("check", verifier.Overrides{})
+	probe := (&ai.Model{}).Probe
+	config, _ := ai.ResolveConfig("check", ai.Overrides{})
 	if strings.TrimSpace(config.APIKey) == "" {
-		probe = func(context.Context, verifier.Config) error { return nil }
+		probe = func(context.Context, ai.Config) error { return nil }
 	}
 	result := runReadiness(target, nil, probe)
 	if strings.TrimSpace(config.APIKey) == "" {
@@ -491,7 +491,7 @@ func runSetupReadiness(cmd *cobra.Command, scope string) setupResult {
 }
 
 func aiConfigValid() bool {
-	config, err := verifier.ConfigFromEnv()
+	config, err := ai.ConfigFromEnv()
 	return err == nil && config.Validate() == nil
 }
 

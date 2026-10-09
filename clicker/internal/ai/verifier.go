@@ -1,6 +1,6 @@
 // Package verifier runs an independent, bounded inference conversation. It has
 // no access to the builder's messages, filesystem, shell, or browser transport.
-package verifier
+package ai
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-const Method = "vibium:check.run"
 const Timeout = 3 * time.Minute
 const MaxActions = 24
 const MaxOutputTokens = 4096
@@ -204,36 +203,6 @@ func (c Config) Validate() error {
 	return nil
 }
 
-type Request struct {
-	Claim  string `json:"claim"`
-	Record string `json:"record,omitempty"` // explicit archive on the runtime host
-	Output string `json:"output,omitempty"` // optional new live recording on the runtime host
-	// BaseSite is the site under test (#575), distinct from the AI provider
-	// endpoint in Config.BaseURL.
-	BaseSite string `json:"baseURL,omitempty"`
-	// Configuration is transmitted only over the existing private daemon socket.
-	// Never pass it to the recorder, tool executor, or provider messages.
-	Config Config `json:"config"`
-}
-
-func (r Request) Validate() error {
-	if r.Record != "" && r.Output != "" {
-		return fmt.Errorf("input archive and live recording output cannot be combined")
-	}
-	if r.BaseSite != "" {
-		if r.Record != "" {
-			return fmt.Errorf("a saved-recording check has no live site to open; record and a site under test cannot be combined")
-		}
-		if _, err := ParseSiteURL(r.BaseSite); err != nil {
-			return err
-		}
-	}
-	if strings.TrimSpace(r.Claim) == "" || len(r.Claim) > MaxClaim {
-		return fmt.Errorf("check requires a nonempty claim of at most %d bytes", MaxClaim)
-	}
-	return r.Config.Validate()
-}
-
 type Evidence struct {
 	Type    string `json:"type"`
 	Summary string `json:"summary"`
@@ -319,10 +288,6 @@ type ActionError struct{ Err error }
 
 func (e *ActionError) Error() string { return e.Err.Error() }
 func (e *ActionError) Unwrap() error { return e.Err }
-
-type Verifier interface {
-	Check(context.Context, Request, ToolExecutor) (Result, error)
-}
 
 // Clip marks truncation explicitly so missing evidence is never presented as
 // an exhaustive observation. The conversion also keeps JSON valid UTF-8.

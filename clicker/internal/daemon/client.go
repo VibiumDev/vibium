@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/check"
 	"github.com/vibium/clicker/internal/paths"
 	runop "github.com/vibium/clicker/internal/run"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 // Vars, not consts, so tests can shrink them to hermetic sizes.
@@ -154,8 +155,8 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	}
 
 	responseTimeout := readTimeout
-	if method == verifier.Method || method == runop.Method {
-		responseTimeout = verifier.Timeout + 30*time.Second
+	if method == check.Method || method == runop.Method {
+		responseTimeout = ai.Timeout + 30*time.Second
 	}
 	conn.SetReadDeadline(time.Now().Add(responseTimeout))
 	// bufio.Reader grows as needed; bufio.Scanner failed with "token too long"
@@ -214,26 +215,26 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 // checkParams adds CLI lifecycle policy on the existing private connection.
 // SDK/MCP requests keep their existing browser ownership behavior.
 type checkParams struct {
-	verifier.Request
+	check.Request
 	CLI *agent.OperationCLIOptions `json:"cli,omitempty"`
 }
 
 // Check uses the same private JSON-RPC connection as every daemon command.
-func Check(req verifier.Request) (*verifier.Result, error) {
+func Check(req check.Request) (*ai.Result, error) {
 	return checkRequest(checkParams{Request: req})
 }
 
 // CheckWithBrowser lets the daemon atomically reuse or own a live browser.
-func CheckWithBrowser(req verifier.Request, options agent.OperationCLIOptions) (*verifier.Result, error) {
+func CheckWithBrowser(req check.Request, options agent.OperationCLIOptions) (*ai.Result, error) {
 	return checkRequest(checkParams{Request: req, CLI: &options})
 }
 
-func checkRequest(req checkParams) (*verifier.Result, error) {
+func checkRequest(req checkParams) (*ai.Result, error) {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("encode verification request")
 	}
-	response, err := sendRequest(verifier.Method, data)
+	response, err := sendRequest(check.Method, data)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +245,7 @@ func checkRequest(req checkParams) (*verifier.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	var result verifier.Result
+	var result ai.Result
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("invalid verification result")
 	}

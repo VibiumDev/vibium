@@ -1,6 +1,8 @@
-package verifier
+package check
 
 import (
+	"github.com/vibium/clicker/internal/ai"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +14,23 @@ import (
 	"time"
 )
 
+// message and toolCall mirror the openai-compatible wire shapes the tests
+// decode; the production versions are unexported in internal/ai.
+type message struct {
+	Role       string      `json:"role"`
+	Content    interface{} `json:"content"`
+	ToolCalls  []toolCall  `json:"tool_calls,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
+}
+type toolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
 type fakeTools struct {
 	calls    []string
 	image    bool
@@ -19,22 +38,22 @@ type fakeTools struct {
 	errAfter int // return err only once this many calls have completed
 }
 
-func (f *fakeTools) Tools() []Tool {
-	return []Tool{{Name: "browser_map", Parameters: map[string]interface{}{"type": "object"}}}
+func (f *fakeTools) Tools() []ai.Tool {
+	return []ai.Tool{{Name: "browser_map", Parameters: map[string]interface{}{"type": "object"}}}
 }
-func (f *fakeTools) Execute(ctx context.Context, name string, args map[string]interface{}) (Observation, error) {
+func (f *fakeTools) Execute(ctx context.Context, name string, args map[string]interface{}) (ai.Observation, error) {
 	f.calls = append(f.calls, name)
-	obs := Observation{Text: "observed value: America/Chicago"}
+	obs := ai.Observation{Text: "observed value: America/Chicago"}
 	if f.image && len(f.calls) > 3 {
 		obs.Image = "cG5n"
 	}
 	if f.err != nil && len(f.calls) > f.errAfter {
-		return Observation{}, f.err
+		return ai.Observation{}, f.err
 	}
 	return obs, nil
 }
 func testRequest(base string) Request {
-	return Request{Claim: "name persists", Config: Config{Provider: "openai-compatible", Model: "test-model", BaseURL: base, APIKey: "test-secret"}}
+	return Request{Claim: "name persists", Config: ai.Config{Provider: "openai-compatible", Model: "test-model", BaseURL: base, APIKey: "test-secret"}}
 }
 func answer(w http.ResponseWriter, content interface{}, calls interface{}) {
 	reason := "stop"
@@ -86,17 +105,17 @@ func TestFreshContextAndToolLoop(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	adapter := &OpenAI{}
 	for i := 0; i < 2; i++ {
 		tools := &fakeTools{}
 		req := testRequest(server.URL)
 		req.Config.ReasoningEffort = "none"
-		result, err := adapter.Check(context.Background(), req, tools)
+		result, err := Check(context.Background(), req, tools)
 		if err != nil || result.Status != "passed" || result.Claim != "name persists" || len(tools.calls) != 5 {
 			t.Fatalf("result=%+v err=%v calls=%v", result, err, tools.calls)
 		}
 	}
 }
+
 // Auto turns leave parallel tool calls at the provider default so one
 // response can batch observations; the forced result turn pins them off to
 // get exactly one verdict call. The loop executes a batch in order (#594).
@@ -146,7 +165,7 @@ func TestParallelToolCallsAllowedOutsideForcedTurns(t *testing.T) {
 	req := testRequest(server.URL)
 	req.Config.Provider = "openai"
 	tools := &fakeTools{}
-	result, err := (&OpenAI{}).Check(context.Background(), req, tools)
+	result, err := Check(context.Background(), req, tools)
 	if err != nil || result.Status != "passed" || requests != 3 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -176,7 +195,7 @@ func TestInitialObservationsIncludeVisibleText(t *testing.T) {
 	}))
 	defer server.Close()
 	tools := &fakeTools{}
-	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools); err != nil {
+	if _, err := Check(context.Background(), testRequest(server.URL), tools); err != nil {
 		t.Fatal(err)
 	}
 	if len(tools.calls) < 4 || tools.calls[3] != "browser_get_text" {
@@ -197,7 +216,7 @@ func TestVerdictDeliveredViaToolCall(t *testing.T) {
 		answer(w, nil, verdictCall("v1", verdict))
 	}))
 	defer server.Close()
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	result, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
 	if err != nil || result.Status != "passed" || result.Claim != "name persists" || requests != 1 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -225,7 +244,7 @@ func TestInvalidVerdictToolArgsReturnToModel(t *testing.T) {
 		answer(w, nil, verdictCall("v2", verdict))
 	}))
 	defer server.Close()
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	result, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
 	if err != nil || result.Status != "passed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -264,7 +283,7 @@ func TestRepairTurnForcesVerdictTool(t *testing.T) {
 			defer server.Close()
 			req := testRequest(server.URL)
 			req.Config.Provider = provider
-			result, err := (&OpenAI{}).Check(context.Background(), req, &fakeTools{})
+			result, err := Check(context.Background(), req, &fakeTools{})
 			if err != nil || result.Status != "passed" || requests != 2 {
 				t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 			}
@@ -297,7 +316,7 @@ func TestInvalidVerdictGetsOneRepairTurn(t *testing.T) {
 		answer(w, verdict, nil)
 	}))
 	defer server.Close()
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	result, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
 	if err != nil || result.Status != "passed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -309,7 +328,7 @@ func TestPersistentInvalidVerdictStillErrors(t *testing.T) {
 		answer(w, "still not the JSON you asked for", nil)
 	}))
 	defer server.Close()
-	_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	_, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
 	if err == nil || !strings.Contains(err.Error(), "invalid JSON verdict") || requests != 2 {
 		t.Fatalf("err=%v requests=%d", err, requests)
 	}
@@ -344,7 +363,7 @@ func TestProviderErrorsAndVerdicts(t *testing.T) {
 			}))
 			defer server.Close()
 			tools := &fakeTools{}
-			_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
+			_, err := Check(context.Background(), testRequest(server.URL), tools)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("err=%v", err)
 			}
@@ -378,8 +397,8 @@ func TestActionErrorReturnedToModel(t *testing.T) {
 	}))
 	defer server.Close()
 	// The 4 initial observations succeed; the model's own call fails.
-	tools := &fakeTools{err: &ActionError{Err: fmt.Errorf("failed to click: element not found")}, errAfter: 4}
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
+	tools := &fakeTools{err: &ai.ActionError{Err: fmt.Errorf("failed to click: element not found")}, errAfter: 4}
+	result, err := Check(context.Background(), testRequest(server.URL), tools)
 	if err != nil || result.Status != "passed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -390,7 +409,7 @@ func TestNonActionErrorStaysFatal(t *testing.T) {
 	}))
 	defer server.Close()
 	tools := &fakeTools{err: fmt.Errorf("browser connection lost"), errAfter: 4}
-	_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
+	_, err := Check(context.Background(), testRequest(server.URL), tools)
 	if err == nil || !strings.Contains(err.Error(), "verifier browser action") {
 		t.Fatalf("expected fatal browser action error, got: %v", err)
 	}
@@ -399,8 +418,8 @@ func TestActionBudget(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { answer(w, nil, calls("browser_map", 2)) }))
 	defer server.Close()
 	tools := &fakeTools{}
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), tools)
-	if err != nil || result.Status != "inconclusive" || len(tools.calls) != MaxActions+4 {
+	result, err := Check(context.Background(), testRequest(server.URL), tools)
+	if err != nil || result.Status != "inconclusive" || len(tools.calls) != ai.MaxActions+4 {
 		t.Fatalf("%+v %v %d", result, err, len(tools.calls))
 	}
 }
@@ -409,7 +428,7 @@ func TestTimeout(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, err := (&OpenAI{}).Check(ctx, testRequest(server.URL), &fakeTools{})
+	_, err := Check(ctx, testRequest(server.URL), &fakeTools{})
 	if err == nil || !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("%v", err)
 	}
@@ -431,7 +450,7 @@ func TestScreenshotMessages(t *testing.T) {
 		answer(w, verdict, nil)
 	}))
 	defer server.Close()
-	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
+	if _, err := Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -455,7 +474,7 @@ func TestScreenshotPruning(t *testing.T) {
 		answer(w, verdict, nil)
 	}))
 	defer server.Close()
-	if _, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
+	if _, err := Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -482,7 +501,7 @@ func TestEmptyFinalMessageNotEchoedInRepair(t *testing.T) {
 		answer(w, nil, verdictCall("v1", verdict))
 	}))
 	defer server.Close()
-	result, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	result, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
 	if err != nil || result.Status != "passed" || requests != 2 {
 		t.Fatalf("result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -492,15 +511,15 @@ func TestConfiguration(t *testing.T) {
 	t.Setenv("VIBIUM_AI_PROVIDER", "openai")
 	t.Setenv("VIBIUM_AI_MODEL", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	if _, err := ConfigFromEnv(); err == nil {
+	if _, err := ai.ConfigFromEnv(); err == nil {
 		t.Fatal("accepted missing model")
 	}
 	t.Setenv("VIBIUM_AI_MODEL", "configured-model")
-	if _, err := ConfigFromEnv(); err == nil {
+	if _, err := ai.ConfigFromEnv(); err == nil {
 		t.Fatal("accepted missing key")
 	}
 	t.Setenv("OPENAI_API_KEY", "secret")
-	if _, err := ConfigFromEnv(); err != nil {
+	if _, err := ai.ConfigFromEnv(); err != nil {
 		t.Fatal(err)
 	}
 	for _, base := range []string{"file:///tmp/provider", "http://user:secret@localhost/v1", "http://localhost/v1?key=secret"} {
@@ -508,33 +527,5 @@ func TestConfiguration(t *testing.T) {
 		if c.Validate() == nil {
 			t.Errorf("accepted %s", base)
 		}
-	}
-}
-
-func TestUnparseableProviderResponseNamesContentAndSetting(t *testing.T) {
-	for _, tc := range []struct{ name, contentType, body, want string }{
-		{name: "html page", contentType: "text/html; charset=utf-8", body: "<!doctype html><title>welcome</title>", want: "AI provider returned text/html, not JSON; check --ai-base-url / VIBIUM_AI_BASE_URL"},
-		{name: "unrecognized type", contentType: "application/x-mystery", body: "junk-body", want: "AI provider returned a non-JSON content type"},
-		{name: "json wrong shape", contentType: "application/json", body: `{"ok":true}`, want: "AI provider returned JSON that is not a chat-completions message"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", tc.contentType)
-				fmt.Fprint(w, tc.body)
-			}))
-			defer server.Close()
-			_, err := (&OpenAI{}).Check(context.Background(), testRequest(server.URL), &fakeTools{})
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("want %q in error, got: %v", tc.want, err)
-			}
-			for _, leak := range []string{"welcome", "junk-body", `"ok"`} {
-				if strings.Contains(err.Error(), leak) {
-					t.Fatal("leaked provider body")
-				}
-			}
-		})
-	}
-	if err := invalidProviderResponse(Config{Provider: "openai"}, "text/html", "a chat-completions message"); strings.Contains(err.Error(), "--ai-base-url") {
-		t.Fatal("hint should name the override only when one is in effect")
 	}
 }

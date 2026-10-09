@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
-func checkVerifierSetup(ctx context.Context, config verifier.Config, probe func(context.Context, verifier.Config) error) setupResult {
+func checkVerifierSetup(ctx context.Context, config ai.Config, probe func(context.Context, ai.Config) error) setupResult {
 	prefix := config.Prefix()
 	result := setupResult{Ready: true, Notes: []string{"AI readiness does not test browser access, screenshot support, or application behavior."}}
 	fixes := map[string]string{
@@ -29,7 +29,7 @@ func checkVerifierSetup(ctx context.Context, config verifier.Config, probe func(
 	// Present prerequisites before settings that depend on them. Keep shared
 	// validation unchanged for Run and Check.
 	order := map[string]int{prefix + "PROVIDER": 0, prefix + "MODEL": 1, config.CredentialVariable(): 2, "Grok login": 2, prefix + "BASE_URL": 3, prefix + "REASONING_EFFORT": 4}
-	slices.SortStableFunc(checks, func(a, b verifier.ConfigCheck) int { return order[a.Variable] - order[b.Variable] })
+	slices.SortStableFunc(checks, func(a, b ai.ConfigCheck) int { return order[a.Variable] - order[b.Variable] })
 	for _, check := range checks {
 		item := setupCheck{Name: check.Variable, Status: "passed", Message: "Configuration valid (value not displayed)."}
 		if check.Variable == config.CredentialVariable() && config.APIKey == "" {
@@ -84,7 +84,7 @@ func providerSetupFix(err error) string {
 	}
 }
 
-func providerSetupFixForConfig(err error, config verifier.Config) string {
+func providerSetupFixForConfig(err error, config ai.Config) string {
 	fix := strings.ReplaceAll(providerSetupFix(err), "VIBIUM_AI_", config.Prefix())
 	// Name the model the user actually configured; a hint that always names
 	// the wizard default reads as wrong advice for every other model (#621).
@@ -92,7 +92,7 @@ func providerSetupFixForConfig(err error, config verifier.Config) string {
 		fix = strings.ReplaceAll(fix, "the configured model", config.Model)
 	}
 	if config.Provider == "xai" && (strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403")) {
-		if config.CredentialSource == verifier.CredentialGrokSession {
+		if config.CredentialSource == ai.CredentialGrokSession {
 			return "Run grok login to renew the Grok CLI session, or export XAI_API_KEY."
 		}
 		return "Check XAI_API_KEY and its permissions, or sign in with grok login."

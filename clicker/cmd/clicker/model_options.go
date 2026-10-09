@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 // aiFlagGroup marks the flags help lists under "AI Flags:".
@@ -42,7 +42,7 @@ func groupFlagUsages(c *cobra.Command, ai bool) string {
 
 func aiModelIDs() string {
 	var lines []string
-	for _, p := range verifier.Providers {
+	for _, p := range ai.Providers {
 		where := p.ModelsURL
 		if where == "" {
 			where = "the model name your server serves"
@@ -54,15 +54,15 @@ func aiModelIDs() string {
 
 func addModelFlags(cmd *cobra.Command) {
 	var noEffort []string
-	for _, p := range verifier.Providers {
+	for _, p := range ai.Providers {
 		if !p.ReasoningEffort {
 			noEffort = append(noEffort, p.Name)
 		}
 	}
-	cmd.Flags().String("provider", "", "AI provider: "+verifier.OrList(verifier.ProviderNames())+" (env: VIBIUM_AI_PROVIDER); changing it requires --model and resets endpoint/effort defaults")
+	cmd.Flags().String("provider", "", "AI provider: "+ai.OrList(ai.ProviderNames())+" (env: VIBIUM_AI_PROVIDER); changing it requires --model and resets endpoint/effort defaults")
 	cmd.Flags().String("model", "", "Model ID for the provider; see Model IDs below (env: VIBIUM_AI_MODEL)")
 	cmd.Flags().String("ai-base-url", "", "AI provider API base URL, not the site under test (env: VIBIUM_AI_BASE_URL); empty resets the provider default")
-	cmd.Flags().String("reasoning-effort", "", verifier.OrList(verifier.ReasoningEfforts)+"; not for "+verifier.OrList(noEffort)+" (env: VIBIUM_AI_REASONING_EFFORT); empty uses the model default")
+	cmd.Flags().String("reasoning-effort", "", ai.OrList(ai.ReasoningEfforts)+"; not for "+ai.OrList(noEffort)+" (env: VIBIUM_AI_REASONING_EFFORT); empty uses the model default")
 	for _, name := range []string{"provider", "model", "ai-base-url", "reasoning-effort"} {
 		cmd.Flags().SetAnnotation(name, aiFlagGroup, []string{"true"})
 	}
@@ -79,8 +79,8 @@ func addModelFlags(cmd *cobra.Command) {
 	cmd.Example += example + ` --provider local --model my-model --ai-base-url http://127.0.0.1:8080/v1 --reasoning-effort ""` + "\n  # Uses these settings for one invocation; credentials still come from the environment."
 }
 
-func modelOverrides(cmd *cobra.Command) verifier.Overrides {
-	var overrides verifier.Overrides
+func modelOverrides(cmd *cobra.Command) ai.Overrides {
+	var overrides ai.Overrides
 	for name, target := range map[string]**string{"provider": &overrides.Provider, "model": &overrides.Model, "ai-base-url": &overrides.BaseURL, "reasoning-effort": &overrides.ReasoningEffort} {
 		if cmd.Flags().Changed(name) {
 			value, _ := cmd.Flags().GetString(name)

@@ -6,16 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vibium/clicker/internal/verifier"
+	"github.com/vibium/clicker/internal/ai"
 )
 
 // A scroll past the cap is model-correctable, so it must come back as an
 // ActionError the loop feeds to the model, not a fatal error that aborts the
 // whole check (#619). This is the SDK-surface twin of the agent test.
 func TestAPIScrollLimitIsRecoverable(t *testing.T) {
-	v := verifier.NewModelToolExecutor(&apiModelTools{}, verifier.ToolPolicy{}, false)
+	v := ai.NewModelToolExecutor(&apiModelTools{}, ai.ToolPolicy{}, false)
 	_, err := v.Execute(context.Background(), "browser_scroll", map[string]interface{}{"amount": float64(50)})
-	var action *verifier.ActionError
+	var action *ai.ActionError
 	if !errors.As(err, &action) {
 		t.Fatalf("got %v, want ActionError", err)
 	}

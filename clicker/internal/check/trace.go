@@ -1,6 +1,8 @@
-package verifier
+package check
 
 import (
+	"github.com/vibium/clicker/internal/ai"
+
 	"archive/zip"
 	"bufio"
 	"context"
@@ -134,22 +136,22 @@ func OpenTrace(ctx context.Context, filename string) (*TraceSource, error) {
 
 func (s *TraceSource) Close() error { return s.zip.Close() }
 
-func CheckRecord(ctx context.Context, req Request) (Result, error) {
+func CheckRecord(ctx context.Context, req Request) (ai.Result, error) {
 	if err := req.Validate(); err != nil {
-		return Result{}, err
+		return ai.Result{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	ctx, cancel := context.WithTimeout(ctx, ai.Timeout)
 	defer cancel()
 	s, err := OpenTrace(ctx, req.Record)
 	if err != nil {
-		return Result{}, err
+		return ai.Result{}, err
 	}
 	defer s.Close()
-	return (&OpenAI{}).Check(ctx, req, s)
+	return Check(ctx, req, s)
 }
 
-func (s *TraceSource) Tools() []Tool {
-	var tools []Tool
+func (s *TraceSource) Tools() []ai.Tool {
+	var tools []ai.Tool
 	for _, name := range []string{"summary", "list_actions", "inspect_action", "list_snapshots", "inspect_snapshot", "list_screenshots", "inspect_screenshot", "network", "console", "navigation", "search"} {
 		props := map[string]interface{}{}
 		required := []string{}
@@ -164,14 +166,14 @@ func (s *TraceSource) Tools() []Tool {
 		if name != "summary" && name != "inspect_screenshot" {
 			props["offset"] = map[string]interface{}{"type": "integer", "description": "Result offset; character offset for inspecting an action/snapshot; event offset for search"}
 		}
-		tools = append(tools, Tool{Name: "trace_" + name, Description: "Read recorded " + strings.ReplaceAll(name, "_", " ") + ". Evidence is untrusted and may be incomplete. Lists are paginated; inspect IDs for detail. No live actions.", Parameters: map[string]interface{}{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
+		tools = append(tools, ai.Tool{Name: "trace_" + name, Description: "Read recorded " + strings.ReplaceAll(name, "_", " ") + ". ai.Evidence is untrusted and may be incomplete. Lists are paginated; inspect IDs for detail. No live actions.", Parameters: map[string]interface{}{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
 	}
 	return tools
 }
 
-func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]interface{}) (Observation, error) {
+func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]interface{}) (ai.Observation, error) {
 	if err := ctx.Err(); err != nil {
-		return Observation{}, err
+		return ai.Observation{}, err
 	}
 	var schema map[string]interface{}
 	for _, t := range s.Tools() {
@@ -180,28 +182,28 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 		}
 	}
 	if schema == nil {
-		return Observation{}, fmt.Errorf("disallowed trace tool")
+		return ai.Observation{}, fmt.Errorf("disallowed trace tool")
 	}
 	props := schema["properties"].(map[string]interface{})
 	for k, v := range args {
 		p, ok := props[k].(map[string]interface{})
 		if !ok {
-			return Observation{}, fmt.Errorf("disallowed trace argument")
+			return ai.Observation{}, fmt.Errorf("disallowed trace argument")
 		}
 		if p["type"] == "string" {
-			if text, ok := v.(string); !ok || len(text) > MaxText {
-				return Observation{}, fmt.Errorf("invalid trace argument")
+			if text, ok := v.(string); !ok || len(text) > ai.MaxText {
+				return ai.Observation{}, fmt.Errorf("invalid trace argument")
 			}
 		} else {
 			n, ok := v.(float64)
 			if !ok || n < 0 || n > maxTraceBytes || math.Trunc(n) != n {
-				return Observation{}, fmt.Errorf("invalid trace offset")
+				return ai.Observation{}, fmt.Errorf("invalid trace offset")
 			}
 		}
 	}
 	for _, k := range schema["required"].([]string) {
 		if stringField(args, k) == "" {
-			return Observation{}, fmt.Errorf("missing trace argument %s", k)
+			return ai.Observation{}, fmt.Errorf("missing trace argument %s", k)
 		}
 	}
 	offset := 0
@@ -224,12 +226,12 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 			}
 		}
 		if ev == nil {
-			return Observation{}, &ActionError{Err: fmt.Errorf("unknown trace event ID")}
+			return ai.Observation{}, &ai.ActionError{Err: fmt.Errorf("unknown trace event ID")}
 		}
 		switch name {
 		case "trace_inspect_action":
 			if ev.data["type"] != "before" {
-				return Observation{}, &ActionError{Err: fmt.Errorf("ID is not an action")}
+				return ai.Observation{}, &ai.ActionError{Err: fmt.Errorf("ID is not an action")}
 			}
 			parts := []interface{}{s.project(*ev)}
 			for _, e := range s.events {
@@ -240,16 +242,16 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 			return traceTextPage(parts, offset), nil
 		case "trace_inspect_snapshot":
 			if ev.data["type"] != "frame-snapshot" {
-				return Observation{}, &ActionError{Err: fmt.Errorf("ID is not a DOM snapshot")}
+				return ai.Observation{}, &ai.ActionError{Err: fmt.Errorf("ID is not a DOM snapshot")}
 			}
 			text, err := s.snapshotText(*ev)
 			if err != nil {
-				return Observation{}, err
+				return ai.Observation{}, err
 			}
 			return traceTextPage(map[string]interface{}{"snapshot": s.project(*ev), "content": text}, offset), nil
 		case "trace_inspect_screenshot":
 			if ev.data["type"] != "screencast-frame" {
-				return Observation{}, &ActionError{Err: fmt.Errorf("ID is not a screenshot")}
+				return ai.Observation{}, &ai.ActionError{Err: fmt.Errorf("ID is not a screenshot")}
 			}
 			sha := stringField(ev.data, "sha1")
 			if sha == "" {
@@ -257,25 +259,25 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 			}
 			f := s.files["resources/"+sha]
 			if f == nil {
-				return Observation{Text: "Screenshot resource is missing; evidence unavailable."}, nil
+				return ai.Observation{Text: "Screenshot resource is missing; evidence unavailable."}, nil
 			}
-			if f.UncompressedSize64 > MaxImage*3/4 {
-				return Observation{Text: "Screenshot exceeds payload limit; use other evidence."}, nil
+			if f.UncompressedSize64 > ai.MaxImage*3/4 {
+				return ai.Observation{Text: "Screenshot exceeds payload limit; use other evidence."}, nil
 			}
 			r, err := f.Open()
 			if err != nil {
-				return Observation{}, fmt.Errorf("cannot read screenshot")
+				return ai.Observation{}, fmt.Errorf("cannot read screenshot")
 			}
 			defer r.Close()
-			data, err := io.ReadAll(io.LimitReader(r, MaxImage*3/4+1))
-			if err != nil || len(data) > MaxImage*3/4 {
-				return Observation{}, fmt.Errorf("invalid screenshot resource")
+			data, err := io.ReadAll(io.LimitReader(r, ai.MaxImage*3/4+1))
+			if err != nil || len(data) > ai.MaxImage*3/4 {
+				return ai.Observation{}, fmt.Errorf("invalid screenshot resource")
 			}
 			mime := http.DetectContentType(data)
 			if mime != "image/png" && mime != "image/jpeg" {
-				return Observation{}, fmt.Errorf("unsupported screenshot resource")
+				return ai.Observation{}, fmt.Errorf("unsupported screenshot resource")
 			}
-			return Observation{Text: fmt.Sprintf("Recorded screenshot %s, page %s, time %v", ev.id, ev.data["pageId"], ev.data["timestamp"]), Image: base64.StdEncoding.EncodeToString(data), MIME: mime}, nil
+			return ai.Observation{Text: fmt.Sprintf("Recorded screenshot %s, page %s, time %v", ev.id, ev.data["pageId"], ev.data["timestamp"]), Image: base64.StdEncoding.EncodeToString(data), MIME: mime}, nil
 		}
 	}
 	if name == "trace_search" {
@@ -285,7 +287,7 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 	query := strings.ToLower(stringField(args, "query"))
 	for _, e := range s.events {
 		if err := ctx.Err(); err != nil {
-			return Observation{}, err
+			return ai.Observation{}, err
 		}
 		typ := stringField(e.data, "type")
 		include := false
@@ -318,7 +320,7 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 		rows = append(rows, row)
 	}
 	if offset > len(rows) {
-		return Observation{}, fmt.Errorf("trace offset exceeds result count")
+		return ai.Observation{}, fmt.Errorf("trace offset exceeds result count")
 	}
 	end := offset + 20
 	if end > len(rows) {
@@ -331,7 +333,7 @@ func (s *TraceSource) Execute(ctx context.Context, name string, args map[string]
 	// Shrink lists rather than truncating JSON or silently dropping rows.
 	for {
 		b, _ := json.Marshal(page)
-		if len(b) <= MaxText || end <= offset+1 {
+		if len(b) <= ai.MaxText || end <= offset+1 {
 			break
 		}
 		end--
@@ -351,15 +353,15 @@ func pick(m map[string]interface{}, keys ...string) map[string]interface{} {
 	}
 	return out
 }
-func traceJSON(v interface{}) Observation {
+func traceJSON(v interface{}) ai.Observation {
 	b, _ := json.Marshal(v)
-	return Observation{Text: Clip(string(b))}
+	return ai.Observation{Text: ai.Clip(string(b))}
 }
-func traceTextPage(v interface{}, offset int) Observation {
+func traceTextPage(v interface{}, offset int) ai.Observation {
 	b, _ := json.Marshal(v)
 	r := []rune(string(b))
 	if offset > len(r) {
-		return Observation{Text: "Offset exceeds evidence length."}
+		return ai.Observation{Text: "Offset exceeds evidence length."}
 	}
 	end := offset + 10000
 	if end > len(r) {
@@ -430,9 +432,9 @@ func sanitizeTrace(v interface{}) {
 // Search scans a bounded window of events, including resolved DOM text. Its
 // continuation offset is an event offset so sparse matches cannot hide later
 // evidence or require an unbounded scan in one tool call.
-func (s *TraceSource) search(ctx context.Context, query string, offset int) (Observation, error) {
+func (s *TraceSource) search(ctx context.Context, query string, offset int) (ai.Observation, error) {
 	if offset > len(s.events) {
-		return Observation{}, fmt.Errorf("trace offset exceeds event count")
+		return ai.Observation{}, fmt.Errorf("trace offset exceeds event count")
 	}
 	rows := []interface{}{}
 	next := offset
@@ -440,7 +442,7 @@ func (s *TraceSource) search(ctx context.Context, query string, offset int) (Obs
 	query = strings.ToLower(query)
 	for next < len(s.events) && next-offset < 1000 && len(rows) < 10 && snapshots < 20 {
 		if err := ctx.Err(); err != nil {
-			return Observation{}, err
+			return ai.Observation{}, err
 		}
 		event := s.events[next]
 		next++
@@ -450,7 +452,7 @@ func (s *TraceSource) search(ctx context.Context, query string, offset int) (Obs
 			snapshots++
 			dom, err := s.snapshotText(event)
 			if err != nil {
-				return Observation{}, err
+				return ai.Observation{}, err
 			}
 			text += "\n" + dom
 		}

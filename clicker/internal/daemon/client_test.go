@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/check"
 	"github.com/vibium/clicker/internal/paths"
-	"github.com/vibium/clicker/internal/verifier"
 )
 
 // fakeDaemon listens on the session socket and serves one connection with the
@@ -181,14 +181,14 @@ func TestCheckLaunchNotificationPreservesModelBudget(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if request.Method != verifier.Method || request.Params.CLI == nil || !request.Params.CLI.KeepOpen || request.Params.Claim != "claim" {
+		if request.Method != check.Method || request.Params.CLI == nil || !request.Params.CLI.KeepOpen || request.Params.Claim != "claim" {
 			t.Error("CLI lifecycle options did not use the existing Check request")
 		}
 		fmt.Fprintf(conn, "{\"jsonrpc\":\"2.0\",\"method\":%q}\n", launchingBrowserMethod)
 		time.Sleep(600 * time.Millisecond)
 		fmt.Fprintln(conn, `{"jsonrpc":"2.0","id":1,"result":{"status":"inconclusive","claim":"claim","summary":"fixture","evidence":[]}}`)
 	})
-	result, err := CheckWithBrowser(verifier.Request{Claim: "claim"}, agent.OperationCLIOptions{KeepOpen: true})
+	result, err := CheckWithBrowser(check.Request{Claim: "claim"}, agent.OperationCLIOptions{KeepOpen: true})
 	if err != nil || result.Status != "inconclusive" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
