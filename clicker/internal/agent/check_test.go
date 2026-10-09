@@ -12,7 +12,7 @@ import (
 )
 
 func TestVerifierToolBoundary(t *testing.T) {
-	v := &modelTools{h: &Handlers{}}
+	v := verifier.NewModelToolExecutor(&modelTools{h: &Handlers{}}, verifier.ToolPolicy{}, true)
 	for _, tc := range []struct {
 		name string
 		args map[string]interface{}
@@ -47,7 +47,7 @@ func TestVerifierToolBoundary(t *testing.T) {
 // as an ActionError the loop feeds to the model, not a fatal error that
 // aborts the whole check (#619).
 func TestScrollLimitIsRecoverable(t *testing.T) {
-	v := &modelTools{h: &Handlers{}}
+	v := verifier.NewModelToolExecutor(&modelTools{h: &Handlers{}}, verifier.ToolPolicy{}, true)
 	_, err := v.Execute(context.Background(), "browser_scroll", map[string]interface{}{"amount": float64(50)})
 	var action *verifier.ActionError
 	if !errors.As(err, &action) {

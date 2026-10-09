@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	runop "github.com/vibium/clicker/internal/run"
@@ -167,7 +166,7 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 		group = recorder.StartGroup(label + ": " + claim)
 		recorder.SetGroupParams(group, map[string]interface{}{"name": label + ": " + claim, "method": method, "modelConfig": config.RecordingMetadata(), inputKey: claim})
 	}
-	executor := &apiModelTools{r: r, session: session, page: page, recorder: recorder, policy: verifier.ToolPolicy{CredentialInput: isRun}}
+	executor := verifier.NewModelToolExecutor(&apiModelTools{r: r, session: session, page: page, recorder: recorder}, verifier.ToolPolicy{CredentialInput: isRun}, false)
 	result, err := run(ctx, executor)
 	if group != "" {
 		recorder.StopGroup()
@@ -190,117 +189,39 @@ func (r *Router) handleModelOperation(session *BrowserSession, cmd bidiCommand, 
 	}
 }
 
+// apiModelTools is the pipe-surface ModelDispatcher: the shared policy in
+// verifier has already validated the call and applied the navigation,
+// scroll, timeout, and password guards; only the routing into the vibium
+// handlers and the script probe live here (#571). SDK clients manage their
+// own @e refs, so this surface passes refs=false and takes CSS selectors
+// only.
 type apiModelTools struct {
 	r        *Router
 	session  *BrowserSession
 	page     string
 	recorder *Recorder
 	nextID   int
-	policy   verifier.ToolPolicy
 }
 
-func (v *apiModelTools) Tools() []verifier.Tool {
-	var out []verifier.Tool
-	for _, name := range []string{"get_url", "map", "a11y_tree", "navigate", "reload", "click", "fill", "type", "press", "scroll", "find", "get_text", "get_value", "screenshot", "console", "network"} {
-		props := map[string]interface{}{}
-		required := []string{}
-		fields := []string{}
-		switch name {
-		case "click", "get_value", "find":
-			fields = []string{"selector"}
-		case "fill", "type":
-			fields = []string{"selector", "text"}
-		case "press":
-			fields = []string{"selector", "key"}
-		case "navigate":
-			fields = []string{"url"}
-		}
-		for _, field := range fields {
-			props[field] = map[string]interface{}{"type": "string"}
-			required = append(required, field)
-		}
-		if name == "get_text" || name == "map" {
-			props["selector"] = map[string]interface{}{"type": "string"}
-		}
-		if name == "scroll" {
-			props["direction"] = map[string]interface{}{"type": "string", "enum": []string{"up", "down", "left", "right"}}
-			props["amount"] = map[string]interface{}{"type": "number", "minimum": 0, "maximum": 10}
-		}
-		out = append(out, verifier.Tool{Name: "browser_" + name, Description: "Use existing Vibium " + name + " on the pinned page. Use CSS selectors returned by browser_map; no @refs. Console/network require an active recording.", Parameters: map[string]interface{}{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
+func (v *apiModelTools) ProbeSecret(ctx context.Context, selector, name string) (bool, error) {
+	// CallScript returns strings, so the shared bool-returning probe is
+	// wrapped in String().
+	script := `(selector) => String((` + verifier.SecretProbeJS(PierceQueryJS()) + `)(selector))`
+	data, err := CallScript(NewAPISession(v.r, v.session, v.page), v.page, script, []map[string]interface{}{{"type": "string", "value": selector}})
+	if err != nil {
+		return false, err
 	}
-	return out
+	secret, err := parseScriptResult(data)
+	if err != nil {
+		return false, err
+	}
+	return secret == "true", nil
 }
-func (v *apiModelTools) Execute(ctx context.Context, name string, args map[string]interface{}) (verifier.Observation, error) {
-	if err := ctx.Err(); err != nil {
-		return verifier.Observation{}, err
-	}
-	var schema map[string]interface{}
-	for _, t := range v.Tools() {
-		if t.Name == name {
-			schema = t.Parameters
-		}
-	}
-	if schema == nil {
-		return verifier.Observation{}, fmt.Errorf("disallowed verifier tool")
-	}
-	props := schema["properties"].(map[string]interface{})
-	params := map[string]interface{}{"context": v.page, "timeout": float64(5000)}
+
+func (v *apiModelTools) Dispatch(ctx context.Context, name string, args map[string]interface{}) (verifier.Observation, error) {
+	params := map[string]interface{}{"context": v.page}
 	for k, x := range args {
-		p, ok := props[k].(map[string]interface{})
-		if !ok {
-			return verifier.Observation{}, fmt.Errorf("disallowed verifier argument")
-		}
-		if p["type"] == "string" {
-			if _, ok := x.(string); !ok {
-				return verifier.Observation{}, fmt.Errorf("invalid verifier argument")
-			}
-		} else {
-			n, ok := x.(float64)
-			if !ok {
-				return verifier.Observation{}, fmt.Errorf("invalid verifier argument")
-			}
-			if n < 0 || n > 10 {
-				// Model-correctable, so a tool result rather than a fatal
-				// error: the model retries with a smaller amount instead of
-				// the whole check aborting (#619).
-				return verifier.Observation{}, &verifier.ActionError{Err: fmt.Errorf("scroll amount %v is outside 0 to 10; scroll again with a smaller amount, repeating the call if needed", n)}
-			}
-		}
 		params[k] = x
-	}
-	for _, k := range schema["required"].([]string) {
-		if s, ok := params[k].(string); !ok || s == "" {
-			return verifier.Observation{}, fmt.Errorf("missing verifier argument")
-		}
-	}
-	if name == "browser_navigate" {
-		u, err := url.Parse(params["url"].(string))
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return verifier.Observation{}, fmt.Errorf("verifier navigation requires HTTP(S) without credentials")
-		}
-	}
-	if name == "browser_scroll" {
-		if d, ok := params["direction"]; ok && d != "up" && d != "down" && d != "left" && d != "right" {
-			return verifier.Observation{}, fmt.Errorf("invalid scroll direction")
-		}
-	}
-	if selector, ok := params["selector"].(string); ok && selector != "" {
-		script := `(selector) => { ` + PierceQueryJS() + `; const el = pierceQuery(document,selector); return String(!!el && (el.type === 'password' || el.autocomplete === 'current-password' || el.autocomplete === 'new-password')); }`
-		data, err := CallScript(NewAPISession(v.r, v.session, v.page), v.page, script, []map[string]interface{}{{"type": "string", "value": selector}})
-		if err != nil {
-			// Usually a model-supplied selector the engine rejects; recoverable.
-			return verifier.Observation{}, &verifier.ActionError{Err: fmt.Errorf("cannot inspect verifier target")}
-		}
-		secret, err := parseScriptResult(data)
-		if err != nil {
-			return verifier.Observation{}, err
-		}
-		if secret == "true" && !v.policy.AllowsCredentialInput(name) {
-			if v.policy.CredentialInput {
-				return verifier.Observation{Text: "Password fields are unavailable for reading. Return not_completed if completion cannot be established without reading them."}, nil
-			}
-			return verifier.Observation{Text: "Password fields are unavailable; return inconclusive if required."}, nil
-		}
 	}
 	handler := v.r.handlePageURL
 	method := "vibium:page.url"
