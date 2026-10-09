@@ -31,6 +31,11 @@ func killByPid(pid int) {
 	syscall.Kill(pid, syscall.SIGKILL)
 }
 
+// killBrowserProfileProcesses is a no-op on Unix: the process-group kill in
+// Close already reaps the whole Firefox tree here. The profile sweep exists
+// only to work around the Windows launcher process re-parenting (#622).
+func killBrowserProfileProcesses(profileDir string) {}
+
 // waitForProcessDead polls until the given PID has exited or timeout is reached.
 func waitForProcessDead(pid int, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
