@@ -23,7 +23,9 @@ func fakeDaemon(t *testing.T, serve func(conn net.Conn)) {
 	if err != nil {
 		t.Fatalf("get socket path: %v", err)
 	}
-	ln, err := net.Listen("unix", socketPath)
+	// The package's own listen: a unix socket here, a named pipe on Windows,
+	// the same split the real daemon uses (#657).
+	ln, err := listen(socketPath)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
