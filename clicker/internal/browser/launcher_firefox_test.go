@@ -4,12 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
 )
 
 func TestPrepareFirefoxXDGUsesProfile(t *testing.T) {
+	// prepareFirefox only calls this on Linux; XDG user dirs mean nothing to
+	// Firefox elsewhere. Off Linux the %q-quoted backslashes also break the
+	// Contains assertion below, which is how this surfaced (#656).
+	if runtime.GOOS != "linux" {
+		t.Skip("prepareFirefoxXDG is Linux-only at its call site")
+	}
 	profile := t.TempDir()
 	config, err := prepareFirefoxXDG(profile)
 	if err != nil {
