@@ -99,11 +99,14 @@ describe('Prompt-blocked context', () => {
     await vibe.close();
   });
 
-  test('a prompt on one page does not block another page', async () => {
+  // Two pages, two navigations and a dialog poll do not fit the default 30s
+  // test timeout on a loaded CI runner (the macOS legs run the suite beside
+  // three others on 3 cores); the dialog still has to stay open and
+  // unhandled, so the poll itself cannot be replaced with a capture.
+  test('a prompt on one page does not block another page', { timeout: 60000 }, async () => {
     const blocked = await bro.newPage();
     const other = await bro.newPage();
-    await blocked.go(baseURL);
-    await other.go(baseURL);
+    await Promise.all([blocked.go(baseURL), other.go(baseURL)]);
 
     let dialogOpen = false;
     blocked.onDialog(() => { dialogOpen = true; });

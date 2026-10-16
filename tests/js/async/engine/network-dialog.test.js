@@ -511,10 +511,13 @@ describe.requires('dialogs')('Capture: dialog', () => {
     const vibe = await bro.newPage();
     await vibe.go(baseURL);
 
-    // Use setTimeout because alert() blocks eval — the dialog must fire
-    // asynchronously so capture.dialog can capture it.
-    await vibe.evaluate('setTimeout(() => alert("Hello from expect"), 50)');
-    const dialog = await vibe.capture.dialog();
+    // The trigger form arms the capture before the trigger body runs, so the
+    // alert cannot open before anyone listens (arming a 50ms fuse and then
+    // subscribing lost that race on slow runners). setTimeout because alert()
+    // blocks eval; zero delay is fine since the capture is already armed.
+    const dialog = await vibe.capture.dialog(async () => {
+      await vibe.evaluate('setTimeout(() => alert("Hello from expect"), 0)');
+    });
 
     assert.ok(dialog, 'Should resolve with a Dialog object');
     assert.strictEqual(dialog.type(), 'alert');
