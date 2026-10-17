@@ -3,6 +3,7 @@
   "network": ["chrome", "firefox"],
   "dialogs": ["chrome", "firefox"],
   "pdf": ["chrome"],
+  "useragent-flag": ["chrome"],
   "prompt-blocking": ["chrome", "firefox"],
   "audio": [],
   "console": ["chrome", "firefox"],

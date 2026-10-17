@@ -70,8 +70,9 @@ type LaunchOptions struct {
 	Engine   string // "chrome" (default) or "firefox"
 	Channel  string // engine release channel; "" means the VIBIUM_ENGINE_CHANNEL default
 	Headless bool
-	Port     int  // Chromedriver port, 0 = auto-select
-	Verbose  bool // Show browser/driver output
+	Port     int      // Chromedriver port, 0 = auto-select
+	Verbose  bool     // Show browser/driver output
+	Args     []string // extra engine command-line flags, appended last (#640)
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -204,7 +205,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	wsURL := fmt.Sprintf("ws://localhost:%d/session", port)
 	conn, connErr := bidi.Connect(wsURL)
 	if connErr == nil {
-		caps := buildCapabilities(chromePath, opts.Headless)
+		caps := buildCapabilities(chromePath, opts.Headless, opts.Args)
 		// Handshake without NewClient: a Client's reader would own this
 		// connection forever, and the consumer of LaunchResult.BidiConn
 		// (agent or api router) must be able to take over reads itself.
@@ -227,7 +228,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Fallback: HTTP POST /session (original path)
-	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
+	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, opts.Args)
 	if err != nil {
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -269,8 +270,10 @@ func waitForChromedriver(baseURL string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for chromedriver")
 }
 
-// chromeArgs returns the standard Chrome launch arguments.
-func chromeArgs(headless bool) []string {
+// chromeArgs returns the standard Chrome launch arguments, with any
+// caller-supplied extras (StartOptions.args / --browser-arg, #640) appended
+// last so they win over the defaults.
+func chromeArgs(headless bool, extra []string) []string {
 	args := []string{
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -309,6 +312,8 @@ func chromeArgs(headless bool) []string {
 	// etc. in root/CI/container environments where Chrome refuses to start
 	// otherwise. Empty tokens (from extra whitespace) are skipped.
 	args = append(args, customChromeArgs()...)
+	// Caller-supplied flags last, so an explicit arg overrides a default.
+	args = append(args, extra...)
 	return args
 }
 
@@ -369,7 +374,7 @@ func splitFlagString(s string) []string {
 }
 
 // buildCapabilities returns the capabilities map for BiDi session.new.
-func buildCapabilities(chromePath string, headless bool) map[string]interface{} {
+func buildCapabilities(chromePath string, headless bool, extraArgs []string) map[string]interface{} {
 	return map[string]interface{}{
 		"alwaysMatch": map[string]interface{}{
 			"browserName":  "chrome",
@@ -379,7 +384,7 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 			},
 			"goog:chromeOptions": map[string]interface{}{
 				"binary":          chromePath,
-				"args":            chromeArgs(headless),
+				"args":            chromeArgs(headless, extraArgs),
 				"excludeSwitches": []string{"enable-automation", "enable-logging"},
 				"prefs": map[string]interface{}{
 					"credentials_enable_service":                           false,
@@ -393,9 +398,9 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 }
 
 // createSession creates a new WebDriver session with BiDi enabled via HTTP.
-func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, string, error) {
+func createSession(baseURL, chromePath string, headless, verbose bool, extraArgs []string) (string, string, string, error) {
 	reqBody := map[string]interface{}{
-		"capabilities": buildCapabilities(chromePath, headless),
+		"capabilities": buildCapabilities(chromePath, headless, extraArgs),
 	}
 
 	jsonBody, err := json.Marshal(reqBody)

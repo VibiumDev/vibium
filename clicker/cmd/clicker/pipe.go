@@ -68,17 +68,21 @@ Use --connect to proxy to a remote BiDi endpoint instead of launching a local br
 				printError(fmt.Errorf("--no-browser cannot be combined with --connect"))
 				return
 			}
-			runPipe(connectURL, connectHeaders, noBrowser, parseConnectCaps(capsJSON))
+			browserArgs, _ := cmd.Flags().GetStringArray("browser-arg")
+			runPipe(connectURL, connectHeaders, noBrowser, parseConnectCaps(capsJSON), browserArgs)
 		},
 	}
 	cmd.Flags().Bool("no-browser", false, "Start the existing pipe runtime for read-only archive commands without installing or launching a browser")
 	cmd.Flags().String("connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArray("connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
 	cmd.Flags().String("connect-caps", "", "Extra alwaysMatch capabilities for classic WebDriver endpoints (JSON object)")
+	// Repeatable so each flag is one whole argument, no splitting or quoting:
+	//   vibium pipe --browser-arg --user-agent=Bot/1 --browser-arg --lang=fr
+	cmd.Flags().StringArray("browser-arg", nil, "Extra engine command-line flag for a locally launched browser (repeatable)")
 	return cmd
 }
 
-func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, connectCaps map[string]interface{}) {
+func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, connectCaps map[string]interface{}, browserArgs []string) {
 	// Save a reference to the real fd 1 for protocol output BEFORE redirecting.
 	fd, err := dupFd(os.Stdout.Fd())
 	if err != nil {
@@ -115,6 +119,7 @@ func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, conn
 	}
 
 	router := api.NewRouter(engineName, headless, connectURL, connectHeaders, connectCaps)
+	router.SetBrowserArgs(browserArgs)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,

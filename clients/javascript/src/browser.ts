@@ -23,6 +23,13 @@ export interface StartOptions {
    *  (cloud grids take their config this way, via vendor-prefixed capability keys). */
   caps?: Record<string, unknown>;
   executablePath?: string;
+  /**
+   * Extra command-line flags for the launched browser, e.g.
+   * ['--use-fake-device-for-media-stream', '--lang=fr']. Each is passed to the
+   * engine as-is and wins over Vibium's defaults. Ignored in connect mode,
+   * where the browser is already running elsewhere.
+   */
+  args?: string[];
 }
 
 export interface Browser { (goal: string, options?: RunOptions): Promise<RunResult>; }
@@ -189,14 +196,15 @@ export const browser = {
       return new Browser(client, proc);
     }
 
-    const { engine, channel, headless = false, executablePath } = options;
-    debug('launching browser', { engine, channel, headless, executablePath });
+    const { engine, channel, headless = false, executablePath, args } = options;
+    debug('launching browser', { engine, channel, headless, executablePath, args });
 
     const proc = await VibiumProcess.start({
       engine,
       channel,
       headless,
       executablePath,
+      browserArgs: args,
     });
     debug('vibium started');
 

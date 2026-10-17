@@ -29,6 +29,8 @@ export interface VibiumProcessOptions {
   connectHeaders?: Record<string, string>;
   /** JSON object of extra alwaysMatch capabilities for classic WebDriver endpoints. */
   connectCaps?: string;
+  /** Extra engine command-line flags for a locally launched browser (#640). */
+  browserArgs?: string[];
 }
 
 export class VibiumProcess {
@@ -74,6 +76,11 @@ export class VibiumProcess {
     }
     if (options.connectCaps) {
       args.push('--connect-caps', options.connectCaps);
+    }
+    if (options.browserArgs) {
+      for (const flag of options.browserArgs) {
+        args.push('--browser-arg', flag);
+      }
     }
 
     // Startup is slow (~16s cold) and gets slower when many browsers launch at

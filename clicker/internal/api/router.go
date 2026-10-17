@@ -37,9 +37,9 @@ type BrowserSession struct {
 	// endpoint and this router created the session there. Grids release the
 	// slot on DELETE, so closeSession must delete it.
 	classicSession *bidi.ClassicSession
-	mu           sync.Mutex
-	closed       bool
-	stopChan     chan struct{}
+	mu             sync.Mutex
+	closed         bool
+	stopChan       chan struct{}
 
 	// Internal command tracking for vibium: extension commands
 	internalCmds map[int]chan json.RawMessage
@@ -153,7 +153,13 @@ type Router struct {
 	connectURL     string
 	connectHeaders http.Header
 	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	browserArgs    []string               // extra engine flags for a locally launched browser (#640)
 }
+
+// SetBrowserArgs sets extra engine command-line flags applied to a locally
+// launched browser. Call once before any client connects. No effect in
+// connect mode, where the browser is someone else's.
+func (r *Router) SetBrowserArgs(args []string) { r.browserArgs = args }
 
 // NewRouter creates a new router.
 func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Router {
@@ -213,6 +219,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		launchResult, err = browser.Launch(browser.LaunchOptions{
 			Engine:   r.engine,
 			Headless: r.headless,
+			Args:     r.browserArgs,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to launch browser for client %d: %v\n", client.ID(), err)

@@ -99,6 +99,9 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	if opts.Headless {
 		args = append(args, "--headless")
 	}
+	// Caller-supplied flags (StartOptions.args / --browser-arg, #640), before
+	// the about:blank positional so they are parsed as flags.
+	args = append(args, opts.Args...)
 	// Open on about:blank instead of Firefox's chrome-privileged blanktab.
 	// The startup tab otherwise lives in the parent process until a
 	// navigation, where script-backed commands are refused and, on Firefox

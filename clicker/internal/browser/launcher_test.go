@@ -62,7 +62,7 @@ func TestDriverErrorMessageTruncatesRunaway(t *testing.T) {
 func TestChromeArgsCustomEnv(t *testing.T) {
 	t.Setenv("VIBIUM_CHROME_ARGS", "--no-sandbox --disable-gpu")
 
-	args := chromeArgs(false)
+	args := chromeArgs(false, nil)
 
 	if !slices.Contains(args, "--no-sandbox") {
 		t.Errorf("expected --no-sandbox in chrome args, got %v", args)
@@ -77,7 +77,7 @@ func TestChromeArgsCustomEnv(t *testing.T) {
 func TestChromeArgsCustomEnvUnset(t *testing.T) {
 	t.Setenv("VIBIUM_CHROME_ARGS", "")
 
-	args := chromeArgs(false)
+	args := chromeArgs(false, nil)
 
 	if slices.Contains(args, "") {
 		t.Errorf("expected no empty-string args, got %v", args)
@@ -95,12 +95,26 @@ func TestChromeArgsCustomEnvUnset(t *testing.T) {
 func TestChromeArgsCustomEnvWhitespace(t *testing.T) {
 	t.Setenv("VIBIUM_CHROME_ARGS", "  --no-sandbox   --disable-gpu  ")
 
-	args := chromeArgs(false)
+	args := chromeArgs(false, nil)
 
 	if slices.Contains(args, "") {
 		t.Errorf("expected no empty-string args from whitespace, got %v", args)
 	}
 	if !slices.Contains(args, "--no-sandbox") || !slices.Contains(args, "--disable-gpu") {
 		t.Errorf("expected both flags parsed from padded input, got %v", args)
+	}
+}
+
+// Caller-supplied flags (StartOptions.args / --browser-arg, #640) are appended
+// last, after the defaults and the env var, so an explicit flag wins.
+func TestChromeArgsExtraAppendedLast(t *testing.T) {
+	t.Setenv("VIBIUM_CHROME_ARGS", "")
+	args := chromeArgs(false, []string{"--user-agent=Bot/1", "--lang=fr"})
+
+	if !slices.Contains(args, "--user-agent=Bot/1") || !slices.Contains(args, "--lang=fr") {
+		t.Fatalf("expected the extra flags in chrome args, got %v", args)
+	}
+	if got := args[len(args)-1]; got != "--lang=fr" {
+		t.Errorf("extra flags should come last; last arg = %q", got)
 	}
 }
