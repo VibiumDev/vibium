@@ -157,6 +157,28 @@ describe('MCP Server: Protocol', () => {
     assert.ok(response.result.capabilities.tools, 'Should have tools capability');
   });
 
+  // The version was hard-coded to 2024-11-05, so clients that dropped it could
+  // not handshake at all (#650). initialize now echoes a newer version the
+  // client proposes, and falls back to the newest for an unknown one.
+  test('initialize echoes a newer protocol version the client proposes', async () => {
+    const response = await client.call('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'test', version: '1.0' },
+    });
+    assert.strictEqual(response.result.protocolVersion, '2025-06-18');
+  });
+
+  test('initialize falls back to a supported version for an unknown one', async () => {
+    const response = await client.call('initialize', {
+      protocolVersion: '2099-01-01',
+      capabilities: {},
+      clientInfo: { name: 'test', version: '1.0' },
+    });
+    assert.notStrictEqual(response.result.protocolVersion, '2099-01-01');
+    assert.match(response.result.protocolVersion, /^\d{4}-\d{2}-\d{2}$/);
+  });
+
   test('tools/list returns all 87 tools including Check and Run', async () => {
     const response = await client.call('tools/list', {});
 

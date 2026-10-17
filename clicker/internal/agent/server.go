@@ -272,6 +272,26 @@ func (s *Server) route(req Request) (interface{}, *Error) {
 	}
 }
 
+// supportedProtocolVersions are the MCP protocol versions vibium's initialize
+// handshake speaks, newest first. vibium's tool surface is identical across
+// them, so negotiation is in practice the version string. The first entry is
+// the fallback when a client asks for a version not listed here.
+var supportedProtocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
+
+// negotiateProtocolVersion echoes the client's requested MCP version when
+// vibium supports it, and otherwise answers with the newest version it does,
+// as the MCP initialize handshake expects. It was hard-coded to 2024-11-05, so
+// a client that has dropped that version (anubis_mcp 2.0) could not complete
+// the handshake and could not talk to vibium at all (#650).
+func negotiateProtocolVersion(requested string) string {
+	for _, v := range supportedProtocolVersions {
+		if v == requested {
+			return requested
+		}
+	}
+	return supportedProtocolVersions[0]
+}
+
 // handleInitialize handles the initialize request.
 func (s *Server) handleInitialize(params json.RawMessage) (interface{}, *Error) {
 	var p InitializeParams
@@ -286,7 +306,7 @@ func (s *Server) handleInitialize(params json.RawMessage) (interface{}, *Error) 
 	}
 
 	return InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities: ServerCapabilities{
 			Tools: &ToolsCapability{},
 		},
