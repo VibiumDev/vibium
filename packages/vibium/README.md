@@ -52,6 +52,28 @@ writeFileSync('screenshot.png', screenshot)
 bro.stop()
 ```
 
+## CLI
+
+The same package ships a `vibium` command-line tool. It is a native binary, so
+once installed it drives the browser from a shell or a non-Node harness (Make,
+Python, bash) with no Node runtime involved.
+
+```bash
+npx vibium go https://example.com   # or node_modules/.bin/vibium
+npx vibium map                      # list interactive elements as @refs
+npx vibium find "a"                 # find an element
+npx vibium click "a"
+npx vibium screenshot -o shot.png
+npx vibium --help                   # full command list
+```
+
+Give it a plain-language goal (needs AI configured), or use the explicit
+commands above:
+
+```bash
+npx vibium "open example.com and screenshot the pricing page"
+```
+
 ## Environment Variables
 
 | Variable | Description |
@@ -60,7 +82,8 @@ bro.stop()
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 18+ for the JavaScript API. The `vibium` CLI is a native binary and
+  needs no Node runtime to run.
 
 ## Links
 
