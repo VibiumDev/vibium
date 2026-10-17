@@ -13,6 +13,7 @@ import (
 
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/webbotauth"
 )
 
 // DefaultTimeout is the default timeout for element resolution and actionability checks.
@@ -37,9 +38,9 @@ type BrowserSession struct {
 	// endpoint and this router created the session there. Grids release the
 	// slot on DELETE, so closeSession must delete it.
 	classicSession *bidi.ClassicSession
-	mu           sync.Mutex
-	closed       bool
-	stopChan     chan struct{}
+	mu             sync.Mutex
+	closed         bool
+	stopChan       chan struct{}
 
 	// Internal command tracking for vibium: extension commands
 	internalCmds map[int]chan json.RawMessage
@@ -153,9 +154,15 @@ type Router struct {
 	connectURL     string
 	connectHeaders http.Header
 	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	// signer, when set, signs every outgoing request with Web Bot Auth so a
+	// site in Cloudflare's Verified Bots program can recognize the agent (#28).
+	// nil disables signing and leaves the request path untouched.
+	signer *webbotauth.Signer
 }
 
-// NewRouter creates a new router.
+// NewRouter creates a new router. Web Bot Auth signing turns on here, from the
+// environment, so every entry path that builds a router (pipe, daemon, serve,
+// mcp) enables it the same way with no per-path plumbing (#28).
 func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Router {
 	return &Router{
 		engine:         engine,
@@ -163,7 +170,29 @@ func NewRouter(engine string, headless bool, connectURL string, connectHeaders h
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
 		connectCaps:    connectCaps,
+		signer:         webBotAuthSignerFromEnv(),
 	}
+}
+
+// SetWebBotAuthSigner overrides the signer (tests set a known key).
+func (r *Router) SetWebBotAuthSigner(s *webbotauth.Signer) { r.signer = s }
+
+// webBotAuthSignerFromEnv builds a signer when VIBIUM_WEB_BOT_AUTH_KEY is set,
+// or nil when it is not. A key that is set but unreadable is reported loudly
+// and signing stays off: the browser still works, but the operator sees why
+// their requests are going unsigned rather than the binary refusing to start.
+func webBotAuthSignerFromEnv() *webbotauth.Signer {
+	keyPath := os.Getenv("VIBIUM_WEB_BOT_AUTH_KEY")
+	if keyPath == "" {
+		return nil
+	}
+	signer, err := webbotauth.LoadSigner(keyPath, os.Getenv("VIBIUM_WEB_BOT_AUTH_DIRECTORY"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[router] web-bot-auth disabled: %v\n", err)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "[router] web-bot-auth signing enabled (keyid %s)\n", signer.KeyID())
+	return signer
 }
 
 // OnClientConnect is called when a new client connects.
@@ -310,6 +339,12 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// delays connect by that much at most; on timeout downloads degrade the
 	// same way as any other failure here.
 	r.setupDownloads(session)
+
+	// With signing on, install the global request intercept now, before any
+	// client command navigates, so the first request is already signed (#28).
+	if r.signer != nil {
+		r.installSignatureIntercept(session)
+	}
 }
 
 // vibiumHandler is the signature for vibium: extension command handlers.
@@ -1084,7 +1119,8 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		var bidiEvent struct {
 			Method string `json:"method"`
 			Params struct {
-				URL string `json:"url"`
+				URL       string `json:"url"`
+				IsBlocked bool   `json:"isBlocked"`
 			} `json:"params"`
 		}
 		if json.Unmarshal([]byte(msg), &bidiEvent) == nil {
@@ -1137,6 +1173,18 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// here so clients share one glob dialect (#446).
 		msg = session.routes.annotateBlockedRequest(msg)
 		session.captures.offer(msg)
+
+		// Web Bot Auth: when signing is on, the router owns the request
+		// intercept, so it signs and continues each blocked request itself
+		// rather than forwarding the block to the client (page.route is
+		// refused in this mode, so no client handler is waiting for it).
+		// Captures above still observed the event; only the forward is
+		// replaced. Runs on its own goroutine so continueRequest can round
+		// trip without stalling this read loop (#28).
+		if r.signer != nil && bidiEvent.Method == "network.beforeRequestSent" && bidiEvent.Params.IsBlocked {
+			go r.signAndContinue(session, msg)
+			continue
+		}
 
 		// Forward message to client. A Send that blocks means the client has
 		// stopped reading its pipe: every event after this one queues behind

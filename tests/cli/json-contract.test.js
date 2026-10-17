@@ -141,6 +141,8 @@ const CLASSES = {
   'wait load': 'envelope',
   'wait text': 'usage-error',
   'wait url': 'usage-error',
+  'webbotauth directory': 'usage-error',
+  'webbotauth keygen': 'exempt', // prints a PEM private key to stdout, not a JSON result
   'window': 'envelope',
   'ws-test': 'usage-error',
 };

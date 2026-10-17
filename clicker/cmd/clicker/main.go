@@ -224,6 +224,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newTypeCmd())
 	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newPipeCmd())
+	rootCmd.AddCommand(newWebBotAuthCmd())
 	rootCmd.AddCommand(newMCPCmd())
 	rootCmd.AddCommand(newDaemonCmd())
 	rootCmd.AddCommand(newTextCmd())
