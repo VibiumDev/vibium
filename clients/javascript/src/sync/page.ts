@@ -4,6 +4,7 @@ import { CheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { SyncBridge } from './bridge';
+import { toEvalExpression } from '../utils/eval-expression';
 import { ElementSync } from './element';
 import { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 import { ClockSync } from './clock';
@@ -313,8 +314,11 @@ export class PageSync {
 
   // --- Evaluation ---
 
-  evaluate<T = unknown>(expression: string): T {
-    const result = this._bridge.call<{ value: T }>('page.eval', [this._pageId, expression]);
+  evaluate<T = unknown>(expression: string | (() => unknown)): T {
+    // Convert here, before the worker boundary: a function cannot survive the
+    // structured-clone postMessage to the worker, so it must become a string
+    // on this side (#639).
+    const result = this._bridge.call<{ value: T }>('page.eval', [this._pageId, toEvalExpression(expression)]);
     return result.value;
   }
 

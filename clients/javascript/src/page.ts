@@ -12,6 +12,7 @@ import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
 import { debug } from './utils/debug';
+import { toEvalExpression } from './utils/eval-expression';
 
 export interface FindOptions {
   /** Timeout in milliseconds to wait for element. Default: 30000 */
@@ -639,10 +640,10 @@ export class Page {
   // --- Evaluation ---
 
   /** Evaluate a JS expression and return the deserialized value. */
-  async evaluate<T = unknown>(expression: string): Promise<T> {
+  async evaluate<T = unknown>(expression: string | (() => unknown)): Promise<T> {
     const result = await this.client.send<{ value: T }>('vibium:page.eval', {
       context: this.contextId,
-      expression,
+      expression: toEvalExpression(expression),
     });
     return result.value;
   }

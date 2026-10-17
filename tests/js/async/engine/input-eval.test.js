@@ -267,6 +267,18 @@ describe('Evaluation: page-level', () => {
     assert.strictEqual(result, null);
   });
 
+  // The arrow-function form is what the docs and Quick Start show; it used to
+  // resolve to null silently because the function was dropped by JSON.stringify
+  // and the expression arrived empty (#639).
+  test('eval() runs a function, not just a string', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    assert.strictEqual(await vibe.evaluate(() => 1 + 1), 2);
+    assert.strictEqual(await vibe.evaluate(() => document.title), 'Example Domain');
+    assert.strictEqual(await vibe.evaluate(() => typeof document.body), 'object');
+  });
+
   test('addScript() injects inline JS', async () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);

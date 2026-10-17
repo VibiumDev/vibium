@@ -185,6 +185,15 @@ describe('Sync API: Evaluation', () => {
     assert.strictEqual(typeof year, 'number');
     assert.ok(year >= 2025);
   });
+
+  // The function form must be converted to a string before the worker boundary,
+  // since a function cannot cross postMessage (#639).
+  test('eval() runs a function, not just a string', () => {
+    const vibe = bro.page();
+    vibe.go(baseURL);
+    assert.strictEqual(vibe.evaluate(() => 1 + 1), 2);
+    assert.strictEqual(vibe.evaluate(() => typeof document.body), 'object');
+  });
 });
 
 describe('Sync API: Exposed functions', () => {
