@@ -284,15 +284,16 @@ describe('Interaction: dispatchEvent', () => {
 // --- Regression: fill/select edge cases (#117, #140) ---
 
 describe('Interaction: fill/select regressions', () => {
-  const FORM = 'data:text/html,' + encodeURIComponent(
+  // Set via setContent, not a data: URL: Firefox 159 blocks top-level data:
+  // navigation (#648).
+  const FORM =
     '<input id="i" type="text">' +
     '<textarea id="t"></textarea>' +
-    '<select id="s"><option value="">--</option><option value="CA">California</option></select>'
-  );
+    '<select id="s"><option value="">--</option><option value="CA">California</option></select>';
 
   test('fill works on <textarea> (no "Illegal invocation") (#117)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
+    await vibe.setContent(FORM);
     await vibe.find('#t').fill('hello textarea');
     const value = await vibe.evaluate(`document.querySelector('#t').value`);
     assert.strictEqual(value, 'hello textarea', 'textarea should be filled');
@@ -300,7 +301,7 @@ describe('Interaction: fill/select regressions', () => {
 
   test('selectOption rejects when no option matches (#140)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
+    await vibe.setContent(FORM);
     await assert.rejects(
       () => vibe.find('#s').selectOption('NoSuchValue'),
       /option/i,
@@ -310,7 +311,7 @@ describe('Interaction: fill/select regressions', () => {
 
   test('selectOption matches by visible label (#140)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
+    await vibe.setContent(FORM);
     await vibe.find('#s').selectOption('California');
     const value = await vibe.evaluate(`document.querySelector('#s').value`);
     assert.strictEqual(value, 'CA', 'label "California" should select value "CA"');

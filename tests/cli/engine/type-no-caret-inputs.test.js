@@ -25,7 +25,10 @@ function cliFails(args) {
   try { cli(args); return null; } catch (e) { return `${e.stdout || ''}${e.stderr || ''}`; }
 }
 
-function page(html) { cli(`go 'data:text/html,${html}'`); }
+// Set the fixture with `content` rather than navigating to a data: URL:
+// Firefox 159 blocks top-level data: navigation (#648), and content works on
+// every engine.
+function page(html) { cli(`content '${html}'`); }
 
 after(() => {
   try { cli('stop'); } catch { /* no session left behind either way */ }

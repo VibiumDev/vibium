@@ -225,7 +225,7 @@ describe('Page Waiting', () => {
 
   test('waitUntil(bare expression) resolves, not just functions (#123)', async () => {
     const vibe = await bro.page();
-    await vibe.go('data:text/html,<h1>hi</h1>');
+    await vibe.setContent('<h1>hi</h1>');
 
     // A bare boolean expression (no "() =>") previously always timed out.
     const result = await vibe.waitForFunction(`document.readyState === 'complete'`, { timeout: 3000 });
