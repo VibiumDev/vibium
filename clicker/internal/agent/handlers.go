@@ -1655,12 +1655,33 @@ func (h *Handlers) browserQuit(args map[string]interface{}) (*ToolsCallResult, e
 		}, nil
 	}
 
+	// Decide the message from what this process actually owns, captured before
+	// Close clears it. We only close what we created: a local launch, a remote
+	// session we created (ownsRemote), or a classic session we created. A
+	// session attached by URL belongs to the caller and is deliberately left
+	// running — so "Browser session closed" would claim the opposite of what
+	// happened, with no way to tell from the CLI that cleanup is still the
+	// caller's (#647).
+	h.sessionMu.Lock()
+	owned := h.launchResult != nil || h.ownsRemote || h.classicSession != nil
+	connectURL := h.connectURL
+	h.sessionMu.Unlock()
+
 	h.Close()
+
+	text := "Browser session closed"
+	if !owned {
+		if connectURL != "" {
+			text = fmt.Sprintf("Detached from the remote browser at %s (left running; vibium did not create it)", bidi.RedactURL(connectURL))
+		} else {
+			text = "Detached from the attached session (left running; vibium did not create it)"
+		}
+	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: "Browser session closed",
+			Text: text,
 		}},
 	}, nil
 }
