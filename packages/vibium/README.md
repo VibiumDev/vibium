@@ -8,7 +8,8 @@ Browser automation for AI agents and humans.
 npm install vibium
 ```
 
-This automatically downloads Chrome for Testing on first install.
+Chrome for Testing downloads on first launch if it isn't installed. To fetch it
+ahead of time (CI images, offline machines): `npx vibium setup browser`.
 
 ## Quick Start
 
@@ -78,7 +79,7 @@ npx vibium "open example.com and screenshot the pricing page"
 
 | Variable | Description |
 |----------|-------------|
-| `VIBIUM_SKIP_BROWSER_DOWNLOAD` | Set to `1` to skip Chrome download on install |
+| `VIBIUM_SKIP_BROWSER_DOWNLOAD` | Set to `1` to skip the automatic Chrome download |
 
 ## Requirements
 

@@ -146,13 +146,13 @@ func newInstallCmd() *cobra.Command {
 		Use:   "install",
 		Short: "Download the selected browser (Chrome for Testing by default)",
 		Example: `  vibium install
-  # Installing Chrome for Testing v139.0.7258.68...
+  # Downloads Chrome for Testing, at the version this vibium pins
 
   vibium install --engine firefox
-  # Installing Firefox v153.0.3 (release channel)...
+  # Downloads Firefox, at the version this vibium pins
 
   vibium install --engine firefox --channel beta
-  # Installing Firefox v154.0b6 (beta channel)...`,
+  # Downloads the current Firefox beta`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if engineName == "firefox" {
 				exePath, err := browser.InstallFirefox()
