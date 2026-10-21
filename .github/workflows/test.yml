@@ -123,12 +123,9 @@ jobs:
   #                     timing out the same way, with a renderer killed under
   #                     memory pressure in the second run ("Browsing context
   #                     is gone", runs 39296069220 and 39360774147), so macOS
-  #                     ran suites serially. That history is from the 3-core
-  #                     7 GB hosted runner; the self-hosted VMs (see runner)
-  #                     have 5 cores and 12 GB, so macOS now runs 2-way. If
-  #                     the hosted-era timeouts come back — scattered 30s
-  #                     timeouts or a killed renderer — drop this to 1 before
-  #                     debugging anything else.
+  #                     ran suites serially. That was the 3-core / 7 GB
+  #                     hosted runner; the 5-core / 12 GB self-hosted VMs
+  #                     run 2-way. If those timeouts return, drop to 1.
   #   runner          — the machine the leg runs on. Linux stays on the
   #                     GitHub-hosted image; macOS runs on our self-hosted
   #                     Mac mini (vibium-mac-mini-dev-01, org-level runner,
