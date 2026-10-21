@@ -35,12 +35,24 @@ If you prefer to develop directly on your host machine, follow the steps below.
 
 - Go 1.21+
 - Node.js 18+
-- Python 3.9+ (for Python client development)
+- Python 3.11+ (for Python client development)
 - Java 21+ (required for the default `make` target and Java client development)
 - GitHub CLI (optional, for managing issues/PRs from terminal):
   - macOS: `brew install gh`
   - Linux: `sudo apt install gh` or `sudo dnf install gh`
   - Windows: `winget install GitHub.cli`
+
+### Python support policy
+
+The Python client supports every CPython version that still receives
+security fixes upstream. When a version reaches end of life (each October),
+the floor moves up in the next minor release: `requires-python` in
+`clients/python/pyproject.toml` and `packages/python/*/pyproject.toml`, the
+pinned `python_version`/`python-version` in the CI workflows, and the
+versions named in the docs all change together. The scheduled `eol-watch`
+workflow opens an issue when a floor is approaching end of life. Users on
+an older Python are not broken by a bump — pip resolves them to the last
+release that supported their version.
 
 ---
 
