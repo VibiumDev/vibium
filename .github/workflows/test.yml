@@ -173,14 +173,15 @@ jobs:
             suite_parallel: 1
           # arm64 Linux risk is binary and arch handling (#675), not browser
           # behavior, so only this job carries the leg. Runs on the mini's
-          # Linux VM (4 cores / 6 GB).
+          # Linux VM (4 cores / 6 GB); 2-way suites starved it into the
+          # known 30s-timeout signature (run 39657675176), so serial.
           - os: linux-arm64
             runner: [self-hosted, Linux, ARM64]
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-arm64-gnu'
             display_wrap: xvfb-run --auto-servernum
             python_version: '3.11'
-            suite_parallel: 2
+            suite_parallel: 1
     runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
