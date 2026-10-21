@@ -155,7 +155,7 @@ jobs:
       # A failing OS is signal about that OS; let the other legs finish.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, linux-arm64]
         include:
           - os: ubuntu-latest
             runner: ubuntu-latest
@@ -171,6 +171,16 @@ jobs:
             python_version: '3.13'
             go_version: stable
             suite_parallel: 1
+          # arm64 Linux risk is binary and arch handling (#675), not browser
+          # behavior, so only this job carries the leg. Runs on the mini's
+          # Linux VM (4 cores / 6 GB).
+          - os: linux-arm64
+            runner: [self-hosted, Linux, ARM64]
+            cache_root: ~/.cache/vibium
+            rollup_native: '@rollup/rollup-linux-arm64-gnu'
+            display_wrap: xvfb-run --auto-servernum
+            python_version: '3.11'
+            suite_parallel: 2
     runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
@@ -227,9 +237,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-chrome-
+            ${{ runner.os }}-${{ runner.arch }}-chrome-
 
       # npm ci installs exactly what the lockfile pins, minus this runner's
       # rollup native module (npm/cli#4828, see the matrix comment above),
@@ -245,9 +255,9 @@ jobs:
 
       # Browser-free: fails when api.md is malformed or a client column
       # claims a symbol the client does not export. OS-independent, so one
-      # leg is enough.
+      # leg is enough (not runner.os: that now matches two Linux legs).
       - name: API drift check
-        if: runner.os == 'Linux'
+        if: matrix.os == 'ubuntu-latest'
         run: make check-api-drift
 
       # The NODE_TEST_TIMEOUT override is gone with Node 20: --test-timeout is
@@ -346,9 +356,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-chrome-
+            ${{ runner.os }}-${{ runner.arch }}-chrome-
 
       - name: Install npm dependencies
         run: |
@@ -434,9 +444,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/firefox
-          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-firefox-
+            ${{ runner.os }}-${{ runner.arch }}-firefox-
 
       # install-browser below still fetches Chrome. Same key as the chrome
       # job, so this restores what that job saved rather than downloading
@@ -445,9 +455,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-chrome-
+            ${{ runner.os }}-${{ runner.arch }}-chrome-
 
       # Chrome's sandbox needs this on Ubuntu 24.04, same as the chrome job.
       - name: Configure kernel for Chrome sandbox
@@ -545,9 +555,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/firefox
-          key: ${{ runner.os }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-firefox-
+            ${{ runner.os }}-${{ runner.arch }}-firefox-
 
       # These suites drive Chrome for their non-Firefox cases. Same key as
       # the chrome job, so this restores what that job saved rather than
@@ -556,9 +566,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ matrix.cache_root }}/chrome-for-testing
-          key: ${{ runner.os }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
           restore-keys: |
-            ${{ runner.os }}-chrome-
+            ${{ runner.os }}-${{ runner.arch }}-chrome-
 
       # Chrome's sandbox needs this on Ubuntu 24.04, same as the chrome job.
       - name: Configure kernel for Chrome sandbox
