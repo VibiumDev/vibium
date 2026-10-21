@@ -89,7 +89,9 @@ jobs:
   bump-chrome:
     needs: drift
     if: needs.drift.outputs.chrome != ''
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: this job sets up Python 3.9, which setup-python has no
+    # build for on ubuntu-latest's 26.04 image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write
@@ -205,7 +207,9 @@ jobs:
   bump-firefox:
     needs: drift
     if: needs.drift.outputs.firefox != ''
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: this job sets up Python 3.9, which setup-python has no
+    # build for on ubuntu-latest's 26.04 image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write

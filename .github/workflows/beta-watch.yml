@@ -20,7 +20,9 @@ concurrency:
 
 jobs:
   firefox-beta:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: this job sets up Python 3.9, which setup-python has no
+    # build for on ubuntu-latest's 26.04 image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       VIBIUM_REQUIRE_FIREFOX: 1
@@ -99,7 +101,9 @@ jobs:
         run: make double-tap
 
   chrome-beta:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: this job sets up Python 3.9, which setup-python has no
+    # build for on ubuntu-latest's 26.04 image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       VIBIUM_ENGINE_CHANNEL: beta

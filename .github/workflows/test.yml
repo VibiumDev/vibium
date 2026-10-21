@@ -107,7 +107,9 @@ jobs:
   #                     Linux runners lack one, so only Linux wraps in xvfb
   #   python_version  — setup-python has no 3.9 build for Apple Silicon, so
   #                     macOS tests a current Python while Linux holds the
-  #                     3.9 floor
+  #                     3.9 floor. Linux pins ubuntu-24.04 (see runner) to keep
+  #                     that floor: ubuntu-latest moved to 26.04, which
+  #                     setup-python has no 3.9 x64 build for either.
   #   go_version      — Go emits the LC_UUID load command only from 1.23, and
   #                     the macOS 26 runner's dyld aborts binaries without it,
   #                     so macOS builds with current Go while Linux holds the
@@ -121,8 +123,10 @@ jobs:
   #                     memory pressure in the second run ("Browsing context
   #                     is gone", runs 39296069220 and 39360774147), so macOS
   #                     runs suites serially.
-  #   runner          — the machine the leg runs on. Linux stays on the
-  #                     GitHub-hosted image; macOS runs on our self-hosted
+  #   runner          — the machine the leg runs on. Linux pins the
+  #                     GitHub-hosted ubuntu-24.04 image (ubuntu-latest moved
+  #                     to 26.04, which setup-python has no Python 3.9 build
+  #                     for); macOS runs on our self-hosted
   #                     Mac mini (vibium-mac-mini-dev-01, org-level runner,
   #                     10 cores / 32 GB). matrix.os remains the plain label
   #                     the include entries and cache keys match on.
@@ -140,7 +144,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
@@ -266,7 +270,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
@@ -359,7 +363,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
@@ -470,7 +474,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
