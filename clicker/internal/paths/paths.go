@@ -191,6 +191,12 @@ func resolveVersionDir(channel string) (string, error) {
 		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
 			return "", err
 		}
+		// A version directory of the wrong architecture is not installed:
+		// failing here makes the ensure-install path download the right
+		// build over it instead of hitting an exec format error (#699).
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
+			return "", fmt.Errorf("cached Chrome for Testing %s is built for another architecture: %w", pin, os.ErrNotExist)
+		}
 		return dir, nil
 	}
 
@@ -209,6 +215,9 @@ func resolveVersionDir(channel string) (string, error) {
 			continue
 		}
 		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			continue
+		}
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
 			continue
 		}
 		complete = append(complete, entry.Name())
