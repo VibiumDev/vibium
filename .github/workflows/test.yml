@@ -276,6 +276,18 @@ jobs:
       - name: Test
         run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }} ${{ matrix.worker_flags }}
 
+      # The arm64 leg runs in an ephemeral VM that is destroyed after the
+      # job, so a crashed Chrome leaves nothing to inspect afterwards. Dump
+      # the kernel log and any crashpad dumps while the VM still exists:
+      # segfaults and OOM kills both land in dmesg (runs 39679856714 and
+      # 39823423114 died on websocket EOF with no cause in the job log).
+      - name: Dump crash evidence
+        if: failure() && matrix.os == 'linux-arm64'
+        run: |
+          sudo dmesg | tail -200 || true
+          free -m || true
+          find ~/.cache /tmp -name '*.dmp' 2>/dev/null | head || true
+
       - name: Audit capability selection
         run: make test-capability-audit
 
