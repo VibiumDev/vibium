@@ -167,6 +167,10 @@ jobs:
             display_wrap: xvfb-run --auto-servernum
             python_version: '3.11'
             suite_parallel: 1
+            # Serial suites still ran 3 pytest-xdist Chromes (the Makefile
+            # worker floor) and one crashed under memory pressure (run
+            # 39679856714), so in-suite workers go serial too.
+            worker_flags: PY_PARALLEL=1 JS_PARALLEL=1
     runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
@@ -255,7 +259,7 @@ jobs:
       # run on the chrome-checks runner. Locally `make test` is still the
       # whole suite.
       - name: Test
-        run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }}
+        run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }} ${{ matrix.worker_flags }}
 
       - name: Audit capability selection
         run: make test-capability-audit
