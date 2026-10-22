@@ -41,7 +41,7 @@ type Handlers struct {
 	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
 	lastMaps       map[string]string            // context -> last map output (for diff)
-	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	connectCaps    map[string]interface{}       // extra alwaysMatch capabilities for classic endpoints
 	// classicSession is set when connectURL was a classic WebDriver HTTP
 	// endpoint and this process created the session there. Grids release
 	// the slot on DELETE, so Close() must delete it.
@@ -375,6 +375,12 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserMouseUp(args)
 	case "browser_mouse_click":
 		return h.browserMouseClick(args)
+	case "browser_tap":
+		return h.browserTap(args)
+	case "browser_swipe":
+		return h.browserSwipe(args)
+	case "browser_long_press":
+		return h.browserLongPress(args)
 	case "browser_drag":
 		return h.browserDrag(args)
 	case "browser_set_viewport":
@@ -614,6 +620,12 @@ func mcpToolToMethod(name string) string {
 		return "vibium:mouse.up"
 	case "browser_mouse_click":
 		return "vibium:mouse.click"
+	case "browser_tap":
+		return "vibium:touch.tap"
+	case "browser_swipe":
+		return "vibium:touch.swipe"
+	case "browser_long_press":
+		return "vibium:touch.longPress"
 	case "browser_scroll":
 		return "vibium:page.scroll"
 
@@ -3879,6 +3891,104 @@ func (h *Handlers) browserMouseClick(args map[string]interface{}) (*ToolsCallRes
 		Content: []Content{{
 			Type: "text",
 			Text: msg,
+		}},
+	}, nil
+}
+
+// browserTap taps a touch pointer at (x, y).
+func (h *Handlers) browserTap(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	x, hasX := argFloat(args, "x")
+	y, hasY := argFloat(args, "y")
+	if !hasX || !hasY {
+		return nil, fmt.Errorf("x and y are required")
+	}
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.TouchTap(s, ctx, int(x), int(y)); err != nil {
+		return nil, fmt.Errorf("failed to tap: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Tapped at (%d, %d)", int(x), int(y)),
+		}},
+	}, nil
+}
+
+// browserSwipe drags a touch pointer from (x1, y1) to (x2, y2), finger held
+// down for the move. duration (ms) controls the move, default 300.
+func (h *Handlers) browserSwipe(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	x1, ok1 := argFloat(args, "x1")
+	y1, ok2 := argFloat(args, "y1")
+	x2, ok3 := argFloat(args, "x2")
+	y2, ok4 := argFloat(args, "y2")
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		return nil, fmt.Errorf("x1, y1, x2 and y2 are required")
+	}
+	duration := 300
+	if d, ok := argFloat(args, "duration"); ok && d > 0 {
+		duration = int(d)
+	}
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.TouchSwipe(s, ctx, int(x1), int(y1), int(x2), int(y2), duration); err != nil {
+		return nil, fmt.Errorf("failed to swipe: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", int(x1), int(y1), int(x2), int(y2)),
+		}},
+	}, nil
+}
+
+// browserLongPress holds a touch press at (x, y) for duration ms (default 500).
+func (h *Handlers) browserLongPress(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	x, hasX := argFloat(args, "x")
+	y, hasY := argFloat(args, "y")
+	if !hasX || !hasY {
+		return nil, fmt.Errorf("x and y are required")
+	}
+	duration := 500
+	if d, ok := argFloat(args, "duration"); ok && d > 0 {
+		duration = int(d)
+	}
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.TouchLongPress(s, ctx, int(x), int(y), duration); err != nil {
+		return nil, fmt.Errorf("failed to long-press: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Long-pressed at (%d, %d) for %dms", int(x), int(y), duration),
 		}},
 	}, nil
 }

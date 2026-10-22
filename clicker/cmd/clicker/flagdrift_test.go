@@ -58,7 +58,7 @@ func TestNoLocalFlagShadowsRootPersistent(t *testing.T) {
 func TestDisableFlagParsingSetIsExact(t *testing.T) {
 	root, _ := newRootCmd("vibium")
 
-	want := []string{"fill", "geolocation", "mouse click", "mouse move", "sleep", "type", "window"}
+	want := []string{"fill", "geolocation", "long-press", "mouse click", "mouse move", "sleep", "swipe", "tap", "type", "window"}
 	var got []string
 	walkCommands(root, func(path string, c *cobra.Command) {
 		if c.DisableFlagParsing {

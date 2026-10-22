@@ -179,12 +179,12 @@ describe('MCP Server: Protocol', () => {
     assert.match(response.result.protocolVersion, /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test('tools/list returns all 87 tools including Check and Run', async () => {
+  test('tools/list returns all 90 tools including Check and Run', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 87, 'Should have 87 tools');
+    assert.strictEqual(response.result.tools.length, 90, 'Should have 90 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
@@ -211,6 +211,7 @@ describe('MCP Server: Protocol', () => {
       'browser_dialog_accept', 'browser_dialog_dismiss',
       'browser_get_cookies', 'browser_set_cookie', 'browser_delete_cookies',
       'browser_mouse_move', 'browser_mouse_down', 'browser_mouse_up', 'browser_mouse_click', 'browser_drag',
+      'browser_tap', 'browser_swipe', 'browser_long_press',
       'browser_set_viewport', 'browser_get_viewport',
       'browser_get_window', 'browser_set_window',
       'browser_emulate_media',
@@ -1176,5 +1177,64 @@ describe('MCP Server: regression fixes', () => {
     assert.ok(!r.result.isError, `annotate should not crash: ${JSON.stringify(r.result)}`);
     const img = r.result.content.find((c) => c.type === 'image');
     assert.ok(img && img.data && img.data.length > 100, 'should return image data');
+  });
+});
+
+describe('MCP Server: Touch gestures', () => {
+  /** @type {MCPClient} */
+  let client;
+
+  before(async () => {
+    client = new MCPClient();
+    await client.start();
+    await client.call('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-touch', version: '1.0.0' },
+    });
+    // Own page with no links to activate; document-level capture recorder with
+    // touch-action:none so a swipe is not turned into a scroll (pointercancel).
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: 'about:blank' } });
+  });
+
+  after(async () => {
+    await client.call('tools/call', { name: 'browser_stop', arguments: {} });
+    client.stop();
+  });
+
+  const tool = (name, args) => client.call('tools/call', { name, arguments: args });
+  const RECORDER = "(function(){document.documentElement.style.touchAction='none';document.body.style.touchAction='none';window.__ev=[];if(!window.__touchrec){window.__touchrec=true;for(const t of ['pointerdown','pointermove','pointerup'])document.addEventListener(t,e=>window.__ev.push({type:t,x:e.clientX,y:e.clientY,pt:e.pointerType}),true);}return 'ok'})()";
+
+  const setup = () => tool('browser_evaluate', { expression: RECORDER });
+  const evalText = async (expression) => {
+    const r = await tool('browser_evaluate', { expression });
+    assert.ok(!r.result.isError, `evaluate should not error: ${expression}`);
+    return r.result.content[0].text;
+  };
+
+  test('browser_tap drives a touch pointerdown at the point', async () => {
+    await setup();
+    const tap = await tool('browser_tap', { x: 60, y: 80 });
+    assert.ok(!tap.result.isError, 'tap should not error');
+    assert.match(tap.result.content[0].text, /Tapped at \(60, 80\)/);
+    const summary = await evalText("(function(){var d=window.__ev.find(e=>e.type==='pointerdown');return [d.pt,d.x,d.y].join('|')})()");
+    assert.match(summary, /touch\|60\|80/, 'records a touch pointerdown at (60, 80)');
+  });
+
+  test('browser_swipe presses at start, moves while held, releases at end', async () => {
+    await setup();
+    const swipe = await tool('browser_swipe', { x1: 40, y1: 100, x2: 240, y2: 100, duration: 200 });
+    assert.ok(!swipe.result.isError, 'swipe should not error');
+    const summary = await evalText("(function(){var e=window.__ev;return [e.every(x=>x.pt==='touch'),e.find(x=>x.type==='pointerdown').x,e.filter(x=>x.type==='pointermove').length>0,e[e.length-1].type,e[e.length-1].x].join('|')})()");
+    assert.match(summary, /true\|40\|true\|pointerup\|240/, 'drags a held touch pointer from start to end');
+  });
+
+  test('browser_long_press holds a touch pointer then releases', async () => {
+    await setup();
+    const lp = await tool('browser_long_press', { x: 120, y: 120, duration: 300 });
+    assert.ok(!lp.result.isError, 'long press should not error');
+    assert.match(lp.result.content[0].text, /Long-pressed at \(120, 120\)/);
+    const summary = await evalText("(function(){var e=window.__ev;var d=e.find(x=>x.type==='pointerdown');return [d.pt,d.x,d.y,!!e.find(x=>x.type==='pointerup')].join('|')})()");
+    assert.match(summary, /touch\|120\|120\|true/, 'holds then releases a touch pointer');
   });
 });
