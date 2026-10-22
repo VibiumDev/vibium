@@ -155,7 +155,7 @@ jobs:
       # A failing OS is signal about that OS; let the other legs finish.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, linux-arm64]
         include:
           - os: ubuntu-latest
             runner: ubuntu-latest
@@ -171,6 +171,21 @@ jobs:
             python_version: '3.13'
             go_version: stable
             suite_parallel: 1
+          # arm64 Linux risk is binary and arch handling (#675), not browser
+          # behavior, so only this job carries the leg. Runs on the mini's
+          # Linux VM (4 cores / 6 GB); 2-way suites starved it into the
+          # known 30s-timeout signature (run 39657675176), so serial.
+          - os: linux-arm64
+            runner: [self-hosted, Linux, ARM64]
+            cache_root: ~/.cache/vibium
+            rollup_native: '@rollup/rollup-linux-arm64-gnu'
+            display_wrap: xvfb-run --auto-servernum
+            python_version: '3.11'
+            suite_parallel: 1
+            # Serial suites still ran 3 pytest-xdist Chromes (the Makefile
+            # worker floor) and one crashed under memory pressure (run
+            # 39679856714), so in-suite workers go serial too.
+            worker_flags: PY_PARALLEL=1 JS_PARALLEL=1
     runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
@@ -245,9 +260,9 @@ jobs:
 
       # Browser-free: fails when api.md is malformed or a client column
       # claims a symbol the client does not export. OS-independent, so one
-      # leg is enough.
+      # leg is enough (not runner.os: that now matches two Linux legs).
       - name: API drift check
-        if: runner.os == 'Linux'
+        if: matrix.os == 'ubuntu-latest'
         run: make check-api-drift
 
       # The NODE_TEST_TIMEOUT override is gone with Node 20: --test-timeout is
@@ -258,8 +273,35 @@ jobs:
       # the serial tail (browser-modes, firefox, daemon, js-sync), which both
       # run on the chrome-checks runner. Locally `make test` is still the
       # whole suite.
+      # The published npm package's postinstall runs the released vibium
+      # binary, which predates this PR's arch fix and side-loads an x86
+      # Chrome for Testing into the cache on arm64. The moment the pin
+      # names that version, launches die with an exec format error (run
+      # 39834662203). Purge wrong-arch version dirs after npm ci so the
+      # pinned install below fetches the arm64 build; drop this once a
+      # release ships the fix.
+      - name: Purge wrong-arch browsers
+        if: matrix.os == 'linux-arm64'
+        run: |
+          for d in ~/.cache/vibium/chrome-for-testing/*/; do
+            [ -f "$d/chrome" ] || continue
+            file -b "$d/chrome" | grep -q aarch64 || { echo "purging $(basename "$d"): $(file -b "$d/chrome" | cut -d, -f2)"; rm -rf "$d"; }
+          done
+
       - name: Test
-        run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }}
+        run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }} ${{ matrix.worker_flags }}
+
+      # The arm64 leg runs in an ephemeral VM that is destroyed after the
+      # job, so a crashed Chrome leaves nothing to inspect afterwards. Dump
+      # the kernel log and any crashpad dumps while the VM still exists:
+      # segfaults and OOM kills both land in dmesg (runs 39679856714 and
+      # 39823423114 died on websocket EOF with no cause in the job log).
+      - name: Dump crash evidence
+        if: failure() && matrix.os == 'linux-arm64'
+        run: |
+          sudo dmesg | tail -200 || true
+          free -m || true
+          find ~/.cache /tmp -name '*.dmp' 2>/dev/null | head || true
 
       - name: Audit capability selection
         run: make test-capability-audit
@@ -583,110 +625,6 @@ jobs:
         if: always()
         run: make double-tap
 
-  # arm64 Linux runs as its own job rather than a leg of chrome so it can
-  # wait for the macOS jobs. All of them share one Mac mini (the arm64 leg
-  # is a Linux VM, the macOS legs are macOS VMs, siblings on that host), and
-  # running them together starved the arm64 guest's Chrome until its
-  # websocket died with an EOF (#701) — the same suite is solid 1-at-a-time.
-  # needs serializes it after the macOS work; the arm64 risk this leg exists
-  # for (#675) is binary and arch handling, not timing, so running last loses
-  # no coverage. always() so a macOS failure still lets arm64 report.
-  chrome-arm64:
-    needs: [changes, chrome, chrome-checks, firefox, firefox-checks]
-    if: always() && needs.changes.outputs.docs_only != 'true'
-    runs-on: [self-hosted, Linux, ARM64]
-    # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: clicker/go.mod
-          cache-dependency-path: clicker/go.sum
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-          cache: npm
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            clients/python/pyproject.toml
-            packages/python/vibium_linux_x64/pyproject.toml
-
-      - name: Set up Java
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          java-version: '21'
-          distribution: temurin
-          cache: gradle
-
-      - name: Configure kernel for Chrome sandbox
-        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
-
-      - name: Cache Chrome for Testing
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/vibium/chrome-for-testing
-          key: ${{ runner.os }}-${{ runner.arch }}-chrome-${{ hashFiles('clicker/internal/paths/browsers.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-chrome-
-
-      - name: Install npm dependencies
-        run: |
-          npm ci
-          npm install --no-save @rollup/rollup-linux-arm64-gnu@$(node -p "require('rollup/package.json').version")
-
-      - name: Build
-        run: make
-
-      # The published npm package's postinstall runs the released vibium
-      # binary, which predates this PR's arch fix and side-loads an x86
-      # Chrome for Testing into the cache on arm64. The moment the pin
-      # names that version, launches die with an exec format error (run
-      # 39834662203). Purge wrong-arch version dirs after npm ci so the
-      # pinned install below fetches the arm64 build; drop this once a
-      # release ships the fix (#699).
-      - name: Purge wrong-arch browsers
-        run: |
-          for d in ~/.cache/vibium/chrome-for-testing/*/; do
-            [ -f "$d/chrome" ] || continue
-            file -b "$d/chrome" | grep -q aarch64 || { echo "purging $(basename "$d"): $(file -b "$d/chrome" | cut -d, -f2)"; rm -rf "$d"; }
-          done
-
-      # In-suite workers also go serial: serial suites still ran 3
-      # pytest-xdist Chromes (the Makefile worker floor) and one crashed
-      # under memory pressure (run 39679856714).
-      - name: Test
-        run: xvfb-run --auto-servernum make test-core SUITE_PARALLEL=1 PY_PARALLEL=1 JS_PARALLEL=1
-
-      # The VM is destroyed after the job, so a crashed Chrome leaves nothing
-      # to inspect afterwards. Dump the kernel log and any crashpad dumps
-      # while the VM still exists (#701).
-      - name: Dump crash evidence
-        if: failure()
-        run: |
-          sudo dmesg | tail -200 || true
-          free -m || true
-          find ~/.cache /tmp -name '*.dmp' 2>/dev/null | head || true
-
-      - name: Audit capability selection
-        run: make test-capability-audit
-
-      - name: Clean up zombie processes
-        if: always()
-        run: make double-tap
-
   # Branch protection requires a check named "test" (the pre-split job).
   # This gate reports it, green only when every suite job passes. The check
   # and run shards are not required by name, so this is the only thing that
@@ -697,7 +635,7 @@ jobs:
   # protection would treat as satisfied.
   test:
     runs-on: ubuntu-latest
-    needs: [changes, chrome, chrome-checks, firefox, firefox-checks, chrome-arm64]
+    needs: [changes, chrome, chrome-checks, firefox, firefox-checks]
     if: always()
     steps:
       - name: All suites green
@@ -716,4 +654,3 @@ jobs:
           test "${{ needs['chrome-checks'].result }}" = "success"
           test "${{ needs.firefox.result }}" = "success"
           test "${{ needs['firefox-checks'].result }}" = "success"
-          test "${{ needs['chrome-arm64'].result }}" = "success"
