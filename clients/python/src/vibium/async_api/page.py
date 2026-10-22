@@ -147,6 +147,29 @@ class Touch:
     async def tap(self, x: float, y: float) -> None:
         await self._client.send("vibium:touch.tap", {"context": self._context_id, "x": x, "y": y})
 
+    async def swipe(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        duration_ms: Optional[int] = None,
+    ) -> None:
+        """Swipe from (x1, y1) to (x2, y2). The finger stays down for the move,
+        so the gesture reads as a swipe/fling rather than two taps. duration_ms
+        controls how long the move takes (default 300)."""
+        params: dict = {"context": self._context_id, "x1": x1, "y1": y1, "x2": x2, "y2": y2}
+        if duration_ms is not None:
+            params["duration"] = duration_ms
+        await self._client.send("vibium:touch.swipe", params)
+
+    async def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
+        """Press and hold at (x, y) for duration_ms before releasing (default 500)."""
+        params: dict = {"context": self._context_id, "x": x, "y": y}
+        if duration_ms is not None:
+            params["duration"] = duration_ms
+        await self._client.send("vibium:touch.longPress", params)
+
 
 class Page:
     """Async page automation interface."""

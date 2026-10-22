@@ -1,7 +1,8 @@
 /**
  * CLI Tests: global flags on commands that disable cobra flag parsing
  *
- * fill, type, geolocation, sleep, mouse click, mouse move, and window parse
+ * fill, type, geolocation, sleep, mouse click, mouse move, tap, swipe,
+ * long-press, and window parse
  * their flags inside Run, after the root's PersistentPreRunE has already
  * read them as unset. Regression tests for #482: --session and --channel
  * were accepted and silently ignored, so the command targeted the default
@@ -34,6 +35,9 @@ const COMMANDS = {
   sleep: ['sleep', '100'],
   'mouse click': ['mouse', 'click', '100', '200'],
   'mouse move': ['mouse', 'move', '100', '200'],
+  tap: ['tap', '100', '200'],
+  swipe: ['swipe', '200', '400', '200', '100'],
+  'long-press': ['long-press', '100', '200'],
   window: ['window', '1280', '720'],
 };
 

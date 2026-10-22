@@ -566,6 +566,44 @@ func MouseClick(s Session, context string, x, y, button int) error {
 	return err
 }
 
+// TouchTap taps a touch pointer at (x, y). It shares touchPointerActions with
+// the client-facing touch handlers so both stacks emit the same gesture (#682).
+func TouchTap(s Session, context string, x, y int) error {
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": x, "y": y, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
+// TouchSwipe drags a touch pointer from (x1, y1) to (x2, y2) over durationMs,
+// keeping the finger down for the move so the gesture reads as a swipe/fling
+// rather than two taps.
+func TouchSwipe(s Session, context string, x1, y1, x2, y2, durationMs int) error {
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": x1, "y": y1, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pointerMove", "x": x2, "y": y2, "duration": durationMs},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
+// TouchLongPress holds a touch press at (x, y) for durationMs before release.
+func TouchLongPress(s Session, context string, x, y, durationMs int) error {
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": x, "y": y, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pause", "duration": durationMs},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
 // parseContextFromCreate extracts the context ID from a browsingContext.create response.
 func parseContextFromCreate(resp json.RawMessage) (string, error) {
 	var result struct {

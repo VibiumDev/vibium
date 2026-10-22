@@ -403,3 +403,82 @@ func (r *Router) handleTouchTap(session *BrowserSession, cmd bidiCommand) {
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"tapped": true})
 }
+
+// touchPointerActions wraps a touch pointer-action sequence for
+// input.performActions, the one shape every touch verb uses (#682).
+func touchPointerActions(actions []map[string]interface{}, context string) map[string]interface{} {
+	return map[string]interface{}{
+		"context": context,
+		"actions": []map[string]interface{}{
+			{
+				"type":       "pointer",
+				"id":         "touch",
+				"parameters": map[string]interface{}{"pointerType": "touch"},
+				"actions":    actions,
+			},
+		},
+	}
+}
+
+// handleTouchSwipe handles vibium:touch.swipe — a touch drag from (x1,y1) to
+// (x2,y2) over duration ms (the finger stays down for the move, so the gesture
+// reads as a swipe/fling rather than two taps).
+func (r *Router) handleTouchSwipe(session *BrowserSession, cmd bidiCommand) {
+	x1, _ := cmd.Params["x1"].(float64)
+	y1, _ := cmd.Params["y1"].(float64)
+	x2, _ := cmd.Params["x2"].(float64)
+	y2, _ := cmd.Params["y2"].(float64)
+	duration := 300.0
+	if d, ok := cmd.Params["duration"].(float64); ok && d > 0 {
+		duration = d
+	}
+
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": int(x1), "y": int(y1), "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pointerMove", "x": int(x2), "y": int(y2), "duration": int(duration)},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+
+	if _, err := r.sendInternalCommand(session, "input.performActions", params); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{"swiped": true})
+}
+
+// handleTouchLongPress handles vibium:touch.longPress — a touch press held at
+// (x,y) for duration ms before release.
+func (r *Router) handleTouchLongPress(session *BrowserSession, cmd bidiCommand) {
+	x, _ := cmd.Params["x"].(float64)
+	y, _ := cmd.Params["y"].(float64)
+	duration := 500.0
+	if d, ok := cmd.Params["duration"].(float64); ok && d > 0 {
+		duration = d
+	}
+
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": int(x), "y": int(y), "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pause", "duration": int(duration)},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+
+	if _, err := r.sendInternalCommand(session, "input.performActions", params); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{"longPressed": true})
+}

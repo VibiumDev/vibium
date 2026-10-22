@@ -150,6 +150,12 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium mouse up` — release mouse button (`--button 0|1|2`)
 - `vibium drag "<source>" "<target>"` — drag from one element to another
 
+### Touch Primitives
+For touchscreen devices and phones (for example driving a phone through Roadie).
+- `vibium tap <x> <y>` — tap at coordinates
+- `vibium swipe <x1> <y1> <x2> <y2>` — swipe from one point to another (`--duration ms`, default 300)
+- `vibium long-press <x> <y>` — press and hold (`--duration ms`, default 500)
+
 ### Element State
 - `vibium value "<selector>"` — get input/textarea/select value
 - `vibium attr "<selector>" "<attribute>"` — get HTML attribute value

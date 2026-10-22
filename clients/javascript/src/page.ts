@@ -241,6 +241,40 @@ export class Touch {
       y,
     });
   }
+
+  /**
+   * Swipe from (x1, y1) to (x2, y2). The finger stays down for the move, so
+   * the gesture reads as a swipe/fling rather than two taps. durationMs
+   * controls how long the move takes (default 300).
+   */
+  async swipe(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    durationMs?: number,
+  ): Promise<void> {
+    await this.client.send('vibium:touch.swipe', {
+      context: this.contextId,
+      x1,
+      y1,
+      x2,
+      y2,
+      ...(durationMs !== undefined ? { duration: durationMs } : {}),
+    });
+  }
+
+  /**
+   * Press and hold at (x, y) for durationMs before releasing (default 500).
+   */
+  async longPress(x: number, y: number, durationMs?: number): Promise<void> {
+    await this.client.send('vibium:touch.longPress', {
+      context: this.contextId,
+      x,
+      y,
+      ...(durationMs !== undefined ? { duration: durationMs } : {}),
+    });
+  }
 }
 
 export interface A11yNode {

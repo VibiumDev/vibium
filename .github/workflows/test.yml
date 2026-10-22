@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge queue batches. Without this the queue waits forever for the
+  # required `test` check. The changes classifier treats merge_group like a
+  # push: full suite, no docs-only skip.
+  merge_group:
 
 # Deliberately no paths/paths-ignore. Branch protection requires the checks
 # this workflow reports, and a filter that skips the workflow also skips the
@@ -20,6 +24,17 @@ on:
 # the repo default is ever write.
 permissions:
   contents: read
+
+# A new push to a PR obsoletes that PR's running suite: cancel it rather
+# than queue behind it — with two macOS runner slots org-wide, a stale run
+# can hold real PRs in the queue for half an hour (see the pileup behind
+# #688, where a branch update plus a base change stacked three identical
+# runs). Pushes to main are exempt: each gets a unique group via run_id, so
+# nothing ever cancels or queues behind a main build and every merge commit
+# is tested in full.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Forward the vibium binary's stderr through the JS and Python clients into
 # the job log. Without it the clients drain stderr into a small in-memory
