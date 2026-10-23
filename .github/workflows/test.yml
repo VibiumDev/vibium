@@ -288,21 +288,6 @@ jobs:
       # the serial tail (browser-modes, firefox, daemon, js-sync), which both
       # run on the chrome-checks runner. Locally `make test` is still the
       # whole suite.
-      # The published npm package's postinstall runs the released vibium
-      # binary, which predates this PR's arch fix and side-loads an x86
-      # Chrome for Testing into the cache on arm64. The moment the pin
-      # names that version, launches die with an exec format error (run
-      # 39834662203). Purge wrong-arch version dirs after npm ci so the
-      # pinned install below fetches the arm64 build; drop this once a
-      # release ships the fix.
-      - name: Purge wrong-arch browsers
-        if: matrix.os == 'linux-arm64'
-        run: |
-          for d in ~/.cache/vibium/chrome-for-testing/*/; do
-            [ -f "$d/chrome" ] || continue
-            file -b "$d/chrome" | grep -q aarch64 || { echo "purging $(basename "$d"): $(file -b "$d/chrome" | cut -d, -f2)"; rm -rf "$d"; }
-          done
-
       - name: Test
         run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }} ${{ matrix.worker_flags }}
 
