@@ -620,10 +620,23 @@ func killOrphanedProcessesFromDir(dir string) {
 // the same glob, and deleting them out from under a live Chrome breaks its
 // BiDi connection.
 //
-// The minAge filter only deletes directories whose mtime is older than the
-// given duration — anything fresher could belong to a currently-running
-// sibling process. Pass time.Minute or longer for parallel-safe cleanup.
+// The minAge filter alone is NOT ownership: a healthy sibling browser that has
+// run longer than minAge has a matching profile dir too, because Chrome does
+// not touch its temp dirs' mtimes after creation, so age-based deletion would
+// pull a live browser's profile out from under it (#706, mirroring
+// systemd-tmpfiles/systemd#30760). The authoritative check is the process
+// table: a dir a running process still references in its argv
+// (chrome/chromedriver/crashpad all carry it) is never deleted. If the process
+// listing fails the sweep is skipped entirely, so a failed check leaks an
+// orphan rather than wedging a live sibling. Pass time.Minute or longer so a
+// just-created dir whose owner has not yet appeared in the table is also spared.
 func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
+	procTable, err := listProcessTable()
+	if err != nil {
+		log.Debug("skipping orphan temp-dir sweep: process table unavailable", "error", err)
+		return
+	}
+
 	tmpDir := os.TempDir()
 	patterns := []string{
 		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
@@ -637,6 +650,10 @@ func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 		for _, m := range matches {
 			info, err := os.Stat(m)
 			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
+			// A live browser still owns this dir — leave it alone.
+			if strings.Contains(procTable, m) {
 				continue
 			}
 			if os.RemoveAll(m) == nil {

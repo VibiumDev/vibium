@@ -18,6 +18,17 @@ func setProcGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
+// listProcessTable returns every running process's command line as one blob,
+// so the temp-dir sweep can tell whether a candidate dir still belongs to a
+// live browser (chrome/chromedriver/crashpad carry the dir in argv).
+func listProcessTable() (string, error) {
+	out, err := exec.Command("ps", "-axo", "command=").Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // killProcessGroup kills all processes in the process group of the given PID.
 func killProcessGroup(pid int) {
 	pgid, err := syscall.Getpgid(pid)
