@@ -193,7 +193,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	// Wait for chromedriver to be ready
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
 	if err := waitForChromedriver(baseURL, chromedriverReadyTimeout); err != nil {
-		cmd.Process.Kill()
+		cleanupFailedLaunch(cmd)
 		return nil, fmt.Errorf("chromedriver failed to start: %w", err)
 	}
 
@@ -230,7 +230,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	// Fallback: HTTP POST /session (original path)
 	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, opts.Args)
 	if err != nil {
-		cmd.Process.Kill()
+		cleanupFailedLaunch(cmd)
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	log.Info("browser launched via HTTP", "sessionId", sessionID, "wsUrl", httpWsURL)
@@ -521,6 +521,21 @@ func firefoxProfileKillScript(profileDir string) string {
 			`$procs | ForEach-Object { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction SilentlyContinue }`,
 		base,
 	)
+}
+
+// cleanupFailedLaunch tears down chromedriver after a launch fails partway,
+// the same way Close() does on a healthy shutdown. A bare Process.Kill() (what
+// these error paths used to do) kills only chromedriver's own pid, so a Chrome
+// tree chromedriver had already spawned is orphaned; it also skips Wait(),
+// leaving a zombie, and skips Untrack(), leaking an entry in the process
+// manager for the life of a long-running daemon or serve (#699 neighborhood).
+func cleanupFailedLaunch(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	killProcessTree(cmd.Process.Pid)
+	cmd.Wait()
+	process.Untrack(cmd)
 }
 
 // killProcessTree kills a process and all its descendants using process group kill.
