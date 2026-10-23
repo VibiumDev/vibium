@@ -32,6 +32,18 @@ func setProcGroup(cmd *exec.Cmd) {
 // which kills the entire process tree.
 func killProcessGroup(pid int) {}
 
+// listProcessTable returns every running process's command line as one blob,
+// so the temp-dir sweep can tell whether a candidate dir still belongs to a
+// live browser (chrome/chromedriver/crashpad carry the dir in argv).
+func listProcessTable() (string, error) {
+	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		"Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine").Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // killByPid kills a process tree by PID on Windows.
 func killByPid(pid int) {
 	// /T kills the entire process tree, /F forces termination
