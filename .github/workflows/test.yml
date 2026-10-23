@@ -139,11 +139,14 @@ jobs:
   #                     memory pressure in the second run ("Browsing context
   #                     is gone", runs 39296069220 and 39360774147), so macOS
   #                     runs suites serially.
-  #   runner          — the machine the leg runs on. Linux stays on the
-  #                     GitHub-hosted image; macOS runs on our self-hosted
-  #                     Mac mini (vibium-mac-mini-dev-01, org-level runner,
-  #                     10 cores / 32 GB). matrix.os remains the plain label
-  #                     the include entries and cache keys match on.
+  #   runner          — the machine the leg runs on. x64 Linux stays on the
+  #                     GitHub-hosted image; macOS and arm64 Linux run on our
+  #                     self-hosted Mac mini (vibium-mac-mini-dev-01,
+  #                     org-level runners; the arm64 leg is an ephemeral
+  #                     Ubuntu VM from the linux-base tart image, which
+  #                     ships without unattended-upgrades — see #701).
+  #                     matrix.os remains the plain label the include
+  #                     entries and cache keys match on.
   # Windows is not in the matrix yet: its legs need Go test fixes (Unix file
   # modes, XDG, path separators), Python client binary discovery for
   # vibium.exe, and a story for Firefox auto-install, which the binary
