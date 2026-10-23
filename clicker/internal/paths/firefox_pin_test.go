@@ -116,3 +116,31 @@ func TestFirefoxExecutableBetaPicksNewest(t *testing.T) {
 		t.Errorf("GetFirefoxExecutable() = %q, want the newest %q", got, want)
 	}
 }
+
+// A wrong-architecture cached Firefox must be rejected and deleted so
+// ensure-install downloads the right build instead of launching into
+// "exec format error" (#704, the Firefox twin of the Chrome fix #699).
+func TestFirefoxExecutableRejectsWrongArch(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cacheDir)
+	t.Setenv("VIBIUM_ENGINE_PATH", "")
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "153.0.4")
+
+	dir := filepath.Join(cacheDir, "firefox", "release", "153.0.4")
+	buildTinyBinary(t, foreignArch(), FirefoxPathInVersion(dir))
+
+	if _, err := GetFirefoxExecutable(); err == nil {
+		t.Error("GetFirefoxExecutable() with a wrong-arch cached pin: want error, got nil")
+	}
+	// The rejected directory is deleted so the reinstall extracts cleanly.
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("wrong-arch Firefox version dir should be deleted, Stat() err = %v", err)
+	}
+
+	// Rebuilt for the host arch, the same pin resolves.
+	buildTinyBinary(t, runtime.GOARCH, FirefoxPathInVersion(dir))
+	if _, err := GetFirefoxExecutable(); err != nil {
+		t.Errorf("GetFirefoxExecutable() with a host-arch cached pin: %v", err)
+	}
+}
