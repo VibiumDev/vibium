@@ -182,9 +182,15 @@ public class BiDiClient {
         eventExecutor.shutdownNow();
 
         // Fail all pending requests
-        VibiumConnectionException closedEx = new VibiumConnectionException("Connection closed");
+        failPending(new VibiumConnectionException("Connection closed"));
+    }
+
+    // failPending completes every in-flight request exceptionally and clears
+    // the map, so a caller blocked in send() gets a prompt connection error
+    // instead of waiting out its request timeout.
+    private void failPending(VibiumConnectionException ex) {
         for (CompletableFuture<JsonObject> future : pendingRequests.values()) {
-            future.completeExceptionally(closedEx);
+            future.completeExceptionally(ex);
         }
         pendingRequests.clear();
     }
@@ -195,14 +201,17 @@ public class BiDiClient {
             while (!closed && (line = stdout.readLine()) != null) {
                 dispatchLine(line);
             }
+            // readLine() returned null: the vibium process closed stdout
+            // cleanly, so the loop exits with no exception. Without this an
+            // in-flight request would block until its 60s timeout and then
+            // throw a misleading timeout instead of a connection error.
+            // Python and JS fail pending on EOF/close; Java was the outlier.
+            if (!closed) {
+                failPending(new VibiumConnectionException("Connection closed: the vibium process ended"));
+            }
         } catch (IOException e) {
             if (!closed) {
-                // Connection lost
-                VibiumConnectionException ex = new VibiumConnectionException("Connection lost: " + e.getMessage(), e);
-                for (CompletableFuture<JsonObject> future : pendingRequests.values()) {
-                    future.completeExceptionally(ex);
-                }
-                pendingRequests.clear();
+                failPending(new VibiumConnectionException("Connection lost: " + e.getMessage(), e));
             }
         }
     }
