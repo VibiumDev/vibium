@@ -138,7 +138,9 @@ jobs:
   #                     timing out the same way, with a renderer killed under
   #                     memory pressure in the second run ("Browsing context
   #                     is gone", runs 39296069220 and 39360774147), so macOS
-  #                     runs suites serially.
+  #                     ran suites serially. That was the 3-core / 7 GB
+  #                     hosted runner; the 5-core / 12 GB self-hosted VMs
+  #                     run 2-way. If those timeouts return, drop to 1.
   #   runner          — the machine the leg runs on. Linux stays on the
   #                     GitHub-hosted image; macOS runs on our self-hosted
   #                     Mac mini (vibium-mac-mini-dev-01, org-level runner,
@@ -170,7 +172,7 @@ jobs:
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-            suite_parallel: 1
+            suite_parallel: 2
     runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
