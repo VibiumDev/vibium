@@ -1,7 +1,8 @@
 /**
  * CLI Tests: -h/--help on commands that disable cobra flag parsing
  *
- * fill, type, geolocation, sleep, mouse click, mouse move, and window set
+ * fill, type, geolocation, sleep, mouse click, mouse move, tap, swipe,
+ * long-press, and window set
  * DisableFlagParsing to support negative-number positionals, which also
  * bypasses cobra's built-in help interception. Regression tests for #422
  * (bare --help returned an arity error) and #423 (--help alongside
@@ -35,6 +36,9 @@ const COMMANDS = {
   // never starts a line with '{'.
   'mouse click': { argv: ['mouse', 'click'], short: 'Click at coordinates or current position', executed: /^\{/m },
   'mouse move': { argv: ['mouse', 'move'], short: 'Move the mouse to coordinates', executed: /^\{/m },
+  tap: { argv: ['tap'], short: 'Tap a touchscreen at coordinates', executed: /^\{/m },
+  swipe: { argv: ['swipe'], short: 'Swipe a touchscreen from one point to another', executed: /^\{/m },
+  'long-press': { argv: ['long-press'], short: 'Press and hold a touchscreen at coordinates', executed: /^\{/m },
   window: { argv: ['window'], short: 'Get or set the OS browser window size, position, or state', executed: /^\{/m },
 };
 

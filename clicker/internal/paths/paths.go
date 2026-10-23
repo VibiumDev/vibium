@@ -191,6 +191,13 @@ func resolveVersionDir(channel string) (string, error) {
 		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
 			return "", err
 		}
+		// A cached pin of the wrong architecture can never launch; delete
+		// it so ensure-install extracts the right build into a clean
+		// directory instead of over the old files (#699).
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("cached Chrome for Testing %s is built for another architecture: %w", pin, os.ErrNotExist)
+		}
 		return dir, nil
 	}
 
@@ -209,6 +216,12 @@ func resolveVersionDir(channel string) (string, error) {
 			continue
 		}
 		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			continue
+		}
+		// A cached dir whose binaries are the wrong architecture can never
+		// launch; delete it rather than resolve it (#699).
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
+			os.RemoveAll(dir)
 			continue
 		}
 		complete = append(complete, entry.Name())

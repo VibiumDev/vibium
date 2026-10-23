@@ -64,7 +64,7 @@ vibium version   # Show version
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.11+
 
 ## Links
 

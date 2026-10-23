@@ -73,6 +73,19 @@ class Touch:
     def tap(self, x: float, y: float) -> None:
         self._loop.run(self._async.tap(x, y))
 
+    def swipe(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        duration_ms: Optional[int] = None,
+    ) -> None:
+        self._loop.run(self._async.swipe(x1, y1, x2, y2, duration_ms))
+
+    def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
+        self._loop.run(self._async.long_press(x, y, duration_ms))
+
 
 class Page:
     """Synchronous wrapper for async Page."""

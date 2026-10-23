@@ -1227,6 +1227,81 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
+			Name:        "browser_tap",
+			Description: "Tap a touch pointer at coordinates (for touchscreen devices and phones)",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"x": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate to tap at",
+					},
+					"y": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate to tap at",
+					},
+				},
+				"required":             []string{"x", "y"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "browser_swipe",
+			Description: "Swipe a touch pointer from one point to another, finger held down for the move (for touchscreen devices and phones)",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"x1": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate to start from",
+					},
+					"y1": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate to start from",
+					},
+					"x2": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate to end at",
+					},
+					"y2": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate to end at",
+					},
+					"duration": map[string]interface{}{
+						"type":        "number",
+						"description": "How long the move takes in milliseconds (default: 300)",
+						"default":     300,
+					},
+				},
+				"required":             []string{"x1", "y1", "x2", "y2"},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "browser_long_press",
+			Description: "Press and hold a touch pointer at coordinates (for touchscreen devices and phones)",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"x": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate to press at",
+					},
+					"y": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate to press at",
+					},
+					"duration": map[string]interface{}{
+						"type":        "number",
+						"description": "How long to hold the press in milliseconds (default: 500)",
+						"default":     500,
+					},
+				},
+				"required":             []string{"x", "y"},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "browser_drag",
 			Description: "Drag from one element to another",
 			InputSchema: map[string]interface{}{

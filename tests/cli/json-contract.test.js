@@ -89,6 +89,7 @@ const CLASSES = {
   'is-installed': 'envelope',
   'keys': 'usage-error',
   'launch-test': 'exempt', // runs until Ctrl+C
+  'long-press': 'usage-error',
   'map': 'envelope',
   'mcp': 'exempt', // server: banner on stderr, exits when stdin closes
   'media': 'usage-error',
@@ -127,6 +128,8 @@ const CLASSES = {
   'stop': 'envelope',
   'storage': 'envelope',
   'storage restore': 'usage-error',
+  'swipe': 'usage-error',
+  'tap': 'usage-error',
   'text': 'envelope',
   'title': 'envelope',
   'type': 'usage-error',

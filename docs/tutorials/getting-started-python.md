@@ -12,13 +12,13 @@ A script that opens a browser, visits a website, takes a screenshot, and clicks 
 
 ## Step 1: Install Python
 
-Vibium requires Python 3.9 or higher. Check if you have it:
+Vibium requires Python 3.11 or higher. Check if you have it:
 
 ```bash
 python3 --version
 ```
 
-If you see a version number (like `Python 3.9.0` or higher), skip to Step 2.
+If you see a version number (like `Python 3.11.0` or higher), skip to Step 2.
 
 ### macOS
 

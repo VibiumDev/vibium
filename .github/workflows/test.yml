@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge queue batches. Without this the queue waits forever for the
+  # required `test` check. The changes classifier treats merge_group like a
+  # push: full suite, no docs-only skip.
+  merge_group:
 
 # Deliberately no paths/paths-ignore. Branch protection requires the checks
 # this workflow reports, and a filter that skips the workflow also skips the
@@ -20,6 +24,17 @@ on:
 # the repo default is ever write.
 permissions:
   contents: read
+
+# A new push to a PR obsoletes that PR's running suite: cancel it rather
+# than queue behind it — with two macOS runner slots org-wide, a stale run
+# can hold real PRs in the queue for half an hour (see the pileup behind
+# #688, where a branch update plus a base change stacked three identical
+# runs). Pushes to main are exempt: each gets a unique group via run_id, so
+# nothing ever cancels or queues behind a main build and every merge commit
+# is tested in full.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Forward the vibium binary's stderr through the JS and Python clients into
 # the job log. Without it the clients drain stderr into a small in-memory
@@ -105,9 +120,12 @@ jobs:
   #                     so each leg installs its own rollup module explicitly
   #   display_wrap    — the Python suite's headed tests need a display; only
   #                     Linux runners lack one, so only Linux wraps in xvfb
-  #   python_version  — setup-python has no 3.9 build for Apple Silicon, so
-  #                     macOS tests a current Python while Linux holds the
-  #                     3.9 floor
+  #   python_version  — Linux holds the client's requires-python floor so a
+  #                     change cannot lean on features newer than the oldest
+  #                     Python we ship to; macOS tests a current Python,
+  #                     covering the other end of the supported range. The
+  #                     floor tracks CPython's security-fix window (see the
+  #                     support policy in CONTRIBUTING.md)
   #   go_version      — Go emits the LC_UUID load command only from 1.23, and
   #                     the macOS 26 runner's dyld aborts binaries without it,
   #                     so macOS builds with current Go while Linux holds the
@@ -115,7 +133,17 @@ jobs:
   #   suite_parallel  — the macOS runner has 3 cores and 7 GB against Linux's
   #                     4 and 16, and renders Chrome in software; 4-way suite
   #                     parallelism intermittently starved it into scattered
-  #                     30s test timeouts (run 38786751399)
+  #                     30s test timeouts (run 38786751399). 2-way still ran
+  #                     the JS suite against two pytest-xdist Chromes and kept
+  #                     timing out the same way, with a renderer killed under
+  #                     memory pressure in the second run ("Browsing context
+  #                     is gone", runs 39296069220 and 39360774147), so macOS
+  #                     runs suites serially.
+  #   runner          — the machine the leg runs on. Linux stays on the
+  #                     GitHub-hosted image; macOS runs on our self-hosted
+  #                     Mac mini (vibium-mac-mini-dev-01, org-level runner,
+  #                     10 cores / 32 GB). matrix.os remains the plain label
+  #                     the include entries and cache keys match on.
   # Windows is not in the matrix yet: its legs need Go test fixes (Unix file
   # modes, XDG, path separators), Python client binary discovery for
   # vibium.exe, and a story for Firefox auto-install, which the binary
@@ -130,18 +158,20 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
+            runner: ubuntu-latest
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
-            python_version: '3.9'
+            python_version: '3.11'
             suite_parallel: 4
           - os: macos-latest
+            runner: [self-hosted, macOS, ARM64]
             cache_root: ~/Library/Caches/vibium
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-            suite_parallel: 2
-    runs-on: ${{ matrix.os }}
+            suite_parallel: 1
+    runs-on: ${{ matrix.runner }}
     # Backstop only — scripts/timeout.mjs fails a hung suite after 10 min.
     timeout-minutes: 30
 
@@ -254,16 +284,18 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
+            runner: ubuntu-latest
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
-            python_version: '3.9'
+            python_version: '3.11'
           - os: macos-latest
+            runner: [self-hosted, macOS, ARM64]
             cache_root: ~/Library/Caches/vibium
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
 
     steps:
@@ -345,16 +377,18 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
+            runner: ubuntu-latest
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
-            python_version: '3.9'
+            python_version: '3.11'
           - os: macos-latest
+            runner: [self-hosted, macOS, ARM64]
             cache_root: ~/Library/Caches/vibium
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
       VIBIUM_REQUIRE_FIREFOX: 1
@@ -454,16 +488,18 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
+            runner: ubuntu-latest
             cache_root: ~/.cache/vibium
             rollup_native: '@rollup/rollup-linux-x64-gnu'
             display_wrap: xvfb-run --auto-servernum
-            python_version: '3.9'
+            python_version: '3.11'
           - os: macos-latest
+            runner: [self-hosted, macOS, ARM64]
             cache_root: ~/Library/Caches/vibium
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
       VIBIUM_REQUIRE_FIREFOX: 1

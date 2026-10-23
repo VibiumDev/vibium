@@ -68,4 +68,18 @@ export class TouchSync {
   tap(x: number, y: number): void {
     this.bridge.call('touch.tap', [this.pageId, x, y]);
   }
+
+  swipe(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    durationMs?: number,
+  ): void {
+    this.bridge.call('touch.swipe', [this.pageId, x1, y1, x2, y2, durationMs]);
+  }
+
+  longPress(x: number, y: number, durationMs?: number): void {
+    this.bridge.call('touch.longPress', [this.pageId, x, y, durationMs]);
+  }
 }

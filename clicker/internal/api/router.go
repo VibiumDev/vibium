@@ -650,6 +650,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:touch.tap":
 		r.dispatch(session, cmd, r.handleTouchTap)
 		return
+	case "vibium:touch.swipe":
+		r.dispatch(session, cmd, r.handleTouchSwipe)
+		return
+	case "vibium:touch.longPress":
+		r.dispatch(session, cmd, r.handleTouchLongPress)
+		return
 
 	// Page-level capture commands
 	case "vibium:page.screenshot":
