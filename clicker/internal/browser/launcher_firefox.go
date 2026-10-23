@@ -109,9 +109,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	args = append(args, "about:blank")
 
 	cmd := exec.Command(firefoxPath, args...)
-	if xdgConfigHome != "" {
-		cmd.Env = replaceEnv(os.Environ(), "XDG_CONFIG_HOME", xdgConfigHome)
-	}
+	cmd.Env = firefoxLaunchEnv(xdgConfigHome)
 	setProcGroup(cmd)
 	if opts.Verbose {
 		fmt.Println("       ------- firefox -------")
@@ -179,6 +177,20 @@ func prepareFirefoxXDG(profileDir string) (string, error) {
 		return "", err
 	}
 	return configDir, nil
+}
+
+// firefoxLaunchEnv is the environment for the Firefox process: the parent
+// environment plus MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1, which Firefox 159 requires
+// to permit privileged BiDi operations (setContent, activate) that the
+// --remote-allow-system-access flag alone no longer unlocks (#673). On Linux it
+// also overrides XDG_CONFIG_HOME to the private profile (prepareFirefoxXDG);
+// xdgConfigHome is "" on other platforms.
+func firefoxLaunchEnv(xdgConfigHome string) []string {
+	env := replaceEnv(os.Environ(), "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS", "1")
+	if xdgConfigHome != "" {
+		env = replaceEnv(env, "XDG_CONFIG_HOME", xdgConfigHome)
+	}
+	return env
 }
 
 func replaceEnv(env []string, key, value string) []string {
