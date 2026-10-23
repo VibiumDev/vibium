@@ -197,21 +197,6 @@ jobs:
           # build and test steps could read it.
           persist-credentials: false
 
-      # The self-hosted arm64 runner is a fresh Ubuntu VM per job, so
-      # apt-daily-upgrade.timer (Persistent=true) fires a few minutes after
-      # boot and runs unattended upgrades. When it upgrades systemd/udev it
-      # does a daemon-reexec and restarts systemd-networkd mid-suite, which
-      # drops Chrome's BiDi websocket (close 1006, unexpected EOF) with no
-      # OOM or crash — three identical failures at run time (#701). Stop and
-      # mask the timers before anything launches a browser. The GitHub-hosted
-      # legs manage this themselves, so this is the self-hosted VM only. The
-      # durable fix is baking this into the runner image.
-      - name: Disable unattended upgrades
-        if: matrix.os == 'linux-arm64'
-        run: |
-          sudo systemctl disable --now unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer || true
-          sudo systemctl mask apt-daily.service apt-daily-upgrade.service || true
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -290,6 +275,15 @@ jobs:
       # whole suite.
       - name: Test
         run: ${{ matrix.display_wrap }} make test-core SUITE_PARALLEL=${{ matrix.suite_parallel }} ${{ matrix.worker_flags }}
+
+      # The ephemeral VM is destroyed after the job and its console is not
+      # captured, so system-level evidence (the unattended-upgrade incident
+      # #701 took three runs to pin down) must be dumped inside the job.
+      - name: Dump system journal on failure
+        if: failure() && matrix.os == 'linux-arm64'
+        run: |
+          sudo journalctl -b --no-pager | tail -n 500
+          systemctl list-timers --all --no-pager
 
       - name: Audit capability selection
         run: make test-capability-audit
