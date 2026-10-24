@@ -77,23 +77,6 @@ func InstallForChannel(channel string) (*InstallResult, error) {
 		}, nil
 	}
 
-	// linux-arm64 has no Chrome for Testing build, so there is nothing to
-	// download; the browser must come from the system package. Reaching here
-	// means IsInstalledForChannel above did not find it, so name the cause
-	// (and the fix) instead of fetching an x86 build that dies with "exec
-	// format error" (#638).
-	if paths.UseSystemChrome() {
-		if _, err := paths.SystemChromeExecutable(); err != nil {
-			return nil, err
-		}
-		if _, err := paths.SystemChromedriverPath(); err != nil {
-			return nil, err
-		}
-		chromePath, _ := paths.GetChromeExecutableForChannel(channel)
-		chromedriverPath, _ := paths.GetChromedriverPathForChannel(channel)
-		return &InstallResult{ChromePath: chromePath, ChromedriverPath: chromedriverPath}, nil
-	}
-
 	platform := paths.GetPlatformString()
 
 	versionInfo, err := resolveChromeVersionInfo(channel)

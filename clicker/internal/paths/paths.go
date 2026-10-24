@@ -267,10 +267,6 @@ func GetChromeExecutable() (string, error) {
 // GetChromeExecutableForChannel resolves the executable of a specific
 // channel. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
 func GetChromeExecutableForChannel(channel string) (string, error) {
-	// linux-arm64 has no Chrome for Testing build; use the system browser (#638).
-	if UseSystemChrome() {
-		return SystemChromeExecutable()
-	}
 	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
@@ -288,9 +284,6 @@ func GetChromedriverPath() (string, error) {
 // GetChromedriverPathForChannel resolves the chromedriver of a specific
 // channel, from the same version directory as the executable.
 func GetChromedriverPathForChannel(channel string) (string, error) {
-	if UseSystemChrome() {
-		return SystemChromedriverPath()
-	}
 	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
@@ -453,15 +446,26 @@ func FirefoxPathInVersion(versionDir string) string {
 
 // getPlatformString returns the platform string used by Chrome for Testing.
 func getPlatformString() string {
-	switch runtime.GOOS {
+	return platformStringFor(runtime.GOOS, runtime.GOARCH)
+}
+
+// platformStringFor maps a Go GOOS/GOARCH to the Chrome for Testing platform
+// token. Chrome for Testing publishes linux-arm64 from 153.0.8001.0 on, so
+// aarch64 Linux downloads its own build like any other platform rather than
+// an x86 one that cannot exec (#638, #675).
+func platformStringFor(goos, goarch string) string {
+	switch goos {
 	case "darwin":
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			return "mac-arm64"
 		}
 		return "mac-x64"
 	case "windows":
 		return "win64"
 	default: // linux
+		if goarch == "arm64" {
+			return "linux-arm64"
+		}
 		return "linux64"
 	}
 }
