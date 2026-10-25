@@ -13,6 +13,14 @@ import (
 // vibiumMatchedPatterns (see routeRegistry), so clients dispatch handlers
 // without their own glob implementations.
 func (r *Router) handlePageRoute(session *BrowserSession, cmd bidiCommand) {
+	// Web Bot Auth signing owns the one beforeRequestSent intercept for the
+	// session and continues every request itself. A client route would install
+	// a second intercept and race that continue (one blocked event, two
+	// continues), so the two cannot share a session yet (#28).
+	if r.signer != nil {
+		r.sendError(session, cmd.ID, fmt.Errorf("page.route is not supported while Web Bot Auth signing is enabled"))
+		return
+	}
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)

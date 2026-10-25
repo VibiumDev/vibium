@@ -116,3 +116,54 @@ func TestResolveVersionDirNewestSkipsWrongArch(t *testing.T) {
 		t.Errorf("wrong-arch version dir should be deleted, Stat() err = %v", err)
 	}
 }
+
+// A cached Firefox pin whose binary is the wrong architecture must be
+// rejected and deleted so ensure-install downloads the right build instead of
+// launching into "exec format error" (#704, the Firefox side of #699).
+func TestResolveFirefoxVersionDirRejectsWrongArch(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "140.0.1")
+
+	dir := filepath.Join(cache, "firefox", "release", "140.0.1")
+	buildTinyBinary(t, foreignArch(), FirefoxPathInVersion(dir))
+
+	if _, err := resolveFirefoxVersionDir(""); err == nil {
+		t.Error("resolveFirefoxVersionDir() with a wrong-arch cached pin: want error, got nil")
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("wrong-arch version dir should be deleted, Stat() err = %v", err)
+	}
+
+	// Rebuilt for the host arch, the same pin resolves.
+	buildTinyBinary(t, runtime.GOARCH, FirefoxPathInVersion(dir))
+	if _, err := resolveFirefoxVersionDir(""); err != nil {
+		t.Errorf("resolveFirefoxVersionDir() with a host-arch cached pin: %v", err)
+	}
+}
+
+// Newest-cached selection (the beta channel) must skip a wrong-architecture
+// Firefox rather than resolve it, even when it carries the highest version.
+func TestResolveFirefoxVersionDirNewestSkipsWrongArch(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+	t.Setenv("VIBIUM_ENGINE_CHANNEL", "beta")
+	t.Setenv("VIBIUM_ENGINE_VERSION", "")
+
+	good := filepath.Join(cache, "firefox", "beta", "100.0b1")
+	buildTinyBinary(t, runtime.GOARCH, FirefoxPathInVersion(good))
+	bad := filepath.Join(cache, "firefox", "beta", "999.0b1")
+	buildTinyBinary(t, foreignArch(), FirefoxPathInVersion(bad))
+
+	dir, err := resolveFirefoxVersionDir("beta")
+	if err != nil {
+		t.Fatalf("resolveFirefoxVersionDir(beta) error = %v", err)
+	}
+	if got := filepath.Base(dir); got != "100.0b1" {
+		t.Errorf("resolveFirefoxVersionDir(beta) = %s, want the host-arch 100.0b1", got)
+	}
+	if _, err := os.Stat(bad); !os.IsNotExist(err) {
+		t.Errorf("wrong-arch version dir should be deleted, Stat() err = %v", err)
+	}
+}

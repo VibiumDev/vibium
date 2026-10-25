@@ -394,6 +394,14 @@ func resolveFirefoxVersionDir(channel string) (string, error) {
 		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
 			return "", err
 		}
+		// A cached pin of the wrong architecture can never launch; delete
+		// it so ensure-install extracts the right build into a clean
+		// directory instead of over the old files (#704, the Firefox side
+		// of #699).
+		if !binaryArchMatches(FirefoxPathInVersion(dir)) {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("cached Firefox %s is built for another architecture: %w", pin, os.ErrNotExist)
+		}
 		return dir, nil
 	}
 
@@ -407,7 +415,14 @@ func resolveFirefoxVersionDir(channel string) (string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(FirefoxPathInVersion(filepath.Join(ffDir, entry.Name()))); err != nil {
+		dir := filepath.Join(ffDir, entry.Name())
+		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
+			continue
+		}
+		// A cached dir whose binary is the wrong architecture can never
+		// launch; delete it rather than resolve it (#704).
+		if !binaryArchMatches(FirefoxPathInVersion(dir)) {
+			os.RemoveAll(dir)
 			continue
 		}
 		complete = append(complete, entry.Name())
