@@ -194,6 +194,17 @@ type modelTools struct {
 }
 
 func (v *modelTools) ProbeSecret(ctx context.Context, selector, name string) (bool, error) {
+	// Check the ref first, against this page's refs, as Call will: it may
+	// re-point the ref, and the probe must look at the element the action is
+	// about to use. A stale ref is still probed where it points; Call then
+	// fails the action with the stale error, which the executor would hide
+	// behind a generic probe failure if it came from here.
+	prev := v.h.pageOverride
+	v.h.pageOverride = v.page
+	defer func() { v.h.pageOverride = prev }()
+	if strings.HasPrefix(selector, "@e") {
+		_ = v.h.checkRef(selector)
+	}
 	script := ai.SecretProbeJS(api.PierceQueryJS())
 	secret, err := v.h.client.CallFunction(v.page, script, []interface{}{v.h.resolveSelector(selector)})
 	if err != nil {

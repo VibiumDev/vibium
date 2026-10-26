@@ -119,4 +119,105 @@ describe('Daemon: Find @refs workflow', () => {
     const urlResult = clickerJSON('url');
     assert.ok(urlResult.result.includes('/example'), 'Should still be on /example');
   });
+
+  // Refs are positional selectors, so after a re-render the old @e3 used to
+  // match whichever button had taken its place.
+  test('ref follows its element when siblings are removed', () => {
+    clicker(`go ${baseURL}/add_remove_elements/`);
+    clicker(`eval "addElement(); addElement(); addElement(); document.querySelectorAll('.added-manually').forEach((b, i) => b.dataset.n = i)"`);
+    const mapResult = clickerJSON('map');
+    assert.ok(mapResult.result.includes('@e4'), 'map should list the three Delete buttons');
+
+    clickerJSON('click @e2');
+    clickerJSON('click @e3');
+    const left = clickerJSON(`eval "[...document.querySelectorAll('.added-manually')].map(b => b.dataset.n).join()"`);
+    assert.strictEqual(left.result, '2', '@e3 should have deleted the second button, not the third');
+  });
+
+  test('a CSS find ref keeps its own selector', () => {
+    // A generated path in its place would drop "#f2" here and hit the first #go.
+    clicker(`content '<form id="f1"><button type="button" id="go" onclick="document.title=1">Go</button></form><form id="f2"><button type="button" id="go" onclick="document.title=2">Go</button></form>'`);
+    clickerJSON('find "#f2 #go"');
+    clickerJSON('click @e1');
+    clickerJSON('click @e1');
+    assert.strictEqual(clickerJSON('title').result, '2');
+  });
+
+  test('questions about absence answer "gone" for a removed element', () => {
+    clicker(`go ${baseURL}/add_remove_elements/`);
+    clicker('eval "addElement()"');
+    clickerJSON('map');
+    clicker(`eval "document.querySelector('.added-manually').remove()"`);
+    assert.strictEqual(clickerJSON('is visible @e2').result, 'false');
+    assert.strictEqual(clickerJSON('count @e2').result, '0');
+    assert.match(clickerJSON('wait @e2 --state hidden --timeout 2000').result, /reached state: hidden/);
+  });
+
+  test('a live element another one now shadows is not reported gone', () => {
+    clicker(`content '<div id="slot"></div><button id="save">Save</button>'`);
+    clickerJSON('map');
+    // A second #save earlier in the page takes over @e1's selector.
+    clicker(`eval "document.getElementById('slot').innerHTML = '<button id=save>Other</button>'"`);
+    let out;
+    try {
+      out = clicker('--json is visible @e1');
+    } catch (e) {
+      out = e.stdout.trim();
+    }
+    const result = JSON.parse(out);
+    assert.strictEqual(result.ok, false, 'a visible element must not answer "not visible"');
+    assert.match(result.error, /still on the page/);
+  });
+
+  test('an open dialog does not hold a ref command for the full command timeout', () => {
+    clicker(`content '<button onclick="setTimeout(() => alert(1))">Alert</button><button>Other</button>'`);
+    clickerJSON('map');
+    clicker('click @e1');
+    const started = Date.now();
+    try {
+      clicker('click @e2 --timeout 2000');
+    } catch {
+      /* failing is fine; hanging is not */
+    }
+    const took = Date.now() - started;
+    try { clicker('dialog dismiss'); } catch { /* already gone */ }
+    assert.ok(took < 10000, `click @e2 under an open alert took ${took}ms`);
+  });
+
+  test('the ref store is invisible to the page', () => {
+    clicker(`go ${baseURL}/checkboxes`);
+    clickerJSON('map');
+    const seen = clickerJSON(`eval "String(typeof vibiumRefs) + ',' + Object.getOwnPropertySymbols(document).length"`);
+    assert.strictEqual(seen.result, 'undefined,0');
+  });
+
+  test('a CSS find ref re-resolves its selector after a re-render', () => {
+    // The selector is the caller's, not a positional path, so it keeps
+    // meaning "whatever matches .spinner now", as it always has.
+    clicker(`content '<div id="box"><span class="spinner">wait</span></div>'`);
+    clickerJSON('find ".spinner"');
+    // find of that ref copies it, and the copy stays a CSS ref too.
+    clickerJSON('find @e1');
+    clicker(`eval "document.getElementById('box').innerHTML = '<span class=spinner>still</span>'"`);
+    assert.strictEqual(clickerJSON('is visible @e1').result, 'true');
+    assert.strictEqual(clickerJSON('count @e1').result, '1');
+  });
+
+  test('ref from a previous document fails as stale', () => {
+    clicker(`go ${baseURL}/checkboxes`);
+    clickerJSON('map');
+    clicker(`go ${baseURL}/checkboxes`);
+
+    let out;
+    try {
+      out = clicker('--json click @e1');
+    } catch (e) {
+      out = e.stdout.trim();
+    }
+    const result = JSON.parse(out);
+    assert.strictEqual(result.ok, false, 'clicking a ref from the old document should fail');
+    assert.match(result.error, /stale ref @e1/);
+    const checked = clickerJSON(`eval "document.querySelector('#checkboxes input').checked"`);
+    assert.strictEqual(checked.result, 'false', 'the new page must not have been clicked');
+  });
 });
