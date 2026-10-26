@@ -113,7 +113,8 @@ func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, conn
 	// Reclaim Chrome profile dirs orphaned by earlier crashed/killed sessions.
 	// A clean shutdown removes a session's own dir, but any hard kill (crash,
 	// test timeout, `make test`'s pkill -9) leaks it, and nothing swept them.
-	// Parallel-safe: the minAge filter never touches a live sibling's dir.
+	// Parallel-safe: dirs referenced by a live process are spared (#706), and
+	// the minAge filter covers a dir between creation and launch.
 	if !noBrowser {
 		browser.CleanupOrphanedBrowserTempDirs(time.Minute)
 	}

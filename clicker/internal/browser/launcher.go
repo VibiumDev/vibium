@@ -620,15 +620,25 @@ func killOrphanedProcessesFromDir(dir string) {
 // the same glob, and deleting them out from under a live Chrome breaks its
 // BiDi connection.
 //
-// The minAge filter only deletes directories whose mtime is older than the
-// given duration — anything fresher could belong to a currently-running
-// sibling process. Pass time.Minute or longer for parallel-safe cleanup.
+// Two guards keep it off live directories. A dir referenced by any running
+// process's command line is spared: mtime alone cannot tell a leaked dir
+// from a healthy long-lived sibling's, since Chrome never touches its temp
+// dirs after creation, so any browser older than minAge looks stale (#706).
+// The minAge filter covers the remaining window between a dir's creation
+// and its browser appearing in the process table. When the process listing
+// fails nothing is deleted: leaking a directory is recoverable, wedging a
+// live browser is not.
 func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 	tmpDir := os.TempDir()
 	patterns := []string{
 		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
 		filepath.Join(tmpDir, "org.chromium.Chromium.scoped_dir.*"),
 		filepath.Join(tmpDir, "vibium-firefox-profile-*"),
+	}
+	args, ok := liveProcessArgs()
+	if !ok {
+		log.Debug("orphan temp dir sweep skipped: process listing failed")
+		return
 	}
 	cutoff := time.Now().Add(-minAge)
 	var count int
@@ -639,6 +649,9 @@ func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 			if err != nil || info.ModTime().After(cutoff) {
 				continue
 			}
+			if tempDirInUse(args, m) {
+				continue
+			}
 			if os.RemoveAll(m) == nil {
 				count++
 			}
@@ -647,6 +660,40 @@ func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 	if count > 0 {
 		log.Debug("cleaned up orphaned Chrome temp dirs", "count", count, "minAge", minAge)
 	}
+}
+
+// liveProcessArgs returns every running process's command line in one blob,
+// or ok=false when the listing fails. One read serves a whole sweep.
+func liveProcessArgs() (string, bool) {
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("powershell", "-NoProfile", "-Command",
+			"Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }").Output()
+		if err != nil {
+			return "", false
+		}
+		return string(out), true
+	}
+	out, err := exec.Command("ps", "axww", "-o", "args=").Output()
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
+}
+
+// tempDirInUse reports whether any live process references dir on its command
+// line. Chrome, chromedriver and crashpad carry their temp dirs in argv
+// (--user-data-dir, scoped profile paths, --database), so a referenced dir
+// belongs to a live browser no matter how old its mtime is. The resolved path
+// is checked too: macOS reaches os.TempDir() through the /var -> /private/var
+// symlink and argv can carry either spelling.
+func tempDirInUse(args, dir string) bool {
+	if strings.Contains(args, dir) {
+		return true
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+		return strings.Contains(args, resolved)
+	}
+	return false
 }
 
 // driverErrorMessage pulls the human-readable part out of a WebDriver error
