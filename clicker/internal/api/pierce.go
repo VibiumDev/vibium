@@ -15,9 +15,32 @@ package api
 // common case and cannot change its behavior.
 func PierceQueryJS() string {
 	return `
+		// Splits on >> and >>> outside quotes, brackets and escapes,
+		// so [aria-label=">>"] stays one selector. >>> wins over >> at one
+		// index. Parts are trimmed of whitespace (any \s, as the old regex
+		// split did) except an escaped space, which ends a ref for an id
+		// like "a ".
 		function __pierceSplit(selector) {
-			// Alternation order matters: >>> must win over >> at the same index.
-			return selector.split(/\s*(>>>|>>)\s*/);
+			const out = [];
+			const skipSpace = (j) => { while (j < selector.length && /\s/.test(selector[j])) j++; return j; };
+			let start = skipSpace(0), end = start, quote = '', depth = 0;
+			for (let i = start; i < selector.length; i++) {
+				const c = selector[i];
+				const prevEnd = end;
+				if (c === '\\') { i++; end = i + 1; continue; }
+				if (!/\s/.test(c)) end = i + 1;
+				if (quote) { if (c === quote) quote = ''; continue; }
+				if (c === '"' || c === "'") { quote = c; continue; }
+				if (c === '[' || c === '(') { depth++; continue; }
+				if (c === ']' || c === ')') { if (depth) depth--; continue; }
+				if (depth || c !== '>' || selector[i + 1] !== '>') continue;
+				const comb = selector[i + 2] === '>' ? '>>>' : '>>';
+				out.push(selector.slice(start, Math.max(start, prevEnd)), comb);
+				start = end = skipSpace(i + comb.length);
+				i = start - 1;
+			}
+			out.push(selector.slice(start, Math.max(start, end)));
+			return out;
 		}
 
 		function __shadowRootsUnder(root) {
@@ -71,6 +94,8 @@ func PierceQueryJS() string {
 		}
 
 		function pierceQuery(root, selector) {
+			if (!root || !selector) return null;
+			if (selector.indexOf('>>') === -1) return root.querySelector(selector);
 			const all = pierceQueryAll(root, selector);
 			return all.length ? all[0] : null;
 		}

@@ -7,6 +7,8 @@ const { test, describe, before, after } = require("../../helpers/capabilities").
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { VIBIUM } = require("../../helpers");
 
 let serverProcess, baseURL;
@@ -114,6 +116,17 @@ describe('CLI: shadow DOM pierce', () => {
     assert.match(execSync(`${VIBIUM} find "my-card >>> #deep"`, { encoding: 'utf-8', timeout: 30000 }), /Deep Button/);
   });
 
+  test('wait and focus resolve a pierced selector (#748)', () => {
+    // Their resolvers used plain querySelector, so ">>" was an invalid selector
+    // there, and "wait --state hidden" passed on it without looking.
+    execSync(`${VIBIUM} go ${baseURL}/shadow`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(execSync(`${VIBIUM} wait "my-card >> #i" --state visible --timeout 2s`, { encoding: 'utf-8', timeout: 30000 }), /reached state: visible/);
+    assert.throws(() => execSync(`${VIBIUM} wait "my-card >> #i" --state hidden --timeout 1s`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' }), /still visible/);
+    execSync(`${VIBIUM} focus "my-card >> #i"`, { encoding: 'utf-8', timeout: 30000 });
+    const active = execSync(`${VIBIUM} eval "document.querySelector('my-card').shadowRoot.activeElement.id"`, { encoding: 'utf-8', timeout: 30000 }).trim();
+    assert.strictEqual(active, 'i');
+  });
+
   test('actions work on a pierced element', () => {
     execSync(`${VIBIUM} go ${baseURL}/shadow`, { encoding: 'utf-8', timeout: 30000 });
 
@@ -124,6 +137,78 @@ describe('CLI: shadow DOM pierce', () => {
     // inside the shadow root — including the elementFromPoint hit test.
     const out = execSync(`${VIBIUM} text "#out"`, { encoding: 'utf-8', timeout: 30000 });
     assert.match(out, /clicked:hello/);
+  });
+
+  // Since #283 map lists shadow elements, but their refs were document paths
+  // that stopped at the shadow root: they matched nothing or a light-DOM element.
+  const refFor = (out, pattern) => {
+    const m = out.match(new RegExp('(@e\\d+) ' + pattern));
+    assert.ok(m, `should list ${pattern}:\n${out}`);
+    return m[1];
+  };
+  const clickAndRead = (ref) => {
+    execSync(`${VIBIUM} click ${ref} --timeout 5s`, { encoding: 'utf-8', timeout: 30000 });
+    return execSync(`${VIBIUM} text "#out"`, { encoding: 'utf-8', timeout: 30000 }).trim();
+  };
+
+  test('map refs inside shadow roots click the mapped element (#748)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
+    const out = execSync(`${VIBIUM} map`, { encoding: 'utf-8', timeout: 30000 });
+    for (const label of ['Save', 'B', 'C', 'Deep']) {
+      assert.strictEqual(clickAndRead(refFor(out, `\\[button\\] "${label}"`)), `shadow:${label}`);
+    }
+
+    // A shadow element with an id: the id only holds inside its root.
+    execSync(`${VIBIUM} go ${baseURL}/shadow`, { encoding: 'utf-8', timeout: 30000 });
+    const card = execSync(`${VIBIUM} map`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(clickAndRead(refFor(card, '\\[button\\] "Shadow Button"')), 'clicked:');
+  });
+
+  test('find --all refs inside a shadow root click the found element (#748)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
+    const out = execSync(`${VIBIUM} find --all "x-panel >> div > button"`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(clickAndRead(refFor(out, '\\[button\\] "C"')), 'shadow:C');
+  });
+
+  test('a ref keeps the escapes in a host id (#748)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
+    const out = execSync(`${VIBIUM} map`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(clickAndRead(refFor(out, '\\[button\\] "Spaced"')), 'shadow:Spaced');
+    assert.strictEqual(clickAndRead(refFor(out, '\\[button\\] "Quoted"')), 'shadow:Quoted');
+  });
+
+  test('the >> split skips a quoted >> and trims whitespace (#748)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
+    const last = `'button[aria-label=">>"]'`;
+    assert.strictEqual(execSync(`${VIBIUM} count ${last}`, { encoding: 'utf-8', timeout: 30000 }).trim(), '1');
+    execSync(`${VIBIUM} click ${last} --timeout 5s`, { encoding: 'utf-8', timeout: 30000 });
+    assert.strictEqual(execSync(`${VIBIUM} text "#out"`, { encoding: 'utf-8', timeout: 30000 }).trim(), 'last');
+    // Whitespace around >> is trimmed, including a pasted no-break space.
+    assert.strictEqual(execSync(`${VIBIUM} count "x-panel\u00a0>> button"`, { encoding: 'utf-8', timeout: 30000 }).trim(), '6');
+  });
+
+  test('count, highlight, annotate and upload resolve shadow refs (#748)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
+    const map = execSync(`${VIBIUM} map`, { encoding: 'utf-8', timeout: 30000 });
+    const save = refFor(map, '\\[button\\] "Save"');
+    const b = refFor(map, '\\[button\\] "B"');
+    assert.strictEqual(execSync(`${VIBIUM} count ${b}`, { encoding: 'utf-8', timeout: 30000 }).trim(), '1');
+    assert.strictEqual(execSync(`${VIBIUM} count "x-panel >> button"`, { encoding: 'utf-8', timeout: 30000 }).trim(), '6');
+    // The outline itself is removed after 3s, too soon to read reliably from
+    // another process; the click tests show this selector reaches Save.
+    assert.match(execSync(`${VIBIUM} highlight ${save}`, { encoding: 'utf-8', timeout: 30000 }), /Highlighted body > x-panel >> :host > button /);
+    // Annotate drops an element it can't resolve; this guards against it
+    // throwing on the ">>" in a shadow ref.
+    const shot = path.join(os.tmpdir(), `shadow-refs-annotate-${process.pid}.png`);
+    try {
+      execSync(`${VIBIUM} screenshot --annotate -o ${JSON.stringify(shot)}`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
+    } finally {
+      fs.rmSync(shot, { force: true });
+    }
+    const file = refFor(map, '\\[input type="file"\\]');
+    execSync(`${VIBIUM} upload ${file} ${JSON.stringify(__filename)} --timeout 5s`, { encoding: 'utf-8', timeout: 30000 });
+    const name = execSync(`${VIBIUM} eval "document.querySelector('x-panel').shadowRoot.querySelector('input').files[0].name"`, { encoding: 'utf-8', timeout: 30000 }).trim();
+    assert.strictEqual(name, path.basename(__filename));
   });
 
   test('map lists elements inside shadow roots (#203)', () => {
