@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	errs "github.com/vibium/clicker/internal/errors"
+	"github.com/vibium/clicker/internal/log"
 )
 
 // maxMessageSize is the maximum size of a WebSocket message (10MB).
@@ -135,8 +136,20 @@ func (c *Connection) Send(msg string) error {
 	if c.writeDeadline > 0 {
 		c.conn.SetWriteDeadline(time.Now().Add(c.writeDeadline))
 	}
+	start := time.Now()
 	err := c.conn.WriteMessage(websocket.TextMessage, []byte(msg))
 	if err != nil {
+		// Name the write that killed the connection. By the time the teardown
+		// surfaces at a caller as "close 1006 unexpected EOF", which command
+		// stalled (and for how long) is exactly the question (#701).
+		head := msg
+		if len(head) > 200 {
+			head = head[:200] + "..."
+		}
+		log.Warn("browser-bound write failed, closing connection",
+			"elapsed", time.Since(start).Round(time.Millisecond).String(),
+			"error", err.Error(),
+			"command", head)
 		c.failClosed()
 	}
 	return err
