@@ -368,6 +368,11 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 
 	// Poll for socket availability
 	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
+		// Stop the process we just spawned. A daemon that is merely slow to
+		// bind (cold browser launch, in-process install) would otherwise come
+		// up moments after this reports failure: a leaked background process
+		// that follow-up commands silently find and use (#724).
+		stopSpawnedDaemon(cmd)
 		fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
 		os.Exit(1)
 	}
@@ -381,6 +386,30 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		return
 	}
 	fmt.Printf("Daemon started (pid %d)\n", cmd.Process.Pid)
+}
+
+// stopSpawnedDaemon terminates a daemon this process started but gave up
+// waiting on. SIGTERM first so the daemon's own shutdown path (browser
+// teardown, socket and pid cleanup) runs; kill when the signal cannot be
+// delivered (Windows) or the daemon is too wedged to act on it.
+func stopSpawnedDaemon(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if cmd.Process.Signal(syscall.SIGTERM) != nil {
+		cmd.Process.Kill()
+	}
+	done := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		cmd.Process.Kill()
+		<-done
+	}
 }
 
 // waitForSocket polls until the socket is connectable or timeout.
