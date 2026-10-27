@@ -130,17 +130,25 @@ class _BrowserLauncher:
         loop_thread = _EventLoopThread()
         loop_thread.start()
 
-        async_browser = loop_thread.run(
-            async_browser_launcher.start(
-                url,
-                engine=engine,
-                channel=channel,
-                headless=headless,
-                headers=headers,
-                caps=caps,
-                executable_path=executable_path,
+        # On a failed launch, stop the loop thread before the exception
+        # propagates, matching check() above; otherwise every failed start
+        # leaks a daemon thread running run_forever (#722). On success the
+        # returned Browser owns the thread and stops it in stop().
+        try:
+            async_browser = loop_thread.run(
+                async_browser_launcher.start(
+                    url,
+                    engine=engine,
+                    channel=channel,
+                    headless=headless,
+                    headers=headers,
+                    caps=caps,
+                    executable_path=executable_path,
+                )
             )
-        )
+        except BaseException:
+            loop_thread.stop()
+            raise
         return Browser(async_browser, loop_thread)
 
 
