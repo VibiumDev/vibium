@@ -1238,3 +1238,43 @@ describe('MCP Server: Touch gestures', () => {
     assert.match(summary, /touch\|120\|120\|true/, 'holds then releases a touch pointer');
   });
 });
+
+describe('MCP Server: select empty value (#730)', () => {
+  /** @type {MCPClient} */
+  let client;
+
+  before(async () => {
+    client = new MCPClient();
+    await client.start();
+    await client.call('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-select', version: '1.0.0' },
+    });
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: 'about:blank' } });
+  });
+
+  after(async () => {
+    await client.call('tools/call', { name: 'browser_stop', arguments: {} });
+    client.stop();
+  });
+
+  const tool = (name, args) => client.call('tools/call', { name, arguments: args });
+
+  // An <option value=""> (the common None/placeholder) must be selectable; the
+  // agent handler used to reject "" with "value is required".
+  test('browser_select can select an <option value="">', async () => {
+    await tool('browser_set_content', {
+      html: '<select id="s"><option value="a" selected>Alpha</option><option value="">None</option><option value="b">Beta</option></select>',
+    });
+
+    const sel = await tool('browser_select', { selector: '#s', value: '' });
+    assert.ok(!sel.result.isError, `select "" should not error: ${JSON.stringify(sel.result)}`);
+
+    const check = await tool('browser_evaluate', {
+      expression: "document.querySelector('#s').value === '' ? 'SELECTED_EMPTY' : 'got:' + document.querySelector('#s').value",
+    });
+    assert.ok(!check.result.isError, 'evaluate should not error');
+    assert.match(check.result.content[0].text, /SELECTED_EMPTY/, 'the empty-value option should be selected');
+  });
+});

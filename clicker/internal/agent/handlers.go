@@ -2001,8 +2001,11 @@ func (h *Handlers) browserSelect(args map[string]interface{}) (*ToolsCallResult,
 	}
 	selector = h.resolveSelector(selector)
 
+	// An empty string is a valid option value (the common "None"/placeholder
+	// <option value="">), so only a missing value key is an error (#730,
+	// same class as the fill "" fix #187).
 	value, ok := args["value"].(string)
-	if !ok || value == "" {
+	if !ok {
 		return nil, fmt.Errorf("value is required")
 	}
 
