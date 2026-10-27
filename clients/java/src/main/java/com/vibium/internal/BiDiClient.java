@@ -202,18 +202,25 @@ public class BiDiClient {
                 dispatchLine(line);
             }
             // readLine() returned null: the vibium process closed stdout
-            // cleanly, so the loop exits with no exception. Without this an
-            // in-flight request would block until its 60s timeout and then
-            // throw a misleading timeout instead of a connection error.
-            // Python and JS fail pending on EOF/close; Java was the outlier.
-            if (!closed) {
-                failPending(new VibiumConnectionException("Connection closed: the vibium process ended"));
-            }
+            // cleanly, so the loop exits with no exception.
+            markDead(new VibiumConnectionException("Connection closed: the vibium process ended"));
         } catch (IOException e) {
-            if (!closed) {
-                failPending(new VibiumConnectionException("Connection lost: " + e.getMessage(), e));
-            }
+            markDead(new VibiumConnectionException("Connection lost: " + e.getMessage(), e));
         }
+    }
+
+    // markDead handles the reader loop ending on its own (process exit or I/O
+    // error), as opposed to a deliberate close(). It marks the client closed so
+    // a send() issued after death fails fast via writeCommand's guard instead of
+    // registering a future nothing will complete and then waiting out the full
+    // timeout, and it fails any already-pending requests. A no-op if close()
+    // already ran. Python and JS fail pending on EOF/close too.
+    private void markDead(VibiumConnectionException ex) {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        failPending(ex);
     }
 
     private void dispatchLine(String line) {
