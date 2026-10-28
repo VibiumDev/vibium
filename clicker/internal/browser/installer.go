@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,11 +267,40 @@ func findDownloadURL(downloads []Download, platform string) string {
 	return ""
 }
 
+// chromeDownloadHost is the only host Chrome for Testing serves its archives
+// from. The archive URL comes from a separately-fetched JSON document, and the
+// binary is extracted and executed, so pinning the host before the download
+// stops a poisoned versions JSON (or any other tampered url field) from
+// pointing the install at an attacker-controlled server. Chrome for Testing
+// publishes no checksums, so this host pin is the integrity control available
+// here; Firefox verifies SHA256SUMS instead (installer_firefox.go).
+const chromeDownloadHost = "storage.googleapis.com"
+
+// validateChromeDownloadURL rejects a download URL that is not an HTTPS URL on
+// the expected Chrome for Testing host.
+func validateChromeDownloadURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid download URL %q: %w", raw, err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing non-https download URL %q", raw)
+	}
+	if u.Host != chromeDownloadHost {
+		return fmt.Errorf("refusing Chrome download from unexpected host %q (want %s)", u.Host, chromeDownloadHost)
+	}
+	return nil
+}
+
 // downloadAndExtract downloads a zip file and extracts it to the destination.
 // Unlike Firefox (SHA256SUMS, verified in installer_firefox.go), Chrome for
 // Testing publishes no checksums — its downloads JSON carries only platform
-// and url — so there is nothing official to verify the archive against.
+// and url — so the host pin (validateChromeDownloadURL) is the integrity
+// control: it stops a tampered url from fetching and executing a foreign binary.
 func downloadAndExtract(url, destDir string) error {
+	if err := validateChromeDownloadURL(url); err != nil {
+		return err
+	}
 	// Download to temp file
 	resp, err := http.Get(url)
 	if err != nil {
