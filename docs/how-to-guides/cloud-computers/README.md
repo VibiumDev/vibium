@@ -81,8 +81,9 @@ about a minute.
 The cloud-init file works unchanged on most other clouds that accept
 user-data (Azure, Vultr, Linode, …), which is why those don't get
 pages of their own — they add nothing the six above don't have.
-Oracle's always-free ARM tier becomes interesting the day Chrome for
-Testing ships linux-arm64.
+Oracle's always-free ARM tier works with vibium's own browser install
+(Chrome for Testing ships linux-arm64 and vibium downloads it), but
+not yet with the installer script below, which is still x86-64 only.
 
 ## What install-chrome.sh does
 
@@ -106,8 +107,9 @@ browser server, idempotently:
    edit the unit to add `--allowed-ips=""` when your platform provides
    the network isolation (the Fly recipe's Dockerfile does exactly that).
 
-x86-64 Linux only for now — Chrome for Testing doesn't ship linux-arm64
-builds yet; the script gains ARM support the week Google's feed does.
+The script is x86-64 Linux only for now. Chrome for Testing does ship
+linux-arm64 builds, and vibium itself downloads them on arm64 Linux;
+the script just hasn't grown the arch mapping yet.
 
 ## Reaching a private app
 

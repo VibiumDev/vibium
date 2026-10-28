@@ -280,6 +280,7 @@ bro.stop();
 | Platform | Architecture | Status |
 |----------|--------------|--------|
 | Linux | x64 | ✅ Supported |
+| Linux | arm64 | ✅ Supported |
 | macOS | x64 (Intel) | ✅ Supported |
 | macOS | arm64 (Apple Silicon) | ✅ Supported |
 | Windows | x64 | ✅ Supported |
