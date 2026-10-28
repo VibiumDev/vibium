@@ -31,6 +31,7 @@ var firefoxPrefs = map[string]interface{}{
 	"startup.homepage_welcome_url":                "about:blank",
 	"startup.homepage_welcome_url.additional":     "",
 	"browser.newtabpage.enabled":                  false,
+	"browser.startup.page":                        0,
 	"app.update.disabledForTesting":               true,
 	"app.update.auto":                             false,
 	"datareporting.policy.dataSubmissionEnabled":  false,
@@ -105,7 +106,9 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	// Open on about:blank instead of Firefox's chrome-privileged blanktab.
 	// The startup tab otherwise lives in the parent process until a
 	// navigation, where script-backed commands are refused and, on Firefox
-	// 155, browsingContext.activate is rejected as privileged scope.
+	// 155, browsingContext.activate is rejected as privileged scope. Firefox
+	// 159+ still opens blanktab despite this argument; browser.startup.page=0
+	// above prevents that.
 	args = append(args, "about:blank")
 
 	cmd := exec.Command(firefoxPath, args...)
