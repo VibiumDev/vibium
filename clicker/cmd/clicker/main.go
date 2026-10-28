@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,7 +16,8 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 )
 
-// connectFromEnv reads VIBIUM_CONNECT_URL and VIBIUM_CONNECT_API_KEY from the environment.
+// connectFromEnv reads VIBIUM_CONNECT_URL, VIBIUM_CONNECT_API_KEY, and
+// VIBIUM_CONNECT_HEADERS from the environment.
 // Returns the connect URL and any headers to send with the WebSocket connection.
 func connectFromEnv() (string, http.Header) {
 	url := os.Getenv("VIBIUM_CONNECT_URL")
@@ -26,8 +28,54 @@ func connectFromEnv() (string, http.Header) {
 		headers = make(http.Header)
 		headers.Set("Authorization", "Bearer "+apiKey)
 	}
+	for _, line := range strings.Split(os.Getenv("VIBIUM_CONNECT_HEADERS"), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if headers == nil {
+			headers = make(http.Header)
+		}
+		headers.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+	}
 
 	return url, headers
+}
+
+// headersEnvValue encodes headers as newline-separated "Key: value" lines
+// for VIBIUM_CONNECT_HEADERS.
+func headersEnvValue(headers http.Header) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var lines []string
+	for _, key := range keys {
+		for _, value := range headers[key] {
+			lines = append(lines, key+": "+value)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// connectSpawnEnv builds the environment for an internal daemon spawn.
+// Connect secrets MUST travel here, not on argv: argv is world-readable.
+func connectSpawnEnv(connectURL string, headers http.Header, capsJSON string) []string {
+	env := os.Environ()
+	if connectURL != "" {
+		env = append(env, "VIBIUM_CONNECT_URL="+connectURL)
+	}
+	if value := headersEnvValue(headers); value != "" {
+		env = append(env, "VIBIUM_CONNECT_HEADERS="+value)
+	}
+	if capsJSON != "" {
+		env = append(env, "VIBIUM_CONNECT_CAPS="+capsJSON)
+	}
+	return env
 }
 
 // connectCapsFromEnv reads VIBIUM_CONNECT_CAPS, a JSON object of extra

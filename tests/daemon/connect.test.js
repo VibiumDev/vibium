@@ -285,3 +285,32 @@ describe('Daemon: VIBIUM_CONNECT_URL env var', () => {
     assert.match(status, /running/i, 'Daemon should be running after env var auto-start');
   });
 });
+
+// The daemon never contacts the endpoint until a browser command, so a dead
+// URL still gives a running daemon whose argv and behavior can be inspected.
+describe('Daemon: connect secrets stay off argv (#743)', { skip: process.platform === 'win32' }, () => {
+  before(() => stopDaemon());
+  after(() => stopDaemon());
+
+  test('spawned daemon argv contains no connect credentials', () => {
+    const result = clickerJSON(
+      `daemon start --connect "ws://user:argv-secret-key@127.0.0.1:9" ` +
+      `--connect-header "Authorization: Bearer argv-secret-token"`
+    );
+    assert.strictEqual(result.ok, true, JSON.stringify(result));
+    const pid = result.result.pid;
+    assert.ok(pid > 0, 'daemon start should report the child pid');
+
+    const argv = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' });
+    assert.ok(!argv.includes('argv-secret-key'), `URL credentials leaked into argv: ${argv}`);
+    assert.ok(!argv.includes('argv-secret-token'), `header leaked into argv: ${argv}`);
+
+    // The config still reached the child: a browser command tries the
+    // endpoint and fails naming the host, with the credentials redacted.
+    const err = clickerJSONSafe('--json title');
+    assert.strictEqual(err.ok, false, 'dead endpoint should fail');
+    const message = JSON.stringify(err);
+    assert.match(message, /127\.0\.0\.1:9/, `error should name the endpoint: ${message}`);
+    assert.ok(!message.includes('argv-secret-key'), `error leaked URL credentials: ${message}`);
+  });
+});

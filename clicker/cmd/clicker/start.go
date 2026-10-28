@@ -28,6 +28,8 @@ If no URL is given, checks VIBIUM_CONNECT_URL env var before falling
 back to a local browser launch.
 
 Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.
+Set VIBIUM_CONNECT_HEADERS to newline-separated "Key: value" lines for
+arbitrary headers; a key given here overrides the API key header.
 Set VIBIUM_CONNECT_CAPS to a JSON object of extra alwaysMatch
 capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 		Example: `  vibium start
@@ -101,8 +103,7 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 				return
 			}
 
-			daemonArgs := []string{"daemon", "start", "--_internal", "--idle-timeout=30m",
-				fmt.Sprintf("--connect=%s", connectURL)}
+			daemonArgs := []string{"daemon", "start", "--_internal", "--idle-timeout=30m"}
 			if headless {
 				daemonArgs = append(daemonArgs, "--headless")
 			}
@@ -110,17 +111,11 @@ capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 				daemonArgs = append(daemonArgs, "--engine="+engineName)
 			}
 
-			_, envHeaders := connectFromEnv()
-			for key, vals := range envHeaders {
-				for _, v := range vals {
-					daemonArgs = append(daemonArgs, fmt.Sprintf("--connect-header=%s: %s", key, v))
-				}
-			}
-			if capsJSON := os.Getenv("VIBIUM_CONNECT_CAPS"); capsJSON != "" {
-				daemonArgs = append(daemonArgs, fmt.Sprintf("--connect-caps=%s", capsJSON))
-			}
-
 			child := exec.Command(exe, daemonArgs...)
+			// The URL goes via the environment, not argv: it can carry
+			// credentials in its userinfo. Headers and caps are already
+			// in the environment, which the child inherits.
+			child.Env = connectSpawnEnv(connectURL, nil, "")
 			child.Stdout = nil
 			child.Stderr = nil
 			child.Stdin = nil

@@ -342,18 +342,16 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		args = append(args, "--engine="+engineName)
 	}
 
-	// Forward connect flags to child process
-	if connectFlag != "" {
-		args = append(args, fmt.Sprintf("--connect=%s", connectFlag))
-	}
-	for _, h := range headerFlags {
-		args = append(args, fmt.Sprintf("--connect-header=%s", h))
-	}
-	if capsFlag != "" {
-		args = append(args, fmt.Sprintf("--connect-caps=%s", capsFlag))
+	// Connect config reaches the child through its environment, where
+	// resolveConnect reads it, because argv would leak the secrets to ps.
+	connectURL, connectHeaders, _ := resolveConnect(connectFlag, headerFlags, capsFlag)
+	capsJSON := capsFlag
+	if capsJSON == "" {
+		capsJSON = os.Getenv("VIBIUM_CONNECT_CAPS")
 	}
 
 	cmd := exec.Command(exe, args...)
+	cmd.Env = connectSpawnEnv(connectURL, connectHeaders, capsJSON)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
