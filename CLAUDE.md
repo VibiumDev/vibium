@@ -39,3 +39,10 @@ Power users can override defaults (headless mode, custom paths, etc.) when neede
 - The browser under test is a parameter, never a literal in a test. Suites read `ENGINE` from tests/helpers.js (`VIBIUM_ENGINE`, threaded through the Makefile as `ENGINE=`), and CI runs each suite once per engine job. Naming an engine inside a case in the default suite runs it in the chrome job, which installs no other browser. Adding an engine should be a new job, not a new branch in a test.
 - When adding new command line options to the vibium binary, add a simple example and sample output (or short description)
 - A CLI command whose positional values can be negative or numeric (coordinates, offsets, durations) must be built with `lateParse` (cmd/clicker/helpers.go). Never set `DisableFlagParsing` by hand; the flag drift test rejects it.
+
+## Writing Style
+
+- Write short sentences.
+- Use RFC 2119 keywords (MUST, SHOULD, MAY) for obligations.
+- Commits MUST have an imperative subject. The body MUST carry only facts the diff cannot show.
+- Comments MUST only clarify code that needs it. Comments MUST NOT narrate. Existing long comment blocks are not license to add more.
