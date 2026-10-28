@@ -216,7 +216,8 @@ jobs:
           - runner: macos-15-intel
             npm_platform: darwin-x64
             python_platform: darwin_x64
-          - runner: macos-15
+          # Self-hosted: GitHub's hosted macOS arm64 pool cancels for capacity.
+          - runner: [self-hosted, macOS, ARM64]
             npm_platform: darwin-arm64
             python_platform: darwin_arm64
           - runner: windows-2025
