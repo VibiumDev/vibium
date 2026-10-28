@@ -98,20 +98,8 @@ func autoStartDaemon() error {
 		args = append(args, "--engine="+engineName)
 	}
 
-	// Forward connect env vars to the spawned daemon
-	connectURL, connectHeaders := connectFromEnv()
-	if connectURL != "" {
-		args = append(args, fmt.Sprintf("--connect=%s", connectURL))
-	}
-	for key, vals := range connectHeaders {
-		for _, v := range vals {
-			args = append(args, fmt.Sprintf("--connect-header=%s: %s", key, v))
-		}
-	}
-	if capsJSON := os.Getenv("VIBIUM_CONNECT_CAPS"); capsJSON != "" {
-		args = append(args, fmt.Sprintf("--connect-caps=%s", capsJSON))
-	}
-
+	// The child inherits the environment, so the connect env vars reach
+	// it without touching argv, which would leak the secrets to ps.
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
