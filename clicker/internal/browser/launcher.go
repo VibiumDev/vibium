@@ -256,9 +256,14 @@ func findAvailablePort() (int, error) {
 
 // waitForChromedriver waits for chromedriver to be ready.
 func waitForChromedriver(baseURL string, timeout time.Duration) error {
+	// Each probe gets its own bound: the default client has no timeout, so a
+	// chromedriver that accepts the connection but never answers would block
+	// a single Get forever and defeat the deadline below, which is only
+	// checked between iterations (#725).
+	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(baseURL + "/status")
+		resp, err := client.Get(baseURL + "/status")
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
