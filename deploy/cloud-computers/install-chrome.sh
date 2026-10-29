@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install Chrome for Testing + matching chromedriver on a Debian/Ubuntu
-# linux64 box, and run chromedriver as a non-root user (Chrome refuses to
-# start as root).
+# box (x86-64 or arm64), and run chromedriver as a non-root user (Chrome
+# refuses to start as root).
 #
 # Used by the DigitalOcean cloud-init, the AWS user-data script, the Fly.io
 # Dockerfile, and the exe.dev recipe — one script, every platform.
@@ -19,10 +19,14 @@ CFT_JSON="https://googlechromelabs.github.io/chrome-for-testing/last-known-good-
 INSTALL_DIR="/opt/chrome-for-testing"
 RUN_USER="vibium"
 
-if [ "$(uname -m)" != "x86_64" ]; then
-    echo "error: this script installs the linux64 build; $(uname -m) is not supported" >&2
-    exit 1
-fi
+case "$(uname -m)" in
+    x86_64)         PLATFORM="linux64" ;;
+    aarch64|arm64)  PLATFORM="linux-arm64" ;;
+    *)
+        echo "error: Chrome for Testing has no $(uname -m) build" >&2
+        exit 1
+        ;;
+esac
 
 echo "Installing Chrome dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -41,8 +45,8 @@ apt-get install -y -qq --no-install-recommends \
     libxext6 libxfixes3 libxkbcommon0 libxrandr2 xdg-utils
 
 echo "Resolving latest stable Chrome for Testing..."
-CHROME_URL=$(curl -fsSL "$CFT_JSON" | jq -r '.channels.Stable.downloads.chrome[] | select(.platform=="linux64") | .url')
-DRIVER_URL=$(curl -fsSL "$CFT_JSON" | jq -r '.channels.Stable.downloads.chromedriver[] | select(.platform=="linux64") | .url')
+CHROME_URL=$(curl -fsSL "$CFT_JSON" | jq -r --arg p "$PLATFORM" '.channels.Stable.downloads.chrome[] | select(.platform==$p) | .url')
+DRIVER_URL=$(curl -fsSL "$CFT_JSON" | jq -r --arg p "$PLATFORM" '.channels.Stable.downloads.chromedriver[] | select(.platform==$p) | .url')
 VERSION=$(curl -fsSL "$CFT_JSON" | jq -r '.channels.Stable.version')
 echo "Version: $VERSION"
 
@@ -53,8 +57,8 @@ curl -fsSL -o chromedriver.zip "$DRIVER_URL"
 unzip -oq chrome.zip
 unzip -oq chromedriver.zip
 rm chrome.zip chromedriver.zip
-ln -sf "$INSTALL_DIR/chrome-linux64/chrome" /usr/local/bin/chrome
-ln -sf "$INSTALL_DIR/chromedriver-linux64/chromedriver" /usr/local/bin/chromedriver
+ln -sf "$INSTALL_DIR/chrome-$PLATFORM/chrome" /usr/local/bin/chrome
+ln -sf "$INSTALL_DIR/chromedriver-$PLATFORM/chromedriver" /usr/local/bin/chromedriver
 
 id -u "$RUN_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$RUN_USER"
 chown -R "$RUN_USER":"$RUN_USER" "$INSTALL_DIR"

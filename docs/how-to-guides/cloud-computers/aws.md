@@ -12,7 +12,7 @@ you don't.
 |---|---|---|
 | **EC2 on-demand** (this recipe) | Default; steady use | t3.medium runs 2–3 headless Chromes |
 | **EC2 Spot** | Disposable/burst boxes | Same recipe, `--instance-market-options`; interruptible by design |
-| **Graviton (arm64)** | Letting vibium install the browser | Cheaper per vCPU; vibium downloads the linux-arm64 Chrome for Testing build, but `install-chrome.sh` is still x86-64 only |
+| **Graviton (arm64)** | Cheaper per vCPU | Same recipe on a `t4g.medium` with the arm64 AMI; `install-chrome.sh` picks the linux-arm64 build |
 | **Fargate** | Container workflow, no instance management | Per-vCPU-second; use the Fly recipe's Dockerfile; no KVM, slower cold start |
 | Lambda | — | Don't: execution caps and cold starts fight the browser-session model |
 
