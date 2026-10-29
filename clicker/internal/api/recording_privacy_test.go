@@ -82,3 +82,26 @@ func TestRecordingRedactsEarlierObservationsAndOmitsSensitiveVisuals(t *testing.
 		}
 	}
 }
+
+// Field names a defensive pass found missing from the redaction list: a page
+// or endpoint using these names leaked the value into the exported trace.
+func TestSecretFieldCoversCommonCredentialNames(t *testing.T) {
+	secret := []string{
+		"secret", "SECRET", "Bearer", "csrf", "csrf_token", "X-CSRF-Token",
+		"X-XSRF-TOKEN", "sessionid", "session_id", "session_token",
+		"session-key", "auth_token", "private_key",
+	}
+	for _, name := range secret {
+		if !secretField(name) {
+			t.Errorf("secretField(%q) = false, want true", name)
+		}
+	}
+
+	// Ordinary fields must stay readable or traces lose their value.
+	plain := []string{"session", "user", "id", "content-type", "accept", "name", "value"}
+	for _, name := range plain {
+		if secretField(name) {
+			t.Errorf("secretField(%q) = true, want false", name)
+		}
+	}
+}
