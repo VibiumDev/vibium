@@ -1184,10 +1184,11 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("failed to encode annotation selectors: %w", err)
 		}
 		annotateScript := `(selectorsJSON) => {
+			` + api.PierceQueryJS() + `
 			const selectors = JSON.parse(selectorsJSON);
 			let count = 0;
 			for (let i = 0; i < selectors.length; i++) {
-				const el = document.querySelector(selectors[i]);
+				const el = pierceQuery(document, selectors[i]);
 				if (!el) continue;
 				const rect = el.getBoundingClientRect();
 				if (rect.width === 0 || rect.height === 0) continue;
@@ -3362,7 +3363,8 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 	selector = h.resolveSelector(selector)
 
 	script := `(selector) => {
-		const el = document.querySelector(selector);
+		` + api.PierceQueryJS() + `
+		const el = pierceQuery(document, selector);
 		if (!el) return 'not_found';
 		const prev = el.style.cssText;
 		el.style.outline = '3px solid red';

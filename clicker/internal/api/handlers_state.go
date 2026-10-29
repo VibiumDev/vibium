@@ -946,7 +946,7 @@ func GetCount(s Session, context, selector string) (int, error) {
 	// Return the count as a string: parseScriptResult unmarshals the BiDi result
 	// value into a Go string field, so a bare numeric result fails with "cannot
 	// unmarshal number ... into ... string" (issue #149).
-	expr := fmt.Sprintf(`() => String(document.querySelectorAll(%q).length)`, selector)
+	expr := fmt.Sprintf(`() => { %s return String(pierceQueryAll(document, %q).length); }`, PierceQueryJS(), selector)
 	val, err := EvalSimpleScript(s, context, expr)
 	if err != nil {
 		return 0, err

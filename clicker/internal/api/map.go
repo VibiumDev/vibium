@@ -3,7 +3,14 @@ package api
 // GetSelectorJS returns the JS getSelector(el) function body that generates unique CSS selectors.
 func GetSelectorJS() string {
 	return `function getSelector(el) {
-			if (el.id) return '#' + CSS.escape(el.id);
+			// An element inside a shadow root is addressed as "<host> >> <path>",
+			// the pierce form the ref resolvers understand. Without the host hop the
+			// path stopped at the root, so map minted refs that matched nothing or
+			// a light-DOM element with the same path.
+			const root = el.getRootNode();
+			const shadow = root instanceof ShadowRoot ? root : null;
+			const prefix = shadow ? getSelector(shadow.host) + ' >> ' : '';
+			if (el.id) return prefix + '#' + CSS.escape(el.id);
 			const parts = [];
 			let cur = el;
 			while (cur && cur !== document.body && cur !== document.documentElement) {
@@ -12,7 +19,7 @@ func GetSelectorJS() string {
 					parts.unshift('#' + CSS.escape(cur.id));
 					break;
 				}
-				const parent = cur.parentElement;
+				const parent = cur.parentElement || shadow;
 				if (parent) {
 					const siblings = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
 					if (siblings.length > 1) {
@@ -21,11 +28,13 @@ func GetSelectorJS() string {
 					}
 				}
 				parts.unshift(seg);
-				cur = parent;
+				cur = cur.parentElement;
 			}
-			if (parts.length === 0) return el.tagName.toLowerCase();
-			if (!parts[0].startsWith('#')) parts.unshift('body');
-			return parts.join(' > ');
+			if (parts.length === 0) return prefix + el.tagName.toLowerCase();
+			// :host anchors the path at the shadow root, as body does in the
+			// document; unanchored, "div > button" would match a deeper button first.
+			if (!parts[0].startsWith('#')) parts.unshift(shadow ? ':host' : 'body');
+			return prefix + parts.join(' > ');
 		}`
 }
 

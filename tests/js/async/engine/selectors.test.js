@@ -67,4 +67,27 @@ describe('Selector Strategies', () => {
     assert.strictEqual(el.info.tag, 'span');
     assert.ok(el.info.text.includes('Hello from span'));
   });
+
+  // Element methods re-resolve their selector; focus and waitUntil did it with
+  // plain querySelector, which threw or timed out on ">>".
+  test('element methods resolve a pierced selector (#748)', async () => {
+    await vibe.go(`${baseURL}/shadow`);
+    try {
+      const input = await vibe.find('my-card >> #i');
+      await input.focus();
+      assert.strictEqual(await vibe.evaluate("document.querySelector('my-card').shadowRoot.activeElement.id"), 'i');
+      await input.waitUntil('visible', { timeout: 2000 });
+      // findAll elements re-resolve by index.
+      const [button] = await vibe.findAll('my-card >> button');
+      await button.focus();
+      assert.strictEqual(await vibe.evaluate("document.querySelector('my-card').shadowRoot.activeElement.id"), 'b');
+
+      await vibe.go(`${baseURL}/shadow-refs`);
+      const [file] = await vibe.findAll('x-panel >> input');
+      await file.setFiles([__filename]);
+      assert.strictEqual(await vibe.evaluate("document.querySelector('x-panel').shadowRoot.querySelector('input').files[0].name"), require('node:path').basename(__filename));
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
 });
