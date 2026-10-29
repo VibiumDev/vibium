@@ -88,17 +88,102 @@ func TestSocketPathLengthLimit(t *testing.T) {
 		t.Skip("named pipes have no socket path length limit")
 	}
 
-	// Long cache dir + long session exceeds the sockaddr_un limit.
-	t.Setenv("VIBIUM_CACHE_DIR", "/tmp/"+strings.Repeat("d", 60))
+	// A long runtime dir + long session exceeds the sockaddr_un limit.
+	t.Setenv("VIBIUM_RUNTIME_DIR", t.TempDir()+"/"+strings.Repeat("d", 80))
 	t.Setenv("VIBIUM_SESSION", strings.Repeat("s", 40))
 	if _, err := GetSocketPath(); err == nil {
 		t.Error("GetSocketPath: want error for socket path exceeding sockaddr_un limit")
 	}
 
-	// The same session fits under a short cache dir.
-	t.Setenv("VIBIUM_CACHE_DIR", "/tmp/vib")
+	// The same session fits under a short runtime dir.
+	short := shortRuntimeDir(t)
+	t.Setenv("VIBIUM_RUNTIME_DIR", short)
 	if _, err := GetSocketPath(); err != nil {
-		t.Errorf("GetSocketPath with short cache dir: %v", err)
+		t.Errorf("GetSocketPath with short runtime dir: %v", err)
+	}
+}
+
+// shortRuntimeDir makes a dir whose path stays well under sun_path even
+// with a long session suffix; t.TempDir can be too long on macOS.
+func shortRuntimeDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "vib")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
+// The socket must not live under the cache dir: long cache paths (CI
+// workspaces, per-test caches) used to stop every command (#727).
+func TestSocketPathIgnoresCacheDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("named pipes have no socket path length limit")
+	}
+
+	t.Setenv("VIBIUM_SESSION", "")
+	t.Setenv("VIBIUM_RUNTIME_DIR", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	cache := "/tmp/" + strings.Repeat("c", 150)
+	t.Setenv("VIBIUM_CACHE_DIR", cache)
+
+	sock, err := GetSocketPath()
+	if err != nil {
+		t.Fatalf("GetSocketPath with a long cache dir: %v", err)
+	}
+	if strings.HasPrefix(sock, cache) {
+		t.Errorf("socket %q lives under VIBIUM_CACHE_DIR", sock)
+	}
+}
+
+func TestDaemonDirPrecedence(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the daemon dir on Windows is the cache dir")
+	}
+
+	own := shortRuntimeDir(t)
+	xdg := shortRuntimeDir(t)
+
+	t.Setenv("VIBIUM_RUNTIME_DIR", own)
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+	dir, err := GetDaemonDir()
+	if err != nil {
+		t.Fatalf("GetDaemonDir: %v", err)
+	}
+	if dir != own {
+		t.Errorf("dir = %q, want VIBIUM_RUNTIME_DIR %q", dir, own)
+	}
+
+	t.Setenv("VIBIUM_RUNTIME_DIR", "")
+	dir, err = GetDaemonDir()
+	if err != nil {
+		t.Fatalf("GetDaemonDir: %v", err)
+	}
+	if want := filepath.Join(xdg, "vibium"); dir != want {
+		t.Errorf("dir = %q, want %q", dir, want)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("runtime dir mode = %#o, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestRuntimeDirRefusesOpenPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no unix permission bits")
+	}
+
+	dir := shortRuntimeDir(t)
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIBIUM_RUNTIME_DIR", dir)
+	if _, err := GetDaemonDir(); err == nil {
+		t.Error("GetDaemonDir: want error for a group/world accessible runtime dir")
 	}
 }
 
