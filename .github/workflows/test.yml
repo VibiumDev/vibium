@@ -610,6 +610,84 @@ jobs:
         if: always()
         run: make double-tap
 
+  # arm64 Firefox risk is the installer's arch mapping, not browser behavior.
+  # Pushes to main only: PRs must not queue behind the single arm64 slot.
+  firefox-arm64:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 30
+    env:
+      VIBIUM_REQUIRE_FIREFOX: 1
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: clicker/go.mod
+          cache-dependency-path: clicker/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            clients/python/pyproject.toml
+            packages/python/vibium_linux_x64/pyproject.toml
+
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Cache Firefox
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/vibium/firefox
+          key: ${{ runner.os }}-${{ runner.arch }}-firefox-${{ hashFiles('clicker/internal/paths/browsers.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-firefox-
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --no-save @rollup/rollup-linux-arm64-gnu@$(node -p "require('rollup/package.json').version")
+
+      - name: Build and install Firefox
+        run: |
+          make
+          make install-firefox
+
+      # Serial workers: the 4-core VM starves parallel suites (see the
+      # chrome arm64 leg).
+      - name: Test Firefox capabilities
+        run: xvfb-run --auto-servernum make test-firefox-capabilities PY_PARALLEL=1 JS_PARALLEL=1
+
+      - name: Test focused Firefox behavior
+        run: xvfb-run --auto-servernum make test-firefox PY_PARALLEL=1 JS_PARALLEL=1
+
+      - name: Dump system journal on failure
+        if: failure()
+        run: |
+          sudo journalctl -b --no-pager | tail -n 500
+          systemctl list-timers --all --no-pager
+
+      - name: Clean up zombie processes
+        if: always()
+        run: make double-tap
+
   # Windows smoke (#635). Windows ships the binary but the suite runs only on
   # Linux and macOS, so a recurring class of Windows-only process-cleanup bugs
   # (#622, and before it #78/#325/#49/#47/#31/#16) reaches users first: the
