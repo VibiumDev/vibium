@@ -15,6 +15,10 @@ public class Mouse {
 
     private final BiDiClient client;
     private final String contextId;
+    // Last pointer position, so wheel() scrolls where the mouse is rather than
+    // at (0, 0). Updated by every action that repositions the pointer (#726).
+    private double lastX = 0;
+    private double lastY = 0;
 
     Mouse(BiDiClient client, String contextId) {
         this.client = client;
@@ -33,6 +37,8 @@ public class Mouse {
         params.addProperty("y", y);
         mergeOptions(params, options);
         client.send("vibium:mouse.click", params);
+        lastX = x;
+        lastY = y;
     }
 
     /** Move mouse to coordinates. */
@@ -47,6 +53,8 @@ public class Mouse {
         params.addProperty("y", y);
         mergeOptions(params, options);
         client.send("vibium:mouse.move", params);
+        lastX = x;
+        lastY = y;
     }
 
     /** Press mouse button down. */
@@ -74,8 +82,11 @@ public class Mouse {
     }
 
     /** Scroll the mouse wheel. */
+    /** Scroll the mouse wheel at the current pointer position. */
     public void wheel(double deltaX, double deltaY) {
         JsonObject params = params();
+        params.addProperty("x", lastX);
+        params.addProperty("y", lastY);
         params.addProperty("deltaX", deltaX);
         params.addProperty("deltaY", deltaY);
         client.send("vibium:mouse.wheel", params);

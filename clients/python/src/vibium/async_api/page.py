@@ -117,12 +117,18 @@ class Mouse:
     def __init__(self, client: BiDiClient, context_id: str) -> None:
         self._client = client
         self._context_id = context_id
+        # Last pointer position, so wheel() scrolls where the mouse is rather
+        # than at (0, 0). Updated by every action that repositions it (#726).
+        self._last_x: float = 0
+        self._last_y: float = 0
 
     async def click(self, x: float, y: float) -> None:
         await self._client.send("vibium:mouse.click", {"context": self._context_id, "x": x, "y": y})
+        self._last_x, self._last_y = x, y
 
     async def move(self, x: float, y: float) -> None:
         await self._client.send("vibium:mouse.move", {"context": self._context_id, "x": x, "y": y})
+        self._last_x, self._last_y = x, y
 
     async def down(self) -> None:
         await self._client.send("vibium:mouse.down", {"context": self._context_id})
@@ -132,7 +138,7 @@ class Mouse:
 
     async def wheel(self, delta_x: float, delta_y: float) -> None:
         await self._client.send("vibium:mouse.wheel", {
-            "context": self._context_id, "x": 0, "y": 0,
+            "context": self._context_id, "x": self._last_x, "y": self._last_y,
             "deltaX": delta_x, "deltaY": delta_y,
         })
 

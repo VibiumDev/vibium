@@ -173,6 +173,10 @@ export class Keyboard {
 export class Mouse {
   private client: BiDiClient;
   private contextId: string;
+  // Last pointer position, so wheel() scrolls where the mouse is rather than
+  // at (0, 0). Updated by every action that repositions the pointer (#726).
+  private lastX = 0;
+  private lastY = 0;
 
   constructor(client: BiDiClient, contextId: string) {
     this.client = client;
@@ -186,6 +190,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Move mouse to (x, y) coordinates. */
@@ -195,6 +201,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Press mouse button down. */
@@ -211,12 +219,12 @@ export class Mouse {
     });
   }
 
-  /** Scroll the mouse wheel. */
+  /** Scroll the mouse wheel at the current pointer position. */
   async wheel(deltaX: number, deltaY: number): Promise<void> {
     await this.client.send('vibium:mouse.wheel', {
       context: this.contextId,
-      x: 0,
-      y: 0,
+      x: this.lastX,
+      y: this.lastY,
       deltaX,
       deltaY,
     });

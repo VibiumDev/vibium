@@ -138,6 +138,33 @@ describe('Mouse: page-level input', () => {
     }
     assert.ok(scrollY > 0, `Page should have scrolled down, scrollY: ${scrollY}`);
   });
+
+  test('mouse.wheel() scrolls at the last mouse position, not (0,0) (#726)', async () => {
+    // Own page so the shared page's mouse state stays untouched; close it on
+    // the way out or the extra renderer starves the screenshot captures below
+    // on the 4-core CI runner (three merge-queue timeouts before the close).
+    const vibe = await bro.newPage();
+    try {
+      await vibe.setContent(`<body style="margin:0;height:3000px"><script>
+        window.__wheel = null;
+        document.addEventListener('wheel', (e) => { window.__wheel = { x: e.clientX, y: e.clientY }; }, { passive: true });
+      </script></body>`);
+
+      await vibe.mouse.move(250, 180);
+      await vibe.mouse.wheel(0, 100);
+
+      let pos = null;
+      for (let i = 0; i < 20 && !pos; i++) {
+        pos = await vibe.evaluate('window.__wheel');
+        if (!pos) await vibe.wait(100);
+      }
+      assert.ok(pos, 'a wheel event should have fired');
+      assert.strictEqual(pos.x, 250, 'wheel should land at the last mouse x');
+      assert.strictEqual(pos.y, 180, 'wheel should land at the last mouse y');
+    } finally {
+      await vibe.close();
+    }
+  });
 });
 
 // --- Screenshots & PDF ---
