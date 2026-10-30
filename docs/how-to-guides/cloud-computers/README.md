@@ -27,7 +27,8 @@ about a minute.
 ## What's provided here
 
 - [`install-chrome.sh`](../../../deploy/cloud-computers/install-chrome.sh) — one installer that turns any
-  Debian/Ubuntu x86-64 machine into a browser server (detailed below).
+  Debian/Ubuntu machine (x86-64 or arm64) into a browser server
+  (detailed below).
 - [`cloud-init.yml`](../../../deploy/cloud-computers/cloud-init.yml) — a first-boot wrapper for that
   installer. Most VM clouds accept a first-boot configuration file
   (the cloud-init "user-data" standard); this one just fetches and
@@ -81,14 +82,13 @@ about a minute.
 The cloud-init file works unchanged on most other clouds that accept
 user-data (Azure, Vultr, Linode, …), which is why those don't get
 pages of their own — they add nothing the six above don't have.
-Oracle's always-free ARM tier works with vibium's own browser install
-(Chrome for Testing ships linux-arm64 and vibium downloads it), but
-not yet with the installer script below, which is still x86-64 only.
+Oracle's always-free ARM tier works too: the installer below maps the
+machine's architecture to the matching Chrome for Testing build.
 
 ## What install-chrome.sh does
 
-The shared installer turns a bare Debian/Ubuntu x86-64 box into a
-browser server, idempotently:
+The shared installer turns a bare Debian/Ubuntu box (x86-64 or arm64)
+into a browser server, idempotently:
 
 1. **Installs Chrome's library dependencies** via apt (the NSS/GTK/X11
    libraries and fonts a headless Chrome still links against — the usual
@@ -106,10 +106,6 @@ browser server, idempotently:
    crash. Loopback-only on purpose: reach it through an SSH tunnel, or
    edit the unit to add `--allowed-ips=""` when your platform provides
    the network isolation (the Fly recipe's Dockerfile does exactly that).
-
-The script is x86-64 Linux only for now. Chrome for Testing does ship
-linux-arm64 builds, and vibium itself downloads them on arm64 Linux;
-the script just hasn't grown the arch mapping yet.
 
 ## Reaching a private app
 
