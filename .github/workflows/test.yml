@@ -652,6 +652,18 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      # The VM image carries only headless Chrome's needs; Firefox loads GTK
+      # even headless and dies on the bare image ("Couldn't load XPCOM").
+      - name: Install Firefox libraries
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            libgtk-3-0t64 libasound2t64 libdbus-glib-1-2 libx11-xcb1 \
+            libxt6t64 libpci3 xvfb
+
+      - name: Configure kernel for Chrome sandbox
+        run: echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
       - name: Cache Firefox
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
