@@ -105,3 +105,33 @@ func TestSecretFieldCoversCommonCredentialNames(t *testing.T) {
 		}
 	}
 }
+
+// Console text in the verifier payload leaves the machine, so a page that
+// logs a captured credential must have it masked there too, not only in the
+// written trace (#746).
+func TestBrowserObservationsRedactKnownSecretsInConsoleText(t *testing.T) {
+	rec := NewRecorder()
+	rec.RegisterSecret("tok-9f8e7d6c5b4a")
+	rec.events = append(rec.events, recordEvent{
+		"method": "log.entryAdded",
+		"time":   1.0,
+		"params": map[string]interface{}{
+			"source": map[string]interface{}{"context": "page-1"},
+			"level":  "info",
+			"type":   "console",
+			"text":   "auth ok with tok-9f8e7d6c5b4a",
+		},
+	})
+
+	obs := rec.BrowserObservations("console", "page-1")
+	if len(obs) != 1 {
+		t.Fatalf("expected one console observation, got %d", len(obs))
+	}
+	text, _ := obs[0]["text"].(string)
+	if strings.Contains(text, "tok-9f8e7d6c5b4a") {
+		t.Fatalf("console observation leaks a registered secret: %q", text)
+	}
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("console observation lost its text instead of masking it: %q", text)
+	}
+}

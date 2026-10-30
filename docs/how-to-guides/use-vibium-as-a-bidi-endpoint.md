@@ -83,6 +83,13 @@ Docker's `-p 127.0.0.1:9633:9633` with the server inside the container.
 Clients that are not browsers (most BiDi libraries) send no `Origin` header and
 connect normally.
 
+The port itself carries no authentication. Loopback keeps remote machines and
+web pages out, but any process or user on the same host can connect and drive
+the browser — including navigating to `file://` URLs. That is the standard
+posture for local automation tools. On a host you share with untrusted users,
+do not leave `serve` running; use `vibium pipe`, whose lifetime is tied to the
+client process and which exchanges no network port at all.
+
 ---
 
 ## When it does not fit

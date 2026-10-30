@@ -1765,6 +1765,9 @@ func (t *Recorder) BrowserObservations(kind, page string) []map[string]interface
 			if len(text) > 1000 {
 				text = text[:1000] + " [truncated]"
 			}
+			// This payload leaves the machine (AI verifier), so a page that
+			// logs a captured credential must not forward it in cleartext.
+			text, _ = t.redactKnown(text).(string)
 			result = append(result, map[string]interface{}{"level": p["level"], "type": p["type"], "text": text, "time": e["time"]})
 		}
 	} else {
