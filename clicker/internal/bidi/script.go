@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // RealmInfo represents information about a JavaScript realm.
@@ -189,6 +190,13 @@ func (c *Client) Evaluate(context, expression string) (interface{}, error) {
 // CallFunction calls a JavaScript function with arguments.
 // If context is empty, it uses the first available context.
 func (c *Client) CallFunction(context, functionDeclaration string, args []interface{}) (interface{}, error) {
+	return c.CallFunctionIn(context, "", functionDeclaration, args, 0)
+}
+
+// CallFunctionIn is CallFunction in a named sandbox: a realm that shares the
+// page's DOM but not its globals, so what it stores is invisible to the page.
+// An empty sandbox is the page's own realm, and a zero timeout is the default.
+func (c *Client) CallFunctionIn(context, sandbox, functionDeclaration string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	// If no context provided, get the first one from the tree
 	if context == "" {
 		tree, err := c.GetTree()
@@ -207,15 +215,22 @@ func (c *Client) CallFunction(context, functionDeclaration string, args []interf
 		serializedArgs[i] = serializeValue(arg)
 	}
 
+	target := map[string]interface{}{"context": context}
+	if sandbox != "" {
+		target["sandbox"] = sandbox
+	}
 	params := map[string]interface{}{
 		"functionDeclaration": functionDeclaration,
-		"target":              map[string]interface{}{"context": context},
+		"target":              target,
 		"arguments":           serializedArgs,
 		"awaitPromise":        true,
 		"resultOwnership":     "none",
 	}
 
-	msg, err := c.SendCommand("script.callFunction", params)
+	if timeout == 0 {
+		timeout = defaultCommandTimeout
+	}
+	msg, err := c.SendCommandWithTimeout("script.callFunction", params, timeout)
 	if err != nil {
 		return nil, err
 	}

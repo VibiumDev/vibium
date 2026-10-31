@@ -80,12 +80,17 @@ async function fixture() {
       let steps;
       if (d.input === 'not possible') steps = [];
       else if (d.input === 'credential test') steps = [['browser_fill', { selector: '#password', text: 'TEST-PASSWORD-SECRET' }], ['browser_get_value', { selector: '#password' }]];
+      else if (d.input === 'moved password') {
+        const ref = re => obs[0]?.split('\n').find(l => re.test(l))?.match(/@e\d+/)[0];
+        steps = [['browser_map', {}], ['browser_click', { selector: ref(/"Add"/) }], ['browser_get_value', { selector: ref(/type="password"/) }]];
+      }
       else steps = isRun ? [
         ['browser_navigate', { url }], ['browser_fill', { selector: '#name', text: 'Updated' }], ['browser_click', { selector: 'button' }], ['browser_get_value', { selector: '#name' }], ['browser_screenshot', {}],
       ] : [['browser_reload', {}], ['browser_get_value', { selector: '#name' }]];
       const step = steps[obs.length];
       if (!step && d.input !== 'not possible') {
         if (d.input === 'credential test') assert.match(obs[1], /Password fields are unavailable/);
+        else if (d.input === 'moved password') { assert.match(obs[2], /Password fields are unavailable/); assert.ok(!obs.some(o => o.includes('TEST-PASSWORD-SECRET'))); }
         else assert.ok(obs[isRun ? 3 : 1].includes('Updated'), 'goal not accomplished in browser');
       }
       const result = { status: isRun ? (d.input === 'not possible' ? 'not_completed' : 'completed') : 'passed', summary: 'Fixture observed the outcome.', evidence: [{ type: 'observation', summary: 'Observed the requested state.' }] };

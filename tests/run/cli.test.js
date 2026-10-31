@@ -63,6 +63,25 @@ async function run(t, options = {}) {
 }
 for (const provider of ['openai', 'xai', 'anthropic', 'google', 'openai-compatible', 'local']) test(`Run CLI uses ${provider} browser tools and shared AI configuration`, { timeout: 120000 }, t => run(t, { provider, existing: true }));
 for (const state of [{}, { incomplete: true }, { error: true }, { keepOpen: true }, { keepOpen: true, error: true }, { existing: true, error: true }, { existing: true, privacy: true }]) test(`Run ownership and evidence ${JSON.stringify(state)}`, { timeout: 120000 }, t => run(t, state));
+// The password probe must look where the action will act: after a re-render
+// moves the password field, its old ref is re-pointed to it, not read.
+test('Run never reads a password field a re-render moved under a ref', { timeout: 120000 }, async () => {
+  const f = await fixture(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-cli-'));
+  const env = { ...process.env, ...f.env, VIBIUM_SESSION: `run-moved-${process.pid}`, VIBIUM_ENGINE: ENGINE, VIBIUM_ENGINE_CHANNEL: '', VIBIUM_ENGINE_PATH: '', VIBIUM_CONNECT_URL: '', VIBIUM_AI_PROVIDER: 'openai-compatible' };
+  const cli = async (...args) => JSON.parse((await exec(VIBIUM, ['--json', '--headless', ...args], { env, timeout: 230000 })).stdout).result;
+  const output = path.join(dir, 'run.zip');
+  try {
+    await cli('go', f.url);
+    await cli('eval', `document.body.innerHTML='<input value="plain"><input type="password" value="TEST-PASSWORD-SECRET"><button onclick="document.body.prepend(document.createElement(\\'input\\'))">Add</button>';'ready'`);
+    assert.equal((await cli('run', 'moved password', '-o', output)).status, 'completed');
+    const trace = (await exec('unzip', ['-p', output, 'trace.trace'], { maxBuffer: 12*1024*1024 })).stdout;
+    assert.ok(!trace.includes('TEST-PASSWORD-SECRET'));
+  } finally {
+    await exec(VIBIUM, ['daemon', 'stop'], { env, timeout: 15000 }).catch(() => {});
+    fs.rmSync(dir, { recursive: true, force: true }); await f.close();
+  }
+});
+
 test('Run rejects archive/report flags and requires shared AI configuration', async () => {
   // Old per-feature variables must not silently configure the shared model loop.
   // An empty provider makes run load ai.env, so point the config dir at an

@@ -424,7 +424,7 @@ All wait commands accept `--timeout <ms>` (default varies by command).
 
 ## Ref Lifecycle
 
-Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
+Refs (`@e1`, `@e2`) from `map`, `find --all` or a semantic `find` are tied to the element they were minted for. Using one after a navigation, a reload, or a re-render that replaced its element usually fails with `stale ref @eN … run map again` (asking whether it is visible, counting it, or waiting for it to be hidden answers "gone" instead). The check is best effort, and a re-render that reuses the same element with new content keeps the ref, so re-map after anything that changes the page. A ref from `find` with a CSS selector just re-runs that selector. Always re-map after:
 - Clicking links or buttons that navigate
 - Form submissions
 - Dynamic content loading (dropdowns, modals)

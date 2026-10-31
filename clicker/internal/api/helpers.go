@@ -329,6 +329,10 @@ func realmDestroyedByNavigation(err error) bool {
 		strings.Contains(msg, "browsing context discarded")
 }
 
+// RealmDestroyedByNavigation is realmDestroyedByNavigation for callers outside
+// this package.
+func RealmDestroyedByNavigation(err error) bool { return realmDestroyedByNavigation(err) }
+
 // EvalSimpleScript runs a no-argument script.callFunction via the Session and
 // returns the string result.
 //

@@ -96,4 +96,21 @@ describe('CLI: browser closed externally', () => {
       `expected recovery on the next command, got: ${recovered.slice(0, 200)}`
     );
   });
+
+  // A ref's check talks to the browser before the command runs, so it must
+  // leave a dead browser for the command to report, not fail on it itself.
+  // page new makes that page the active one, so the check has a page to ask
+  // about without first querying the (dead) browser for one.
+  test('a command given a ref also reports the browser is gone, then recovers', () => {
+    run(`page new ${baseURL}/example`);
+    assert.match(run('map'), /@e1/, 'setup: map should list a ref');
+    killBrowser();
+    execSync('sleep 2');
+    assert.strictEqual(browserCount(), 0, 'the browser process should be gone');
+
+    const afterKill = run('click @e1');
+    assert.match(afterKill, /browser is no longer running/, `got: ${afterKill.slice(0, 200)}`);
+    run(`go ${baseURL}/example`);
+    assert.match(run('title'), /Example Domain/);
+  });
 });
