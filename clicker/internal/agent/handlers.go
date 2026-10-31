@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +42,7 @@ type Handlers struct {
 	connectHeaders http.Header                  // headers for remote WebSocket connection
 	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
+	refTokens      map[string]string            // context -> token of its registered ref store
 	lastMaps       map[string]string            // context -> last map output (for diff)
 	connectCaps    map[string]interface{}       // extra alwaysMatch capabilities for classic endpoints
 	// classicSession is set when connectURL was a classic WebDriver HTTP
@@ -194,6 +197,23 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		defer func() { h.pageOverride = "" }()
 	}
 
+	// Checked before dispatch so a stale failure is recorded like any other result.
+	var refErr error
+	for _, arg := range []string{"selector", "source", "target"} {
+		ref, ok := args[arg].(string)
+		if !ok || !strings.HasPrefix(ref, "@e") {
+			continue
+		}
+		if err := h.checkRef(ref); err != nil {
+			// Nothing else sits where the element was, so absence questions
+			// answer as on main. "Click Close, then wait for it to go" needs this.
+			if stale := (*staleRefError)(nil); !errors.As(err, &stale) || !stale.vacant || !absenceQuery(name, args) {
+				refErr = err
+			}
+			break
+		}
+	}
+
 	// Inject a synthetic find trace event before selector-based actions
 	// so CLI recordings match the JS client's find→action pairs.
 	// Skip @e refs — those come from an explicit find the user already ran.
@@ -214,7 +234,13 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		h.lastElementBox = nil
 	}
 
-	result, err := h.dispatch(name, args)
+	var result *ToolsCallResult
+	var err error
+	if refErr != nil {
+		err = refErr
+	} else {
+		result, err = h.dispatch(name, args)
+	}
 
 	endTime := time.Now()
 
@@ -547,12 +573,131 @@ func (h *Handlers) refKey() string {
 	return tree.Contexts[0].Context
 }
 
-// setRefs replaces the ref table for one page.
-func (h *Handlers) setRefs(key string, refs map[string]string) {
+// refSandbox shares the page's DOM but not its globals, so the page can't see
+// or rewrite the ref store. A new document starts without a store.
+const refSandbox = "vibium-refs"
+
+// refCheckTimeout bounds ref registration and checks. An open dialog blocks
+// script calls on Chrome, and the prompt tracker doesn't always know of it.
+const refCheckTimeout = 2 * time.Second
+
+// promptOpen reports a prompt the tracker knows is open. It blocks script calls.
+func (h *Handlers) promptOpen(key string) bool {
+	if h.prompts == nil {
+		return false
+	}
+	_, open := h.prompts.OpenPrompt(key)
+	return open
+}
+
+// setRefs replaces the ref table for one page. With register set, it also
+// stores the elements so checkRef can tell whether a ref still reaches its own.
+// A CSS find selector is the caller's, so it isn't registered.
+//
+// Elements are held strongly: a WeakRef to a DOM wrapper can be collected
+// while its node lives on.
+func (h *Handlers) setRefs(key string, refs map[string]string, register bool) {
 	if h.refMaps == nil {
 		h.refMaps = make(map[string]map[string]string)
 	}
+	if h.refTokens == nil {
+		h.refTokens = make(map[string]string)
+	}
 	h.refMaps[key] = refs
+	delete(h.refTokens, key)
+	if !register || h.client == nil || h.promptOpen(key) {
+		return
+	}
+
+	var nonce [8]byte
+	rand.Read(nonce[:])
+	token := hex.EncodeToString(nonce[:])
+	selectors := make([]string, len(refs))
+	for i := range selectors {
+		selectors[i] = refs[fmt.Sprintf("@e%d", i+1)]
+	}
+	encoded, _ := json.Marshal(selectors)
+	script := `(token, selectors) => {
+		` + api.PierceQueryJS() + `
+		globalThis.vibiumRefs = { token, els: JSON.parse(selectors).map(s => pierceQuery(document, s)) };
+	}`
+	if _, err := h.client.CallFunctionIn(key, refSandbox, script, []interface{}{token, string(encoded)}, refCheckTimeout); err != nil {
+		log.Debug("refs not registered; they will not be checked", "error", err)
+		return
+	}
+	h.refTokens[key] = token
+}
+
+// staleRefError: gone means the element left the page, and vacant that its
+// selector reaches nothing now. Otherwise the element is still there, but its
+// selector reaches another element or none.
+type staleRefError struct {
+	ref    string
+	gone   bool
+	vacant bool
+}
+
+func (e *staleRefError) Error() string {
+	if e.gone {
+		return fmt.Sprintf("stale ref %s: the page changed since it was mapped; run map again", e.ref)
+	}
+	return fmt.Sprintf("stale ref %s: its element is still on the page, but its selector now reaches another element or none; run map again", e.ref)
+}
+
+// checkRef fails a ref whose selector no longer reaches its own element. An
+// unregistered ref, or a check with no answer, is left unchecked; a dead
+// browser fails the check this way, so ensureBrowser still reports it (#219).
+func (h *Handlers) checkRef(ref string) error {
+	if h.client == nil {
+		return nil
+	}
+	key := h.refKey()
+	token, registered := h.refTokens[key]
+	if _, ok := h.refMaps[key][ref]; !ok || !registered || h.promptOpen(key) {
+		return nil
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(ref, "@e"))
+	if err != nil {
+		return nil
+	}
+	script := `(token, index, current) => {
+		` + api.PierceQueryJS() + `
+		const store = globalThis.vibiumRefs;
+		const live = store && store.token === token;
+		if (live && !store.els[index - 1]) return 'unregistered';
+		const el = live && store.els[index - 1];
+		const here = pierceQuery(document, current);
+		if (el && el.isConnected) return here === el ? 'ok' : 'moved';
+		return here ? 'gone' : 'vacant';
+	}`
+	result, err := h.client.CallFunctionIn(key, refSandbox, script, []interface{}{token, index, h.refMaps[key][ref]}, refCheckTimeout)
+	if err != nil {
+		log.Debug("ref not checked", "ref", ref, "error", err)
+		return nil
+	}
+	state, _ := result.(string)
+	switch state {
+	case "gone":
+		return &staleRefError{ref: ref, gone: true}
+	case "vacant":
+		return &staleRefError{ref: ref, gone: true, vacant: true}
+	case "moved":
+		return &staleRefError{ref: ref}
+	}
+	// "unregistered": the selector matched nothing when the ref was minted.
+	return nil
+}
+
+// absenceQuery reports a tool that asks whether an element is absent.
+func absenceQuery(tool string, args map[string]interface{}) bool {
+	switch tool {
+	case "browser_is_visible", "browser_count":
+		return true
+	case "browser_wait":
+		state, _ := args["state"].(string)
+		return state == "hidden"
+	}
+	return false
 }
 
 // queryViewport queries the browser for the current viewport size.
@@ -785,6 +930,7 @@ func (h *Handlers) Close() {
 	h.activeContext = ""
 	h.activeFrameParent = ""
 	h.refMaps = nil
+	h.refTokens = nil
 	h.lastMaps = nil
 	recorder := h.recorder
 	h.recorder = nil
@@ -1346,7 +1492,7 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		}
 
 		// Store ref in this page's ref table
-		h.setRefs(h.refKey(), map[string]string{"@e1": found.Selector})
+		h.setRefs(h.refKey(), map[string]string{"@e1": found.Selector}, true)
 
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -1389,7 +1535,7 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 	}
 
 	// Store ref in this page's ref table
-	h.setRefs(h.refKey(), map[string]string{"@e1": selector})
+	h.setRefs(h.refKey(), map[string]string{"@e1": selector}, false)
 
 	labelStr := fmt.Sprintf("%v", labelResult)
 	return &ToolsCallResult{
@@ -2215,7 +2361,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		refs[ref] = el.Selector
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
-	h.setRefs(h.refKey(), refs)
+	h.setRefs(h.refKey(), refs, true)
 
 	text := strings.Join(lines, "\n")
 	if text == "" {
@@ -3154,6 +3300,7 @@ func (h *Handlers) discardSession() {
 	h.conn = nil
 	h.prompts = nil
 	h.refMaps = nil
+	h.refTokens = nil
 	h.lastMaps = nil
 	h.activeContext = ""
 	h.activeFrameParent = ""
@@ -3229,7 +3376,7 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
 	}
 	key := h.refKey()
-	h.setRefs(key, refs)
+	h.setRefs(key, refs, true)
 
 	output := strings.Join(lines, "\n")
 	if output == "" {
