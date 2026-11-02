@@ -43,6 +43,7 @@ type Handlers struct {
 	ownsRemote     bool                         // remote session was created here, so Close() ends it
 	refMaps        map[string]map[string]string // context -> @e1 -> CSS selector
 	refTokens      map[string]string            // context -> token of its registered ref store
+	refWarned      bool                         // a disabled stale-ref check was already logged at Warn
 	lastMaps       map[string]string            // context -> last map output (for diff)
 	connectCaps    map[string]interface{}       // extra alwaysMatch capabilities for classic endpoints
 	// classicSession is set when connectURL was a classic WebDriver HTTP
@@ -622,7 +623,13 @@ func (h *Handlers) setRefs(key string, refs map[string]string, register bool) {
 		globalThis.vibiumRefs = { token, els: JSON.parse(selectors).map(s => pierceQuery(document, s)) };
 	}`
 	if _, err := h.client.CallFunctionIn(key, refSandbox, script, []interface{}{token, string(encoded)}, refCheckTimeout); err != nil {
-		log.Debug("refs not registered; they will not be checked", "error", err)
+		// Silent degradation hides that refs can act on the wrong element again.
+		if !h.refWarned {
+			h.refWarned = true
+			log.Warn("stale-ref checks disabled: refs not registered", "error", err)
+		} else {
+			log.Debug("refs not registered; they will not be checked", "error", err)
+		}
 		return
 	}
 	h.refTokens[key] = token
