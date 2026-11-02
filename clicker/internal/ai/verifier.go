@@ -211,8 +211,13 @@ type Result struct {
 	Status   string     `json:"status"`
 	Claim    string     `json:"claim"`
 	Summary  string     `json:"summary"`
+	Reason   string     `json:"reason,omitempty"`
 	Evidence []Evidence `json:"evidence"`
 }
+
+// CheckReasons are the machine-readable causes of an inconclusive verdict.
+// The Go loop stamps action_limit; the model reports the others.
+var CheckReasons = []string{"action_limit", "insufficient_evidence", "safety_stop", "archive_missing_evidence"}
 
 // Verdict is the display word only; the JSON status strings are the API.
 // REVIEW displays the inconclusive status: the verdict needs human attention.
@@ -236,6 +241,9 @@ func (r Result) Validate() error {
 	if r.Status != "inconclusive" && len(r.Evidence) == 0 {
 		return fmt.Errorf("verifier verdict requires evidence")
 	}
+	if r.Reason != "" && (r.Status != "inconclusive" || !slices.Contains(CheckReasons, r.Reason)) {
+		return fmt.Errorf("invalid verifier reason")
+	}
 	for _, e := range r.Evidence {
 		if e.Type != "observation" || strings.TrimSpace(e.Summary) == "" || len(e.Summary) > 2000 {
 			return fmt.Errorf("invalid verifier evidence")
@@ -252,23 +260,28 @@ type Tool struct {
 
 // ResultToolSchema describes a result object with the given status values, so
 // Check and Run can receive their result as validated tool arguments instead
-// of free text.
-func ResultToolSchema(statuses ...string) map[string]interface{} {
+// of free text. A nonempty reasons enum adds an optional reason parameter for
+// the undecided status.
+func ResultToolSchema(statuses, reasons []string) map[string]interface{} {
+	properties := map[string]interface{}{
+		"status":  map[string]interface{}{"type": "string", "enum": statuses},
+		"summary": map[string]interface{}{"type": "string", "description": "Concise explanation of the result."},
+		"evidence": map[string]interface{}{"type": "array", "description": "Up to 12 observations supporting the result.", "items": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"type":    map[string]interface{}{"type": "string", "enum": []string{"observation"}},
+				"summary": map[string]interface{}{"type": "string"},
+			},
+			"required": []string{"type", "summary"},
+		}},
+	}
+	if len(reasons) > 0 {
+		properties["reason"] = map[string]interface{}{"type": "string", "enum": reasons, "description": "Machine-readable cause when the result is " + statuses[len(statuses)-1] + ". Omit for other statuses."}
+	}
 	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"status":  map[string]interface{}{"type": "string", "enum": statuses},
-			"summary": map[string]interface{}{"type": "string", "description": "Concise explanation of the result."},
-			"evidence": map[string]interface{}{"type": "array", "description": "Up to 12 observations supporting the result.", "items": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"type":    map[string]interface{}{"type": "string", "enum": []string{"observation"}},
-					"summary": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"type", "summary"},
-			}},
-		},
-		"required": []string{"status", "summary"},
+		"type":       "object",
+		"properties": properties,
+		"required":   []string{"status", "summary"},
 	}
 }
 

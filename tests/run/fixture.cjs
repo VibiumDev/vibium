@@ -71,7 +71,7 @@ async function fixture() {
       if (d.tools[0] === 'verifier_ping') return answer(res, d.family, d.ping.length ? null : ['verifier_ping', {}], d.ping.length ? JSON.parse(d.ping.at(-1)) : null, 0);
       if (!d.tools.some(t => t.startsWith('browser_'))) {
         assert.ok(d.model);
-        return answer(res, d.family, null, { status: 'inconclusive', summary: 'Archive does not establish the claim.', evidence: [] }, 0);
+        return answer(res, d.family, null, { status: 'inconclusive', summary: 'Archive does not establish the claim.', reason: 'archive_missing_evidence', evidence: [] }, 0);
       }
       assert.ok(!d.tools.some(t => /eval|stop|launch|record|^vibium_(run|check)$/.test(t)), 'operation obtained unrestricted or recursive tools');
       const isRun = d.system.includes('accomplish');
@@ -89,6 +89,7 @@ async function fixture() {
         else assert.ok(obs[isRun ? 3 : 1].includes('Updated'), 'goal not accomplished in browser');
       }
       const result = { status: isRun ? (d.input === 'not possible' ? 'not_completed' : 'completed') : 'passed', summary: 'Fixture observed the outcome.', evidence: [{ type: 'observation', summary: 'Observed the requested state.' }] };
+      if (result.status === 'not_completed') result.reason = 'missing_information';
       answer(res, d.family, step, result, obs.length);
     } catch (err) { errors.push(err.stack); res.writeHead(500); res.end('{}'); }
   });

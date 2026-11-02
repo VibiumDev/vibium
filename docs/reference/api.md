@@ -331,15 +331,17 @@ The JS and Python module-level `browser.check` launcher requires `record` and
 uses the existing pipe runtime without launching a browser. Browser instances
 and Page instances use the current live session unless `record` is supplied.
 Page instances pin their own context. The result contains `status` (`passed`,
-`failed`, or `inconclusive`), `claim`, `summary`, and concise `evidence`.
-Operational errors raise exceptions instead of returning a verdict.
+`failed`, or `inconclusive`), `claim`, `summary`, concise `evidence`, and on
+inconclusive MAY include a machine-readable `reason`. Operational errors
+raise exceptions instead of returning a verdict.
 
 CLI `-i`/`--input` maps to the runtime `record` field. CLI `-o`/`--output`
 saves a live recording, `--report` writes a JSON verdict, and `--json` controls
 stdout. See the [Check reference](check.md) for configuration and examples.
 
 Run is live-only and returns `completed` or `not_completed` with a goal,
-summary, and evidence. Execution errors remain errors. Configure its provider
+summary, and evidence; `not_completed` MAY include a machine-readable
+`reason`. Execution errors remain errors. Configure its provider
 with `VIBIUM_AI_*` and check it with `vibium ready ai`.
 See [Run](../how-to-guides/run.md).
 

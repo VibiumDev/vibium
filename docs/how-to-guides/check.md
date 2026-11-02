@@ -119,9 +119,11 @@ To save a JSON verdict, use `--report`. To print JSON, use `--json`:
 vibium check "the changed display name persists after refresh" --report verdict.json --json
 ```
 
-**All three verdicts exit with code 0.** In JSON stdout, check
-`result.status == "passed"` to require a PASS. In the report file, check the
-top-level `status`. Execution errors exit 1 and have no verdict.
+**All three verdicts exit with code 0 by default.** To gate on the verdict,
+add `--expect pass`: FAIL exits 2 and REVIEW exits 3. Or in JSON
+stdout, check `result.status == "passed"` to require a PASS. In the report
+file, check the top-level `status`. Execution errors exit 1 and have no
+verdict.
 
 If a run errors, check the reported provider or browser problem. `--output`
 saves available recording evidence even on an error. If you started recording

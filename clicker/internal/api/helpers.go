@@ -101,7 +101,8 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 		args := buildElSemanticArgs(ep)
 		script := `
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -126,14 +127,15 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 
 	script := `
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 			let el;
 			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
+				const all = pierceQueryAll(root, selector);
 				el = all[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			return el || null;
 		}
@@ -226,14 +228,15 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 		}
 		script := `
 			(scope, selector, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 				let el;
 				if (hasIndex) {
-					const all = root.querySelectorAll(selector);
+					const all = pierceQueryAll(root, selector);
 					el = all[index];
 				} else {
-					el = root.querySelector(selector);
+					el = pierceQuery(root, selector);
 				}
 				if (!el) return null;
 				if (el.scrollIntoViewIfNeeded) {
@@ -270,7 +273,8 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 
 	script := `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 	` + semanticMatchesHelper() + `
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);

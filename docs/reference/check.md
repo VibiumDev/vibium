@@ -35,6 +35,7 @@ vibium check "<claim>" [options]
 | `--keep-open` | Keep a browser started by Check open after the run | `vibium check "https://example.com is up" --keep-open` |
 | `--report` | Save the verdict and evidence as JSON | `vibium check "the cart contains one battery pack" --report verdict.json` |
 | `--json` | Print the CLI result as JSON | `vibium check "the cart contains one battery pack" --json` |
+| `--expect` | Map the verdict to the exit code for gating | `vibium check "the cart contains one battery pack" --expect pass` |
 
 `--keep-open` cannot be combined with `--input`.
 `--input` and `--output` cannot be combined. You can combine either one with
@@ -118,12 +119,18 @@ shows how to create it with private permissions.
 
 ## Results and exit codes
 
-| Displayed verdict | JSON `status` | Meaning | Exit code |
-|-------------------|---------------|---------|-----------|
-| PASS | `passed` | Evidence supports the claim. | 0 |
-| FAIL | `failed` | Evidence contradicts the claim. | 0 |
-| REVIEW | `inconclusive` | Evidence is insufficient to decide. | 0 |
-| Execution error | No verdict | Configuration, provider, browser, or timeout failure. | 1 |
+| Displayed verdict | JSON `status` | Meaning | Exit code | With `--expect pass` |
+|-------------------|---------------|---------|-----------|----------------------|
+| PASS | `passed` | Evidence supports the claim. | 0 | 0 |
+| FAIL | `failed` | Evidence contradicts the claim. | 0 | 2 |
+| REVIEW | `inconclusive` | Evidence is insufficient to decide. | 0 | 3 |
+| Execution error | No verdict | Configuration, provider, browser, or timeout failure. | 1 | 1 |
+
+`--expect pass` gates automation on the verdict without JSON parsing. The
+result is still printed and `--report` is still written. REVIEW is not
+a pass: it fails the gate (fail closed), with exit 3 so a pipeline MAY retry
+it while hard-failing on 2. Exit 1 keeps one meaning with or without the
+flag. `vibium run` accepts `--expect completed`; NOT_COMPLETED exits 2.
 
 REVIEW is the display word for the `inconclusive` status: the verdict needs
 human attention. It is not a pass. JSON output, reports, SDK results, MCP,
@@ -145,8 +152,22 @@ With `--json`, a completed check prints this CLI envelope:
 }
 ```
 
-`ok: true` means the check completed. To require a PASS in automation, inspect
-`result.status == "passed"`. Execution errors print `{"ok":false,"error":"..."}`.
+`ok: true` means the check completed. To require a PASS in automation, add
+`--expect pass` or inspect `result.status == "passed"`. Execution errors
+print `{"ok":false,"error":"..."}`.
+
+An inconclusive result MAY carry a machine-readable `reason`:
+
+| `reason` | Cause |
+|----------|-------|
+| `action_limit` | The action budget ran out before a verdict. Retry with a narrower claim. |
+| `insufficient_evidence` | The evidence could not decide the claim. |
+| `safety_stop` | Safe verification was not possible (credentials, purchases, irreversible actions). |
+| `archive_missing_evidence` | The saved recording lacks the needed evidence. |
+
+The verifier reports its own reason; the loop stamps `action_limit`. PASS and
+FAIL never carry a reason. Run results use `action_limit`,
+`missing_information`, and `safety_stop` on `not_completed`.
 
 `--report` writes the inner result object, without `ok` or `result`. Inspect
 `status` at the top level of that file. An execution error leaves no verdict
@@ -203,7 +224,8 @@ establish what a later deployment or live session does.
 - Claims must be nonempty and at most 4,000 bytes.
 - Each run has a three-minute budget and at most 24 model-selected actions.
 - Text and image payloads are bounded; truncated text is marked.
-- Exhausting the action limit returns REVIEW. A timeout returns an error.
+- Exhausting the action limit returns REVIEW with reason
+  `action_limit`. A timeout returns an error.
 - Browser polling or recording cleanup can take additional time after a timeout.
 
 ## MCP and language APIs

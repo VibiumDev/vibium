@@ -59,7 +59,9 @@ The timezone was changed and saved.
 
 Read the evidence. COMPLETED is the model's assessment, not proof. If the goal
 is ambiguous or required information is missing, Run can return
-NOT_COMPLETED. Provider, browser, and configuration failures are errors.
+NOT_COMPLETED, with a machine-readable `reason` in the JSON result:
+`action_limit`, `missing_information`, or `safety_stop`. Provider, browser,
+and configuration failures are errors.
 
 Run reuses the existing session and selected page. It can change page
 state and does not undo its actions. Supply a clear goal and appropriate test
@@ -125,7 +127,9 @@ vibium run "open https://example.com" -o example.zip --keep-open
 Close it later with `vibium stop`. Run is live-only: it has no `--input`
 or `--report` option. `--json` prints the structured result instead of text.
 Completed operations exit 0 for either status; execution errors exit 1.
-In automation, inspect `result.status == "completed"` in JSON stdout.
+In automation, add `--expect completed` so NOT_COMPLETED exits 2 while
+errors keep exit 1, or inspect `result.status == "completed"` in JSON
+stdout.
 
 ## Follow with Check
 

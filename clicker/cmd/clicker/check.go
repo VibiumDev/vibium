@@ -71,6 +71,7 @@ func newCheckCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: true, Result: result})
+				exitExpected(cmd, "passed", result.Status)
 				return
 			}
 			fmt.Printf("CHECK: %s\n\n%s\n\n%s\n", result.Claim, result.Verdict(), result.Summary)
@@ -83,6 +84,7 @@ func newCheckCmd() *cobra.Command {
 			if files.report != "" {
 				fmt.Printf("Report saved to %s\n", files.report)
 			}
+			exitExpected(cmd, "passed", result.Status)
 		},
 	}
 	cmd.Flags().StringVarP(&files.input, "input", "i", "", "Read an existing Vibium recording or Playwright trace ZIP; no browser is launched")
@@ -90,15 +92,40 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&files.report, "report", "", "Save the verdict and concise evidence as a new JSON file")
 	cmd.Flags().Bool("keep-open", false, "Leave a browser started by Check open after the run (existing browsers are always preserved)")
 	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
+	cmd.Flags().String("expect", "", "Gate automation on the verdict: with pass, FAIL exits 2 and REVIEW exits 3 (execution errors keep exit 1)")
 	addModelFlags(cmd)
 	cmd.Example += "\n  vibium check \"checkout completes\" --base-url http://localhost:3000\n  # Verifies the claim against that site; a page already on its origin keeps its state."
+	cmd.Example += "\n  vibium check \"checkout completes\" --expect pass\n  # Exits 0 on PASS, 2 on FAIL, 3 on REVIEW for CI gating."
 	return cmd
+}
+
+// exitExpected applies the --expect exit contract after the result is
+// printed. Exit 1 stays reserved for execution errors.
+func exitExpected(cmd *cobra.Command, expected, status string) {
+	if expect, _ := cmd.Flags().GetString("expect"); expect == "" || status == expected {
+		return
+	}
+	if status == "failed" || status == "not_completed" {
+		os.Exit(2)
+	}
+	os.Exit(3)
+}
+
+// validateExpect rejects unknown --expect values before any model action.
+func validateExpect(cmd *cobra.Command, allowed string) error {
+	if expect, _ := cmd.Flags().GetString("expect"); expect != "" && expect != allowed {
+		return fmt.Errorf("--expect accepts only %s", allowed)
+	}
+	return nil
 }
 
 // Return errors before printing them so all artifact cleanup runs before the
 // CLI's printError exits the process.
 func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *ai.Result, err error) {
 	if err = files.validate(cmd); err != nil {
+		return
+	}
+	if err = validateExpect(cmd, "pass"); err != nil {
 		return
 	}
 	keepOpen, _ := cmd.Flags().GetBool("keep-open")

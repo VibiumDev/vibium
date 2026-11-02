@@ -222,6 +222,17 @@ func TestVerdictDeliveredViaToolCall(t *testing.T) {
 	}
 }
 
+func TestVerdictReasonPassesThrough(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		answer(w, nil, verdictCall("v1", `{"status":"inconclusive","summary":"cannot decide","reason":"insufficient_evidence","evidence":[]}`))
+	}))
+	defer server.Close()
+	result, err := Check(context.Background(), testRequest(server.URL), &fakeTools{})
+	if err != nil || result.Status != "inconclusive" || result.Reason != "insufficient_evidence" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 // Invalid verdict arguments go back to the model as a tool result so it can
 // correct itself, instead of failing the run.
 func TestInvalidVerdictToolArgsReturnToModel(t *testing.T) {
@@ -419,7 +430,7 @@ func TestActionBudget(t *testing.T) {
 	defer server.Close()
 	tools := &fakeTools{}
 	result, err := Check(context.Background(), testRequest(server.URL), tools)
-	if err != nil || result.Status != "inconclusive" || len(tools.calls) != ai.MaxActions+4 {
+	if err != nil || result.Status != "inconclusive" || result.Reason != "action_limit" || len(tools.calls) != ai.MaxActions+4 {
 		t.Fatalf("%+v %v %d", result, err, len(tools.calls))
 	}
 }
