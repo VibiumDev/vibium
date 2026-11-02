@@ -3,7 +3,11 @@ package api
 // GetSelectorJS returns the JS getSelector(el) function body that generates unique CSS selectors.
 func GetSelectorJS() string {
 	return `function getSelector(el) {
-			if (el.id) return '#' + CSS.escape(el.id);
+			// A shadow element's ref is "<host> >> <path>", the pierce form the resolvers parse.
+			const root = el.getRootNode();
+			const shadow = root instanceof ShadowRoot ? root : null;
+			const prefix = shadow ? getSelector(shadow.host) + ' >> ' : '';
+			if (el.id) return prefix + '#' + CSS.escape(el.id);
 			const parts = [];
 			let cur = el;
 			while (cur && cur !== document.body && cur !== document.documentElement) {
@@ -12,7 +16,7 @@ func GetSelectorJS() string {
 					parts.unshift('#' + CSS.escape(cur.id));
 					break;
 				}
-				const parent = cur.parentElement;
+				const parent = cur.parentElement || shadow;
 				if (parent) {
 					const siblings = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
 					if (siblings.length > 1) {
@@ -21,11 +25,12 @@ func GetSelectorJS() string {
 					}
 				}
 				parts.unshift(seg);
-				cur = parent;
+				cur = cur.parentElement;
 			}
-			if (parts.length === 0) return el.tagName.toLowerCase();
-			if (!parts[0].startsWith('#')) parts.unshift('body');
-			return parts.join(' > ');
+			if (parts.length === 0) return prefix + el.tagName.toLowerCase();
+			// Unanchored, "div > button" could match a deeper button first.
+			if (!parts[0].startsWith('#')) parts.unshift(shadow ? ':host' : 'body');
+			return prefix + parts.join(' > ');
 		}`
 }
 

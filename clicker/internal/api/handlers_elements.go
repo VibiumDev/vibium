@@ -304,6 +304,11 @@ func semanticMatchesHelper() string {
 			}
 
 			function collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath) {
+				// el.matches cannot take a pierce selector; resolve it first.
+				if (selector && selector.indexOf('>>') !== -1 && !xpath) {
+					return pierceQueryAll(root, selector).filter((el) =>
+						matches(el, '', role, text, label, placeholder, alt, title, testid));
+				}
 				const found = [];
 				if (xpath) {
 					const xr = document.evaluate(xpath, root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);

@@ -163,6 +163,45 @@ const FRAMES_HTML = `<html><head><title>Frames</title></head><body>
   <iframe src="/frame-inner" name="myframe"></iframe>
 </body></html>`;
 
+// Shadow buttons without ids: "Save" has an old path that resolves to the
+// page's first button, "B" has a path that also matches the deeper "Y" first, "C" is in
+// the second of two top-level divs, and "Deep" is in a nested shadow root.
+// The file input is for upload, which resolves refs through its own script.
+// x-spaced's id ends in a space and x-quoted's holds a quote; their refs must
+// keep the escapes.
+const SHADOW_REFS_HTML = `<html><head><title>Shadow refs</title></head><body>
+  <button onclick="document.getElementById('out').textContent = 'light'">Delete account</button>
+  <button onclick="document.getElementById('out').textContent = 'light'">Logout</button>
+  <button aria-label=">>" onclick="document.getElementById('out').textContent = 'last'">Last</button>
+  <x-panel></x-panel>
+  <x-spaced id="sp "></x-spaced>
+  <x-quoted id='q"x'></x-quoted>
+  <div id="out"></div>
+  <script>
+    const report = (root) => root.querySelectorAll('button').forEach(b => b.onclick = () => {
+      document.getElementById('out').textContent = 'shadow:' + b.textContent;
+    });
+    customElements.define('x-inner', class extends HTMLElement {
+      constructor() {
+        super();
+        const r = this.attachShadow({ mode: 'open' });
+        r.innerHTML = '<button>Deep</button>';
+        report(r);
+      }
+    });
+    const r = document.querySelector('x-panel').attachShadow({ mode: 'open' });
+    r.innerHTML = '<button>Save</button><section><div><button>X</button><button>Y</button></div></section>' +
+      '<div><button>A</button><button>B</button></div><div><button>C</button></div><x-inner></x-inner><input type="file">';
+    report(r);
+    const sp = document.querySelector('x-spaced').attachShadow({ mode: 'open' });
+    sp.innerHTML = '<button>Spaced</button>';
+    report(sp);
+    const q = document.querySelector('x-quoted').attachShadow({ mode: 'open' });
+    q.innerHTML = '<button>Quoted</button>';
+    report(q);
+  </script>
+</body></html>`;
+
 const SHADOW_HTML = `<html><head><title>Shadow</title></head><body>
   <my-card></my-card>
   <div id="out"></div>
@@ -192,6 +231,7 @@ const SHADOW_HTML = `<html><head><title>Shadow</title></head><body>
 const routes = {
   '/': HOME_HTML,
   '/shadow': SHADOW_HTML,
+  '/shadow-refs': SHADOW_REFS_HTML,
   '/frames': FRAMES_HTML,
   '/frame-inner': FRAME_INNER_HTML,
   '/login': LOGIN_HTML,
