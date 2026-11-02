@@ -3,10 +3,7 @@ package api
 // GetSelectorJS returns the JS getSelector(el) function body that generates unique CSS selectors.
 func GetSelectorJS() string {
 	return `function getSelector(el) {
-			// An element inside a shadow root is addressed as "<host> >> <path>",
-			// the pierce form the ref resolvers understand. Without the host hop the
-			// path stopped at the root, so map minted refs that matched nothing or
-			// a light-DOM element with the same path.
+			// A shadow element's ref is "<host> >> <path>", the pierce form the resolvers parse.
 			const root = el.getRootNode();
 			const shadow = root instanceof ShadowRoot ? root : null;
 			const prefix = shadow ? getSelector(shadow.host) + ' >> ' : '';
@@ -31,8 +28,7 @@ func GetSelectorJS() string {
 				cur = cur.parentElement;
 			}
 			if (parts.length === 0) return prefix + el.tagName.toLowerCase();
-			// :host anchors the path at the shadow root, as body does in the
-			// document; unanchored, "div > button" would match a deeper button first.
+			// Unanchored, "div > button" could match a deeper button first.
 			if (!parts[0].startsWith('#')) parts.unshift(shadow ? ':host' : 'body');
 			return prefix + parts.join(' > ');
 		}`

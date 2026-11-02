@@ -15,11 +15,7 @@ package api
 // common case and cannot change its behavior.
 func PierceQueryJS() string {
 	return `
-		// Splits on >> and >>> outside quotes, brackets and escapes,
-		// so [aria-label=">>"] stays one selector. >>> wins over >> at one
-		// index. Parts are trimmed of whitespace (any \s, as the old regex
-		// split did) except an escaped space, which ends a ref for an id
-		// like "a ".
+		// Splits on >>/>>> outside quotes, brackets and escapes; trims whitespace but keeps an escaped trailing space (ids like "a ").
 		function __pierceSplit(selector) {
 			const out = [];
 			const skipSpace = (j) => { while (j < selector.length && /\s/.test(selector[j])) j++; return j; };
