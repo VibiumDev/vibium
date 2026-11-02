@@ -21,6 +21,11 @@ import (
 // under a sequence number, and the client echoes that seq back with the
 // result. The same channel machinery runs WebSocket monitoring
 // (handlers_websocket.go).
+//
+// The binding installs in every browsing context, and the realm on
+// expose.call only addresses the reply — it is not an origin check. Any page
+// the browser visits can call an exposed function, so host callbacks must
+// treat their arguments as untrusted input (#746).
 
 // exposeChannelName is the BiDi channel every exposed-function binding posts
 // through; one channel serves all names, multiplexed by the payload.
