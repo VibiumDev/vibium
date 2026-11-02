@@ -124,10 +124,12 @@ Successful execution returns:
 ```
 
 `result.status` is `passed`, `failed`, or `inconclusive`, displayed as PASS,
-FAIL, or INCONCLUSIVE. **All three verdicts have CLI exit code zero.** A script
-that gates completion must inspect `result.status`; exit zero alone is not a
-pass. Provider, configuration, and browser execution failures are errors,
-not FAIL verdicts. Report them separately and retain available evidence.
+FAIL, or INCONCLUSIVE. **All three verdicts have CLI exit code zero by
+default.** A script that gates completion must pass `--expect pass` (FAIL
+exits 2, INCONCLUSIVE exits 3, errors keep exit 1) or inspect
+`result.status`; exit zero alone is not a pass. Provider, configuration, and
+browser execution failures are errors, not FAIL verdicts. Report them
+separately and retain available evidence.
 
 For browser automation, exploration, and recording, use the `browser` skill if installed.
 It supplies a broader CLI reference; this skill can run on its own using

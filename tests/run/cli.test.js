@@ -63,6 +63,21 @@ async function run(t, options = {}) {
 }
 for (const provider of ['openai', 'xai', 'anthropic', 'google', 'openai-compatible', 'local']) test(`Run CLI uses ${provider} browser tools and shared AI configuration`, { timeout: 120000 }, t => run(t, { provider, existing: true }));
 for (const state of [{}, { incomplete: true }, { error: true }, { keepOpen: true }, { keepOpen: true, error: true }, { existing: true, error: true }, { existing: true, privacy: true }]) test(`Run ownership and evidence ${JSON.stringify(state)}`, { timeout: 120000 }, t => run(t, state));
+test('Run --expect completed maps results to exit codes', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  const env = { ...process.env, ...f.env, VIBIUM_SESSION: `run-expect-${process.pid}`, VIBIUM_ENGINE: ENGINE, VIBIUM_ENGINE_CHANNEL: '', VIBIUM_ENGINE_PATH: '', VIBIUM_CONNECT_URL: '', VIBIUM_AI_PROVIDER: 'openai-compatible' };
+  const gated = goal => exec(VIBIUM, ['--headless', 'run', goal, '--expect', 'completed'], { env, timeout: 230000 });
+  try {
+    assert.match((await gated('change name')).stdout, /COMPLETED/);
+    const failed = await gated('not possible').then(() => assert.fail('not_completed must exit 2'), e => e);
+    assert.equal(failed.code, 2);
+    assert.match(failed.stdout, /NOT_COMPLETED/, 'the result is still printed before the gating exit');
+    await assert.rejects(exec(VIBIUM, ['run', 'goal', '--expect', 'pass'], { env }), e => e.code === 1 && /accepts only completed/.test(e.stderr));
+  } finally {
+    await exec(VIBIUM, ['daemon', 'stop'], { env, timeout: 15000 }).catch(() => {});
+    await f.close();
+  }
+});
 test('Run rejects archive/report flags and requires shared AI configuration', async () => {
   // Old per-feature variables must not silently configure the shared model loop.
   // An empty provider makes run load ai.env, so point the config dir at an
