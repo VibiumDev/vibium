@@ -123,9 +123,18 @@ vibium run "open https://example.com" -o example.zip --keep-open
 ```
 
 Close it later with `vibium stop`. Run is live-only: it has no `--input`
-or `--report` option. `--json` prints the structured result instead of text.
-Completed operations exit 0 for either status; execution errors exit 1.
-In automation, inspect `result.status == "completed"` in JSON stdout.
+option. `--report` saves the result and evidence as a new JSON file:
+
+```bash
+vibium run "change my timezone to America/Chicago and save it" --report result.json
+```
+
+The report holds the result object with `status`, `goal`, `summary`, and
+`evidence`. The path MUST be new and MUST differ from `--output`. An
+execution error leaves no report. `--json` prints the structured result
+instead of text. Completed operations exit 0 for either status; execution
+errors exit 1. In automation, inspect `result.status == "completed"` in
+JSON stdout or the report file.
 
 ## Follow with Check
 
