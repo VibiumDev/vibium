@@ -50,8 +50,14 @@ type BrowserSession struct {
 	// (vibium pipe --connect starts its internal ids at 1000000, so a nested
 	// router's commands were being swallowed here — #158).
 	abandonedInternal map[int]struct{} // id -> response channel
-	internalCmdsMu    sync.Mutex
-	nextInternalID    int
+	// Forwarded client commands are renumbered from nextInternalID before
+	// they reach the browser, so a client id can never collide with an
+	// in-flight internal command in the browser's single id namespace — a
+	// nested vibium client numbers its commands from the same base (#723).
+	// browser-side id -> the client's original id, restored on the response.
+	forwardedIDs   map[int]int
+	internalCmdsMu sync.Mutex
+	nextInternalID int
 
 	// WebSocket monitoring state
 	wsPreloadScriptID string // "" if not installed
@@ -287,6 +293,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		stopChan:          make(chan struct{}),
 		internalCmds:      make(map[int]chan json.RawMessage),
 		abandonedInternal: make(map[int]struct{}),
+		forwardedIDs:      make(map[int]int),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
 		dialogManual:      make(map[string]struct{}),
@@ -972,10 +979,57 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	}
 
-	// Forward standard BiDi commands to browser
+	// Forward standard BiDi commands to browser, renumbered so the client's
+	// id cannot collide with an internal command's (#723). The response gets
+	// the client's id back in routeBrowserToClient.
+	if cmd.ID > 0 {
+		if remapped, ok := session.remapForwardedCommand(msg, cmd.ID); ok {
+			msg = remapped
+		}
+	}
 	if err := session.BidiConn.Send(msg); err != nil {
 		fmt.Fprintf(os.Stderr, "[router] Failed to send to browser for client %d: %v\n", client.ID(), err)
 	}
+}
+
+// remapForwardedCommand rewrites a client command's id to a fresh id from the
+// internal counter and records the mapping for the response. A message that
+// cannot be rewritten is forwarded as-is, the pre-#723 behavior.
+func (s *BrowserSession) remapForwardedCommand(msg string, clientID int) (string, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return "", false
+	}
+	s.internalCmdsMu.Lock()
+	browserID := s.nextInternalID
+	s.nextInternalID++
+	s.forwardedIDs[browserID] = clientID
+	s.internalCmdsMu.Unlock()
+	fields["id"], _ = json.Marshal(browserID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		s.internalCmdsMu.Lock()
+		delete(s.forwardedIDs, browserID)
+		s.internalCmdsMu.Unlock()
+		return "", false
+	}
+	return string(out), true
+}
+
+// restoreClientID puts the client's original id back on a response to a
+// forwarded command. On a marshal failure the browser-side id stays: the
+// client gets a response it cannot match, but the reader loop stays correct.
+func restoreClientID(msg string, clientID int) string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return msg
+	}
+	fields["id"], _ = json.Marshal(clientID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return msg
+	}
+	return string(out)
 }
 
 // getContext retrieves the active browsing context. It checks lastContext first
@@ -1104,6 +1158,16 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		if err := json.Unmarshal([]byte(msg), &resp); err == nil && resp.ID > 0 {
 			session.internalCmdsMu.Lock()
 			ch, isInternal := session.internalCmds[resp.ID]
+			if isInternal {
+				// Delete before sending, like bidi.Client: with the entry
+				// gone a second response with this id cannot match it, so
+				// the cap-1 send can never block this loop (#723).
+				delete(session.internalCmds, resp.ID)
+			}
+			clientID, isForwarded := session.forwardedIDs[resp.ID]
+			if isForwarded {
+				delete(session.forwardedIDs, resp.ID)
+			}
 			session.internalCmdsMu.Unlock()
 
 			if isInternal {
@@ -1122,6 +1186,10 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			session.internalCmdsMu.Unlock()
 			if abandoned {
 				continue
+			}
+
+			if isForwarded {
+				msg = restoreClientID(msg, clientID)
 			}
 
 			// A browser reply about to be forwarded answers a client command.
