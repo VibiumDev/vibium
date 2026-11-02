@@ -13,8 +13,9 @@ vibium ready ai --json   # Require AI readiness; no browser needed
 
 Use `ready` for initial live setup and `ready ai` for archive-only checks.
 AI diagnostics test configuration and a provider tool round-trip, with up to
-two model requests. Browser diagnostics launch and close an isolated headless
-session. Neither command tests your application's acceptance claims.
+two model requests. Browser diagnostics check the installation without
+launching a browser. Neither command tests your application's acceptance
+claims.
 
 Plain `ready` allows missing AI for direct browser automation; Run and Check
 require AI. See [Readiness diagnostics](ready.md) for selection, installation
@@ -121,8 +122,12 @@ shows how to create it with private permissions.
 |-------------------|---------------|---------|-----------|
 | PASS | `passed` | Evidence supports the claim. | 0 |
 | FAIL | `failed` | Evidence contradicts the claim. | 0 |
-| INCONCLUSIVE | `inconclusive` | Evidence is insufficient to decide. | 0 |
+| REVIEW | `inconclusive` | Evidence is insufficient to decide. | 0 |
 | Execution error | No verdict | Configuration, provider, browser, or timeout failure. | 1 |
+
+REVIEW is the display word for the `inconclusive` status: the verdict needs
+human attention. It is not a pass. JSON output, reports, SDK results, MCP,
+and recordings keep the `inconclusive` string.
 
 With `--json`, a completed check prints this CLI envelope:
 
@@ -152,7 +157,7 @@ execution errors.
 
 Live checks support local Chrome and Firefox. They reuse the existing Vibium
 session and selected page. When no browser exists, the CLI starts one and
-closes it after recording finalization, including on FAIL, INCONCLUSIVE, or an
+closes it after recording finalization, including on FAIL, REVIEW, or an
 execution error. `--keep-open` keeps that newly started browser open instead.
 A browser already running before Check is always preserved. The ownership
 check, launch, verification, and cleanup are serialized in the daemon; its
@@ -189,7 +194,7 @@ The verifier can inspect recorded actions, DOM snapshots where present,
 screenshots, network summaries, console events, and earlier Check groups.
 The entire archive is not automatically sent to the provider.
 
-Missing evidence can produce INCONCLUSIVE. An earlier PASS is an assessment
+Missing evidence can produce REVIEW. An earlier PASS is an assessment
 to examine, not proof. An archive describes its recorded run and cannot
 establish what a later deployment or live session does.
 
@@ -198,7 +203,7 @@ establish what a later deployment or live session does.
 - Claims must be nonempty and at most 4,000 bytes.
 - Each run has a three-minute budget and at most 24 model-selected actions.
 - Text and image payloads are bounded; truncated text is marked.
-- Exhausting the action limit returns INCONCLUSIVE. A timeout returns an error.
+- Exhausting the action limit returns REVIEW. A timeout returns an error.
 - Browser polling or recording cleanup can take additional time after a timeout.
 
 ## MCP and language APIs

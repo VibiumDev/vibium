@@ -58,5 +58,5 @@ first and address any setup errors. Do not display the settings file or keys.
 Report the verdict and the recording path.
 ```
 
-Expect PASS, FAIL, or INCONCLUSIVE with concise evidence. For a complete coding
+Expect PASS, FAIL, or REVIEW with concise evidence. For a complete coding
 workflow, follow [Check with your coding agent](../tutorials/check-with-a-coding-agent.md).

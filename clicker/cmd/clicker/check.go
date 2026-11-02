@@ -52,7 +52,7 @@ func newCheckCmd() *cobra.Command {
 		Short: "Check a claim in a live browser or an existing recording with an independent model",
 		Long:  "Check a claim in a live browser or an existing recording with an independent model.\nCheck provider setup first with: vibium ready ai.\nCloses a browser it starts after saving evidence; reuses and preserves an existing browser.\nUse --keep-open to leave a newly started browser open.",
 		Example: `  vibium check "changing my display name persists after refresh"
-  # Returns PASS, FAIL, or INCONCLUSIVE with concise evidence.
+  # Returns PASS, FAIL, or REVIEW with concise evidence.
   vibium check "changing my display name persists after refresh" -o verification.zip
   # Saves the live verification in a new recording ZIP.
   vibium check "https://example.com is up" -o status.zip --keep-open

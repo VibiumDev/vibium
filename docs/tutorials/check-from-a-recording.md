@@ -25,7 +25,7 @@ vibium check "https://var.parts was up during the recorded run" -i sitecheck.zip
 ```
 
 `-i` means **input**. Check reads evidence from the ZIP and returns **PASS**,
-**FAIL**, or **INCONCLUSIVE**, with a short explanation. It still calls your
+**FAIL**, or **REVIEW**, with a short explanation. It still calls your
 configured model, but it doesn't launch a browser, replay actions, or change
 the original ZIP.
 
@@ -64,7 +64,7 @@ not the Playwright package version. The filename doesn't determine the format;
 Vibium inspects the contents.
 
 An unsupported format produces an execution error. A supported recording with
-insufficient evidence may produce INCONCLUSIVE. A live check can gather new
+insufficient evidence may produce REVIEW. A live check can gather new
 observations; an archive check is limited to what was saved.
 
 For other options and automation exit codes, see the

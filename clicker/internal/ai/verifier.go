@@ -214,6 +214,8 @@ type Result struct {
 	Evidence []Evidence `json:"evidence"`
 }
 
+// Verdict is the display word only; the JSON status strings are the API.
+// REVIEW displays the inconclusive status: the verdict needs human attention.
 func (r Result) Verdict() string {
 	switch r.Status {
 	case "passed":
@@ -221,7 +223,7 @@ func (r Result) Verdict() string {
 	case "failed":
 		return "FAIL"
 	default:
-		return "INCONCLUSIVE"
+		return "REVIEW"
 	}
 }
 func (r Result) Validate() error {
