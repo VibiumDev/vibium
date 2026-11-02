@@ -90,4 +90,17 @@ describe('Selector Strategies', () => {
       await vibe.go(`${baseURL}/selectors`);
     }
   });
+
+  // Semantic matching goes through el.matches, which rejects ">>".
+  test('a semantic filter narrows a pierced selector (#748)', async () => {
+    await vibe.go(`${baseURL}/shadow-refs`);
+    try {
+      const el = await vibe.find({ selector: 'x-panel >> button', text: 'B' });
+      assert.strictEqual(el.info.text, 'B');
+      const all = await vibe.findAll({ selector: 'x-panel >> button', role: 'button' });
+      assert.strictEqual(all.length, 6);
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
 });
