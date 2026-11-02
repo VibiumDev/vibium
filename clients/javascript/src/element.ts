@@ -21,6 +21,7 @@ export interface ActionOptions {
 }
 
 export interface SelectorOptions {
+  selector?: string;
   role?: string;
   text?: string;
   label?: string;
@@ -59,10 +60,11 @@ export class Element {
 
   /** Build the common params sent to vibium: commands for element resolution. */
   private commandParams(extra?: Record<string, unknown>): Record<string, unknown> {
+    // An object locator's own selector replaces the '' placeholder.
     return {
+      selector: this.selector,
       ...this._params,
       context: this.context,
-      selector: this.selector,
       index: this._index,
       ...extra,
     };
@@ -71,8 +73,8 @@ export class Element {
   /** Params that identify this element as a target (e.g. dragTo). */
   private toParams(): Record<string, unknown> {
     return {
-      ...this._params,
       selector: this.selector,
+      ...this._params,
       index: this._index,
     };
   }

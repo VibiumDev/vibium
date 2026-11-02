@@ -154,6 +154,16 @@ const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <div class="container"><span class="inner-text">Hello from span</span></div>
 </body></html>`;
 
+// Only selector + text reaches "Go now": text alone picks the shorter link,
+// and the selector alone picks "Stop".
+const COMBINED_LOCATOR_HTML = `<html><head><title>Combined locator</title></head><body>
+  <a id="go" href="#">Go</a>
+  <form onsubmit="return false"><button id="stop">Stop</button><button id="go-now">Go now</button></form>
+  <div id="src">Drag me</div>
+  <div id="out"></div>
+  <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.id; });</script>
+</body></html>`;
+
 const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
   <h1 id="inner">Inside the frame</h1>
 </body></html>`;
@@ -245,6 +255,7 @@ const routes = {
   '/example': EXAMPLE_HTML,
   '/more-information': MORE_INFORMATION_HTML,
   '/selectors': SELECTORS_HTML,
+  '/combined-locator': COMBINED_LOCATOR_HTML,
   '/form-redirect': FORM_REDIRECT_HTML,
 };
 
