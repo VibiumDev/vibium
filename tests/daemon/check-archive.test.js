@@ -51,7 +51,7 @@ test('Check input reads Vibium and Playwright archives without a browser and wri
       } else {
         assert.ok(observations[1].content.includes('Order confirmed'), 'Inspection resolves real recorded DOM evidence');
         const status = claim.includes('missing') ? 'inconclusive' : claim.includes('failed') ? 'failed' : 'passed';
-        message = { role: 'assistant', content: JSON.stringify({ status, summary: status === 'inconclusive' ? 'Payment settlement is not captured.' : 'The recorded page shows Order confirmed.', evidence: [{ type: 'observation', summary: 'The final recorded DOM contains the Order confirmed heading.' }] }) };
+        message = { role: 'assistant', content: JSON.stringify({ status, summary: status === 'inconclusive' ? 'Payment settlement is not captured.' : 'The recorded page shows Order confirmed.', ...(status === 'inconclusive' ? { reason: 'archive_missing_evidence' } : {}), evidence: [{ type: 'observation', summary: 'The final recorded DOM contains the Order confirmed heading.' }] }) };
       }
       if (step) message = { role: 'assistant', content: null, tool_calls: [{ id: `call-${observations.length}`, type: 'function', function: { name: step[0], arguments: JSON.stringify(step[1]) } }] };
       res.setHeader('Content-Type', 'application/json');
@@ -92,6 +92,7 @@ test('Check input reads Vibium and Playwright archives without a browser and wri
         const before = fs.readdirSync(dir).sort();
         const result = await cli('check', claim, flag, input, '--report', report);
         assert.equal(result.status, status);
+        assert.equal(result.reason, status === 'inconclusive' ? 'archive_missing_evidence' : undefined);
         assert.deepEqual(JSON.parse(fs.readFileSync(report)), result);
         assert.deepEqual(fs.readdirSync(dir).sort(), [...before, path.basename(report)].sort());
         assert.equal(hash(input), originalHash);

@@ -126,8 +126,11 @@ Successful execution returns:
 `result.status` is `passed`, `failed`, or `inconclusive`, displayed as PASS,
 FAIL, or INCONCLUSIVE. **All three verdicts have CLI exit code zero.** A script
 that gates completion must inspect `result.status`; exit zero alone is not a
-pass. Provider, configuration, and browser execution failures are errors,
-not FAIL verdicts. Report them separately and retain available evidence.
+pass. An inconclusive result MAY include `reason`: `action_limit` (retry with
+a narrower claim), `insufficient_evidence`, `safety_stop`, or
+`archive_missing_evidence`. Provider, configuration, and browser execution
+failures are errors, not FAIL verdicts. Report them separately and retain
+available evidence.
 
 For browser automation, exploration, and recording, use the `browser` skill if installed.
 It supplies a broader CLI reference; this skill can run on its own using
