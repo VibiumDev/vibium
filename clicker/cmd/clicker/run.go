@@ -29,6 +29,7 @@ func newRunCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: true, Result: result})
+				exitExpected(cmd, "completed", result.Status)
 				return
 			}
 			fmt.Printf("RUN: %s\n\n%s\n\n%s\n", result.Goal, result.Verdict(), result.Summary)
@@ -38,18 +39,24 @@ func newRunCmd() *cobra.Command {
 			if output != "" {
 				fmt.Printf("Recording saved to %s\n", output)
 			}
+			exitExpected(cmd, "completed", result.Status)
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Save a new live recording ZIP; an active recording exports its current chunk without continuous video")
 	cmd.Flags().BoolVar(&keepOpen, "keep-open", false, "Keep a browser started by Run open after saving evidence")
 	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
+	cmd.Flags().String("expect", "", "Gate automation on the result: with completed, NOT_COMPLETED exits 2 (execution errors keep exit 1)")
 	addModelFlags(cmd)
 	cmd.Example += "\n  vibium run \"add a battery pack to the cart\" --base-url http://localhost:3000\n  # Accomplishes the goal against that site; a page already on its origin keeps its state."
+	cmd.Example += "\n  vibium run \"add a battery pack to the cart\" --expect completed\n  # Exits 0 when completed, 2 when not_completed for CI gating."
 	return cmd
 }
 func runGoal(cmd *cobra.Command, goal, output string, keepOpen bool) (*runop.Result, error) {
 	files := operationFiles{output: output}
 	if err := files.validate(cmd); err != nil {
+		return nil, err
+	}
+	if err := validateExpect(cmd, "completed"); err != nil {
 		return nil, err
 	}
 	config, err := ai.ResolveConfig("run", modelOverrides(cmd))
