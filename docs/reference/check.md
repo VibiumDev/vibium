@@ -34,6 +34,7 @@ vibium check "<claim>" [options]
 | `--keep-open` | Keep a browser started by Check open after the run | `vibium check "https://example.com is up" --keep-open` |
 | `--report` | Save the verdict and evidence as JSON | `vibium check "the cart contains one battery pack" --report verdict.json` |
 | `--json` | Print the CLI result as JSON | `vibium check "the cart contains one battery pack" --json` |
+| `--expect` | Map the verdict to the exit code for gating | `vibium check "the cart contains one battery pack" --expect pass` |
 
 `--keep-open` cannot be combined with `--input`.
 `--input` and `--output` cannot be combined. You can combine either one with
@@ -117,12 +118,18 @@ shows how to create it with private permissions.
 
 ## Results and exit codes
 
-| Displayed verdict | JSON `status` | Meaning | Exit code |
-|-------------------|---------------|---------|-----------|
-| PASS | `passed` | Evidence supports the claim. | 0 |
-| FAIL | `failed` | Evidence contradicts the claim. | 0 |
-| INCONCLUSIVE | `inconclusive` | Evidence is insufficient to decide. | 0 |
-| Execution error | No verdict | Configuration, provider, browser, or timeout failure. | 1 |
+| Displayed verdict | JSON `status` | Meaning | Exit code | With `--expect pass` |
+|-------------------|---------------|---------|-----------|----------------------|
+| PASS | `passed` | Evidence supports the claim. | 0 | 0 |
+| FAIL | `failed` | Evidence contradicts the claim. | 0 | 2 |
+| INCONCLUSIVE | `inconclusive` | Evidence is insufficient to decide. | 0 | 3 |
+| Execution error | No verdict | Configuration, provider, browser, or timeout failure. | 1 | 1 |
+
+`--expect pass` gates automation on the verdict without JSON parsing. The
+result is still printed and `--report` is still written. INCONCLUSIVE is not
+a pass: it fails the gate (fail closed), with exit 3 so a pipeline MAY retry
+it while hard-failing on 2. Exit 1 keeps one meaning with or without the
+flag. `vibium run` accepts `--expect completed`; NOT_COMPLETED exits 2.
 
 With `--json`, a completed check prints this CLI envelope:
 
@@ -140,8 +147,9 @@ With `--json`, a completed check prints this CLI envelope:
 }
 ```
 
-`ok: true` means the check completed. To require a PASS in automation, inspect
-`result.status == "passed"`. Execution errors print `{"ok":false,"error":"..."}`.
+`ok: true` means the check completed. To require a PASS in automation, add
+`--expect pass` or inspect `result.status == "passed"`. Execution errors
+print `{"ok":false,"error":"..."}`.
 
 An inconclusive result MAY carry a machine-readable `reason`:
 

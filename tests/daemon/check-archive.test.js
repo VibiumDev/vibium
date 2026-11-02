@@ -90,7 +90,10 @@ test('Check input reads Vibium and Playwright archives without a browser and wri
         const report = path.join(dir, `report-${path.basename(input)}-${status}.json`);
         const claim = `${input === vibium ? 'vibium:' : 'playwright:'} ${status === 'inconclusive' ? 'missing payment settlement' : status + ': inspect the confirmation heading'}`;
         const before = fs.readdirSync(dir).sort();
-        const result = await cli('check', claim, flag, input, '--report', report);
+        const checkArgs = ['check', claim, flag, input, '--report', report, '--expect', 'pass'];
+        const result = status === 'passed' ? await cli(...checkArgs) : await cli(...checkArgs).then(
+          () => assert.fail('--expect pass must map the verdict to the exit code'),
+          e => { assert.equal(e.code, status === 'failed' ? 2 : 3); return JSON.parse(e.stdout).result; });
         assert.equal(result.status, status);
         assert.equal(result.reason, status === 'inconclusive' ? 'archive_missing_evidence' : undefined);
         assert.deepEqual(JSON.parse(fs.readFileSync(report)), result);
@@ -102,6 +105,7 @@ test('Check input reads Vibium and Playwright archives without a browser and wri
       assert.deepEqual(fs.readdirSync(dir).sort(), before, 'No artifact written by default');
       await reject(['check', 'claim', '-i', input, '-o', path.join(dir, 'derived.zip')], /cannot be combined/);
       await reject(['check', 'claim', '-i', input, '--report', input], /already exists/);
+      await reject(['check', 'claim', '-i', input, '--expect', 'fail'], /accepts only pass/);
       assert.equal(hash(input), originalHash);
     }
     const invalid = path.join(dir, 'invalid.zip'); fs.writeFileSync(invalid, 'not a zip');
