@@ -15,6 +15,8 @@ export interface CheckResult {
   status: 'passed' | 'failed' | 'inconclusive';
   claim: string;
   summary: string;
+  /** Machine-readable cause of an inconclusive verdict. */
+  reason?: 'action_limit' | 'insufficient_evidence' | 'safety_stop' | 'archive_missing_evidence';
   evidence: { type: 'observation'; summary: string }[];
 }
 export const CHECK_TIMEOUT_MS = 210_000;

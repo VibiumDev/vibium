@@ -103,3 +103,20 @@ func TestCheckKeepOpenOnlyForLiveChecks(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestExpectAcceptsOnlyTheExpectedVerdict(t *testing.T) {
+	cmd := newCheckCmd()
+	if err := cmd.ParseFlags([]string{"--expect", "fail"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCheck(cmd, "claim", operationFiles{}); err == nil || !strings.Contains(err.Error(), "accepts only pass") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	run := newRunCmd()
+	if err := run.ParseFlags([]string{"--expect", "pass"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runGoal(run, "goal", "", false); err == nil || !strings.Contains(err.Error(), "accepts only completed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -12,6 +12,8 @@ export interface RunResult {
   status: 'completed' | 'not_completed';
   goal: string;
   summary: string;
+  /** Machine-readable cause of a not_completed result. */
+  reason?: 'action_limit' | 'missing_information' | 'safety_stop';
   evidence: { type: 'observation'; summary: string }[];
 }
 export const RUN_TIMEOUT_MS = 210_000;

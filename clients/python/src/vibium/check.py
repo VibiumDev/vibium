@@ -1,6 +1,6 @@
 """Shared result types and semantic Check command."""
 from pathlib import Path
-from typing import List, Literal, Optional, TypedDict
+from typing import List, Literal, NotRequired, Optional, TypedDict
 from .client import BiDiClient
 from .model_options import model_params
 
@@ -12,6 +12,8 @@ class CheckResult(TypedDict):
     status: Literal["passed", "failed", "inconclusive"]
     claim: str
     summary: str
+    # Machine-readable cause of an inconclusive verdict.
+    reason: NotRequired[Literal["action_limit", "insufficient_evidence", "safety_stop", "archive_missing_evidence"]]
     evidence: List[CheckEvidence]
 
 async def send_check(client: BiDiClient, claim: str, record: Optional[str] = None, context: Optional[str] = None, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:

@@ -45,3 +45,28 @@ func TestOrList(t *testing.T) {
 		}
 	}
 }
+
+func TestVerdictDisplayWords(t *testing.T) {
+	for status, verdict := range map[string]string{"passed": "PASS", "failed": "FAIL", "inconclusive": "REVIEW"} {
+		if v := (Result{Status: status}).Verdict(); v != verdict {
+			t.Fatalf("%s displayed as %s", status, v)
+		}
+	}
+}
+
+func TestResultReasonValidation(t *testing.T) {
+	for _, reason := range CheckReasons {
+		r := Result{Status: "inconclusive", Summary: "cannot decide", Reason: reason, Evidence: []Evidence{}}
+		if err := r.Validate(); err != nil {
+			t.Fatalf("%s rejected: %v", reason, err)
+		}
+	}
+	for _, r := range []Result{
+		{Status: "passed", Summary: "ok", Reason: "safety_stop", Evidence: []Evidence{{Type: "observation", Summary: "seen"}}},
+		{Status: "inconclusive", Summary: "cannot decide", Reason: "because", Evidence: []Evidence{}},
+	} {
+		if err := r.Validate(); err == nil {
+			t.Fatalf("accepted %+v", r)
+		}
+	}
+}
