@@ -30,6 +30,12 @@ export interface StartOptions {
    * where the browser is already running elsewhere.
    */
   args?: string[];
+  /**
+   * Persistent browser profile directory, created if missing and reused
+   * across sessions (cookies, logins survive). Omit for the default: a
+   * temporary profile wiped on close. Ignored in connect mode.
+   */
+  userDataDir?: string;
 }
 
 export interface Browser { (goal: string, options?: RunOptions): Promise<RunResult>; }
@@ -196,8 +202,8 @@ export const browser = {
       return new Browser(client, proc);
     }
 
-    const { engine, channel, headless = false, executablePath, args } = options;
-    debug('launching browser', { engine, channel, headless, executablePath, args });
+    const { engine, channel, headless = false, executablePath, args, userDataDir } = options;
+    debug('launching browser', { engine, channel, headless, executablePath, args, userDataDir });
 
     const proc = await VibiumProcess.start({
       engine,
@@ -205,6 +211,7 @@ export const browser = {
       headless,
       executablePath,
       browserArgs: args,
+      userDataDir,
     });
     debug('vibium started');
 
