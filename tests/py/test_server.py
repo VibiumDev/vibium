@@ -214,6 +214,14 @@ TYPE_FILTER_HTML = """<html><head><title>Type filter</title></head><body>
   <textarea id="notes">Notes</textarea>
 </body></html>"""
 
+# Two identical children; only a scoped re-resolve reaches the one in #b.
+NESTED_SCOPE_HTML = """<html><head><title>Nested scope</title></head><body>
+  <div id="a"><button class="act">A</button></div>
+  <div id="b"><button class="act">B</button></div>
+  <div id="out"></div>
+  <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -237,6 +245,7 @@ HTML_ROUTES = {
     "/selectors": SELECTORS_HTML,
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
+    "/nested-scope": NESTED_SCOPE_HTML,
 }
 
 

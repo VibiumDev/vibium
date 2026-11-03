@@ -109,6 +109,17 @@ describe('Selector Strategies', () => {
     }
   });
 
+  test('a scoped child re-resolves inside its parent (#779)', async () => {
+    try {
+      await vibe.go(`${baseURL}/nested-scope`);
+      const parent = await vibe.find('#b');
+      await (await parent.find('.act')).click();
+      assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'B');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
   test('xpath finds nested element', async () => {
     const el = await vibe.find({ xpath: '//div[@class="container"]/span' });
     assert.ok(el, 'Should find nested element by xpath');

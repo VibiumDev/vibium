@@ -79,3 +79,13 @@ async def test_iteration(async_page, test_server):
     assert len(texts) == 4
     assert texts[0] == "Link 1"
     assert texts[3] == "Link 4"
+
+
+async def test_scoped_child_reresolves_inside_parent(async_page, test_server):
+    """A child of a scoped find must act inside its parent (#779)."""
+    await async_page.go(test_server + "/nested-scope")
+    parent = await async_page.find("#b")
+    child = await parent.find(".act")
+    await child.click()
+    out = await async_page.evaluate("document.getElementById('out').textContent")
+    assert out == "B"
