@@ -100,6 +100,7 @@ with LLM agents like Claude Code.
 					ScreenshotDir:  screenshotDir,
 					Engine:         engineName,
 					Headless:       headless,
+					UserDataDir:    userDataDir,
 					ConnectURL:     connectURL,
 					ConnectHeaders: connectHeaders,
 					ConnectCaps:    connectCapsFromEnv(),

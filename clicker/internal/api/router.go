@@ -161,6 +161,7 @@ type Router struct {
 	connectHeaders http.Header
 	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
 	browserArgs    []string               // extra engine flags for a locally launched browser (#640)
+	userDataDir    string                 // persistent profile dir for a locally launched browser (#715)
 	// signer, when set, signs every outgoing request with Web Bot Auth so a
 	// site in Cloudflare's Verified Bots program can recognize the agent (#28).
 	// nil disables signing and leaves the request path untouched.
@@ -171,6 +172,10 @@ type Router struct {
 // launched browser. Call once before any client connects. No effect in
 // connect mode, where the browser is someone else's.
 func (r *Router) SetBrowserArgs(args []string) { r.browserArgs = args }
+
+// SetUserDataDir sets a persistent profile directory for a locally launched
+// browser (#715). Same contract as SetBrowserArgs.
+func (r *Router) SetUserDataDir(dir string) { r.userDataDir = dir }
 
 // NewRouter creates a new router. Web Bot Auth signing turns on here, from the
 // environment, so every entry path that builds a router (pipe, daemon, serve,
@@ -252,9 +257,10 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Launching browser for client %d...\n", client.ID())
 
 		launchResult, err = browser.Launch(browser.LaunchOptions{
-			Engine:   r.engine,
-			Headless: r.headless,
-			Args:     r.browserArgs,
+			Engine:      r.engine,
+			Headless:    r.headless,
+			Args:        r.browserArgs,
+			UserDataDir: r.userDataDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to launch browser for client %d: %v\n", client.ID(), err)
@@ -358,6 +364,29 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// client command navigates, so the first request is already signed (#28).
 	if r.signer != nil {
 		r.installSignatureIntercept(session)
+	}
+}
+
+// closePersistentBrowser asks the browser itself to exit so a persistent
+// profile is flushed before any process-level teardown (#715). Firefox
+// implements BiDi natively, so browser.close is its clean shutdown. Chrome
+// gets CDP Browser.close through chromedriver's goog:cdp extension instead:
+// chromedriver's own teardown (BiDi browser.close included) hard-kills the
+// browser, and only Chrome's own shutdown writes the profile out. No reply is
+// expected on that path — the mapper dies with the browser — so the timeout
+// is the normal exit. An immediate error means an engine without the
+// extension; fall back to the spec command rather than closing nothing.
+func (r *Router) closePersistentBrowser(session *BrowserSession) {
+	if session.LaunchResult.Engine == "firefox" {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
+		return
+	}
+	_, err := r.sendInternalCommandWithTimeout(session, "goog:cdp.sendCommand", map[string]interface{}{
+		"method": "Browser.close",
+		"params": map[string]interface{}{},
+	}, 2*time.Second)
+	if err != nil && !strings.Contains(err.Error(), "timeout waiting for response") {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
 	}
 }
 
@@ -1492,6 +1521,15 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		}
 	}
 
+	// A persistent profile (#715) needs the browser to exit on its own or
+	// the profile writes it has not flushed (cookies, localStorage) are
+	// lost: every process-level teardown chromedriver runs is a hard kill.
+	// Ask the browser to close itself while the connection still routes;
+	// LaunchResult.Close then waits for the exit before killing anything.
+	if alive && session.LaunchResult != nil && session.LaunchResult.Persistent {
+		r.closePersistentBrowser(session)
+	}
+
 	// Signal the routing goroutine to stop
 	if alive {
 		close(session.stopChan)
@@ -1511,6 +1549,15 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 
+	// Close the browser before the BiDi connection: chromedriver reacts to
+	// its BiDi socket closing by force-killing Chrome, which loses profile
+	// writes a persistent session (#715) needs flushed. Close quits the
+	// session gracefully first; the dead socket below is then harmless.
+	// LaunchResult is nil for remote sessions, whose browser is not ours.
+	if session.LaunchResult != nil {
+		session.LaunchResult.Close()
+	}
+
 	// Close BiDi connection
 	if session.BidiConn != nil {
 		session.BidiConn.Close()
@@ -1525,11 +1572,6 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
-	}
-
-	// Close browser
-	if session.LaunchResult != nil {
-		session.LaunchResult.Close()
 	}
 
 	fmt.Fprintf(os.Stderr, "[router] Browser session closed for client %d\n", session.Client.ID())

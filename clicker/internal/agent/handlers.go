@@ -36,6 +36,7 @@ type Handlers struct {
 	firefoxChannel string // daemon/session default; captured at construction
 	chromeChannel  string // daemon/session default; captured at construction
 	headless       bool
+	userDataDir    string // persistent profile dir for local launches (empty = temp profile)
 	connectURL     string                       // remote BiDi WebSocket URL (empty = local browser)
 	connectHeaders http.Header                  // headers for remote WebSocket connection
 	ownsRemote     bool                         // remote session was created here, so Close() ends it
@@ -86,6 +87,10 @@ type Handlers struct {
 	// either engine. It is empty for remote sessions.
 	launchedChannel string
 
+	// launchedUserDataDir is the persistent profile the running browser was
+	// launched with, "" for a temp profile. Same caveat as launchedHeadless.
+	launchedUserDataDir string
+
 	// launchNotify, when set, is called once at the moment a tool call
 	// commits to launching or connecting a browser, so the caller can warn
 	// its client that the response will take up to the launch bounds. The
@@ -114,13 +119,14 @@ func (h *Handlers) SetInstallNotify(fn func()) {
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
 // engine selects the browser ("chrome" or "firefox").
 // headless controls whether the browser is launched in headless mode.
-func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Handlers {
+func NewHandlers(screenshotDir string, engine string, headless bool, userDataDir string, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Handlers {
 	return &Handlers{
 		screenshotDir:  screenshotDir,
 		engine:         engine,
 		firefoxChannel: paths.FirefoxChannel(),
 		chromeChannel:  paths.ChromeChannel(),
 		headless:       headless,
+		userDataDir:    userDataDir,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
 		connectCaps:    connectCaps,
@@ -809,6 +815,27 @@ func (h *Handlers) Close() {
 		}
 	}
 
+	// A persistent profile (#715) needs the browser to exit on its own or
+	// unflushed profile writes are lost: process-level teardown is a hard
+	// kill. Ask it to close while the connection is up; launchResult.Close
+	// waits for the exit before killing anything. Same engine split as the
+	// router's closePersistentBrowser: Chrome must shut itself down via CDP
+	// (chromedriver hard-kills on every path of its own, and no reply comes
+	// back — the mapper dies with the browser), Firefox via BiDi natively.
+	if launchResult != nil && launchResult.Persistent && client != nil {
+		if launchResult.Engine == "firefox" {
+			client.SendCommandWithTimeout("browser.close", map[string]interface{}{}, 5*time.Second)
+		} else {
+			_, cerr := client.SendCommandWithTimeout("goog:cdp.sendCommand", map[string]interface{}{
+				"method": "Browser.close",
+				"params": map[string]interface{}{},
+			}, 2*time.Second)
+			if cerr != nil && !strings.Contains(cerr.Error(), "timeout") {
+				client.SendCommandWithTimeout("browser.close", map[string]interface{}{}, 5*time.Second)
+			}
+		}
+	}
+
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
 	// when this process created it — an attached session belongs to whoever
 	// handed us the URL, and ending it would close their browser.
@@ -860,6 +887,15 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 			return nil, fmt.Errorf(
 				"%s %s is already running; requested %s. Run `vibium stop` first, or use another --session",
 				engineTitle(h.launchedEngine), h.launchedChannel, want)
+		}
+		if want, ok := args["userDataDir"].(string); ok && want != "" && want != h.launchedUserDataDir {
+			running := "a temporary profile"
+			if h.launchedUserDataDir != "" {
+				running = "user data dir " + h.launchedUserDataDir
+			}
+			return nil, fmt.Errorf(
+				"browser is already running with %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
+				running, want)
 		}
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -935,6 +971,10 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		}
 		useChannel = val
 	}
+	useUserDataDir := h.userDataDir
+	if val, ok := args["userDataDir"].(string); ok && val != "" {
+		useUserDataDir = val
+	}
 
 	// Install the engine if this machine has never had one. The client
 	// libraries get this from `vibium pipe` (#312), but the CLI and MCP reach
@@ -953,6 +993,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{
 		Engine: useEngine, Channel: useChannel, Headless: useHeadless,
+		UserDataDir: useUserDataDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
@@ -977,6 +1018,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.launchedHeadless = useHeadless
 	h.launchedEngine = useEngine
 	h.launchedChannel = useChannel
+	h.launchedUserDataDir = useUserDataDir
 	h.sessionMu.Unlock()
 	h.startPromptTracking()
 

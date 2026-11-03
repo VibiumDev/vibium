@@ -277,6 +277,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 		ScreenshotDir:  screenshotDir,
 		Engine:         engineName,
 		Headless:       headless,
+		UserDataDir:    userDataDir,
 		IdleTimeout:    idleTimeout,
 		ConnectURL:     connectURL,
 		ConnectHeaders: connectHeaders,

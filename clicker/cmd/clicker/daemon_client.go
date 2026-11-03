@@ -72,6 +72,9 @@ func requestedLaunchOptions() map[string]interface{} {
 		}
 		args["channel"] = channel
 	}
+	if userDataDirSet {
+		args["userDataDir"] = userDataDir
+	}
 	return args
 }
 
@@ -96,6 +99,9 @@ func autoStartDaemon() error {
 	}
 	if engineName != "chrome" {
 		args = append(args, "--engine="+engineName)
+	}
+	if userDataDir != "" {
+		args = append(args, "--user-data-dir="+userDataDir)
 	}
 
 	// The child inherits the environment, so the connect env vars reach

@@ -36,6 +36,7 @@ func newServeCmd() *cobra.Command {
 
 			// Create router to manage browser sessions
 			router := api.NewRouter(engineName, headless, "", nil, nil)
+			router.SetUserDataDir(userDataDir)
 
 			server := api.NewServer(
 				api.WithPort(port),
