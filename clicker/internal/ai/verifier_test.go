@@ -45,3 +45,20 @@ func TestOrList(t *testing.T) {
 		}
 	}
 }
+
+func TestResultReasonValidation(t *testing.T) {
+	for _, reason := range CheckReasons {
+		r := Result{Status: "inconclusive", Summary: "cannot decide", Reason: reason, Evidence: []Evidence{}}
+		if err := r.Validate(); err != nil {
+			t.Fatalf("%s rejected: %v", reason, err)
+		}
+	}
+	for _, r := range []Result{
+		{Status: "passed", Summary: "ok", Reason: "safety_stop", Evidence: []Evidence{{Type: "observation", Summary: "seen"}}},
+		{Status: "inconclusive", Summary: "cannot decide", Reason: "because", Evidence: []Evidence{}},
+	} {
+		if err := r.Validate(); err == nil {
+			t.Fatalf("accepted %+v", r)
+		}
+	}
+}

@@ -32,6 +32,7 @@ async function run(t, options = {}) {
     else {
       const result = await cli(...args);
       assert.equal(result.status, options.incomplete ? 'not_completed' : 'completed');
+      assert.equal(result.reason, options.incomplete ? 'missing_information' : undefined);
       assert.equal(result.goal, args[1]); assert.equal(result.claim, undefined);
     }
     if (options.existing) {

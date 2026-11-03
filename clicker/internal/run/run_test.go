@@ -109,7 +109,7 @@ func TestRunContractAndLimits(t *testing.T) {
 			if err != nil || result.Goal != req.Goal {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
-			if scenario == "limit" && (result.Status != "not_completed" || tools.calls != ai.MaxActions+3) {
+			if scenario == "limit" && (result.Status != "not_completed" || result.Reason != "action_limit" || tools.calls != ai.MaxActions+3) {
 				t.Fatal("action limit not enforced")
 			}
 			if scenario == "fresh" {
@@ -190,5 +190,20 @@ func TestRunUsesTheSiteUnderTest(t *testing.T) {
 	}
 	if err := (Request{Goal: "g", BaseSite: "not a url", Config: req.Config}).Validate(); err == nil {
 		t.Fatal("invalid site URL was accepted")
+	}
+}
+
+func TestRunReasonValidation(t *testing.T) {
+	result, err := parse(`{"status":"not_completed","summary":"needs credentials","reason":"missing_information","evidence":[]}`, "goal")
+	if err != nil || result.Reason != "missing_information" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	for _, content := range []string{
+		`{"status":"completed","summary":"done","reason":"missing_information","evidence":[{"type":"observation","summary":"seen"}]}`,
+		`{"status":"not_completed","summary":"blocked","reason":"because","evidence":[]}`,
+	} {
+		if _, err := parse(content, "goal"); err == nil {
+			t.Fatalf("accepted %s", content)
+		}
 	}
 }

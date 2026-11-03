@@ -151,6 +151,19 @@ With `--json`, a completed check prints this CLI envelope:
 `--expect pass` or inspect `result.status == "passed"`. Execution errors
 print `{"ok":false,"error":"..."}`.
 
+An inconclusive result MAY carry a machine-readable `reason`:
+
+| `reason` | Cause |
+|----------|-------|
+| `action_limit` | The action budget ran out before a verdict. Retry with a narrower claim. |
+| `insufficient_evidence` | The evidence could not decide the claim. |
+| `safety_stop` | Safe verification was not possible (credentials, purchases, irreversible actions). |
+| `archive_missing_evidence` | The saved recording lacks the needed evidence. |
+
+The verifier reports its own reason; the loop stamps `action_limit`. PASS and
+FAIL never carry a reason. Run results use `action_limit`,
+`missing_information`, and `safety_stop` on `not_completed`.
+
 `--report` writes the inner result object, without `ok` or `result`. Inspect
 `status` at the top level of that file. An execution error leaves no verdict
 report. Language APIs also return the result directly and raise exceptions for
@@ -206,7 +219,8 @@ establish what a later deployment or live session does.
 - Claims must be nonempty and at most 4,000 bytes.
 - Each run has a three-minute budget and at most 24 model-selected actions.
 - Text and image payloads are bounded; truncated text is marked.
-- Exhausting the action limit returns INCONCLUSIVE. A timeout returns an error.
+- Exhausting the action limit returns INCONCLUSIVE with reason
+  `action_limit`. A timeout returns an error.
 - Browser polling or recording cleanup can take additional time after a timeout.
 
 ## MCP and language APIs

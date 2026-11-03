@@ -59,7 +59,9 @@ The timezone was changed and saved.
 
 Read the evidence. COMPLETED is the model's assessment, not proof. If the goal
 is ambiguous or required information is missing, Run can return
-NOT_COMPLETED. Provider, browser, and configuration failures are errors.
+NOT_COMPLETED, with a machine-readable `reason` in the JSON result:
+`action_limit`, `missing_information`, or `safety_stop`. Provider, browser,
+and configuration failures are errors.
 
 Run reuses the existing session and selected page. It can change page
 state and does not undo its actions. Supply a clear goal and appropriate test
