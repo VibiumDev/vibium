@@ -116,7 +116,7 @@ func TestExpectAcceptsOnlyTheExpectedVerdict(t *testing.T) {
 	if err := run.ParseFlags([]string{"--expect", "pass"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runGoal(run, "goal", "", false); err == nil || !strings.Contains(err.Error(), "accepts only completed") {
+	if _, err := runGoal(run, "goal", "", "", false); err == nil || !strings.Contains(err.Error(), "accepts only completed") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

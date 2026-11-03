@@ -121,12 +121,12 @@ func validateExpect(cmd *cobra.Command, allowed string) error {
 
 // Return errors before printing them so all artifact cleanup runs before the
 // CLI's printError exits the process.
-func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *ai.Result, err error) {
-	if err = files.validate(cmd); err != nil {
-		return
+func runCheck(cmd *cobra.Command, claim string, files operationFiles) (*ai.Result, error) {
+	if err := files.validate(cmd); err != nil {
+		return nil, err
 	}
-	if err = validateExpect(cmd, "pass"); err != nil {
-		return
+	if err := validateExpect(cmd, "pass"); err != nil {
+		return nil, err
 	}
 	keepOpen, _ := cmd.Flags().GetBool("keep-open")
 	if files.input != "" && cmd.Flags().Changed("keep-open") {
@@ -134,18 +134,41 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *a
 	}
 	config, err := ai.ResolveConfig("check", modelOverrides(cmd))
 	if err != nil {
-		return result, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
+		return nil, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
 	baseSite, _ := cmd.Flags().GetString("base-url")
 	req := check.Request{Claim: claim, Record: files.input, Output: files.output, BaseSite: baseSite, Config: config}
-	if err = req.Validate(); err != nil {
-		return
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
+	return runWithReport(files.report, func() (*ai.Result, error) {
+		// Keep browser startup and cleanup inside the daemon's serialized Check
+		// request. A separate browser_start call cannot safely establish ownership.
+		run := func() (*ai.Result, error) {
+			if files.input == "" {
+				return daemon.CheckWithBrowser(req, agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
+			}
+			return daemon.Check(req)
+		}
+		result, err := run()
+		if isConnectionError(err) {
+			daemon.CleanStale()
+			if err = autoStartDaemon(); err == nil {
+				result, err = run()
+			}
+		}
+		return result, err
+	})
+}
+
+// runWithReport reserves the report path before the operation runs; any
+// failure removes the reserved file.
+func runWithReport[T any](path string, operation func() (*T, error)) (result *T, err error) {
 	var report *os.File
-	if files.report != "" {
-		report, err = os.OpenFile(files.report, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if path != "" {
+		report, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
-			return
+			return nil, err
 		}
 		defer func() {
 			closeErr := report.Close()
@@ -153,29 +176,12 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *a
 				err = closeErr
 			}
 			if err != nil {
-				os.Remove(files.report)
+				os.Remove(path)
 			}
 		}()
 	}
-	// Keep browser startup and cleanup inside the daemon's serialized Check
-	// request. A separate browser_start call cannot safely establish ownership.
-	run := func() (*ai.Result, error) {
-		if files.input == "" {
-			return daemon.CheckWithBrowser(req, agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
-		}
-		return daemon.Check(req)
-	}
-	result, err = run()
-	if isConnectionError(err) {
-		daemon.CleanStale()
-		if err = autoStartDaemon(); err == nil {
-			result, err = run()
-		}
-	}
-	if err != nil {
-		return
-	}
-	if report != nil {
+	result, err = operation()
+	if err == nil && report != nil {
 		err = json.NewEncoder(report).Encode(result)
 	}
 	return
