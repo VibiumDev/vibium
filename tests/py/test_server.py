@@ -208,6 +208,12 @@ COMBINED_LOCATOR_HTML = """<html><head><title>Combined locator</title></head><bo
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.id; });</script>
 </body></html>"""
 
+# The textarea is the shortest "Notes" text match; the decoy is longer.
+TYPE_FILTER_HTML = """<html><head><title>Type filter</title></head><body>
+  <div id="decoy">Notes are rendered here after save</div>
+  <textarea id="notes">Notes</textarea>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -230,6 +236,7 @@ HTML_ROUTES = {
     "/a11y": A11Y_HTML,
     "/selectors": SELECTORS_HTML,
     "/combined-locator": COMBINED_LOCATOR_HTML,
+    "/type-filter": TYPE_FILTER_HTML,
 }
 
 

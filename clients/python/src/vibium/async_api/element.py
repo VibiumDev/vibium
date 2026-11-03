@@ -68,7 +68,8 @@ class Element:
         await self._client.send("vibium:element.fill", self._command_params({"value": value, "timeout": timeout}))
 
     async def type(self, text: str, timeout: Optional[int] = None) -> None:
-        await self._client.send("vibium:element.type", self._command_params({"text": text, "timeout": timeout}))
+        # "value" is the payload key; "text" would collide with a text filter.
+        await self._client.send("vibium:element.type", self._command_params({"value": text, "timeout": timeout}))
 
     async def press(self, key: str, timeout: Optional[int] = None) -> None:
         await self._client.send("vibium:element.press", self._command_params({"key": key, "timeout": timeout}))
