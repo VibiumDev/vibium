@@ -321,6 +321,38 @@ describe('MCP Server: Browser Tools', () => {
     );
   });
 
+  test('browser_find narrows a semantic locator with a selector (#780)', async () => {
+    // Text alone picks the shorter link; the selector restricts to the form.
+    await client.call('tools/call', {
+      name: 'browser_evaluate',
+      arguments: { expression: `document.open();document.write('<a id="go" href="#">Go</a><form><button id="stop">Stop</button><button id="go-now">Go now</button></form>');document.close();'ready'` },
+    });
+
+    const combined = await client.call('tools/call', {
+      name: 'browser_find',
+      arguments: { selector: 'form button', text: 'Go' },
+    });
+    assert.ok(!combined.result.isError, 'Combined find should succeed');
+    assert.ok(
+      combined.result.content[0].text.includes('Go now'),
+      `Should pick the form button, got: ${combined.result.content[0].text}`
+    );
+
+    const textOnly = await client.call('tools/call', {
+      name: 'browser_find',
+      arguments: { text: 'Go' },
+    });
+    assert.ok(
+      !textOnly.result.content[0].text.includes('Go now'),
+      'Text alone should still pick the shorter link match'
+    );
+
+    await client.call('tools/call', {
+      name: 'browser_navigate',
+      arguments: { url: `${baseURL}/example` },
+    });
+  });
+
   test('browser_evaluate executes JavaScript', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_evaluate',

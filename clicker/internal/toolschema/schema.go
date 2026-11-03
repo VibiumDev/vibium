@@ -187,7 +187,7 @@ func GetToolSchemas() []Tool {
 				"properties": map[string]interface{}{
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for the element to find",
+						"description": "CSS selector for the element to find; next to a semantic locator it restricts the candidates",
 					},
 					"role": map[string]interface{}{
 						"type":        "string",

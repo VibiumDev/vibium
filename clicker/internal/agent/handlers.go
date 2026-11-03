@@ -1314,8 +1314,13 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 	}
 
 	if hasSemantic {
+		// A selector next to semantic locators narrows them (#780).
+		scope, _ := args["selector"].(string)
+		if scope != "" {
+			scope = h.resolveSelector(scope)
+		}
 		script := findBySemanticScript()
-		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title}, timeout)
+		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title, scope}, timeout)
 		if err != nil {
 			// A rejected selector (e.g. a malformed xpath) is a syntax error,
 			// not a missing element: surface it verbatim (#616).
@@ -1324,6 +1329,7 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 			}
 			desc := ""
 			for _, pair := range []struct{ k, v string }{
+				{"selector", scope},
 				{"role", role}, {"text", text}, {"label", label}, {"placeholder", placeholder},
 				{"testid", testid}, {"xpath", xpath}, {"alt", alt}, {"title", title},
 			} {
@@ -1404,9 +1410,13 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 // findBySemanticScript returns the JS function for finding elements by semantic criteria.
 // Returns JSON: {"selector":"...","label":"...","tag":"...","text":"...","box":{...}}
 func findBySemanticScript() string {
-	return `(role, text, label, placeholder, testid, xpath, alt, title) => {
+	return `(role, text, label, placeholder, testid, xpath, alt, title, scope) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
+
+		// An invalid scope selector throws, surfaced like the CSS branch (#616).
+		if (scope) document.documentElement.matches(scope);
+		const inScope = (node) => !scope || node.matches(scope);
 
 		const IMPLICIT_ROLES = {
 			A: (el) => el.hasAttribute('href') ? 'link' : '',
@@ -1497,6 +1507,7 @@ func findBySemanticScript() string {
 			const found = [];
 			let node;
 			while (node = walker.nextNode()) {
+				if (!inScope(node)) continue;
 				if (getImplicitRole(node) !== roleLower) continue;
 				// Apply additional filters
 				if (text && !(node.textContent || '').trim().includes(text)) continue;
@@ -1535,16 +1546,18 @@ func findBySemanticScript() string {
 				}
 			}
 		} else if (xpath) {
-			const xresult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-			el = xresult.singleNodeValue;
+			const xresult = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+			for (let i = 0; i < xresult.snapshotLength; i++) {
+				if (inScope(xresult.snapshotItem(i))) { el = xresult.snapshotItem(i); break; }
+			}
 		} else if (testid) {
-			el = document.querySelector('[data-testid="' + testid.replace(/"/g, '\\"') + '"]');
+			el = [...document.querySelectorAll('[data-testid="' + testid.replace(/"/g, '\\"') + '"]')].find(inScope) || null;
 		} else if (placeholder) {
-			el = document.querySelector('[placeholder="' + placeholder.replace(/"/g, '\\"') + '"]');
+			el = [...document.querySelectorAll('[placeholder="' + placeholder.replace(/"/g, '\\"') + '"]')].find(inScope) || null;
 		} else if (alt) {
-			el = document.querySelector('[alt="' + alt.replace(/"/g, '\\"') + '"]');
+			el = [...document.querySelectorAll('[alt="' + alt.replace(/"/g, '\\"') + '"]')].find(inScope) || null;
 		} else if (title) {
-			el = document.querySelector('[title="' + title.replace(/"/g, '\\"') + '"]');
+			el = [...document.querySelectorAll('[title="' + title.replace(/"/g, '\\"') + '"]')].find(inScope) || null;
 		} else if (label) {
 			// Try <label> with for= attribute pointing to an input
 			const labels = document.querySelectorAll('label');
@@ -1555,17 +1568,19 @@ func findBySemanticScript() string {
 					} else {
 						el = lbl.querySelector('input, textarea, select');
 					}
+					if (el && !inScope(el)) el = null;
 					if (el) break;
 				}
 			}
 			// Fallback: aria-label
 			if (!el) {
-				el = document.querySelector('[aria-label="' + label.replace(/"/g, '\\"') + '"]');
+				el = [...document.querySelectorAll('[aria-label="' + label.replace(/"/g, '\\"') + '"]')].find(inScope) || null;
 			}
 			// Fallback: aria-labelledby
 			if (!el) {
 				const all = document.querySelectorAll('[aria-labelledby]');
 				for (const candidate of all) {
+					if (!inScope(candidate)) continue;
 					const labelId = candidate.getAttribute('aria-labelledby');
 					const labelEl = document.getElementById(labelId);
 					if (labelEl && labelEl.textContent.trim().includes(label)) {
@@ -1588,6 +1603,7 @@ func findBySemanticScript() string {
 			let bestLen = Infinity;
 			let node;
 			while (node = walker.nextNode()) {
+				if (!inScope(node)) continue;
 				const content = node.textContent.trim();
 				if (content.includes(text) && content.length < bestLen) {
 					// Prefer the most specific (smallest text) match
