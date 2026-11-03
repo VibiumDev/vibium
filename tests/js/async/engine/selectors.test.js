@@ -61,6 +61,27 @@ describe('Selector Strategies', () => {
     assert.strictEqual(el.info.tag, 'input');
   });
 
+  test('an element found by selector and text acts on that element (#767)', async () => {
+    try {
+      await vibe.go(`${baseURL}/combined-locator`);
+      await (await vibe.find({ selector: 'form button', text: 'Go' })).click();
+      assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'go-now');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
+  test('dragTo reaches a target found by selector and text (#767)', async () => {
+    try {
+      await vibe.go(`${baseURL}/combined-locator`);
+      const target = await vibe.find({ selector: 'form button', text: 'Go' });
+      await (await vibe.find('#src')).dragTo(target);
+      assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'go-now');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
   test('xpath finds nested element', async () => {
     const el = await vibe.find({ xpath: '//div[@class="container"]/span' });
     assert.ok(el, 'Should find nested element by xpath');
