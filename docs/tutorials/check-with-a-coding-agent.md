@@ -88,7 +88,7 @@ Send this task:
 > Save the recording even if the check fails. Close only the session this test
 > created. Return the script path, actual verdict, concise evidence, and
 > recording path. If the script gates on success, use `--expect pass` (FAIL
-> exits 2, INCONCLUSIVE exits 3) or inspect the JSON status; without it all
+> exits 2, REVIEW exits 3) or inspect the JSON status; without it all
 > three verdicts have CLI exit code zero.
 
 Chrome opens and the agent works through the product and cart pages. It writes
@@ -117,7 +117,7 @@ Evidence:
 Recording: first-check-<timestamp>.zip
 ```
 
-Your agent should report the actual verdict, including FAIL or INCONCLUSIVE.
+Your agent should report the actual verdict, including FAIL or REVIEW.
 This claim covers the cart contents and subtotal, not payment or order confirmation.
 
 Open [Record Player](https://player.vibium.dev) and drop the ZIP onto it. Look

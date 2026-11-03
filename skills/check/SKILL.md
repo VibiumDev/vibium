@@ -1,6 +1,6 @@
 ---
 name: check
-description: Independently check application acceptance criteria in a live browser or saved recording with the Vibium CLI. Use for a formal verification step in the development loop, with PASS, FAIL, or INCONCLUSIVE and recorded evidence.
+description: Independently check application acceptance criteria in a live browser or saved recording with the Vibium CLI. Use for a formal verification step in the development loop, with PASS, FAIL, or REVIEW and recorded evidence.
 ---
 
 # Check with Vibium
@@ -83,7 +83,7 @@ change later calls or weaken Check's independence.
 6. When a check fails and fixing the application is within the user's task,
    investigate the evidence, fix the cause, and rerun the original claim.
    Preserve the earlier result. Do not weaken the claim or retry unchanged
-   behavior until a model happens to pass it. For INCONCLUSIVE, address the
+   behavior until a model happens to pass it. For REVIEW, address the
    missing evidence or report the limitation. Stop when the requested claims
    pass or a concrete blocker requires user input.
 
@@ -124,9 +124,9 @@ Successful execution returns:
 ```
 
 `result.status` is `passed`, `failed`, or `inconclusive`, displayed as PASS,
-FAIL, or INCONCLUSIVE. **All three verdicts have CLI exit code zero by
+FAIL, or REVIEW. **All three verdicts have CLI exit code zero by
 default.** A script that gates completion must pass `--expect pass` (FAIL
-exits 2, INCONCLUSIVE exits 3, errors keep exit 1) or inspect
+exits 2, REVIEW exits 3, errors keep exit 1) or inspect
 `result.status`; exit zero alone is not a pass. An inconclusive result MAY
 include `reason`: `action_limit` (retry with a narrower claim),
 `insufficient_evidence`, `safety_stop`, or `archive_missing_evidence`.

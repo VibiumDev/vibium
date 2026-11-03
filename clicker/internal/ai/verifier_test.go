@@ -46,6 +46,14 @@ func TestOrList(t *testing.T) {
 	}
 }
 
+func TestVerdictDisplayWords(t *testing.T) {
+	for status, verdict := range map[string]string{"passed": "PASS", "failed": "FAIL", "inconclusive": "REVIEW"} {
+		if v := (Result{Status: status}).Verdict(); v != verdict {
+			t.Fatalf("%s displayed as %s", status, v)
+		}
+	}
+}
+
 func TestResultReasonValidation(t *testing.T) {
 	for _, reason := range CheckReasons {
 		r := Result{Status: "inconclusive", Summary: "cannot decide", Reason: reason, Evidence: []Evidence{}}

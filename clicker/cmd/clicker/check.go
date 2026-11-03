@@ -52,7 +52,7 @@ func newCheckCmd() *cobra.Command {
 		Short: "Check a claim in a live browser or an existing recording with an independent model",
 		Long:  "Check a claim in a live browser or an existing recording with an independent model.\nCheck provider setup first with: vibium ready ai.\nCloses a browser it starts after saving evidence; reuses and preserves an existing browser.\nUse --keep-open to leave a newly started browser open.",
 		Example: `  vibium check "changing my display name persists after refresh"
-  # Returns PASS, FAIL, or INCONCLUSIVE with concise evidence.
+  # Returns PASS, FAIL, or REVIEW with concise evidence.
   vibium check "changing my display name persists after refresh" -o verification.zip
   # Saves the live verification in a new recording ZIP.
   vibium check "https://example.com is up" -o status.zip --keep-open
@@ -92,10 +92,10 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&files.report, "report", "", "Save the verdict and concise evidence as a new JSON file")
 	cmd.Flags().Bool("keep-open", false, "Leave a browser started by Check open after the run (existing browsers are always preserved)")
 	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
-	cmd.Flags().String("expect", "", "Gate automation on the verdict: with pass, FAIL exits 2 and INCONCLUSIVE exits 3 (execution errors keep exit 1)")
+	cmd.Flags().String("expect", "", "Gate automation on the verdict: with pass, FAIL exits 2 and REVIEW exits 3 (execution errors keep exit 1)")
 	addModelFlags(cmd)
 	cmd.Example += "\n  vibium check \"checkout completes\" --base-url http://localhost:3000\n  # Verifies the claim against that site; a page already on its origin keeps its state."
-	cmd.Example += "\n  vibium check \"checkout completes\" --expect pass\n  # Exits 0 on PASS, 2 on FAIL, 3 on INCONCLUSIVE for CI gating."
+	cmd.Example += "\n  vibium check \"checkout completes\" --expect pass\n  # Exits 0 on PASS, 2 on FAIL, 3 on REVIEW for CI gating."
 	return cmd
 }
 

@@ -219,6 +219,8 @@ type Result struct {
 // The Go loop stamps action_limit; the model reports the others.
 var CheckReasons = []string{"action_limit", "insufficient_evidence", "safety_stop", "archive_missing_evidence"}
 
+// Verdict is the display word only; the JSON status strings are the API.
+// REVIEW displays the inconclusive status: the verdict needs human attention.
 func (r Result) Verdict() string {
 	switch r.Status {
 	case "passed":
@@ -226,7 +228,7 @@ func (r Result) Verdict() string {
 	case "failed":
 		return "FAIL"
 	default:
-		return "INCONCLUSIVE"
+		return "REVIEW"
 	}
 }
 func (r Result) Validate() error {

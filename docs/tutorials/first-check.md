@@ -83,7 +83,7 @@ https://var.parts is up and serving its storefront page.
 ```
 
 **PASS** means the evidence supports the claim. **FAIL** means it contradicts
-the claim. **INCONCLUSIVE** means the model couldn't decide. Your result may
+the claim. **REVIEW** means the model couldn't decide. Your result may
 differ; this is a small availability check, not a test of every site feature.
 
 A browser started by Check closes afterward. An existing Vibium browser stays
