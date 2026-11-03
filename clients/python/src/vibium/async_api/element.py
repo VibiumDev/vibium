@@ -221,14 +221,11 @@ class Element:
             "scope": self._selector,
             "timeout": timeout,
         }
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
+        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
+                         ("placeholder", placeholder), ("alt", alt), ("title", title),
+                         ("testid", testid), ("xpath", xpath), ("near", near)]:
+            if val is not None:
+                params[key] = val
 
         result = await self._client.send("vibium:element.find", params)
         info = ElementInfo(
@@ -237,9 +234,7 @@ class Element:
             box=BoundingBox(**result["box"]),
         )
         child_selector = selector or ""
-        child_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "scope", "timeout")
-        }
+        child_params = {k: v for k, v in params.items() if k not in ("context", "scope", "timeout")}
         return Element(self._client, self._context, child_selector, info, None, child_params)
 
     async def find_all(
@@ -263,20 +258,15 @@ class Element:
             "scope": self._selector,
             "timeout": timeout,
         }
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
+        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
+                         ("placeholder", placeholder), ("alt", alt), ("title", title),
+                         ("testid", testid), ("xpath", xpath), ("near", near)]:
+            if val is not None:
+                params[key] = val
 
         result = await self._client.send("vibium:element.findAll", params)
         sel_str = selector or ""
-        sel_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "scope", "timeout")
-        }
+        sel_params = {k: v for k, v in params.items() if k not in ("context", "scope", "timeout")}
         elements = []
         for el in result["elements"]:
             info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))

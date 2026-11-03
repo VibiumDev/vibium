@@ -198,6 +198,16 @@ SELECTORS_HTML = """<html><head><title>Selectors</title></head><body>
   <div class="container"><span class="inner-text">Hello from span</span></div>
 </body></html>"""
 
+# Only selector + text reaches "Go now": text alone picks the shorter link,
+# and the selector alone picks "Stop". Mirrors the JS test server page.
+COMBINED_LOCATOR_HTML = """<html><head><title>Combined locator</title></head><body>
+  <a id="go" href="#">Go</a>
+  <form onsubmit="return false"><button id="stop">Stop</button><button id="go-now">Go now</button></form>
+  <div id="src">Drag me</div>
+  <div id="out"></div>
+  <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.id; });</script>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -219,6 +229,7 @@ HTML_ROUTES = {
     "/page2": PAGE2_HTML,
     "/a11y": A11Y_HTML,
     "/selectors": SELECTORS_HTML,
+    "/combined-locator": COMBINED_LOCATOR_HTML,
 }
 
 

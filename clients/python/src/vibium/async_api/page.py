@@ -291,21 +291,16 @@ class Page:
     ) -> Element:
         """Find an element by CSS selector or semantic options."""
         params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
+        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
+                         ("placeholder", placeholder), ("alt", alt), ("title", title),
+                         ("testid", testid), ("xpath", xpath), ("near", near)]:
+            if val is not None:
+                params[key] = val
 
         result = await self._client.send("vibium:page.find", params)
         info = ElementInfo(tag=result["tag"], text=result["text"], box=BoundingBox(**result["box"]))
         sel_str = selector or ""
-        sel_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "timeout")
-        }
+        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
         return Element(self._client, self._context_id, sel_str, info, None, sel_params)
 
     async def find_all(
@@ -330,20 +325,15 @@ class Page:
         list if there is none. A timeout of 0 checks once without waiting.
         """
         params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
+        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
+                         ("placeholder", placeholder), ("alt", alt), ("title", title),
+                         ("testid", testid), ("xpath", xpath), ("near", near)]:
+            if val is not None:
+                params[key] = val
 
         result = await self._client.send("vibium:page.findAll", params)
         sel_str = selector or ""
-        sel_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "timeout")
-        }
+        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
         elements = []
         for el in result["elements"]:
             info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))
