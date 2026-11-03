@@ -47,6 +47,7 @@ const CLASSES = {
   'bidi-test': 'exempt', // five-step diagnostic transcript, not a result
   'check': 'usage-error',
   'click': 'usage-error',
+  'codegen': 'usage-error',
   'config init': 'envelope',
   'content': 'usage-error',
   'cookies': 'envelope',

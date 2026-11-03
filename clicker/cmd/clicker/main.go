@@ -320,6 +320,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newFrameCmd())
 	rootCmd.AddCommand(newUploadCmd())
 	rootCmd.AddCommand(newRecordCmd())
+	rootCmd.AddCommand(newCodegenCmd())
 	rootCmd.AddCommand(newDownloadCmd())
 
 	// Subcommand groups
