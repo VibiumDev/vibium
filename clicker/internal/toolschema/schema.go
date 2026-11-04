@@ -133,13 +133,13 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_type",
-			Description: "Type text into an element by CSS selector. Waits for element to be visible, stable, enabled, and editable.",
+			Description: "Type text into an element by CSS selector, or, with no selector, into whatever has focus. With a selector, waits for the element to be visible, stable, enabled, and editable.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for the element to type into",
+						"description": "CSS selector for the element to type into. Omit it to type into the focused element, or on a device with no DOM.",
 					},
 					"text": map[string]interface{}{
 						"type":        "string",
@@ -151,7 +151,7 @@ func GetToolSchemas() []Tool {
 						"default":     30000,
 					},
 				},
-				"required":             []string{"selector", "text"},
+				"required":             []string{"text"},
 				"additionalProperties": false,
 			},
 		},

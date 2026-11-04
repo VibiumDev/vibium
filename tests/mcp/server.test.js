@@ -601,6 +601,33 @@ describe('MCP Server: New Tools', () => {
     );
   });
 
+  test('browser_type with no selector types into the focused element', async () => {
+    await client.call('tools/call', {
+      name: 'browser_navigate',
+      arguments: { url: `${baseURL}/login` },
+    });
+    await client.call('tools/call', {
+      name: 'browser_focus',
+      arguments: { selector: '#username' },
+    });
+    const typed = await client.call('tools/call', {
+      name: 'browser_type',
+      arguments: { text: 'calc' },
+    });
+    assert.ok(typed.result, 'Should have result');
+    assert.ok(!typed.result.isError, 'Should not be an error');
+    assert.ok(
+      typed.result.content[0].text.includes('focused'),
+      'Should say the text went to the focused element'
+    );
+
+    const value = await client.call('tools/call', {
+      name: 'browser_get_value',
+      arguments: { selector: '#username' },
+    });
+    assert.strictEqual(value.result.content[0].text, 'calc', 'The focused field got the text');
+  });
+
   test('browser_list_pages returns page list', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_list_pages',

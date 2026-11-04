@@ -132,6 +132,7 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium click "<selector>"` — click an element (also accepts `@ref` from map)
 - `vibium dblclick "<selector>"` — double-click an element
 - `vibium type "<selector>" "<text>"` — type into an input (appends to existing value)
+- `vibium type "<text>"` — type into whatever has focus (a focused field, or a device with no DOM)
 - `vibium fill "<selector>" "<text>"` — clear field and type new text (replaces value)
 - `vibium press <key> [selector]` — press a key on element or focused element
 - `vibium focus "<selector>"` — focus an element

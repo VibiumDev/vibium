@@ -12,9 +12,12 @@ func newTypeCmd() *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "type [url] [selector] [text]",
-		Short: "Type text into an element (optionally navigate to URL first)",
-		Example: `  vibium type "input" "12345"
-  # Types on current page
+		Short: "Type text into an element, or into whatever has focus",
+		Example: `  vibium type "calc"
+  # Types into whatever has focus: a search box, or a phone's screen
+
+  vibium type "input" "12345"
+  # Types into the element on the current page
 
   vibium type https://the-internet.herokuapp.com/inputs "input" "12345"
   # Navigates to URL first, then types
@@ -22,12 +25,13 @@ func newTypeCmd() *cobra.Command {
   vibium type https://the-internet.herokuapp.com/inputs "input" "12345" --timeout 5s
   # Custom timeout (5s, or 5000 for milliseconds)`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) < 2 || len(args) > 3 {
-				fmt.Fprintf(os.Stderr, "Error: accepts between 2 and 3 arg(s), received %d\n", len(args))
+			if len(args) < 1 || len(args) > 3 {
+				fmt.Fprintf(os.Stderr, "Error: accepts between 1 and 3 arg(s), received %d\n", len(args))
 				os.Exit(1)
 			}
 			var selector, text string
-			if len(args) == 3 {
+			switch len(args) {
+			case 3:
 				// type <url> <selector> <text> — navigate first
 				_, err := daemonCall("browser_navigate", map[string]interface{}{"url": args[0]})
 				if err != nil {
@@ -36,18 +40,23 @@ func newTypeCmd() *cobra.Command {
 				}
 				selector = args[1]
 				text = args[2]
-			} else {
+			case 2:
 				// type <selector> <text> — current page
 				selector = args[0]
 				text = args[1]
+			default:
+				// type <text> — whatever has focus
+				text = args[0]
 			}
 
-			// Type into element
-			result, err := daemonCall("browser_type", map[string]interface{}{
-				"selector": selector,
-				"text":     text,
-				"timeout":  float64(timeout.Milliseconds()),
-			})
+			toolArgs := map[string]interface{}{
+				"text":    text,
+				"timeout": float64(timeout.Milliseconds()),
+			}
+			if selector != "" {
+				toolArgs["selector"] = selector
+			}
+			result, err := daemonCall("browser_type", toolArgs)
 			if err != nil {
 				printError(err)
 				return
