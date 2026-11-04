@@ -26,7 +26,19 @@ func newFindCmd() *cobra.Command {
   # → @e1 [button] "Submit"
 
   vibium find role heading --name "Example"
-  # Find heading with accessible name "Example"`,
+  # Find heading with accessible name "Example"
+
+  vibium find "li.row" --nth=2
+  # → @e1 [li.row] "Third row"
+
+  vibium find "li.row" --nth=-1
+  # → @e1 [li.row] "Last row"
+
+  vibium find "li.row" --has-text "Beta"
+  # → @e1 [li.row] "Beta one"
+
+  vibium find "li.row" --all --has-text "Beta"
+  # → @e1 [li.row] "Beta one"  @e2 [li.row] "Beta two"`,
 		Args: cobra.RangeArgs(0, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) == 0 {
@@ -51,7 +63,15 @@ func newFindCmd() *cobra.Command {
 
 			toolArgs["timeout"] = float64(timeout.Milliseconds())
 
+			if hasText, _ := cmd.Flags().GetString("has-text"); hasText != "" {
+				toolArgs["hasText"] = hasText
+			}
+
 			if all {
+				if cmd.Flags().Changed("nth") {
+					fmt.Fprintf(os.Stderr, "Error: --nth selects a single element; it cannot be combined with --all\n")
+					os.Exit(1)
+				}
 				limit, _ := cmd.Flags().GetInt("limit")
 				toolArgs["limit"] = float64(limit)
 				result, err := daemonCall("browser_find_all", toolArgs)
@@ -61,6 +81,11 @@ func newFindCmd() *cobra.Command {
 				}
 				printResult(result)
 				return
+			}
+
+			if cmd.Flags().Changed("nth") {
+				nth, _ := cmd.Flags().GetInt("nth")
+				toolArgs["nth"] = float64(nth)
 			}
 
 			result, err := daemonCall("browser_find", toolArgs)
@@ -75,6 +100,8 @@ func newFindCmd() *cobra.Command {
 	addTimeoutFlag(cmd, &timeout)
 	cmd.Flags().Bool("all", false, "Find all matching elements")
 	cmd.Flags().Int("limit", 10, "Maximum number of elements to return (with --all)")
+	cmd.Flags().Int("nth", 0, "0-based index into the matches; negative counts from the end (use --nth=-1)")
+	cmd.Flags().String("has-text", "", "Keep only matches whose text contains this substring")
 
 	// Semantic locator subcommands
 	var textCmdTimeout time.Duration

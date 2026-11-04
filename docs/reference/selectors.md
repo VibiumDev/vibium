@@ -111,6 +111,44 @@ Locators combine — `{ role: 'button', text: 'Save' }` requires both. When seve
 
 ---
 
+## Filters
+
+Any `find` or `findAll` MAY narrow its matches before one is picked.
+
+| Filter | Meaning |
+|---|---|
+| `nth` | 0-based index into the matches. Negative counts from the end, so `-1` is the last match. `find` only. |
+| `first` / `last` | Sugar for `nth: 0` / `nth: -1`. `find` only. |
+| `hasText` | Keep only matches whose text content contains this substring — the same rule as the `text` locator. |
+
+```bash
+vibium find "li.row" --nth=2
+vibium find "li.row" --has-text "Beta"
+vibium find "li.row" --all --has-text "Beta"
+```
+
+```js
+await vibe.find('li.row', { nth: 2 });
+await vibe.find('li.row', { last: true });
+const rows = await vibe.findAll('li.row', { hasText: 'Beta' });
+```
+
+```python
+await page.find("li.row", nth=2)
+await page.find("li.row", last=True)
+rows = await page.find_all("li.row", has_text="Beta")
+```
+
+```java
+page.find("li.row", new FindOptions().nth(2));
+page.find("li.row", new FindOptions().last());
+List<Element> rows = page.findAll("li.row", new FindOptions().hasText("Beta"));
+```
+
+Filters are part of the element's locator, not a one-shot slice. Every later action re-resolves the element, re-applies `hasText`, and re-counts `nth` against the live DOM, so the handle follows a re-render instead of going stale. Elements from a filtered `findAll` re-select by index from the re-filtered list the same way.
+
+---
+
 ## Scope
 
 `--scope` (CLI) and `scope` (clients) restrict a search to a subtree. It accepts pierce combinators too.

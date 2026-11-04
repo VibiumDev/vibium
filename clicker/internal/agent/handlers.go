@@ -1355,6 +1355,14 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
+	// nth/hasText need every match collected before one is picked, so they
+	// resolve through their own script for both CSS and semantic locators.
+	nth, hasNth := argFloat(args, "nth")
+	hasText, _ := args["hasText"].(string)
+	if hasNth || hasText != "" {
+		return h.browserFindFiltered(args, nth, hasNth, hasText, timeout)
+	}
+
 	if hasSemantic {
 		// A selector next to semantic locators narrows them (#780).
 		scope, _ := args["selector"].(string)
@@ -1446,6 +1454,95 @@ func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, e
 			Type: "text",
 			Text: fmt.Sprintf("@e1 %s", labelStr),
 		}},
+	}, nil
+}
+
+// browserFindFiltered resolves a find that carries nth/hasText filters. It
+// collects every match with the engine's semantic matcher, filters, picks one,
+// and mints a unique selector for the @ref table, so a later click lands on
+// the filtered pick rather than the first raw-selector match.
+func (h *Handlers) browserFindFiltered(args map[string]interface{}, nth float64, hasNth bool, hasText string, timeout time.Duration) (*ToolsCallResult, error) {
+	selector, _ := args["selector"].(string)
+	role, _ := args["role"].(string)
+	text, _ := args["text"].(string)
+	label, _ := args["label"].(string)
+	placeholder, _ := args["placeholder"].(string)
+	testid, _ := args["testid"].(string)
+	xpath, _ := args["xpath"].(string)
+	alt, _ := args["alt"].(string)
+	title, _ := args["title"].(string)
+
+	hasSemantic := role != "" || text != "" || label != "" || placeholder != "" || testid != "" || xpath != "" || alt != "" || title != ""
+	if selector == "" && !hasSemantic {
+		return nil, fmt.Errorf("selector or semantic locator (role, text, label, placeholder, testid, xpath, alt, title) is required")
+	}
+	if selector != "" {
+		selector = h.resolveSelector(selector)
+	}
+
+	script := `(selector, role, text, label, placeholder, alt, title, testid, xpath, hasText, index, hasIndex) => {
+		` + GetSelectorJS() + `
+		` + GetLabelJS() + `
+		` + api.PierceQueryJS() + `
+		` + api.SemanticMatchesJS() + `
+		let found = collectMatches(document, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		if (hasText) found = found.filter((e) => (e.textContent || '').includes(hasText));
+		let el;
+		if (hasIndex) {
+			el = found[index < 0 ? found.length + index : index];
+		} else {
+			el = pickBest(found, text || label);
+		}
+		if (!el) return null;
+		if (el.scrollIntoViewIfNeeded) {
+			el.scrollIntoViewIfNeeded(true);
+		} else {
+			el.scrollIntoView({ block: 'center', inline: 'nearest' });
+		}
+		return JSON.stringify({ selector: getSelector(el), label: getLabel(el) });
+	}`
+
+	result, err := pollCallFunction(h, script,
+		[]interface{}{selector, role, text, label, placeholder, alt, title, testid, xpath, hasText, nth, hasNth}, timeout)
+	if err != nil {
+		if isInvalidSelector(err) {
+			return nil, err
+		}
+		desc := ""
+		for _, pair := range []struct{ k, v string }{
+			{"selector", selector},
+			{"role", role}, {"text", text}, {"label", label}, {"placeholder", placeholder},
+			{"testid", testid}, {"xpath", xpath}, {"alt", alt}, {"title", title},
+			{"has-text", hasText},
+		} {
+			if pair.v != "" {
+				if desc != "" {
+					desc += ", "
+				}
+				desc += pair.k + "=" + pair.v
+			}
+		}
+		if hasNth {
+			if desc != "" {
+				desc += ", "
+			}
+			desc += fmt.Sprintf("nth=%d", int(nth))
+		}
+		return nil, fmt.Errorf("element not found: %s (timeout %s)", desc, timeout)
+	}
+
+	var found struct {
+		Selector string `json:"selector"`
+		Label    string `json:"label"`
+	}
+	if err := json.Unmarshal([]byte(fmt.Sprintf("%v", result)), &found); err != nil {
+		return nil, fmt.Errorf("failed to parse find result: %w", err)
+	}
+
+	h.setRefs(h.refKey(), map[string]string{"@e1": found.Selector})
+
+	return &ToolsCallResult{
+		Content: []Content{{Type: "text", Text: fmt.Sprintf("@e1 %s", found.Label)}},
 	}, nil
 }
 
@@ -2239,12 +2336,15 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		limit = int(l)
 	}
 
+	hasText, _ := args["hasText"].(string)
+
 	// Use JS to find elements and generate selectors + labels
-	findAllScript := `(selector, limit) => {
+	findAllScript := `(selector, limit, hasText) => {
 		` + GetSelectorJS() + `
 		` + GetLabelJS() + `
 		` + api.PierceQueryJS() + `
-		const els = pierceQueryAll(document, selector);
+		let els = pierceQueryAll(document, selector);
+		if (hasText) els = els.filter((e) => (e.textContent || '').includes(hasText));
 		const results = [];
 		const n = Math.min(els.length, limit);
 		for (let i = 0; i < n; i++) {
@@ -2253,7 +2353,7 @@ func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult
 		}
 		return JSON.stringify(results);
 	}`
-	result, err := h.client.CallFunction(h.currentContext(), findAllScript, []interface{}{selector, limit})
+	result, err := h.client.CallFunction(h.currentContext(), findAllScript, []interface{}{selector, limit, hasText})
 	if err != nil {
 		return nil, fmt.Errorf("failed to find elements: %w", err)
 	}

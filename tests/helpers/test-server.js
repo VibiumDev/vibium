@@ -178,6 +178,27 @@ const NESTED_SCOPE_HTML = `<html><head><title>Nested scope</title></head><body>
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
 </body></html>`;
 
+// Rows for the nth/hasText find filters; prependRow re-renders the list so a
+// stored filter must re-apply on use (#709). Mirrored in tests/py/test_server.py.
+const FILTER_ROWS_HTML = `<html><head><title>Filter rows</title></head><body>
+  <ul id="rows">
+    <li class="row">Alpha</li>
+    <li class="row">Beta one</li>
+    <li class="row">Beta two</li>
+    <li class="row">Gamma</li>
+  </ul>
+  <div id="out"></div>
+  <script>
+    document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });
+    window.prependRow = (text) => {
+      const li = document.createElement('li');
+      li.className = 'row';
+      li.textContent = text;
+      document.getElementById('rows').prepend(li);
+    };
+  </script>
+</body></html>`;
+
 const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
   <h1 id="inner">Inside the frame</h1>
 </body></html>`;
@@ -272,6 +293,7 @@ const routes = {
   '/combined-locator': COMBINED_LOCATOR_HTML,
   '/type-filter': TYPE_FILTER_HTML,
   '/nested-scope': NESTED_SCOPE_HTML,
+  '/filter-rows': FILTER_ROWS_HTML,
   '/form-redirect': FORM_REDIRECT_HTML,
 };
 

@@ -81,6 +81,35 @@ async def test_iteration(async_page, test_server):
     assert texts[3] == "Link 4"
 
 
+async def test_find_nth_first_last(async_page, test_server):
+    await async_page.go(test_server + "/filter-rows")
+    el = await async_page.find(".row", nth=1)
+    assert el.info.text == "Beta one"
+    first = await async_page.find(".row", first=True)
+    assert first.info.text == "Alpha"
+    last = await async_page.find(".row", last=True)
+    assert last.info.text == "Gamma"
+
+
+async def test_find_filters_survive_rerender(async_page, test_server):
+    """nth/has_text live in the stored locator, so they re-apply on use (#709)."""
+    await async_page.go(test_server + "/filter-rows")
+    el = await async_page.find(".row", has_text="Beta", nth=1)
+    assert el.info.text == "Beta two"
+    await async_page.evaluate("prependRow('Beta zero')")
+    await el.click()
+    out = await async_page.evaluate("document.getElementById('out').textContent")
+    assert out == "Beta one"
+
+
+async def test_find_all_has_text(async_page, test_server):
+    await async_page.go(test_server + "/filter-rows")
+    rows = await async_page.find_all(".row", has_text="Beta")
+    assert [r.info.text for r in rows] == ["Beta one", "Beta two"]
+    await async_page.evaluate("prependRow('Beta zero')")
+    assert await rows[0].text() == "Beta zero"
+
+
 async def test_scoped_child_reresolves_inside_parent(async_page, test_server):
     """A child of a scoped find must act inside its parent (#779)."""
     await async_page.go(test_server + "/nested-scope")

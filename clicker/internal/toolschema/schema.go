@@ -225,6 +225,14 @@ func GetToolSchemas() []Tool {
 						"type":        "string",
 						"description": "Find element by title attribute",
 					},
+					"nth": map[string]interface{}{
+						"type":        "number",
+						"description": "0-based index into the matches; negative counts from the end (-1 is the last match)",
+					},
+					"hasText": map[string]interface{}{
+						"type":        "string",
+						"description": "Keep only matches whose text content contains this substring",
+					},
 					"timeout": map[string]interface{}{
 						"type":        "number",
 						"description": "Timeout in milliseconds (default: 30000)",
@@ -291,6 +299,10 @@ func GetToolSchemas() []Tool {
 						"type":        "number",
 						"description": "Maximum number of elements to return (default: 10)",
 						"default":     10,
+					},
+					"hasText": map[string]interface{}{
+						"type":        "string",
+						"description": "Keep only matches whose text content contains this substring",
 					},
 				},
 				"required":             []string{"selector"},

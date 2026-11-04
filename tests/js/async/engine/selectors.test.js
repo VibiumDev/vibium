@@ -120,6 +120,61 @@ describe('Selector Strategies', () => {
     }
   });
 
+  test('find picks the nth match, with first/last sugar (#709)', async () => {
+    try {
+      await vibe.go(`${baseURL}/filter-rows`);
+      const el = await vibe.find('.row', { nth: 1 });
+      assert.strictEqual(el.info.text, 'Beta one');
+      const first = await vibe.find('.row', { first: true });
+      assert.strictEqual(first.info.text, 'Alpha');
+      const last = await vibe.find('.row', { last: true });
+      assert.strictEqual(last.info.text, 'Gamma');
+      // Re-render: a new first row shifts every index by one, and the stored
+      // nth must re-apply against the new list.
+      await vibe.evaluate("prependRow('Zero')");
+      assert.strictEqual(await el.text(), 'Alpha');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
+  test('find hasText filters matches and survives a re-render (#709)', async () => {
+    try {
+      await vibe.go(`${baseURL}/filter-rows`);
+      const el = await vibe.find('.row', { hasText: 'Beta', nth: 1 });
+      assert.strictEqual(el.info.text, 'Beta two');
+      await vibe.evaluate("prependRow('Beta zero')");
+      // The stored locator re-filters: nth 1 of the Beta rows is now "Beta one".
+      await el.click();
+      assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'Beta one');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
+  test('findAll hasText keeps the filter in each element (#709)', async () => {
+    try {
+      await vibe.go(`${baseURL}/filter-rows`);
+      const rows = await vibe.findAll('.row', { hasText: 'Beta' });
+      assert.deepStrictEqual(rows.map((r) => r.info.text), ['Beta one', 'Beta two']);
+      await vibe.evaluate("prependRow('Beta zero')");
+      // Index 0 re-selects from the re-filtered list, not the raw one.
+      assert.strictEqual(await rows[0].text(), 'Beta zero');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
+  test('a semantic locator accepts nth (#709)', async () => {
+    try {
+      await vibe.go(`${baseURL}/filter-rows`);
+      const el = await vibe.find({ role: 'listitem', nth: -1 });
+      assert.strictEqual(el.info.text, 'Gamma');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
   test('xpath finds nested element', async () => {
     const el = await vibe.find({ xpath: '//div[@class="container"]/span' });
     assert.ok(el, 'Should find nested element by xpath');

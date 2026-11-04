@@ -243,8 +243,15 @@ public class Page {
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
+        Map<String, Object> locator = findFilterLocator(options);
+        if (locator != null) {
+            for (Map.Entry<String, Object> entry : locator.entrySet()) {
+                params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
+            }
+        }
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, selector, 0);
+        // The element keeps the filters so nth/hasText re-apply on every use.
+        return elementFromResult(result, selector, Element.NO_INDEX, locator);
     }
 
     /** Find a single element by semantic selector. */
@@ -254,7 +261,7 @@ public class Page {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, "", 0, locatorParams(options));
+        return elementFromResult(result, "", Element.NO_INDEX, locatorParams(options));
     }
 
     /**
@@ -282,8 +289,16 @@ public class Page {
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
+        Map<String, Object> locator = null;
+        if (options != null && options.hasText() != null) {
+            params.addProperty("hasText", options.hasText());
+            // The elements keep the filter so their index re-selects from the
+            // same filtered list on every use.
+            locator = new LinkedHashMap<>();
+            locator.put("hasText", options.hasText());
+        }
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, selector);
+        return elementsFromResult(result, selector, locator);
     }
 
     /**
@@ -296,8 +311,12 @@ public class Page {
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        // findAll returns every match; nth is find-only sugar.
+        params.remove("nth");
+        Map<String, Object> locator = locatorParams(options);
+        locator.remove("nth");
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, "", locatorParams(options));
+        return elementsFromResult(result, "", locator);
     }
 
     // ── Screenshots & PDF ───────────────────────────────────────
@@ -448,7 +467,7 @@ public class Page {
             params.addProperty("timeout", options.timeout());
         }
         JsonObject result = client.send("vibium:page.waitFor", params);
-        return elementFromResult(result, selector, 0);
+        return elementFromResult(result, selector, Element.NO_INDEX);
     }
 
     /** Wait for a JS function to return truthy. */
@@ -877,6 +896,17 @@ public class Page {
                                       Map<String, Object> locator) {
         ElementInfo info = parseElementInfo(result);
         return new Element(client, contextId, selector, index, info, locator);
+    }
+
+    /** The nth/hasText filters from per-call options, or null when unfiltered. */
+    static Map<String, Object> findFilterLocator(FindOptions options) {
+        if (options == null) return null;
+        Integer nth = options.effectiveNth();
+        if (nth == null && options.hasText() == null) return null;
+        Map<String, Object> locator = new LinkedHashMap<>();
+        if (nth != null) locator.put("nth", nth);
+        if (options.hasText() != null) locator.put("hasText", options.hasText());
+        return locator;
     }
 
     /** The locator an element was found by, minus per-call options. */

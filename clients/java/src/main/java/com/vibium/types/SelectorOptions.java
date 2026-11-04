@@ -17,6 +17,10 @@ public class SelectorOptions {
     private String xpath;
     private String near;
     private Long timeout;
+    private Integer nth;
+    private boolean first;
+    private boolean last;
+    private String hasText;
 
     public SelectorOptions role(String role) { this.role = role; return this; }
     public SelectorOptions text(String text) { this.text = text; return this; }
@@ -28,6 +32,14 @@ public class SelectorOptions {
     public SelectorOptions xpath(String xpath) { this.xpath = xpath; return this; }
     public SelectorOptions near(String near) { this.near = near; return this; }
     public SelectorOptions timeout(long timeout) { this.timeout = timeout; return this; }
+    /** 0-based index into the matches; negative counts from the end (-1 is the last). */
+    public SelectorOptions nth(int nth) { this.nth = nth; return this; }
+    /** Pick the first match. Sugar for nth(0). */
+    public SelectorOptions first() { this.first = true; return this; }
+    /** Pick the last match. Sugar for nth(-1). */
+    public SelectorOptions last() { this.last = true; return this; }
+    /** Keep only matches whose text content contains this substring. */
+    public SelectorOptions hasText(String hasText) { this.hasText = hasText; return this; }
 
     /**
      * Convert to wire params map.
@@ -44,6 +56,10 @@ public class SelectorOptions {
         if (xpath != null) params.put("xpath", xpath);
         if (near != null) params.put("near", near);
         if (timeout != null) params.put("timeout", timeout);
+        // first/last are client-side sugar; only the resolved nth hits the wire.
+        Integer effectiveNth = nth != null ? nth : first ? 0 : last ? -1 : null;
+        if (effectiveNth != null) params.put("nth", effectiveNth);
+        if (hasText != null) params.put("hasText", hasText);
         return params;
     }
 }

@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .. import errors
 from .._types import A11yNode, BoundingBox, ElementInfo
-from .element import Element
+from .element import Element, _apply_find_filters
 from .clock import Clock
 from .route import Route
 from .network import Request, Response
@@ -287,6 +287,10 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        nth: Optional[int] = None,
+        first: bool = False,
+        last: bool = False,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
         """Find an element by CSS selector or semantic options."""
@@ -296,6 +300,7 @@ class Page:
                          ("testid", testid), ("xpath", xpath), ("near", near)]:
             if val is not None:
                 params[key] = val
+        _apply_find_filters(params, nth, first, last, has_text)
 
         result = await self._client.send("vibium:page.find", params)
         info = ElementInfo(tag=result["tag"], text=result["text"], box=BoundingBox(**result["box"]))
@@ -317,6 +322,7 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
         """Find all elements matching a selector or semantic options.
@@ -330,6 +336,8 @@ class Page:
                          ("testid", testid), ("xpath", xpath), ("near", near)]:
             if val is not None:
                 params[key] = val
+        if has_text is not None:
+            params["hasText"] = has_text
 
         result = await self._client.send("vibium:page.findAll", params)
         sel_str = selector or ""

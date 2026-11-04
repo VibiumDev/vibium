@@ -214,6 +214,27 @@ TYPE_FILTER_HTML = """<html><head><title>Type filter</title></head><body>
   <textarea id="notes">Notes</textarea>
 </body></html>"""
 
+# Rows for the nth/has_text find filters; prependRow re-renders the list so a
+# stored filter must re-apply on use (#709). Mirrors the JS test server page.
+FILTER_ROWS_HTML = """<html><head><title>Filter rows</title></head><body>
+  <ul id="rows">
+    <li class="row">Alpha</li>
+    <li class="row">Beta one</li>
+    <li class="row">Beta two</li>
+    <li class="row">Gamma</li>
+  </ul>
+  <div id="out"></div>
+  <script>
+    document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });
+    window.prependRow = (text) => {
+      const li = document.createElement('li');
+      li.className = 'row';
+      li.textContent = text;
+      document.getElementById('rows').prepend(li);
+    };
+  </script>
+</body></html>"""
+
 # Two identical children; only a scoped re-resolve reaches the one in #b.
 NESTED_SCOPE_HTML = """<html><head><title>Nested scope</title></head><body>
   <div id="a"><button class="act">A</button></div>
@@ -246,6 +267,7 @@ HTML_ROUTES = {
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
     "/nested-scope": NESTED_SCOPE_HTML,
+    "/filter-rows": FILTER_ROWS_HTML,
 }
 
 

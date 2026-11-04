@@ -11,6 +11,28 @@ if TYPE_CHECKING:
     from ..client import BiDiClient
 
 
+def _apply_find_filters(
+    params: Dict[str, Any],
+    nth: Optional[int],
+    first: bool,
+    last: bool,
+    has_text: Optional[str],
+) -> None:
+    """Fold nth/first/last/has_text into wire params.
+
+    first/last are client-side sugar for nth 0/-1. The params stay on the
+    returned element, so the filters re-apply on every re-resolve.
+    """
+    if nth is None and first:
+        nth = 0
+    if nth is None and last:
+        nth = -1
+    if nth is not None:
+        params["nth"] = nth
+    if has_text is not None:
+        params["hasText"] = has_text
+
+
 class Element:
     """Represents a DOM element that can be interacted with."""
 
@@ -215,6 +237,10 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        nth: Optional[int] = None,
+        first: bool = False,
+        last: bool = False,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
         params: Dict[str, Any] = {
@@ -227,6 +253,7 @@ class Element:
                          ("testid", testid), ("xpath", xpath), ("near", near)]:
             if val is not None:
                 params[key] = val
+        _apply_find_filters(params, nth, first, last, has_text)
 
         result = await self._client.send("vibium:element.find", params)
         info = ElementInfo(
@@ -253,6 +280,7 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
         params: Dict[str, Any] = {
@@ -265,6 +293,8 @@ class Element:
                          ("testid", testid), ("xpath", xpath), ("near", near)]:
             if val is not None:
                 params[key] = val
+        if has_text is not None:
+            params["hasText"] = has_text
 
         result = await self._client.send("vibium:element.findAll", params)
         sel_str = selector or ""

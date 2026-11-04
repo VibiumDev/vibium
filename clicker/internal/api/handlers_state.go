@@ -128,18 +128,13 @@ func (r *Router) handleVibiumElAttr(session *BrowserSession, cmd bidiCommand) {
 		args = buildElSemanticArgs(ep)
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, name) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has, name) => {
 				` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
 		` + semanticMatchesHelper() + `
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		`+semanticPickJS+`
 				if (!el) return JSON.stringify({error: 'element not found'});
 				const v = el.getAttribute(name);
 				return JSON.stringify({value: v});
@@ -149,16 +144,11 @@ func (r *Router) handleVibiumElAttr(session *BrowserSession, cmd bidiCommand) {
 		args = buildElBaseArgs(ep)
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
-			(scope, selector, index, hasIndex, name) => {
+			(scope, selector, index, hasIndex, hasText, has, name) => {
 				` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
-				let el;
-				if (hasIndex) {
-					el = pierceQueryAll(root, selector)[index];
-				} else {
-					el = pierceQuery(root, selector);
-				}
+		` + cssPickJS + `
 				if (!el) return JSON.stringify({error: 'element not found'});
 				const v = el.getAttribute(name);
 				return JSON.stringify({value: v});
@@ -605,17 +595,19 @@ func (r *Router) handlePageWaitForFunction(session *BrowserSession, cmd bidiComm
 
 // --- Script builder helpers for state queries ---
 
-// buildElBaseArgs returns the standard [scope, selector, index, hasIndex] args.
+// buildElBaseArgs returns the standard [scope, selector, index, hasIndex, hasText, has] args.
 func buildElBaseArgs(ep ElementParams) []map[string]interface{} {
 	return []map[string]interface{}{
 		{"type": "string", "value": ep.Scope},
 		{"type": "string", "value": ep.Selector},
 		{"type": "number", "value": ep.Index},
 		{"type": "boolean", "value": ep.HasIndex},
+		{"type": "string", "value": ep.HasText},
+		{"type": "string", "value": ep.Has},
 	}
 }
 
-// buildElSemanticArgs returns the 12-arg list for semantic element resolution.
+// buildElSemanticArgs returns the 14-arg list for semantic element resolution.
 func buildElSemanticArgs(ep ElementParams) []map[string]interface{} {
 	return []map[string]interface{}{
 		{"type": "string", "value": ep.Scope},
@@ -630,6 +622,8 @@ func buildElSemanticArgs(ep ElementParams) []map[string]interface{} {
 		{"type": "string", "value": ep.Xpath},
 		{"type": "number", "value": ep.Index},
 		{"type": "boolean", "value": ep.HasIndex},
+		{"type": "string", "value": ep.HasText},
+		{"type": "string", "value": ep.Has},
 	}
 }
 
@@ -639,18 +633,13 @@ func buildElStateScript(ep ElementParams, expr string) (string, []map[string]int
 	if hasSemantic(ep) {
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has) => {
 				`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		`+semanticMatchesHelper()+`
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		`+semanticPickJS+`
 				if (!el) return null;
 				return %s;
 			}
@@ -660,16 +649,11 @@ func buildElStateScript(ep ElementParams, expr string) (string, []map[string]int
 
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
-		(scope, selector, index, hasIndex) => {
+		(scope, selector, index, hasIndex, hasText, has) => {
 			`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
-			let el;
-			if (hasIndex) {
-				el = pierceQueryAll(root, selector)[index];
-			} else {
-				el = pierceQuery(root, selector);
-			}
+	`+cssPickJS+`
 			if (!el) return null;
 			return %s;
 		}
@@ -683,18 +667,13 @@ func buildElBoolScript(ep ElementParams, body string) (string, []map[string]inte
 	if hasSemantic(ep) {
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has) => {
 				`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return 'error:root not found';
 		`+semanticMatchesHelper()+`
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		`+semanticPickJS+`
 				if (!el) return 'error:element not found';
 				const _check = (el) => { %s };
 				return _check(el) ? 'true' : 'false';
@@ -705,16 +684,11 @@ func buildElBoolScript(ep ElementParams, body string) (string, []map[string]inte
 
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
-		(scope, selector, index, hasIndex) => {
+		(scope, selector, index, hasIndex, hasText, has) => {
 			`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return 'error:root not found';
-			let el;
-			if (hasIndex) {
-				el = pierceQueryAll(root, selector)[index];
-			} else {
-				el = pierceQuery(root, selector);
-			}
+	`+cssPickJS+`
 			if (!el) return 'error:element not found';
 			const _check = (el) => { %s };
 			return _check(el) ? 'true' : 'false';
@@ -729,18 +703,13 @@ func buildElJSONScript(ep ElementParams, body string) (string, []map[string]inte
 	if hasSemantic(ep) {
 		args := buildElSemanticArgs(ep)
 		script := fmt.Sprintf(`
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has) => {
 				`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return JSON.stringify({error: 'root not found'});
 		`+semanticMatchesHelper()+`
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		`+semanticPickJS+`
 				if (!el) return JSON.stringify({error: 'element not found'});
 				%s
 			}
@@ -750,16 +719,11 @@ func buildElJSONScript(ep ElementParams, body string) (string, []map[string]inte
 
 	args := buildElBaseArgs(ep)
 	script := fmt.Sprintf(`
-		(scope, selector, index, hasIndex) => {
+		(scope, selector, index, hasIndex, hasText, has) => {
 			`+PierceQueryJS()+`
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({error: 'root not found'});
-			let el;
-			if (hasIndex) {
-				el = pierceQueryAll(root, selector)[index];
-			} else {
-				el = pierceQuery(root, selector);
-			}
+	`+cssPickJS+`
 			if (!el) return JSON.stringify({error: 'element not found'});
 			%s
 		}
@@ -870,18 +834,13 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (*st
 		args = buildElSemanticArgs(ep)
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, name) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has, name) => {
 				` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		`+semanticPickJS+`
 				if (!el) return null;
 				const v = el.getAttribute(name);
 				return JSON.stringify({value: v});
@@ -891,16 +850,11 @@ func GetAttribute(s Session, context string, ep ElementParams, name string) (*st
 		args = buildElBaseArgs(ep)
 		args = append(args, map[string]interface{}{"type": "string", "value": name})
 		script = `
-			(scope, selector, index, hasIndex, name) => {
+			(scope, selector, index, hasIndex, hasText, has, name) => {
 				` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
-				let el;
-				if (hasIndex) {
-					el = pierceQueryAll(root, selector)[index];
-				} else {
-					el = pierceQuery(root, selector);
-				}
+		` + cssPickJS + `
 				if (!el) return null;
 				const v = el.getAttribute(name);
 				return JSON.stringify({value: v});

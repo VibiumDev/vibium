@@ -15,6 +15,9 @@ public class Element {
 
     private static final Gson GSON = new Gson();
 
+    /** Sentinel for "not a findAll handle": no index param is sent on the wire. */
+    static final int NO_INDEX = -1;
+
     private final BiDiClient client;
     private final String contextId;
     private final String selector;
@@ -104,7 +107,7 @@ public class Element {
         // "target" key, not flat "targetSelector"/"targetIndex" (issue #134).
         JsonObject targetParams = new JsonObject();
         targetParams.addProperty("selector", target.selector);
-        if (target.index > 0) {
+        if (target.index >= 0) {
             targetParams.addProperty("index", target.index);
         }
         params.add("target", targetParams);
@@ -286,9 +289,18 @@ public class Element {
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
+        Map<String, Object> filters = Page.findFilterLocator(options);
+        if (filters != null) {
+            for (Map.Entry<String, Object> entry : filters.entrySet()) {
+                params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
+            }
+        }
         JsonObject result = client.send("vibium:element.find", params);
-        // The child keeps the scope so re-resolution stays inside the parent (#779).
-        return elementFromResult(result, childSelector, scopedLocator(null));
+        // The child keeps the scope so re-resolution stays inside the parent
+        // (#779), and the filters so nth/hasText re-apply on every use.
+        Map<String, Object> locator = scopedLocator(null);
+        if (filters != null) locator.putAll(filters);
+        return elementFromResult(result, childSelector, locator);
     }
 
     /** Find a child element by semantic selector. */
@@ -313,9 +325,16 @@ public class Element {
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }
+        // The children keep the scope so re-resolution stays inside the parent
+        // (#779), and the hasText filter so their index re-selects from the
+        // same filtered list.
+        Map<String, Object> locator = scopedLocator(null);
+        if (options != null && options.hasText() != null) {
+            params.addProperty("hasText", options.hasText());
+            locator.put("hasText", options.hasText());
+        }
         JsonObject result = client.send("vibium:element.findAll", params);
-        // The children keep the scope so re-resolution stays inside the parent (#779).
-        return elementsFromResult(result, childSelector, scopedLocator(null));
+        return elementsFromResult(result, childSelector, locator);
     }
 
     /** Find all child elements by semantic selector. */
@@ -324,8 +343,12 @@ public class Element {
         for (Map.Entry<String, Object> entry : childOptions.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        // findAll returns every match; nth is find-only sugar.
+        params.remove("nth");
+        Map<String, Object> locator = scopedLocator(childOptions);
+        locator.remove("nth");
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result, "", scopedLocator(childOptions));
+        return elementsFromResult(result, "", locator);
     }
 
     // ── Internal ────────────────────────────────────────────────
@@ -339,7 +362,7 @@ public class Element {
             params.add(e.getKey(), GSON.toJsonTree(e.getValue()));
         }
         params.addProperty("selector", selector);
-        if (index > 0) {
+        if (index >= 0) {
             params.addProperty("index", index);
         }
         return params;
@@ -378,7 +401,9 @@ public class Element {
     }
 
     private Element elementFromResult(JsonObject result, String selector, Map<String, Object> locator) {
-        int idx = result.has("index") ? result.get("index").getAsInt() : 0;
+        // NO_INDEX for a find result: a find-derived element re-resolves by its
+        // locator (including nth), not by a findAll position.
+        int idx = result.has("index") ? result.get("index").getAsInt() : Element.NO_INDEX;
         ElementInfo eInfo = parseElementInfo(result);
         return new Element(client, contextId, selector, idx, eInfo, locator);
     }

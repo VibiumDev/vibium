@@ -158,11 +158,16 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        nth: Optional[int] = None,
+        first: bool = False,
+        last: bool = False,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
         async_el = self._loop.run(self._async.find(
             selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+            alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            nth=nth, first=first, last=last, has_text=has_text, timeout=timeout,
         ))
         return Element(async_el, self._loop)
 
@@ -180,10 +185,12 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
         async_elements = self._loop.run(self._async.find_all(
             selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+            alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            has_text=has_text, timeout=timeout,
         ))
         return [Element(el, self._loop) for el in async_elements]

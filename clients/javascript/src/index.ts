@@ -3,7 +3,7 @@ export { Page, Keyboard, Mouse, Touch, ScreenshotOptions, A11yNode, FindOptions 
 export { Clock, ClockInstallOptions } from './clock';
 export { BrowserContext, Cookie, SetCookieParam, StorageState, OriginState } from './context';
 export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary } from './recording';
-export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FluentElement, fluent } from './element';
+export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FindFilterOptions, FluentElement, fluent } from './element';
 export { Route } from './route';
 export { Request, Response } from './network';
 export { Dialog } from './dialog';

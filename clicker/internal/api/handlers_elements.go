@@ -41,7 +41,10 @@ func (r *Router) handleVibiumFind(session *BrowserSession, cmd bidiCommand) {
 
 	timeout := findTimeout(cmd.Params)
 
-	script, args := BuildFindScript(cmd.Params, false)
+	// buildActionFindScript honors the nth/hasText/has filters a plain
+	// BuildFindScript ignores, and resolves identically without them.
+	ep := ExtractElementParams(cmd.Params)
+	script, args := buildActionFindScript(ep)
 
 	info, err := r.waitForElementWithScript(session, context, script, args, timeout)
 	if err != nil {
@@ -203,6 +206,10 @@ func buildCSSFindAllScript() string {
 		}
 	`
 }
+
+// SemanticMatchesJS exposes the semantic matcher (collectMatches/pickBest) for
+// callers outside this package, such as the daemon's find handler.
+func SemanticMatchesJS() string { return semanticMatchesHelper() }
 
 func semanticMatchesHelper() string {
 	return `

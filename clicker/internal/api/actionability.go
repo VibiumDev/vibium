@@ -70,29 +70,19 @@ func buildActionableScript(ep ElementParams, checks []ActionCheck) (string, []ma
 }
 
 func buildCSSActionableScript(ep ElementParams, checkVisible, checkReceivesEvents, checkEnabled, checkEditable bool) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-		{"type": "boolean", "value": checkVisible},
-		{"type": "boolean", "value": checkReceivesEvents},
-		{"type": "boolean", "value": checkEnabled},
-		{"type": "boolean", "value": checkEditable},
-	}
+	args := append(buildElBaseArgs(ep),
+		map[string]interface{}{"type": "boolean", "value": checkVisible},
+		map[string]interface{}{"type": "boolean", "value": checkReceivesEvents},
+		map[string]interface{}{"type": "boolean", "value": checkEnabled},
+		map[string]interface{}{"type": "boolean", "value": checkEditable},
+	)
 
 	script := `
-		(scope, selector, index, hasIndex, chkVisible, chkEvents, chkEnabled, chkEditable) => {
+		(scope, selector, index, hasIndex, hasText, has, chkVisible, chkEvents, chkEnabled, chkEditable) => {
 			` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({status:'not_found'});
-			let el;
-			if (hasIndex) {
-				const all = pierceQueryAll(root, selector);
-				el = all[index];
-			} else {
-				el = pierceQuery(root, selector);
-			}
+	` + cssPickJS + `
 			if (!el) return JSON.stringify({status:'not_found'});
 
 			if (el.scrollIntoViewIfNeeded) {
@@ -115,38 +105,21 @@ func buildCSSActionableScript(ep ElementParams, checkVisible, checkReceivesEvent
 }
 
 func buildSemanticActionableScript(ep ElementParams, checkVisible, checkReceivesEvents, checkEnabled, checkEditable bool) (string, []map[string]interface{}) {
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "string", "value": ep.Role},
-		{"type": "string", "value": ep.Text},
-		{"type": "string", "value": ep.Label},
-		{"type": "string", "value": ep.Placeholder},
-		{"type": "string", "value": ep.Alt},
-		{"type": "string", "value": ep.Title},
-		{"type": "string", "value": ep.Testid},
-		{"type": "string", "value": ep.Xpath},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-		{"type": "boolean", "value": checkVisible},
-		{"type": "boolean", "value": checkReceivesEvents},
-		{"type": "boolean", "value": checkEnabled},
-		{"type": "boolean", "value": checkEditable},
-	}
+	args := append(buildElSemanticArgs(ep),
+		map[string]interface{}{"type": "boolean", "value": checkVisible},
+		map[string]interface{}{"type": "boolean", "value": checkReceivesEvents},
+		map[string]interface{}{"type": "boolean", "value": checkEnabled},
+		map[string]interface{}{"type": "boolean", "value": checkEditable},
+	)
 
 	script := `
-		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, chkVisible, chkEvents, chkEnabled, chkEditable) => {
+		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has, chkVisible, chkEvents, chkEnabled, chkEditable) => {
 			` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return JSON.stringify({status:'not_found'});
 	` + semanticMatchesHelper() + `
-			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-			let el;
-			if (hasIndex) {
-				el = found[index];
-			} else {
-				el = pickBest(found, text);
-			}
+			let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+	` + semanticPickJS + `
 			if (!el) return JSON.stringify({status:'not_found'});
 
 			if (el.scrollIntoViewIfNeeded) {

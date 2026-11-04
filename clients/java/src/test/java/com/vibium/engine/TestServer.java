@@ -117,6 +117,27 @@ public class TestServer {
         + "<a href=\"/download-file\" id=\"download-link\" download=\"test.txt\">Download</a>"
         + "</body></html>";
 
+    // Rows for the nth/hasText find filters; prependRow re-renders the list so
+    // a stored filter must re-apply on use (#709). Mirrors the JS/py servers.
+    private static final String FILTER_ROWS_HTML = "<html><head><title>Filter rows</title></head><body>"
+        + "<ul id=\"rows\">"
+        + "<li class=\"row\">Alpha</li>"
+        + "<li class=\"row\">Beta one</li>"
+        + "<li class=\"row\">Beta two</li>"
+        + "<li class=\"row\">Gamma</li>"
+        + "</ul>"
+        + "<div id=\"out\"></div>"
+        + "<script>"
+        + "document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });"
+        + "window.prependRow = (text) => {"
+        + "  const li = document.createElement('li');"
+        + "  li.className = 'row';"
+        + "  li.textContent = text;"
+        + "  document.getElementById('rows').prepend(li);"
+        + "};"
+        + "</script>"
+        + "</body></html>";
+
     private static final Map<String, String> HTML_ROUTES = new HashMap<>();
     static {
         HTML_ROUTES.put("/", HOME_HTML);
@@ -124,6 +145,7 @@ public class TestServer {
         HTML_ROUTES.put("/inputs", INPUTS_HTML);
         HTML_ROUTES.put("/form", FORM_HTML);
         HTML_ROUTES.put("/links", LINKS_HTML);
+        HTML_ROUTES.put("/filter-rows", FILTER_ROWS_HTML);
         HTML_ROUTES.put("/eval", EVAL_HTML);
         HTML_ROUTES.put("/dialog", DIALOG_HTML);
         HTML_ROUTES.put("/dynamic-loading", DYNAMIC_LOADING_HTML);

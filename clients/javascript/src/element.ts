@@ -20,7 +20,19 @@ export interface ActionOptions {
   timeout?: number;
 }
 
-export interface SelectorOptions {
+/** Filters that narrow a find to one of several matches. */
+export interface FindFilterOptions {
+  /** 0-based index into the matches; negative counts from the end (-1 is the last). */
+  nth?: number;
+  /** Pick the first match. Sugar for nth: 0. */
+  first?: boolean;
+  /** Pick the last match. Sugar for nth: -1. */
+  last?: boolean;
+  /** Keep only matches whose text content contains this substring. */
+  hasText?: string;
+}
+
+export interface SelectorOptions extends FindFilterOptions {
   selector?: string;
   role?: string;
   text?: string;
@@ -32,6 +44,35 @@ export interface SelectorOptions {
   xpath?: string;
   near?: string;
   timeout?: number;
+}
+
+/**
+ * Normalize nth/first/last/hasText from a selector object and per-call options
+ * into wire params. The caller merges the result into both the find params and
+ * the element's stored locator, so the filters re-apply on every re-resolve.
+ * @internal
+ */
+export function findFilterParams(
+  selector: string | SelectorOptions,
+  options?: FindFilterOptions
+): { nth?: number; hasText?: string } {
+  const src: FindFilterOptions = {
+    ...(typeof selector === 'string' ? {} : selector),
+    ...options,
+  };
+  const filters: { nth?: number; hasText?: string } = {};
+  let nth = src.nth;
+  if (nth === undefined && src.first) nth = 0;
+  if (nth === undefined && src.last) nth = -1;
+  if (nth !== undefined) filters.nth = nth;
+  if (src.hasText !== undefined) filters.hasText = src.hasText;
+  return filters;
+}
+
+/** Strip the client-only filter keys that must not reach the wire. @internal */
+export function stripFilterSugar(params: Record<string, unknown>): void {
+  delete params.first;
+  delete params.last;
 }
 
 export class Element {
@@ -325,7 +366,7 @@ export class Element {
   }
 
   /** Find a child element by CSS selector or semantic options. Scoped to this element. */
-  find(selector: string | SelectorOptions, options?: { timeout?: number }): FluentElement {
+  find(selector: string | SelectorOptions, options?: { timeout?: number } & FindFilterOptions): FluentElement {
     const promise = (async () => {
       const params: Record<string, unknown> = {
         context: this.context,
@@ -340,6 +381,10 @@ export class Element {
         if (selector.timeout) params.timeout = selector.timeout;
       }
 
+      const filters = findFilterParams(selector, options);
+      stripFilterSugar(params);
+      Object.assign(params, filters);
+
       const result = await this.client.send<{
         tag: string;
         text: string;
@@ -348,8 +393,11 @@ export class Element {
 
       const info: ElementInfo = { tag: result.tag, text: result.text, box: result.box };
       const childSelector = typeof selector === 'string' ? selector : '';
-      // The child keeps the scope so re-resolution stays inside the parent (#779).
+      // The child keeps the scope so re-resolution stays inside the parent (#779),
+      // and the filters so nth/hasText re-apply on every use.
       const childParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+      stripFilterSugar(childParams);
+      Object.assign(childParams, filters);
       childParams.scope = this.selector;
       return new Element(this.client, this.context, childSelector, info, undefined, childParams);
     })();
@@ -357,7 +405,7 @@ export class Element {
   }
 
   /** Find all child elements by CSS selector or semantic options. Scoped to this element. */
-  async findAll(selector: string | SelectorOptions, options?: { timeout?: number }): Promise<Element[]> {
+  async findAll(selector: string | SelectorOptions, options?: { timeout?: number; hasText?: string }): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.context,
       scope: this.selector,
@@ -371,14 +419,25 @@ export class Element {
       if (selector.timeout) params.timeout = selector.timeout;
     }
 
+    // findAll returns every match; nth/first/last are find-only sugar.
+    const { hasText } = findFilterParams(selector, options);
+    stripFilterSugar(params);
+    delete params.nth;
+    if (hasText !== undefined) params.hasText = hasText;
+
     const result = await this.client.send<{
       elements: Array<{ tag: string; text: string; box: BoundingBox; index: number }>;
       count: number;
     }>('vibium:element.findAll', params);
 
     const selectorStr = typeof selector === 'string' ? selector : '';
-    // The children keep the scope so re-resolution stays inside the parent (#779).
+    // The children keep the scope so re-resolution stays inside the parent
+    // (#779), and the hasText filter so their index re-selects from the same
+    // filtered list.
     const selectorParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+    stripFilterSugar(selectorParams);
+    delete selectorParams.nth;
+    if (hasText !== undefined) selectorParams.hasText = hasText;
     selectorParams.scope = this.selector;
     return result.elements.map((el) => {
       const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
@@ -437,8 +496,8 @@ export type FluentElement = Promise<Element> & {
   screenshot(): Promise<Buffer>;
   waitUntil(state?: string, options?: { timeout?: number }): Promise<void>;
   // Finding
-  find(selector: string | SelectorOptions, options?: { timeout?: number }): FluentElement;
-  findAll(selector: string | SelectorOptions, options?: { timeout?: number }): Promise<Element[]>;
+  find(selector: string | SelectorOptions, options?: { timeout?: number } & FindFilterOptions): FluentElement;
+  findAll(selector: string | SelectorOptions, options?: { timeout?: number; hasText?: string }): Promise<Element[]>;
 };
 
 export function fluent(promise: Promise<Element>): FluentElement {

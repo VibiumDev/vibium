@@ -94,49 +94,68 @@ func (r *Router) resolveElementRef(session *BrowserSession, context string, ep E
 	return ResolveElementRef(NewAPISession(r, session, context), context, ep)
 }
 
+// filterMatchesJS is a JS statement block, evaluated with `found`, `hasText`
+// and `has` in scope, that narrows `found` to the elements passing the
+// filters. hasText is a substring match on textContent — the same rule the
+// findAll handler applies — so a locator stored from a filtered findAll
+// re-selects from the same list on every use.
+const filterMatchesJS = `
+			if (hasText) found = found.filter((e) => (e.textContent || '').includes(hasText));
+			if (has) found = found.filter((e) => e.querySelector(has) !== null);`
+
+// nthOfJS is a JS expression selecting the index-th entry of `found`.
+// A negative index counts from the end, so -1 is the last match.
+const nthOfJS = `found[index < 0 ? found.length + index : index]`
+
+// cssPickJS declares `el` from a CSS lookup under `root`. The filtered path
+// collects all matches only when a filter or index is present, so a plain
+// selector keeps the single-query fast path.
+const cssPickJS = `
+			let el;
+			if (hasIndex || hasText || has) {
+				let found = Array.from(pierceQueryAll(root, selector));` + filterMatchesJS + `
+				el = hasIndex ? ` + nthOfJS + ` : found[0];
+			} else {
+				el = pierceQuery(root, selector);
+			}`
+
+// semanticPickJS declares `el` from `found` (collectMatches results), with
+// `pickBest` and `text` in scope.
+const semanticPickJS = filterMatchesJS + `
+			let el;
+			if (hasIndex) {
+				el = ` + nthOfJS + `;
+			} else {
+				el = pickBest(found, text);
+			}`
+
 // buildRefFindScript builds a JS function that finds an element and returns it directly
 // (not JSON-stringified). BiDi will serialize the returned DOM node with a sharedId.
 func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 	if hasSemantic(ep) {
 		args := buildElSemanticArgs(ep)
 		script := `
-			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
+			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has) => {
 				` + PierceQueryJS() + `
 				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
-				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-				let el;
-				if (hasIndex) {
-					el = found[index];
-				} else {
-					el = pickBest(found, text);
-				}
+				let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+		` + semanticPickJS + `
 				return el || null;
 			}
 		`
 		return script, args
 	}
 
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-	}
+	args := buildElBaseArgs(ep)
 
 	script := `
-		(scope, selector, index, hasIndex) => {
+		(scope, selector, index, hasIndex, hasText, has) => {
 			` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
-			let el;
-			if (hasIndex) {
-				const all = pierceQueryAll(root, selector);
-				el = all[index];
-			} else {
-				el = pierceQuery(root, selector);
-			}
+	` + cssPickJS + `
 			return el || null;
 		}
 	`
@@ -148,6 +167,8 @@ type ElementParams struct {
 	Selector    string
 	Index       int
 	HasIndex    bool
+	HasText     string
+	Has         string
 	Scope       string
 	Role        string
 	Text        string
@@ -193,8 +214,17 @@ func ExtractElementParams(params map[string]interface{}) ElementParams {
 	ep.Testid, _ = params["testid"].(string)
 	ep.Xpath, _ = params["xpath"].(string)
 
+	ep.HasText, _ = params["hasText"].(string)
+	ep.Has, _ = params["has"].(string)
+
+	// "index" is the handle a findAll element carries; "nth" is the find-time
+	// filter. Both select from the filtered match list; index wins when a
+	// stored locator carries both.
 	if idx, ok := params["index"].(float64); ok {
 		ep.Index = int(idx)
+		ep.HasIndex = true
+	} else if nth, ok := params["nth"].(float64); ok {
+		ep.Index = int(nth)
 		ep.HasIndex = true
 	}
 
@@ -220,24 +250,13 @@ func hasSemantic(ep ElementParams) bool {
 func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) {
 	if !hasSemantic(ep) && ep.Selector != "" {
 		// CSS path with index support
-		args := []map[string]interface{}{
-			{"type": "string", "value": ep.Scope},
-			{"type": "string", "value": ep.Selector},
-			{"type": "number", "value": ep.Index},
-			{"type": "boolean", "value": ep.HasIndex},
-		}
+		args := buildElBaseArgs(ep)
 		script := `
-			(scope, selector, index, hasIndex) => {
+			(scope, selector, index, hasIndex, hasText, has) => {
 				` + PierceQueryJS() + `
 				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
-				let el;
-				if (hasIndex) {
-					const all = pierceQueryAll(root, selector);
-					el = all[index];
-				} else {
-					el = pierceQuery(root, selector);
-				}
+		` + cssPickJS + `
 				if (!el) return null;
 				if (el.scrollIntoViewIfNeeded) {
 					el.scrollIntoViewIfNeeded(true);
@@ -256,34 +275,16 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 	}
 
 	// Semantic path with index support
-	args := []map[string]interface{}{
-		{"type": "string", "value": ep.Scope},
-		{"type": "string", "value": ep.Selector},
-		{"type": "string", "value": ep.Role},
-		{"type": "string", "value": ep.Text},
-		{"type": "string", "value": ep.Label},
-		{"type": "string", "value": ep.Placeholder},
-		{"type": "string", "value": ep.Alt},
-		{"type": "string", "value": ep.Title},
-		{"type": "string", "value": ep.Testid},
-		{"type": "string", "value": ep.Xpath},
-		{"type": "number", "value": ep.Index},
-		{"type": "boolean", "value": ep.HasIndex},
-	}
+	args := buildElSemanticArgs(ep)
 
 	script := `
-		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
+		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex, hasText, has) => {
 			` + PierceQueryJS() + `
 			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 	` + semanticMatchesHelper() + `
-			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
-			let el;
-			if (hasIndex) {
-				el = found[index];
-			} else {
-				el = pickBest(found, text);
-			}
+			let found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
+	` + semanticPickJS + `
 			if (!el) return null;
 			if (el.scrollIntoViewIfNeeded) {
 				el.scrollIntoViewIfNeeded(true);

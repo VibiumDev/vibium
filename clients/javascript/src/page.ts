@@ -2,7 +2,7 @@ import { callable } from './callable';
 import { RunOptions, RunResult, sendRun } from './run';
 import { CheckOptions, CheckResult, sendCheck } from './check';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
-import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
+import { Element, ElementInfo, SelectorOptions, FindFilterOptions, FluentElement, fluent, findFilterParams, stripFilterSugar } from './element';
 import { BrowserContext } from './context';
 import { Route } from './route';
 import { Request, Response } from './network';
@@ -14,7 +14,7 @@ import { Clock } from './clock';
 import { debug } from './utils/debug';
 import { toEvalExpression } from './utils/eval-expression';
 
-export interface FindOptions {
+export interface FindOptions extends FindFilterOptions {
   /** Timeout in milliseconds to wait for element. Default: 30000 */
   timeout?: number;
 }
@@ -815,6 +815,10 @@ export class Page {
         if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
       }
 
+      const filters = findFilterParams(selector, options);
+      stripFilterSugar(params);
+      Object.assign(params, filters);
+
       const result = await this.client.send<VibiumFindResult>('vibium:page.find', params);
 
       const info: ElementInfo = {
@@ -824,7 +828,10 @@ export class Page {
       };
 
       const selectorStr = typeof selector === 'string' ? selector : '';
-      const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+      // The element keeps the filters so nth/hasText re-apply on every use.
+      const selectorParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+      stripFilterSugar(selectorParams);
+      Object.assign(selectorParams, filters);
       return new Element(this.client, this.contextId, selectorStr, info, undefined, selectorParams);
     })();
     return fluent(promise);
@@ -855,10 +862,21 @@ export class Page {
       if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
     }
 
+    // findAll returns every match; nth/first/last are find-only sugar.
+    const { hasText } = findFilterParams(selector, options);
+    stripFilterSugar(params);
+    delete params.nth;
+    if (hasText !== undefined) params.hasText = hasText;
+
     const result = await this.client.send<VibiumFindAllResult>('vibium:page.findAll', params);
 
     const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    // The elements keep the hasText filter so their index re-selects from the
+    // same filtered list on every use.
+    const selectorParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+    stripFilterSugar(selectorParams);
+    delete selectorParams.nth;
+    if (hasText !== undefined) selectorParams.hasText = hasText;
     return result.elements.map((el) => {
       const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
       return new Element(this.client, this.contextId, selectorStr, info, el.index, selectorParams);
