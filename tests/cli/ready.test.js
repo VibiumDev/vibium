@@ -151,6 +151,26 @@ test('provider authentication failure gives a fix, exit 1, and no leaked respons
   noBrowser(env);
 });
 
+test('reasoning-effort failure names the configured model and a workable remedy', async t => {
+  const fixture = await provider(t, (req, res) => {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'secret-api-marker', param: 'reasoning_effort' } }));
+  });
+  const env = environment(t, { VIBIUM_AI_PROVIDER: 'openai', VIBIUM_AI_MODEL: 'gpt-6.1-sol',
+    VIBIUM_AI_BASE_URL: fixture.url, OPENAI_API_KEY: 'secret-api-marker' });
+  const result = await run(env);
+  assert.equal(result.code, 1);
+  const check = JSON.parse(result.stdout).result.checks.find(c => c.name === 'provider');
+  assert.equal(check.status, 'failed');
+  assert.match(check.message, /HTTP 400 in reasoning_effort/);
+  // gpt-6.1 rejects every effort with Chat Completions function tools (#621):
+  // the fix states that plainly instead of suggesting effort values.
+  assert.match(check.fix, /gpt-6\.1-sol .* Responses API/);
+  assert.doesNotMatch(check.fix, /REASONING_EFFORT/);
+  assert.doesNotMatch(result.stdout + result.stderr, /secret-api-marker/);
+  noBrowser(env);
+});
+
 test('check setup errors point to ready ai and help runs without setup', async t => {
   const env = environment(t);
   const failure = await run(env, ['check', 'the cart works', '--json']);
