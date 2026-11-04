@@ -63,7 +63,7 @@ func TestBrowserQuitAttachedSessionSaysDetached(t *testing.T) {
 	url, stop := fakeBidiServer(t)
 	defer stop()
 
-	h := NewHandlers("", "chrome", true, url, nil, nil)
+	h := NewHandlers("", "chrome", true, "", url, nil, nil)
 	conn, err := bidi.Connect(url)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -87,7 +87,7 @@ func TestBrowserQuitOwnedRemoteSaysClosed(t *testing.T) {
 	url, stop := fakeBidiServer(t)
 	defer stop()
 
-	h := NewHandlers("", "chrome", true, url, nil, nil)
+	h := NewHandlers("", "chrome", true, "", url, nil, nil)
 	conn, err := bidi.Connect(url)
 	if err != nil {
 		t.Fatalf("connect: %v", err)

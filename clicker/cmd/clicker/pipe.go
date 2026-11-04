@@ -121,6 +121,7 @@ func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, conn
 
 	router := api.NewRouter(engineName, headless, connectURL, connectHeaders, connectCaps)
 	router.SetBrowserArgs(browserArgs)
+	router.SetUserDataDir(userDataDir)
 	client := api.NewPipeClientConn(protocolOut)
 
 	// OnClientConnect blocks until Chrome is launched, BiDi connected,

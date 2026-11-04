@@ -105,15 +105,17 @@ var version = "dev"
 
 // Global flags
 var (
-	headless      bool
-	verbose       bool
-	jsonOutput    bool
-	session       string
-	engineName    string
-	engineChannel string
-	headlessSet   bool
-	engineSet     bool
-	channelSet    bool
+	headless       bool
+	verbose        bool
+	jsonOutput     bool
+	session        string
+	engineName     string
+	engineChannel  string
+	userDataDir    string
+	headlessSet    bool
+	engineSet      bool
+	channelSet     bool
+	userDataDirSet bool
 )
 
 // defaultEngine returns the browser engine to launch when --engine is not given.
@@ -137,6 +139,17 @@ func applyGlobalFlags(cmd *cobra.Command) error {
 	headlessSet = cmd.Flags().Changed("headless")
 	engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
 	channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
+	userDataDirSet = cmd.Flags().Changed("user-data-dir")
+	// Resolved here, not at launch: the daemon that launches runs with its
+	// own working directory, so a relative path must be anchored to the
+	// invoking command's.
+	if userDataDir != "" {
+		abs, err := filepath.Abs(userDataDir)
+		if err != nil {
+			return err
+		}
+		userDataDir = abs
+	}
 	// Enable logging only if --verbose is used
 	if verbose {
 		log.Setup(log.LevelVerbose)
@@ -242,6 +255,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
 	rootCmd.PersistentFlags().StringVar(&engineChannel, "channel", os.Getenv("VIBIUM_ENGINE_CHANNEL"), "Engine release channel to install and run (env: VIBIUM_ENGINE_CHANNEL); firefox: release (default) or beta; chrome: stable (default), beta, dev, or canary")
+	rootCmd.PersistentFlags().StringVar(&userDataDir, "user-data-dir", "", "Persistent browser profile directory, created if missing and reused across runs; default is a temp profile wiped on close")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")

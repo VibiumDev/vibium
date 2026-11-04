@@ -62,14 +62,18 @@ public class VibiumProcess {
     }
 
     public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, String connectCaps) {
-        return start(binaryPath, engine, channel, headless, connectURL, connectHeaders, connectCaps, false);
+        return start(binaryPath, engine, channel, headless, null, connectURL, connectHeaders, connectCaps, false);
+    }
+
+    public static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String userDataDir, String connectURL, Map<String, String> connectHeaders, String connectCaps) {
+        return start(binaryPath, engine, channel, headless, userDataDir, connectURL, connectHeaders, connectCaps, false);
     }
 
     public static VibiumProcess startWithoutBrowser(String binaryPath) {
-        return start(binaryPath, null, null, false, null, null, null, true);
+        return start(binaryPath, null, null, false, null, null, null, null, true);
     }
 
-    private static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String connectURL, Map<String, String> connectHeaders, String connectCaps, boolean noBrowser) {
+    private static VibiumProcess start(String binaryPath, String engine, String channel, boolean headless, String userDataDir, String connectURL, Map<String, String> connectHeaders, String connectCaps, boolean noBrowser) {
         List<String> cmd = new ArrayList<>();
         cmd.add(binaryPath);
         cmd.add("pipe");
@@ -87,6 +91,11 @@ public class VibiumProcess {
 
         if (headless) {
             cmd.add("--headless");
+        }
+
+        if (userDataDir != null && !userDataDir.isEmpty()) {
+            cmd.add("--user-data-dir");
+            cmd.add(userDataDir);
         }
 
         if (connectURL != null && !connectURL.isEmpty()) {

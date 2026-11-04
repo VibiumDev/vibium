@@ -73,6 +73,10 @@ type LaunchOptions struct {
 	Port     int      // Chromedriver port, 0 = auto-select
 	Verbose  bool     // Show browser/driver output
 	Args     []string // extra engine command-line flags, appended last (#640)
+	// UserDataDir, when set, is a persistent profile directory to launch the
+	// browser with instead of a throwaway temp profile (#715). It is created
+	// if missing and never deleted.
+	UserDataDir string
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -82,7 +86,11 @@ type LaunchResult struct {
 	SessionID    string
 	BrowserCmd   *exec.Cmd
 	Port         int
-	UserDataDir  string // Chrome temp profile dir — cleaned up on Close()
+	UserDataDir  string // profile dir — cleaned up on Close() unless Persistent
+	// Persistent marks UserDataDir as user-supplied (#715). Close MUST NOT
+	// remove it, and shuts the browser down gracefully first so the profile
+	// (cookies, localStorage) is flushed to disk.
+	Persistent bool
 	// Engine is "firefox" or "chrome"/"" so Close can apply the Firefox-only
 	// Windows profile sweep (#622) without reaching for the global engine flag.
 	Engine string
@@ -136,6 +144,26 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	// Fail with a reason before spending ~2s on a launch that cannot succeed.
 	if err := checkSandboxable(); err != nil {
 		return nil, err
+	}
+
+	// A persistent profile travels as a --user-data-dir engine flag so
+	// chromedriver uses it instead of creating a temp dir. Prepended, so an
+	// explicit caller-supplied flag (#640) still wins. Aggressive DOM-storage
+	// flushing trades a little write batching for localStorage that survives
+	// a crash or kill between Chrome's rate-limited commits — on a profile
+	// meant to outlive the session, durability wins.
+	extraArgs := opts.Args
+	persistentDir := ""
+	if opts.UserDataDir != "" {
+		dir, err := prepareUserDataDir(opts.UserDataDir)
+		if err != nil {
+			return nil, err
+		}
+		persistentDir = dir
+		extraArgs = append([]string{
+			"--user-data-dir=" + dir,
+			"--enable-aggressive-domstorage-flushing",
+		}, extraArgs...)
 	}
 
 	chromedriverPath, err := paths.GetChromedriverPathForChannel(opts.Channel)
@@ -205,13 +233,16 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	wsURL := fmt.Sprintf("ws://localhost:%d/session", port)
 	conn, connErr := bidi.Connect(wsURL)
 	if connErr == nil {
-		caps := buildCapabilities(chromePath, opts.Headless, opts.Args)
+		caps := buildCapabilities(chromePath, opts.Headless, extraArgs)
 		// Handshake without NewClient: a Client's reader would own this
 		// connection forever, and the consumer of LaunchResult.BidiConn
 		// (agent or api router) must be able to take over reads itself.
 		result, sessionErr := bidi.SessionNewOnConn(conn, caps)
 		if sessionErr == nil {
 			userDataDir, _ := result.Capabilities["userDataDir"].(string)
+			if persistentDir != "" {
+				userDataDir = persistentDir
+			}
 			log.Info("browser launched via BiDi session.new", "sessionId", result.SessionID)
 			return &LaunchResult{
 				BidiConn:    conn,
@@ -219,6 +250,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 				BrowserCmd:  cmd,
 				Port:        port,
 				UserDataDir: userDataDir,
+				Persistent:  persistentDir != "",
 			}, nil
 		}
 		log.Debug("BiDi session.new failed, falling back to HTTP", "error", sessionErr)
@@ -228,10 +260,13 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Fallback: HTTP POST /session (original path)
-	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, opts.Args)
+	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, extraArgs)
 	if err != nil {
 		cleanupFailedLaunch(cmd)
 		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+	if persistentDir != "" {
+		userDataDir = persistentDir
 	}
 	log.Info("browser launched via HTTP", "sessionId", sessionID, "wsUrl", httpWsURL)
 
@@ -241,7 +276,21 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		BrowserCmd:   cmd,
 		Port:         port,
 		UserDataDir:  userDataDir,
+		Persistent:   persistentDir != "",
 	}, nil
+}
+
+// prepareUserDataDir resolves a user-supplied profile directory to an
+// absolute path and creates it if missing.
+func prepareUserDataDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve user data dir: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return "", fmt.Errorf("create user data dir: %w", err)
+	}
+	return abs, nil
 }
 
 // findAvailablePort finds an available TCP port.
@@ -462,6 +511,10 @@ func createSession(baseURL, chromePath string, headless, verbose bool, extraArgs
 	return sessResp.Value.SessionID, wsURL, userDataDir, nil
 }
 
+// persistentStopTimeout bounds the graceful-shutdown wait for a browser on a
+// persistent profile before the force kill below proceeds.
+const persistentStopTimeout = 5 * time.Second
+
 // Close terminates a chromedriver session and process.
 func (r *LaunchResult) Close() error {
 	log.Debug("closing browser", "sessionId", r.SessionID)
@@ -470,11 +523,29 @@ func (r *LaunchResult) Close() error {
 	if r.BrowserCmd != nil && r.BrowserCmd.Process != nil {
 		pid := r.BrowserCmd.Process.Pid
 
-		// Kill the entire process tree (chromedriver + Chrome + all helpers)
-		killProcessTree(pid)
-
-		// Wait for chromedriver to exit
-		r.BrowserCmd.Wait()
+		if r.Persistent {
+			// A force kill loses profile writes the browser has not flushed
+			// yet (Chrome batches cookie and localStorage commits). The
+			// session teardown already sent the browser its close command, so
+			// wait for the exit before killing what remains. The root must be
+			// reaped while the group is watched — its zombie would keep the
+			// group occupied forever — and Wait may only run once per Cmd,
+			// hence the goroutine.
+			reaped := make(chan struct{})
+			go func() {
+				r.BrowserCmd.Wait()
+				close(reaped)
+			}()
+			waitProcessGroupIdle(pid, persistentStopTimeout)
+			killProcessTree(pid)
+			<-reaped
+		} else {
+			// Kill the entire process tree (chromedriver + Chrome + all
+			// helpers) first: reaping the root before the kill would erase
+			// the pgid the group kill needs when the root is already dead.
+			killProcessTree(pid)
+			r.BrowserCmd.Wait()
+		}
 
 		process.Untrack(r.BrowserCmd)
 	}
@@ -498,7 +569,8 @@ func (r *LaunchResult) Close() error {
 	// processes' still-active user-data-dirs — Chrome then loses the ability
 	// to create new files inside its profile and the BiDi connection hangs.
 	// Run an orphan sweep explicitly (e.g. `make double-tap`) instead.
-	if r.UserDataDir != "" {
+	// A persistent profile is the user's, never ours to delete (#715).
+	if r.UserDataDir != "" && !r.Persistent {
 		log.Debug("removing Chrome user data dir", "path", r.UserDataDir)
 		os.RemoveAll(r.UserDataDir)
 	}

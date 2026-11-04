@@ -92,6 +92,10 @@ func GetToolSchemas() []Tool {
 						"description": "Release channel of the selected engine; chrome: stable (default), beta, dev, canary; firefox: release (default), beta",
 						"enum":        channelEnum(),
 					},
+					"userDataDir": map[string]interface{}{
+						"type":        "string",
+						"description": "Persistent browser profile directory, created if missing and reused across sessions (cookies, logins survive); omit for a temporary profile wiped on close",
+					},
 				},
 				"additionalProperties": false,
 			},
