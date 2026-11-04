@@ -1164,12 +1164,6 @@ func (h *Handlers) browserType(args map[string]interface{}) (*ToolsCallResult, e
 		return nil, err
 	}
 
-	selector, ok := args["selector"].(string)
-	if !ok || selector == "" {
-		return nil, fmt.Errorf("selector is required")
-	}
-	selector = h.resolveSelector(selector)
-
 	text, ok := args["text"].(string)
 	if !ok {
 		return nil, fmt.Errorf("text is required")
@@ -1180,6 +1174,20 @@ func (h *Handlers) browserType(args map[string]interface{}) (*ToolsCallResult, e
 	if err != nil {
 		return nil, err
 	}
+	// No selector: the text goes to whatever has focus, as browser_press does.
+	selector, _ := args["selector"].(string)
+	if selector == "" {
+		if err := api.TypeText(s, ctx, text); err != nil {
+			return nil, fmt.Errorf("failed to type: %w", err)
+		}
+		return &ToolsCallResult{
+			Content: []Content{{
+				Type: "text",
+				Text: "Typed into the focused element",
+			}},
+		}, nil
+	}
+	selector = h.resolveSelector(selector)
 	if err := api.TypeInto(s, ctx, elementParamsWithTimeout(selector, args), text); err != nil {
 		return nil, fmt.Errorf("failed to type: %w", err)
 	}
