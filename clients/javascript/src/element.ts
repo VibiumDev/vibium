@@ -348,7 +348,9 @@ export class Element {
 
       const info: ElementInfo = { tag: result.tag, text: result.text, box: result.box };
       const childSelector = typeof selector === 'string' ? selector : '';
-      const childParams = typeof selector === 'string' ? { selector } : { ...selector };
+      // The child keeps the scope so re-resolution stays inside the parent (#779).
+      const childParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+      childParams.scope = this.selector;
       return new Element(this.client, this.context, childSelector, info, undefined, childParams);
     })();
     return fluent(promise);
@@ -375,7 +377,9 @@ export class Element {
     }>('vibium:element.findAll', params);
 
     const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    // The children keep the scope so re-resolution stays inside the parent (#779).
+    const selectorParams: Record<string, unknown> = typeof selector === 'string' ? { selector } : { ...selector };
+    selectorParams.scope = this.selector;
     return result.elements.map((el) => {
       const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
       return new Element(this.client, this.context, selectorStr, info, el.index, selectorParams);
