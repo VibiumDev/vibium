@@ -808,7 +808,7 @@ func EvalBoolScript(s Session, context, script string, args []map[string]interfa
 	}
 
 	if len(val) > 6 && val[:6] == "error:" {
-		return false, fmt.Errorf(val[6:])
+		return false, errors.New(val[6:])
 	}
 
 	return val == "true", nil

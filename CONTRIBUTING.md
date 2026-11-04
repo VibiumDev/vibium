@@ -33,7 +33,7 @@ If you prefer to develop directly on your host machine, follow the steps below.
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - Node.js 18+
 - Python 3.11+ (for Python client development)
 - Java 21+ (required for the default `make` target and Java client development)
