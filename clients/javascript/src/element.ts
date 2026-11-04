@@ -112,8 +112,9 @@ export class Element {
    * Waits for element to be visible, stable, receive events, enabled, and editable.
    */
   async type(text: string, options?: ActionOptions): Promise<void> {
+    // "value" is the payload key; "text" would collide with a text filter.
     await this.client.send('vibium:element.type', this.commandParams({
-      text,
+      value: text,
       timeout: options?.timeout,
     }));
   }

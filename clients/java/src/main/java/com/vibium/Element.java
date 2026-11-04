@@ -58,7 +58,8 @@ public class Element {
     /** Type text character by character (appends). */
     public void type(String text) {
         JsonObject params = elementParams();
-        params.addProperty("text", text);
+        // "value" is the payload key; "text" would collide with a text filter.
+        params.addProperty("value", text);
         client.send("vibium:element.type", params);
     }
 

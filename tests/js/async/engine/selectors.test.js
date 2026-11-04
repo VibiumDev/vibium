@@ -82,6 +82,33 @@ describe('Selector Strategies', () => {
     }
   });
 
+  test('element.type() keeps a text-filter locator (#778)', async () => {
+    try {
+      await vibe.go(`${baseURL}/type-filter`);
+      const area = await vibe.find({ text: 'Notes' });
+      await area.type(' 2');
+      assert.strictEqual(await vibe.evaluate("document.querySelector('#notes').value"), 'Notes 2');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
+  test('element.type() still accepts the legacy text payload key', async () => {
+    // Old clients send the text to type under "text"; the engine must keep
+    // reading it when "value" is absent and not treat it as a filter.
+    try {
+      await vibe.go(`${baseURL}/type-filter`);
+      await vibe['client'].send('vibium:element.type', {
+        context: vibe['contextId'],
+        selector: '#notes',
+        text: ' legacy',
+      });
+      assert.strictEqual(await vibe.evaluate("document.querySelector('#notes').value"), 'Notes legacy');
+    } finally {
+      await vibe.go(`${baseURL}/selectors`);
+    }
+  });
+
   test('xpath finds nested element', async () => {
     const el = await vibe.find({ xpath: '//div[@class="container"]/span' });
     assert.ok(el, 'Should find nested element by xpath');

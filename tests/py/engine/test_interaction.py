@@ -127,3 +127,12 @@ async def test_login_flow_checkpoint(async_page, test_server):
     sel = await async_page.find("#color")
     await sel.select_option("green")
     assert await sel.value() == "green"
+
+
+async def test_type_keeps_text_filter_locator(async_page, test_server):
+    """type() must not overwrite a text-filter locator with its payload (#778)."""
+    await async_page.go(test_server + "/type-filter")
+    area = await async_page.find(text="Notes")
+    await area.type(" 2")
+    value = await async_page.evaluate("document.querySelector('#notes').value")
+    assert value == "Notes 2"

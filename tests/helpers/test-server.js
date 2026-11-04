@@ -164,6 +164,12 @@ const COMBINED_LOCATOR_HTML = `<html><head><title>Combined locator</title></head
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.id; });</script>
 </body></html>`;
 
+// The textarea is the shortest "Notes" text match; the decoy is longer.
+const TYPE_FILTER_HTML = `<html><head><title>Type filter</title></head><body>
+  <div id="decoy">Notes are rendered here after save</div>
+  <textarea id="notes">Notes</textarea>
+</body></html>`;
+
 const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
   <h1 id="inner">Inside the frame</h1>
 </body></html>`;
@@ -256,6 +262,7 @@ const routes = {
   '/more-information': MORE_INFORMATION_HTML,
   '/selectors': SELECTORS_HTML,
   '/combined-locator': COMBINED_LOCATOR_HTML,
+  '/type-filter': TYPE_FILTER_HTML,
   '/form-redirect': FORM_REDIRECT_HTML,
 };
 
