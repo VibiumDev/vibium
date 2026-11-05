@@ -68,6 +68,29 @@ func TestReadyAIProviderOutcomeAndFixes(t *testing.T) {
 	}
 }
 
+// The reasoning-effort fix names the configured model and a remedy that is
+// valid for it; gpt-6.1 models get a plain statement instead of effort
+// advice that cannot work (#621).
+func TestReadyAIReasoningEffortFixMatchesModel(t *testing.T) {
+	effortErr := errors.New("verifier provider returned HTTP 400 in reasoning_effort")
+	for _, tc := range []struct{ provider, model, effort, want string }{
+		{"openai", "gpt-6.1-sol", "", "Responses API"},
+		{"openai", "gpt-6.1-sol", "low", "gpt-6.1-sol"},
+		{"openai", "gpt-5.6-sol", "", "VIBIUM_AI_REASONING_EFFORT=none"},
+		{"openai", "gpt-6-sol", "low", "VIBIUM_AI_REASONING_EFFORT=none"},
+		// Already at the known effort: generic advice, naming the model.
+		{"openai", "gpt-5.6-sol", "none", "reasoning effort gpt-5.6-sol supports"},
+		{"openai", "other-model", "", "reasoning effort other-model supports"},
+		// Model knowledge applies to the native provider only.
+		{"openai-compatible", "gpt-6.1-sol", "", "reasoning effort gpt-6.1-sol supports"},
+	} {
+		fix := providerSetupFixForConfig(effortErr, ai.Config{Provider: tc.provider, Model: tc.model, ReasoningEffort: tc.effort})
+		if !strings.Contains(fix, tc.want) {
+			t.Errorf("%s %s effort=%q: fix %q does not contain %q", tc.provider, tc.model, tc.effort, fix, tc.want)
+		}
+	}
+}
+
 func TestReadyAIRequiresProviderBeforeAssessingDependentSettings(t *testing.T) {
 	for _, provider := range []string{"", "unsupported-secret-provider"} {
 		for _, key := range []string{"", "secret-key"} {

@@ -85,6 +85,14 @@ func providerSetupFix(err error) string {
 }
 
 func providerSetupFixForConfig(err error, config ai.Config) string {
+	if config.Provider == "openai" && strings.Contains(err.Error(), "reasoning_effort") {
+		if problem := ai.OpenAIChatToolsProblem(config.Model); problem != "" {
+			return problem
+		}
+		if effort := ai.OpenAIEffortDefault(config.Model); effort != "" && config.ReasoningEffort != effort {
+			return "Set " + config.Prefix() + "REASONING_EFFORT=" + effort + "; " + config.Model + " needs it for Chat Completions function tools."
+		}
+	}
 	fix := strings.ReplaceAll(providerSetupFix(err), "VIBIUM_AI_", config.Prefix())
 	// Name the model the user actually configured; a hint that always names
 	// the wizard default reads as wrong advice for every other model (#621).
