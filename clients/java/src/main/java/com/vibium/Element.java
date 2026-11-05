@@ -287,7 +287,8 @@ public class Element {
             params.addProperty("timeout", options.timeout());
         }
         JsonObject result = client.send("vibium:element.find", params);
-        return elementFromResult(result, childSelector);
+        // The child keeps the scope so re-resolution stays inside the parent (#779).
+        return elementFromResult(result, childSelector, scopedLocator(null));
     }
 
     /** Find a child element by semantic selector. */
@@ -297,7 +298,7 @@ public class Element {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:element.find", params);
-        return elementFromResult(result, "", locatorParams(childOptions));
+        return elementFromResult(result, "", scopedLocator(childOptions));
     }
 
     /** Find all child elements by CSS selector. */
@@ -313,7 +314,8 @@ public class Element {
             params.addProperty("timeout", options.timeout());
         }
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result, childSelector);
+        // The children keep the scope so re-resolution stays inside the parent (#779).
+        return elementsFromResult(result, childSelector, scopedLocator(null));
     }
 
     /** Find all child elements by semantic selector. */
@@ -323,7 +325,7 @@ public class Element {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result, "", locatorParams(childOptions));
+        return elementsFromResult(result, "", scopedLocator(childOptions));
     }
 
     // ── Internal ────────────────────────────────────────────────
@@ -361,10 +363,13 @@ public class Element {
 
     // The find response carries only tag/text/box, so the child's selector has to
     // come from the caller or the returned element cannot be re-resolved.
-    /** The locator an element was found by, minus per-call options. */
-    private static Map<String, Object> locatorParams(SelectorOptions options) {
-        Map<String, Object> p = new LinkedHashMap<>(options.toParams());
+    /** The locator a child was found by, scoped to this element, minus per-call options. */
+    private Map<String, Object> scopedLocator(SelectorOptions options) {
+        Map<String, Object> p = options == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(options.toParams());
         p.remove("timeout");
+        p.put("scope", selector);
         return p;
     }
 

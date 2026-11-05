@@ -235,7 +235,8 @@ class Element:
             box=BoundingBox(**result["box"]),
         )
         child_selector = selector or ""
-        child_params = {k: v for k, v in params.items() if k not in ("context", "scope", "timeout")}
+        # The child keeps the scope so re-resolution stays inside the parent (#779).
+        child_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
         return Element(self._client, self._context, child_selector, info, None, child_params)
 
     async def find_all(
@@ -267,7 +268,8 @@ class Element:
 
         result = await self._client.send("vibium:element.findAll", params)
         sel_str = selector or ""
-        sel_params = {k: v for k, v in params.items() if k not in ("context", "scope", "timeout")}
+        # The children keep the scope so re-resolution stays inside the parent (#779).
+        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
         elements = []
         for el in result["elements"]:
             info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))

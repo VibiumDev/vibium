@@ -134,6 +134,7 @@ class _BrowserLauncher:
         engine: Optional[str] = None,
         channel: Optional[str] = None,
         headless: bool = False,
+        user_data_dir: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         caps: Optional[Dict[str, Any]] = None,
         executable_path: Optional[str] = None,
@@ -149,6 +150,10 @@ class _BrowserLauncher:
             channel: Release channel of the engine to install and run, e.g.
                 "beta". Currently honored by Firefox only (local launch only).
             headless: Run browser in headless mode (local launch only).
+            user_data_dir: Persistent browser profile directory, created if
+                missing and reused across sessions (cookies, logins survive).
+                Default is a temporary profile wiped on close (local launch
+                only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
             caps: Extra alwaysMatch capabilities for classic WebDriver
                 endpoints (vendor-prefixed keys like vendor:options).
@@ -178,6 +183,7 @@ class _BrowserLauncher:
                 headless=headless,
                 engine=engine,
                 channel=channel,
+                user_data_dir=user_data_dir,
                 executable_path=executable_path,
             )
         client = await BiDiClient.connect(process)
@@ -200,6 +206,7 @@ class _EngineLauncher:
         *,
         channel: Optional[str] = None,
         headless: bool = False,
+        user_data_dir: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         executable_path: Optional[str] = None,
     ) -> Browser:
@@ -208,6 +215,7 @@ class _EngineLauncher:
             engine=self._engine,
             channel=channel,
             headless=headless,
+            user_data_dir=user_data_dir,
             headers=headers,
             executable_path=executable_path,
         )

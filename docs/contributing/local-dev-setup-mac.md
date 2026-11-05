@@ -354,8 +354,8 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl wget build-essential
 
 # Install Go
-wget https://go.dev/dl/go1.23.4.linux-arm64.tar.gz
-sudo tar -C /usr/local -xzf go1.23.4.linux-arm64.tar.gz
+wget https://go.dev/dl/go1.26.10.linux-arm64.tar.gz
+sudo tar -C /usr/local -xzf go1.26.10.linux-arm64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 source ~/.bashrc
 

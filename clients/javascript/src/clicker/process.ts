@@ -31,6 +31,8 @@ export interface VibiumProcessOptions {
   connectCaps?: string;
   /** Extra engine command-line flags for a locally launched browser (#640). */
   browserArgs?: string[];
+  /** Persistent profile directory for a locally launched browser (#715). */
+  userDataDir?: string;
 }
 
 export class VibiumProcess {
@@ -81,6 +83,9 @@ export class VibiumProcess {
       for (const flag of options.browserArgs) {
         args.push('--browser-arg', flag);
       }
+    }
+    if (options.userDataDir) {
+      args.push('--user-data-dir', options.userDataDir);
     }
 
     // Startup is slow (~16s cold) and gets slower when many browsers launch at

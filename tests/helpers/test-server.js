@@ -170,6 +170,14 @@ const TYPE_FILTER_HTML = `<html><head><title>Type filter</title></head><body>
   <textarea id="notes">Notes</textarea>
 </body></html>`;
 
+// Two identical children; only a scoped re-resolve reaches the one in #b.
+const NESTED_SCOPE_HTML = `<html><head><title>Nested scope</title></head><body>
+  <div id="a"><button class="act">A</button></div>
+  <div id="b"><button class="act">B</button></div>
+  <div id="out"></div>
+  <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
+</body></html>`;
+
 const FRAME_INNER_HTML = `<html><head><title>Inner Frame</title></head><body>
   <h1 id="inner">Inside the frame</h1>
 </body></html>`;
@@ -263,6 +271,7 @@ const routes = {
   '/selectors': SELECTORS_HTML,
   '/combined-locator': COMBINED_LOCATOR_HTML,
   '/type-filter': TYPE_FILTER_HTML,
+  '/nested-scope': NESTED_SCOPE_HTML,
   '/form-redirect': FORM_REDIRECT_HTML,
 };
 
