@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim vm-fast-launch-note double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -256,15 +256,18 @@ endif
 #
 # This is decided by probing THIS machine, not by detecting a VM: a guest with
 # working GPU passthrough must not be shimmed, because the shim hides the GPU
-# rather than speeding it up. The probe costs ~15s once, then is cached.
+# rather than speeding it up. The probe costs ~15s once, then is cached for the
+# machine, so every checkout and worktree on it gets the shim. Each sub-make
+# probes again, so a GPU that dies mid-run turns the shim on for later suites.
 # Override with VM_FAST_LAUNCH=1 or =0.
 # See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
 MTLSHIM := $(CURDIR)/clicker/bin/mtlshim.dylib
-MTLVERDICT := $(CURDIR)/clicker/bin/.mtl-verdict
+MTLVERDICT := $(HOME)/Library/Caches/vibium/mtl-verdict
+MTLVERDICT_LEGACY := $(CURDIR)/clicker/bin/.mtl-verdict
 
 ifeq ($(UNAME_S),Darwin)
 ifeq ($(origin VM_FAST_LAUNCH),undefined)
-VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT))
+VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT) $(MTLVERDICT_LEGACY))
 endif
 endif
 
@@ -275,10 +278,30 @@ export VIBIUM_VM_FAST_LAUNCH := $(MTLSHIM)
 endif
 endif
 
-mtlshim:
+mtlshim: $(MTLSHIM)
+
+$(MTLSHIM): scripts/mtlshim.m
 	@mkdir -p $(dir $(MTLSHIM))
 	clang -fno-objc-arc -dynamiclib -framework Metal -framework Foundation \
 		-o $(MTLSHIM) scripts/mtlshim.m
+
+# Every target that launches Chrome builds vibium, so the shim rides on build-go.
+build-go: $(FAST_LAUNCH_DEP)
+
+ifeq ($(UNAME_S),Darwin)
+test test-core test-checkrun test-tail: vm-fast-launch-note
+endif
+
+vm-fast-launch-note:
+ifeq ($(UNAME_S),Darwin)
+	@if [ -n "$(filter command line environment,$(origin VM_FAST_LAUNCH))" ]; then \
+		echo "VM fast launch: $(if $(filter 1,$(VM_FAST_LAUNCH)),on,off) (set by VM_FAST_LAUNCH)"; \
+	elif [ "$(VM_FAST_LAUNCH)" = "1" ]; then \
+		echo "VM fast launch: on (this machine has shown the dead-GPU stall; VM_FAST_LAUNCH=0 turns it off)"; \
+	else \
+		echo "VM fast launch: off (Metal answered quickly)"; \
+	fi
+endif
 
 # The suite must see the same AI configuration CI does: none. Without this a
 # developer who has run `vibium setup` has a ~/.config/vibium/ai.env, and the
@@ -288,7 +311,7 @@ export VIBIUM_LOAD_AI_ENV := 0
 
 # The full suite. CI runs the three shards below on separate runners to keep
 # wall time down (#513); locally this is still everything.
-test: build install-browser $(FAST_LAUNCH_DEP)
+test: build install-browser
 	@START_TIME=$$(date +%s); \
 	"$(MAKE)" test-core-suites && \
 	"$(MAKE)" test-tail-suites && \
@@ -309,19 +332,19 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 
 # CI shard entry points (#513). Each carries the same build prerequisites as
 # `test`, so a shard runs standalone on a fresh runner.
-test-core: build install-browser $(FAST_LAUNCH_DEP)
+test-core: build install-browser
 	@"$(MAKE)" test-core-suites; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
 	exit $$EXIT
 
-test-checkrun: build install-browser $(FAST_LAUNCH_DEP)
+test-checkrun: build install-browser
 	@"$(MAKE)" test-checkrun-suites; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
 	exit $$EXIT
 
-test-tail: build install-browser $(FAST_LAUNCH_DEP)
+test-tail: build install-browser
 	@"$(MAKE)" test-tail-suites; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
@@ -540,11 +563,11 @@ build-java: build-go
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
 JAVA_PARALLEL ?= 3
-test-java: build-go install-engine $(FAST_LAUNCH_DEP)
+test-java: build-go install-engine
 	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
-test-java-engine: build-go install-engine $(FAST_LAUNCH_DEP)
+test-java-engine: build-go install-engine
 	@echo "--- Java Cross-Engine Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PcapabilityOnly -PjavaParallel=$(JAVA_PARALLEL)
 
