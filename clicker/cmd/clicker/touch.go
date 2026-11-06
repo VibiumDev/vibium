@@ -51,7 +51,7 @@ func newTapCmd() *cobra.Command {
 
 func newSwipeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "swipe <up|down|left|right> | swipe [x1] [y1] [x2] [y2]",
+		Use:   "swipe <up|down|left|right> | <x1> <y1> <x2> <y2>",
 		Short: "Swipe a touchscreen in a direction or from one point to another",
 		Example: `  vibium swipe up
   # Swipe up from the viewport center, half the viewport height
