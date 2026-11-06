@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -75,7 +76,8 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 }
 
 // handleRecordingStop handles vibium:recording.stop — stops recording and returns recording data.
-// Options: path (overrides the path declared at start).
+// Options: path (overrides the path declared at start); upload (true, or a
+// station URL) sends the zip to the station's Record Store as well.
 func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 	// Wait for any in-flight dispatch() to finish so its after-event is recorded.
 	session.dispatchMu.Lock()
@@ -93,6 +95,14 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 
 	if recorder == nil {
 		r.sendError(session, cmd.ID, fmt.Errorf("recording is not started"))
+		return
+	}
+
+	// An upload that cannot happen is refused before anything stops, so the
+	// recording keeps going and the caller can stop it another way.
+	upload, err := ResolveUpload(cmd.Params["upload"], r.connectURL, r.connectHeaders)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
 		return
 	}
 
@@ -128,6 +138,17 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 		result["path"] = path
 	} else {
 		result["data"] = base64.StdEncoding.EncodeToString(zipData)
+	}
+	if upload != nil {
+		up, err := UploadRecording(context.Background(), *upload, zipData, UploadName(path, recorder.Options().Name))
+		if err != nil {
+			if path != "" {
+				err = fmt.Errorf("%w (the recording was saved to %s)", err, path)
+			}
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		result["upload"] = up.Fields()
 	}
 	r.sendSuccess(session, cmd.ID, result)
 }

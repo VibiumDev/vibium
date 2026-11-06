@@ -196,13 +196,15 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 124 | Start recording | `vibium:recording.start` | `vibium record start` | `browser_record_start` | `recording.start(opts?)` | `recording.start(opts?)` | `recording.start(options?)` |
-| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?)` | `recording.stop(path?)` |
+| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?, upload?)` | `recording.stop(path?)` |
 | 126 | Start a recording chunk | `vibium:recording.startChunk` | `vibium record chunk start` | `browser_record_start_chunk` | `recording.startChunk(opts?)` | `recording.start_chunk(opts?)` | `recording.startChunk(options?)` |
 | 127 | Stop a recording chunk | `vibium:recording.stopChunk` | `vibium record chunk stop` | `browser_record_stop_chunk` | `recording.stopChunk(opts?)` | `recording.stop_chunk(path?)` | `recording.stopChunk(path?)` |
 | 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record group start <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` | `recording.startGroup(name, location?)` |
 | 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record group stop` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` | `recording.stopGroup()` |
 
 `recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md).
+
+`recording.stop` also takes `upload`: `true` sends the zip to the Record Store of the station the browser is connected through, and a station URL names one. It needs the API key the connection was made with (`VIBIUM_CONNECT_API_KEY`), the zip still lands at its path either way, and the result gains `upload: {url, sha256, size, hold, device, event}` saying where the station put it and which hold it filed it under. The CLI form is `vibium record stop --upload` (or `--upload-to URL`), the MCP tool takes `upload: true`, and the SDKs take `upload` on `stop()`.
 
 ## Route
 

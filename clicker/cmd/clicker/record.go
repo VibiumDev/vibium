@@ -149,7 +149,11 @@ func newRecordCmd() *cobra.Command {
   # Saved record-20260808-094123.zip (23 steps, 14s video)
 
   vibium record stop -o my-recording.zip
-  # Save to a custom path (overrides the path declared at start)`,
+  # Save to a custom path (overrides the path declared at start)
+
+  vibium record stop --upload
+  # Also upload the ZIP to the station the session is connected through
+  # (its Record Store); prints where it landed`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			output, _ := cmd.Flags().GetString("output")
@@ -166,6 +170,11 @@ func newRecordCmd() *cobra.Command {
 			if output != "" {
 				callArgs["path"] = output
 			}
+			if to, _ := cmd.Flags().GetString("upload-to"); to != "" {
+				callArgs["upload"] = to
+			} else if up, _ := cmd.Flags().GetBool("upload"); up {
+				callArgs["upload"] = true
+			}
 			result, err := daemonCall("browser_record_stop", callArgs)
 			if err != nil {
 				printError(err)
@@ -175,6 +184,8 @@ func newRecordCmd() *cobra.Command {
 		},
 	}
 	stopCmd.Flags().StringP("output", "o", "", "Output file path (default: record-<timestamp>.zip)")
+	stopCmd.Flags().Bool("upload", false, "Also upload the ZIP to the station the session is connected through (its Record Store)")
+	stopCmd.Flags().String("upload-to", "", "Upload to this station's URL instead, with the API key from VIBIUM_CONNECT_API_KEY")
 
 	// Group subcommand (replaces start-group/stop-group)
 	groupCmd := &cobra.Command{
