@@ -578,16 +578,19 @@ func TouchTap(s Session, context string, x, y int) error {
 	return err
 }
 
-// TouchSwipe drags a touch pointer from (x1, y1) to (x2, y2) over durationMs,
-// keeping the finger down for the move so the gesture reads as a swipe/fling
-// rather than two taps.
-func TouchSwipe(s Session, context string, x1, y1, x2, y2, durationMs int) error {
-	params := touchPointerActions([]map[string]interface{}{
-		{"type": "pointerMove", "x": x1, "y": y1, "duration": 0},
+// TouchSwipe drags a touch pointer along p, keeping the finger down for the
+// move so the gesture reads as a swipe/fling rather than two taps.
+func TouchSwipe(s Session, context string, p SwipePath) error {
+	actions := []map[string]interface{}{
+		{"type": "pointerMove", "x": p.X1, "y": p.Y1, "duration": 0},
 		{"type": "pointerDown", "button": 0},
-		{"type": "pointerMove", "x": x2, "y": y2, "duration": durationMs},
-		{"type": "pointerUp", "button": 0},
-	}, context)
+		{"type": "pointerMove", "x": p.X2, "y": p.Y2, "duration": p.Duration},
+	}
+	if p.Hold > 0 {
+		actions = append(actions, map[string]interface{}{"type": "pause", "duration": p.Hold})
+	}
+	actions = append(actions, map[string]interface{}{"type": "pointerUp", "button": 0})
+	params := touchPointerActions(actions, context)
 	_, err := s.SendBidiCommand("input.performActions", params)
 	return err
 }

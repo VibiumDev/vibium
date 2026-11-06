@@ -1288,6 +1288,23 @@ describe('MCP Server: Touch gestures', () => {
     assert.match(summary, /true\|40\|true\|pointerup\|240/, 'drags a held touch pointer from start to end');
   });
 
+  test('browser_swipe with a direction starts at the named edge', async () => {
+    await setup();
+    const [, h] = JSON.parse(await evalText('JSON.stringify([window.innerWidth, window.innerHeight])'));
+    const swipe = await tool('browser_swipe', { direction: 'right', from: 'left', distance: 150 });
+    assert.ok(!swipe.result.isError, 'swipe should not error');
+    const y = Math.floor(h / 2);
+    assert.match(swipe.result.content[0].text, new RegExp(`Swiped from \\(0, ${y}\\) to \\(150, ${y}\\)`));
+    const summary = await evalText("(function(){var e=window.__ev;var d=e.find(x=>x.type==='pointerdown');var u=e[e.length-1];return [d.x,d.y,u.type,u.x,u.y].join('|')})()");
+    assert.strictEqual(summary, `0|${y}|pointerup|150|${y}`);
+  });
+
+  test('browser_swipe rejects an unknown direction', async () => {
+    const swipe = await tool('browser_swipe', { direction: 'sideways' });
+    assert.ok(swipe.result.isError, 'should be an error');
+    assert.match(swipe.result.content[0].text, /direction must be one of up, down, left, right/);
+  });
+
   test('browser_long_press holds a touch pointer then releases', async () => {
     await setup();
     const lp = await tool('browser_long_press', { x: 120, y: 120, duration: 300 });

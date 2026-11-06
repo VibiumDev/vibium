@@ -231,6 +231,21 @@ export class Mouse {
   }
 }
 
+export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface SwipeOptions {
+  /** Start at an edge of the viewport, its center (default), or a point. */
+  from?: 'top' | 'bottom' | 'left' | 'right' | 'center' | { x: number; y: number };
+  /** Pixels to move (default: half the viewport). */
+  distance?: number;
+  /** 'slow', 'normal', 'fast', or pixels per second. Instead of duration. */
+  speed?: 'slow' | 'normal' | 'fast' | number;
+  /** Milliseconds the move takes (default 300). */
+  duration?: number;
+  /** Milliseconds to rest at the end before lifting. */
+  hold?: number;
+}
+
 /** Page-level touch input. */
 export class Touch {
   private client: BiDiClient;
@@ -251,25 +266,33 @@ export class Touch {
   }
 
   /**
-   * Swipe from (x1, y1) to (x2, y2). The finger stays down for the move, so
-   * the gesture reads as a swipe/fling rather than two taps. durationMs
-   * controls how long the move takes (default 300).
+   * Swipe in a direction, or from (x1, y1) to (x2, y2). The finger stays down
+   * for the move, so the gesture reads as a swipe/fling rather than two taps.
+   *
+   *   swipe('up')                                   // from the center, half the viewport
+   *   swipe('up', { from: 'bottom', speed: 'fast' }) // phone home gesture via Roadie
+   *   swipe(40, 100, 240, 100, 200)                 // coordinates, 200ms
    */
+  async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<void>;
+  async swipe(x1: number, y1: number, x2: number, y2: number, durationMs?: number): Promise<void>;
   async swipe(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
+    a: SwipeDirection | number,
+    b?: SwipeOptions | number,
+    x2?: number,
+    y2?: number,
     durationMs?: number,
   ): Promise<void> {
-    await this.client.send('vibium:touch.swipe', {
-      context: this.contextId,
-      x1,
-      y1,
-      x2,
-      y2,
-      ...(durationMs !== undefined ? { duration: durationMs } : {}),
-    });
+    let params: Record<string, unknown>;
+    if (typeof a === 'string') {
+      const { from, ...rest } = (b as SwipeOptions | undefined) ?? {};
+      params = { direction: a, ...rest };
+      if (typeof from === 'string') params.from = from;
+      else if (from) Object.assign(params, { fromX: from.x, fromY: from.y });
+    } else {
+      params = { x1: a, y1: b, x2, y2 };
+      if (durationMs !== undefined) params.duration = durationMs;
+    }
+    await this.client.send('vibium:touch.swipe', { context: this.contextId, ...params });
   }
 
   /**

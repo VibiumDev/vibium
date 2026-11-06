@@ -1192,15 +1192,9 @@ const handlers: Record<string, Handler> = {
   },
 
   'touch.swipe': async (args) => {
-    const [pageId, x1, y1, x2, y2, durationMs] = args as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number | undefined,
-    ];
-    await getPage(pageId).touch.swipe(x1, y1, x2, y2, durationMs);
+    const [pageId, ...rest] = args as [number, ...unknown[]];
+    const touch = getPage(pageId).touch as unknown as { swipe(...a: unknown[]): Promise<void> };
+    await touch.swipe(...rest);
     return { success: true };
   },
 

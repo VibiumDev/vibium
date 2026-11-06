@@ -103,6 +103,18 @@ func (r pyRenderer) literal(v interface{}) string {
 			parts = append(parts, fmt.Sprintf("%s: %s", pyString(k), r.literal(x[k])))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
+	case options:
+		parts := make([]string, len(x))
+		for i, o := range x {
+			parts[i] = fmt.Sprintf("%s=%s", o.py, r.literal(o.pyVal))
+		}
+		return strings.Join(parts, ", ")
+	case pyTuple:
+		parts := make([]string, len(x))
+		for i, item := range x {
+			parts[i] = r.literal(item)
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
 	}
 	return pyString(fmt.Sprint(v))
 }

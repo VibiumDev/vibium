@@ -111,6 +111,8 @@ func TestGenerateSpecialActions(t *testing.T) {
 		action("vibium:element.waitFor", map[string]interface{}{"selector": "#late", "state": "visible"}),
 		action("vibium:page.eval", map[string]interface{}{"expression": "1 + 1"}),
 		action("vibium:touch.swipe", map[string]interface{}{"x1": float64(0), "y1": float64(0), "x2": float64(100), "y2": float64(200)}),
+		action("vibium:touch.swipe", map[string]interface{}{"direction": "up", "from": "bottom", "speed": "fast", "hold": float64(500)}),
+		action("vibium:touch.swipe", map[string]interface{}{"direction": "left", "fromX": float64(300), "fromY": float64(50), "duration": float64(200)}),
 		action("vibium:element.highlight", map[string]interface{}{"selector": "#x"}),
 		action("vibium:recording.start", nil),
 	}
@@ -129,6 +131,8 @@ func TestGenerateSpecialActions(t *testing.T) {
 		"await vibe.find('#late').waitUntil('visible');\n",
 		"await vibe.evaluate('1 + 1');\n",
 		"await vibe.touch.swipe(0, 0, 100, 200);\n",
+		"await vibe.touch.swipe('up', { from: 'bottom', speed: 'fast', hold: 500 });\n",
+		"await vibe.touch.swipe('left', { from: { x: 300, y: 50 }, duration: 200 });\n",
 	} {
 		if !contains(js, want) {
 			t.Errorf("JavaScript output lacks %q\ngot:\n%s", want, js)
@@ -154,6 +158,8 @@ func TestGenerateSpecialActions(t *testing.T) {
 		"vibe.find('#late').wait_until('visible')\n",
 		"vibe.evaluate('1 + 1')\n",
 		"vibe.touch.swipe(0, 0, 100, 200)\n",
+		"vibe.touch.swipe('up', from_='bottom', speed='fast', hold_ms=500)\n",
+		"vibe.touch.swipe('left', from_=(300, 50), duration_ms=200)\n",
 	} {
 		if !contains(py, want) {
 			t.Errorf("Python output lacks %q\ngot:\n%s", want, py)

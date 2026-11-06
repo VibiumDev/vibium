@@ -7,7 +7,7 @@ from ..run import RunResult
 
 import shutil
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .._types import A11yNode
 from .element import Element
@@ -75,13 +75,21 @@ class Touch:
 
     def swipe(
         self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
+        x1: Union[float, str],
+        y1: Optional[float] = None,
+        x2: Optional[float] = None,
+        y2: Optional[float] = None,
         duration_ms: Optional[int] = None,
+        *,
+        from_: Union[str, Tuple[float, float], None] = None,
+        distance: Optional[float] = None,
+        speed: Union[str, float, None] = None,
+        hold_ms: Optional[int] = None,
     ) -> None:
-        self._loop.run(self._async.swipe(x1, y1, x2, y2, duration_ms))
+        self._loop.run(self._async.swipe(
+            x1, y1, x2, y2, duration_ms,
+            from_=from_, distance=distance, speed=speed, hold_ms=hold_ms,
+        ))
 
     def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
         self._loop.run(self._async.long_press(x, y, duration_ms))

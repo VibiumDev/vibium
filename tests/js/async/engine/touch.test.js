@@ -72,6 +72,36 @@ describe('Touch: page-level gestures', () => {
     assert.strictEqual(up.y, 100, 'release at end y');
   });
 
+  test("swipe('up', { from: 'bottom', hold }) starts at the bottom edge and rests before lifting", async () => {
+    const vibe = await bro.newPage();
+    await vibe.setContent(RECORDER);
+    const [w, h] = await vibe.evaluate('[window.innerWidth, window.innerHeight]');
+
+    await vibe.touch.swipe('up', { from: 'bottom', hold: 300 });
+
+    const ev = await vibe.evaluate('window.__ev');
+    const down = ev.find((e) => e.type === 'pointerdown');
+    const moves = ev.filter((e) => e.type === 'pointermove');
+    const up = ev[ev.length - 1];
+    assert.deepStrictEqual([down.x, down.y], [Math.floor(w / 2), h - 1], 'press at the bottom edge, centered');
+    assert.strictEqual(up.type, 'pointerup');
+    assert.deepStrictEqual([up.x, up.y], [Math.floor(w / 2), h - 1 - Math.round(h / 2)], 'release half the viewport higher');
+    assert.ok(up.t - moves[moves.length - 1].t >= 200, `rested ${Math.round(up.t - moves[moves.length - 1].t)}ms, expected >= 200`);
+  });
+
+  test("swipe('left', { from: point, distance }) moves that far from that point", async () => {
+    const vibe = await bro.newPage();
+    await vibe.setContent(RECORDER);
+
+    await vibe.touch.swipe('left', { from: { x: 300, y: 50 }, distance: 120, speed: 'fast' });
+
+    const ev = await vibe.evaluate('window.__ev');
+    const down = ev.find((e) => e.type === 'pointerdown');
+    const up = ev[ev.length - 1];
+    assert.deepStrictEqual([down.x, down.y], [300, 50]);
+    assert.deepStrictEqual([up.type, up.x, up.y], ['pointerup', 180, 50]);
+  });
+
   test('longPress() holds the press for the requested duration', async () => {
     const vibe = await bro.newPage();
     await vibe.setContent(RECORDER);

@@ -12,7 +12,7 @@ import logging
 import re
 import warnings
 import weakref
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .. import errors
 from .._types import A11yNode, BoundingBox, ElementInfo
@@ -155,18 +155,41 @@ class Touch:
 
     async def swipe(
         self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
+        x1: Union[float, str],
+        y1: Optional[float] = None,
+        x2: Optional[float] = None,
+        y2: Optional[float] = None,
         duration_ms: Optional[int] = None,
+        *,
+        from_: Union[str, Tuple[float, float], None] = None,
+        distance: Optional[float] = None,
+        speed: Union[str, float, None] = None,
+        hold_ms: Optional[int] = None,
     ) -> None:
-        """Swipe from (x1, y1) to (x2, y2). The finger stays down for the move,
-        so the gesture reads as a swipe/fling rather than two taps. duration_ms
-        controls how long the move takes (default 300)."""
-        params: dict = {"context": self._context_id, "x1": x1, "y1": y1, "x2": x2, "y2": y2}
-        if duration_ms is not None:
-            params["duration"] = duration_ms
+        """Swipe in a direction, or from (x1, y1) to (x2, y2). The finger stays
+        down for the move, so the gesture reads as a swipe/fling rather than
+        two taps.
+
+            swipe("up")                                # from the center, half the viewport
+            swipe("up", from_="bottom", speed="fast")  # phone home gesture via Roadie
+            swipe(40, 100, 240, 100, 200)              # coordinates, 200ms
+
+        from_ is an edge ("top", "bottom", "left", "right", "center") or an
+        (x, y) point. speed is "slow", "normal", "fast", or pixels per second.
+        duration_ms defaults to 300. hold_ms rests at the end before lifting."""
+        params: dict = {"context": self._context_id}
+        if isinstance(x1, str):
+            params["direction"] = x1
+        else:
+            params.update({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+        if isinstance(from_, str):
+            params["from"] = from_
+        elif from_ is not None:
+            params["fromX"], params["fromY"] = from_
+        for key, value in (("distance", distance), ("speed", speed),
+                           ("duration", duration_ms), ("hold", hold_ms)):
+            if value is not None:
+                params[key] = value
         await self._client.send("vibium:touch.swipe", params)
 
     async def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
