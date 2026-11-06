@@ -496,10 +496,19 @@ test-daemon: build-go
 PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 # Ensure the Python client venv exists with the client + test deps installed.
+# The 3.11 floor matches requires-python in clients/python/pyproject.toml. An
+# existing venv is never rebuilt, so an old one has to be named.
 python-venv:
 	@cd clients/python && \
 		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
 		. $(VENV_ACTIVATE) && \
+		if ! python -c "import sys; sys.exit(sys.version_info < (3, 11))"; then \
+			echo "clients/python/.venv uses Python $$(python -c 'import platform; print(platform.python_version())'); vibium needs 3.11 or newer." >&2; \
+			echo "Rebuild it with Python 3.11 or newer, then rerun make test, e.g.:" >&2; \
+			echo "  macOS/Linux:  python3.14 -m venv --clear clients/python/.venv" >&2; \
+			echo "  Windows:      py -3.14 -m venv --clear clients\\python\\.venv" >&2; \
+			exit 1; \
+		fi && \
 		if ! python -c "import vibium, xdist" 2>/dev/null; then \
 			python -m pip install --quiet --upgrade pip && \
 			pip install -e ../../packages/python/$(PYTHON_PLATFORM_PKG) -e ".[test]"; \
