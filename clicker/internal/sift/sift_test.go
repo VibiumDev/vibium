@@ -377,6 +377,9 @@ func TestPNGFixtures(t *testing.T) {
 }
 
 // TestFixturesInSync fails when testdata/ no longer matches the generator.
+// The generator anti-aliases with float arithmetic, and a toolchain or CPU
+// can round a channel one level differently, so a pixel may differ by a few
+// levels without the fixture being stale.
 func TestFixturesInSync(t *testing.T) {
 	ref, screen, truth := buildUIFixture()
 	for _, c := range []struct {
@@ -384,22 +387,28 @@ func TestFixturesInSync(t *testing.T) {
 		img  image.Image
 	}{{truth.Ref, ref}, {truth.Screen, screen}} {
 		got := loadPNG(t, filepath.Join("testdata", c.name))
-		if !sameImage(got, c.img) {
+		if !nearlyImage(got, c.img, 4) {
 			t.Fatalf("%s differs from the generator; rerun with SIFT_GEN_FIXTURES=1", c.name)
 		}
 	}
 }
 
-func sameImage(a, b image.Image) bool {
+// nearlyImage reports whether every channel of every pixel is within tol
+// 8-bit levels, with the same bounds.
+func nearlyImage(a, b image.Image, tol int) bool {
 	if a.Bounds() != b.Bounds() {
 		return false
+	}
+	within := func(x, y uint32) bool {
+		d := int(x>>8) - int(y>>8)
+		return d <= tol && d >= -tol
 	}
 	bd := a.Bounds()
 	for y := bd.Min.Y; y < bd.Max.Y; y++ {
 		for x := bd.Min.X; x < bd.Max.X; x++ {
 			r1, g1, b1, a1 := a.At(x, y).RGBA()
 			r2, g2, b2, a2 := b.At(x, y).RGBA()
-			if r1 != r2 || g1 != g2 || b1 != b2 || a1 != a2 {
+			if !within(r1, r2) || !within(g1, g2) || !within(b1, b2) || !within(a1, a2) {
 				return false
 			}
 		}
