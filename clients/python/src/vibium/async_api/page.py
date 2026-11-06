@@ -174,8 +174,9 @@ class Touch:
             swipe("up", from_="bottom", speed="fast")  # phone home gesture via Roadie
             swipe(40, 100, 240, 100, 200)              # coordinates, 200ms
 
-        from_ is an edge ("top", "bottom", "left", "right", "center") or an
-        (x, y) point. speed is "slow", "normal", "fast", or pixels per second.
+        from_ is an edge ("top", "bottom", "left", "right"), a corner
+        ("top-left", "top-right", "bottom-left", "bottom-right"), "center", or
+        an (x, y) point. speed is "slow", "normal", "fast", or pixels per second.
         duration_ms defaults to 300. hold_ms rests at the end before lifting."""
         params: dict = {"context": self._context_id}
         if isinstance(x1, str):

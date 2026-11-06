@@ -234,8 +234,11 @@ export class Mouse {
 export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
 
 export interface SwipeOptions {
-  /** Start at an edge of the viewport, its center (default), or a point. */
-  from?: 'top' | 'bottom' | 'left' | 'right' | 'center' | { x: number; y: number };
+  /** Start at an edge or corner of the viewport, its center (default), or a point. */
+  from?:
+    | 'top' | 'bottom' | 'left' | 'right'
+    | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    | 'center' | { x: number; y: number };
   /** Pixels to move (default: half the viewport). */
   distance?: number;
   /** 'slow', 'normal', 'fast', or pixels per second. Instead of duration. */

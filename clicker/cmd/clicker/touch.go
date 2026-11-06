@@ -68,8 +68,8 @@ func newSwipeCmd() *cobra.Command {
   vibium swipe down --from top
   # Phone (Roadie): Notification Center, or the Android notification shade
 
-  vibium swipe down --from 400,0
-  # iPhone (Roadie): Control Center, pulled from near the top-right corner
+  vibium swipe down --from top-right
+  # iPhone (Roadie): Control Center
 
   vibium swipe up --from 200,600 --duration 600
   # Swipe up from (200, 600) over 600ms
@@ -122,7 +122,7 @@ func newSwipeCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().String("from", "", "Where a direction swipe starts: top, bottom, left, right, center, or x,y")
+	cmd.Flags().String("from", "", "Where a direction swipe starts: top, bottom, left, right, top-left, top-right, bottom-left, bottom-right, center, or x,y")
 	cmd.Flags().Int("distance", 0, "How far a direction swipe moves in pixels (default: half the viewport)")
 	cmd.Flags().String("speed", "", "slow, normal, fast, or pixels per second (instead of --duration)")
 	cmd.Flags().Int("duration", 300, "How long the move takes in milliseconds")

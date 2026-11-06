@@ -12,7 +12,7 @@ import (
 var SwipeDirections = []string{"up", "down", "left", "right"}
 
 // SwipeEdges are the named start points a swipe takes in "from".
-var SwipeEdges = []string{"top", "bottom", "left", "right", "center"}
+var SwipeEdges = []string{"top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "center"}
 
 // SwipeSpeeds maps the named speeds to pixels per second.
 var SwipeSpeeds = map[string]float64{"slow": 500, "normal": 1000, "fast": 2500}
@@ -208,7 +208,7 @@ func ScreenSize(s Session, context string) (int, int, error) {
 }
 
 // ResolveSwipe turns SwipeOptions into a path. A direction swipe starts at the
-// viewport center, a named edge, or a point, and moves half the viewport along
+// viewport center, a named edge or corner, or a point, and moves half the viewport along
 // its axis unless distance says otherwise. The end is clamped to the viewport.
 func ResolveSwipe(o SwipeOptions, width, height int) (SwipePath, error) {
 	var x1, y1, x2, y2 float64
@@ -217,14 +217,14 @@ func ResolveSwipe(o SwipeOptions, width, height int) (SwipePath, error) {
 	} else {
 		maxX, maxY := float64(width-1), float64(height-1)
 		x1, y1 = math.Floor(float64(width)/2), math.Floor(float64(height)/2)
-		switch o.From {
-		case "top":
+		if strings.HasPrefix(o.From, "top") {
 			y1 = 0
-		case "bottom":
+		} else if strings.HasPrefix(o.From, "bottom") {
 			y1 = maxY
-		case "left":
+		}
+		if strings.HasSuffix(o.From, "left") {
 			x1 = 0
-		case "right":
+		} else if strings.HasSuffix(o.From, "right") {
 			x1 = maxX
 		}
 		if o.FromPoint {
