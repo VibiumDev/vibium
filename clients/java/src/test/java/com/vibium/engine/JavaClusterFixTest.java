@@ -6,6 +6,7 @@ import com.vibium.Browser;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import com.vibium.types.WaitOptions;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,7 +47,7 @@ public class JavaClusterFixTest {
     void dispatchEventTriggersHandler() { // #132
         Page page = browser.page();
         page.setContent("<html><body><div id='t' onclick=\"this.dataset.fired='1'\">x</div></body></html>");
-        page.find("#t").dispatchEvent("click");
+        page.find(new SelectorOptions().css("#t")).dispatchEvent("click");
         assertEquals("1", page.evaluate("document.querySelector('#t').dataset.fired"));
     }
 
@@ -66,7 +67,7 @@ public class JavaClusterFixTest {
         page.setContent(
             "<html><body><div id='src' draggable='true'>A</div><div id='dst'>B</div></body></html>");
         // Must not throw "dragTo requires 'target' parameter".
-        assertDoesNotThrow(() -> page.find("#src").dragTo(page.find("#dst")));
+        assertDoesNotThrow(() -> page.find(new SelectorOptions().css("#src")).dragTo(page.find(new SelectorOptions().css("#dst"))));
     }
 
     @Test
@@ -74,7 +75,7 @@ public class JavaClusterFixTest {
         Page page = browser.page();
         page.setContent("<html><body><a id='a' href='#'>link</a></body></html>");
         // Must not throw "Unknown command 'vibium:element.highlight'".
-        assertDoesNotThrow(() -> page.find("#a").highlight());
+        assertDoesNotThrow(() -> page.find(new SelectorOptions().css("#a")).highlight());
     }
 
     @Test

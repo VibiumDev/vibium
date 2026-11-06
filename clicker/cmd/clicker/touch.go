@@ -23,18 +23,26 @@ func parseCoord(val, name string) float64 {
 
 func newTapCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tap [x] [y]",
-		Short: "Tap a touchscreen at coordinates",
+		Use:   "tap [x] [y] | tap <selector|@ref>",
+		Short: "Tap a touchscreen at coordinates or on an element",
 		Example: `  vibium tap 100 200
-  # Tap at (100, 200)`,
+  # Tap at (100, 200)
+
+  vibium tap @e1
+  # Tap the center of an element from find or map`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) != 2 {
-				fmt.Fprintf(os.Stderr, "Error: accepts 2 arg(s), received %d\n", len(args))
+			var params map[string]interface{}
+			switch len(args) {
+			case 1:
+				params = map[string]interface{}{"selector": args[0]}
+			case 2:
+				params = map[string]interface{}{
+					"x": parseCoord(args[0], "x"),
+					"y": parseCoord(args[1], "y"),
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "Error: accepts 2 coordinates or 1 selector, received %d arg(s)\n", len(args))
 				os.Exit(1)
-			}
-			params := map[string]interface{}{
-				"x": parseCoord(args[0], "x"),
-				"y": parseCoord(args[1], "y"),
 			}
 			result, err := daemonCall("browser_tap", params)
 			if err != nil {

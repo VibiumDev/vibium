@@ -23,6 +23,11 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// find --json answers with an array of refs; render it like the text form.
+function refs(r) {
+  return r.result.map((m) => `${m.ref} ${m.label}`).join('\n');
+}
+
 function stopDaemon() {
   try {
     execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
@@ -63,16 +68,16 @@ describe('Daemon: Find @refs workflow', () => {
     clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find text "Example Domain"');
     assert.strictEqual(findResult.ok, true);
-    assert.ok(findResult.result.includes('@e1'), 'find should return @e1');
-    assert.ok(findResult.result.includes('[h1]'), 'Should find h1 element');
+    assert.ok(refs(findResult).includes('@e1'), 'find should return @e1');
+    assert.ok(refs(findResult).includes('[h1]'), 'Should find h1 element');
   });
 
   test('find CSS selector returns @ref and click @e1 navigates', () => {
     clicker(`go ${baseURL}/example`);
-    const findResult = clickerJSON('find "a"');
+    const findResult = clickerJSON('find css "a"');
     assert.strictEqual(findResult.ok, true);
-    assert.ok(findResult.result.includes('@e1'), 'find should return @e1');
-    assert.ok(findResult.result.includes('[a]'), 'Should show [a] tag label');
+    assert.ok(refs(findResult).includes('@e1'), 'find should return @e1');
+    assert.ok(refs(findResult).includes('[a]'), 'Should show [a] tag label');
 
     clickerJSON('click @e1');
     clickerJSON('wait load');
@@ -84,8 +89,8 @@ describe('Daemon: Find @refs workflow', () => {
     clicker(`go ${baseURL}/example`);
     const findResult = clickerJSON('find role link');
     assert.strictEqual(findResult.ok, true);
-    assert.ok(findResult.result.includes('@e1'), 'find role should return @e1');
-    assert.ok(findResult.result.includes('[a]'), 'Should show [a] tag label');
+    assert.ok(refs(findResult).includes('@e1'), 'find role should return @e1');
+    assert.ok(refs(findResult).includes('[a]'), 'Should show [a] tag label');
 
     clickerJSON('click @e1');
     clickerJSON('wait load');
@@ -95,27 +100,29 @@ describe('Daemon: Find @refs workflow', () => {
 
   test('find --all returns multiple @refs', () => {
     clicker(`go ${baseURL}/example`);
-    const findResult = clickerJSON('find --all "p"');
+    const findResult = clickerJSON('find css "p" --all');
     assert.strictEqual(findResult.ok, true);
-    assert.ok(findResult.result.includes('@e1'), 'find --all should return @e1');
-    assert.ok(findResult.result.includes('@e2'), 'find --all should return @e2');
+    assert.ok(refs(findResult).includes('@e1'), 'find --all should return @e1');
+    assert.ok(refs(findResult).includes('@e2'), 'find --all should return @e2');
   });
 
-  test('find resets refMap from previous map', () => {
+  test('find keeps the map\'s refs and adds its own', () => {
     clicker(`go ${baseURL}/example`);
-    // First map to get refs
     const mapResult = clickerJSON('map');
     assert.strictEqual(mapResult.ok, true);
     assert.ok(mapResult.result.includes('@e1'), 'map should have @e1');
 
-    // Now find resets the refMap — @e1 now points to h1
+    // The heading was not in the map, so it takes the next number; @e1 still
+    // names the map's first element.
     const findResult = clickerJSON('find text "Example Domain"');
     assert.strictEqual(findResult.ok, true);
-    assert.ok(findResult.result.includes('@e1'), 'find should return @e1');
-    assert.ok(findResult.result.includes('[h1]'), 'find should return h1');
+    const [h1] = findResult.result;
+    assert.notStrictEqual(h1.ref, '@e1', 'find must not renumber the map');
+    assert.ok(h1.label.includes('[h1]'), 'find should return h1');
+    assert.strictEqual(refs(clickerJSON('find text "Example Domain"')), `${h1.ref} ${h1.label}`, 'the same element keeps its ref');
 
-    // Clicking @e1 (h1) should not navigate away
-    clickerJSON('click @e1');
+    // Clicking the heading should not navigate away
+    clickerJSON(`click ${h1.ref}`);
     const urlResult = clickerJSON('url');
     assert.ok(urlResult.result.includes('/example'), 'Should still be on /example');
   });

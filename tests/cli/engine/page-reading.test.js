@@ -83,7 +83,8 @@ describe('CLI: Page Reading', () => {
   });
 
   test('find --all returns multiple @refs', () => {
-    const result = execSync(`${VIBIUM} find ${baseURL}/example "p" --all`, {
+    execSync(`${VIBIUM} go ${baseURL}/example`, { encoding: 'utf-8', timeout: 30000 });
+    const result = execSync(`${VIBIUM} find css "p" --all`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -92,7 +93,8 @@ describe('CLI: Page Reading', () => {
   });
 
   test('find --all with --limit', () => {
-    const result = execSync(`${VIBIUM} find ${baseURL}/example "p" --all --limit 1`, {
+    execSync(`${VIBIUM} go ${baseURL}/example`, { encoding: 'utf-8', timeout: 30000 });
+    const result = execSync(`${VIBIUM} find css "p" --all --limit 1`, {
       encoding: 'utf-8',
       timeout: 30000,
     });

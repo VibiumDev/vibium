@@ -9,6 +9,7 @@ import com.vibium.Request;
 import com.vibium.Response;
 import com.vibium.Vibium;
 import com.vibium.errors.VibiumTimeoutException;
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import com.vibium.types.WaitOptions;
 import org.junit.jupiter.api.AfterAll;
@@ -73,7 +74,7 @@ class CaptureTest {
     void capturesDownload() {
         page.go(server.baseUrl() + "/download");
         Download download = page.capture().download(
-            () -> page.find("#download-link").click());
+            () -> page.find(new SelectorOptions().css("#download-link")).click());
         assertEquals("test.txt", download.suggestedFilename());
     }
 

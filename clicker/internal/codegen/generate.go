@@ -11,10 +11,20 @@ var Languages = []string{"javascript", "python"}
 
 // locator carries the exact recorded element-resolution form.
 type locator struct {
-	selector string
-	semantic []kv // recorded semantic keys, in semanticKeys order
-	index    int  // nonzero selects the nth findAll match
+	selector    string // css
+	description string
+	image       bool // a reference image, which a recording cannot carry
+	semantic    []kv // recorded semantic keys, in semanticKeys order
+	index       int  // nonzero selects the nth findAll match
 }
+
+// bare reports whether the locator is a lone description, the string form.
+func (l *locator) bare() bool {
+	return l.description != "" && l.selector == "" && !l.image && len(l.semantic) == 0
+}
+
+// imagePlaceholder stands in for reference bytes, which a trace does not keep.
+const imagePlaceholder = "reference.png"
 
 type kv struct {
 	key   string
@@ -22,7 +32,7 @@ type kv struct {
 }
 
 func (l *locator) key() string {
-	parts := []string{l.selector, strconv.Itoa(l.index)}
+	parts := []string{l.selector, l.description, strconv.FormatBool(l.image), strconv.Itoa(l.index)}
 	for _, s := range l.semantic {
 		parts = append(parts, s.key+"="+s.value)
 	}
@@ -44,7 +54,7 @@ type emission struct {
 }
 
 // semanticKeys is the locator key order used by find across clients.
-var semanticKeys = []string{"role", "text", "label", "placeholder", "alt", "title", "testid", "xpath", "near"}
+var semanticKeys = []string{"tag", "role", "text", "label", "placeholder", "alt", "title", "testid", "xpath", "near", "strategy"}
 
 // elementArgs maps replayable element methods to their param names in
 // client-argument order. nil-valued optional params are dropped from the end.
@@ -294,6 +304,13 @@ func locatorFromParams(params map[string]interface{}) *locator {
 	l := &locator{}
 	if s, ok := params["selector"].(string); ok {
 		l.selector = s
+	}
+	if s, ok := params["css"].(string); ok && s != "" {
+		l.selector = s
+	}
+	l.description, _ = params["description"].(string)
+	if s, ok := params["image"].(string); ok && s != "" {
+		l.image = true
 	}
 	for _, k := range semanticKeys {
 		if v, ok := params[k].(string); ok {

@@ -22,12 +22,13 @@ class MCPClient {
     this.resolvers = [];
   }
 
-  start() {
+  start(env) {
     return new Promise((resolve, reject) => {
       // --headless: without it every suite's lazy browser launch opens a
       // visible, focus-stealing Chrome window during the parallel test phase.
       this.proc = spawn(VIBIUM, ['mcp', '--headless'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: env || process.env,
       });
 
       this.proc.stdout.on('data', (data) => {
@@ -1361,5 +1362,100 @@ describe('MCP Server: select empty value (#730)', () => {
     });
     assert.ok(!check.result.isError, 'evaluate should not error');
     assert.match(check.result.content[0].text, /SELECTED_EMPTY/, 'the empty-value option should be selected');
+  });
+});
+
+describe('MCP Server: find by intent', () => {
+  /** @type {MCPClient} */
+  let client;
+  let pattern;
+
+  before(async () => {
+    const env = { ...process.env, VIBIUM_LOAD_AI_ENV: '0' };
+    for (const key of Object.keys(env)) {
+      if (key.startsWith('VIBIUM_AI_') || /_API_KEY$/.test(key)) delete env[key];
+    }
+    pattern = require('../helpers/test-server').PATTERN_PNG.toString('base64');
+    client = new MCPClient();
+    await client.start(env);
+    await client.call('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-find', version: '1.0.0' },
+    });
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: `${baseURL}/find-images` } });
+  });
+
+  after(async () => {
+    await client.call('tools/call', { name: 'browser_stop', arguments: {} });
+    client.stop();
+  });
+
+  const tool = (name, args) => client.call('tools/call', { name, arguments: args });
+
+  test('the find tools declare the locator contract', async () => {
+    const list = await client.call('tools/list', {});
+    const find = list.result.tools.find((t) => t.name === 'browser_find');
+    const all = list.result.tools.find((t) => t.name === 'browser_find_all');
+    for (const t of [find, all]) {
+      for (const key of ['description', 'image', 'css', 'selector', 'tag', 'role', 'strategy', 'details']) {
+        assert.ok(t.inputSchema.properties[key], `${t.name} should accept ${key}`);
+      }
+      assert.deepStrictEqual(t.inputSchema.properties.strategy.enum, ['auto', 'cv', 'vlm', 'tree']);
+    }
+    assert.ok(all.inputSchema.properties.limit);
+  });
+
+  test('a description resolves in the tree and returns a structured ref', async () => {
+    const r = await tool('browser_find', { description: 'the Add to Cart button' });
+    assert.ok(!r.result.isError, r.result.content[0].text);
+    assert.match(r.result.content[0].text, /^@e\d+ \[button\] "Add to Cart"$/);
+    const [m] = r.result.structuredContent;
+    assert.strictEqual(m.source, 'tree');
+    assert.strictEqual(m.tag, 'button');
+    assert.ok(m.selector, 'a DOM-backed match carries its selector');
+    const click = await tool('browser_click', { selector: m.ref });
+    assert.ok(!click.result.isError, click.result.content[0].text);
+  });
+
+  test('selector and css are exact and never call a model', async () => {
+    const css = await tool('browser_find', { css: 'h1' });
+    assert.match(css.result.content[0].text, /\[h1\] "Gallery"/);
+    const sel = await tool('browser_find', { selector: 'h1' });
+    assert.strictEqual(sel.result.structuredContent[0].ref, css.result.structuredContent[0].ref, 'the same element keeps its ref');
+    const bad = await tool('browser_find', { css: 'h1', strategy: 'vlm' });
+    assert.ok(bad.result.isError);
+    assert.match(bad.result.content[0].text, /never by a model/);
+  });
+
+  test('a CSS-looking description is a miss that names the css form', async () => {
+    const r = await tool('browser_find', { description: 'h1', timeout: 300 });
+    assert.ok(r.result.isError);
+    assert.match(r.result.content[0].text, /css/);
+    assert.match(r.result.content[0].text, /none is configured/);
+  });
+
+  test('an image is matched locally and every copy gets a ref', async () => {
+    const r = await tool('browser_find_all', { image: pattern, details: true });
+    assert.ok(!r.result.isError, r.result.content[0].text);
+    const matches = r.result.structuredContent;
+    assert.strictEqual(matches.length, 3);
+    for (const m of matches) {
+      assert.strictEqual(m.source, 'image');
+      assert.strictEqual(m.box.width, 96);
+      assert.strictEqual(m.details.method, 'sift');
+    }
+    const none = await tool('browser_find_all', { image: require('../helpers/test-server').makePatternPNG(4242).toString('base64'), timeout: 300 });
+    assert.ok(!none.result.isError);
+    assert.deepStrictEqual(none.result.structuredContent, []);
+    const vlm = await tool('browser_find', { image: pattern, strategy: 'vlm' });
+    assert.ok(vlm.result.isError);
+    assert.match(vlm.result.content[0].text, /configured vision model/);
+  });
+
+  test('image rejects anything but PNG or JPEG bytes', async () => {
+    const r = await tool('browser_find', { image: Buffer.from('not an image').toString('base64') });
+    assert.ok(r.result.isError);
+    assert.match(r.result.content[0].text, /PNG or JPEG/);
   });
 });

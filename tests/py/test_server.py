@@ -4,7 +4,9 @@ All routes match the JS sync-test-server.js so tests are equivalent.
 """
 
 import json
+import struct
 import threading
+import zlib
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -246,7 +248,86 @@ HTML_ROUTES = {
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
     "/nested-scope": NESTED_SCOPE_HTML,
+    "/find-images": None,
+    "/find-canvas": None,
 }
+
+
+def make_pattern_png(seed: int, size: int = 96) -> bytes:
+    """A deterministic, feature-rich thumbnail for image-find tests: the same
+    drawing as tests/helpers/test-server.js makePatternPNG."""
+    state = seed & 0xFFFFFFFF
+    px = bytearray([128] * (size * size * 3))
+
+    def rand():
+        nonlocal state
+        state = (state * 1664525 + 1013904223) & 0xFFFFFFFF
+        return state / 4294967296
+
+    def put(x, y, v):
+        if 0 <= x < size and 0 <= y < size:
+            i = (y * size + x) * 3
+            px[i] = px[i + 1] = px[i + 2] = v
+
+    for _ in range(60):
+        w, h = 4 + int(rand() * 18), 4 + int(rand() * 18)
+        x0, y0 = int(rand() * (size - w)), int(rand() * (size - h))
+        v = int(rand() * 256)
+        if rand() < 0.5:
+            for y in range(y0, y0 + h):
+                for x in range(x0, x0 + w):
+                    put(x, y, v)
+        else:
+            r = min(w, h) / 2
+            cx, cy = x0 + r, y0 + r
+            for y in range(y0, int(y0 + 2 * r)):
+                for x in range(x0, int(x0 + 2 * r)):
+                    if (x - cx) ** 2 + (y - cy) ** 2 <= r * r:
+                        put(x, y, v)
+    raw = b"".join(b"\x00" + bytes(px[y * size * 3:(y + 1) * size * 3]) for y in range(size))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b""))
+
+
+PATTERN_PNG = make_pattern_png(20261106)
+DECOY_PNG = make_pattern_png(777)
+
+FIND_IMAGES_HTML = """<html><head><title>Find images</title></head><body style="margin:0;padding:20px;font-family:sans-serif">
+  <h1>Gallery</h1>
+  <p>Three copies of one thumbnail and a decoy.</p>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <img id="t1" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail">
+    <img id="t2" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail">
+    <img id="decoy" src="/fixtures/decoy.png" width="96" height="96" alt="Other thumbnail">
+  </div>
+  <div style="margin-top:40px"><img id="t3" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail"></div>
+  <p><button id="add" onclick="window.__added=(window.__added||0)+1">Add to Cart</button> <a id="more" href="/subpage">Learn more</a></p>
+  <p><input id="q" type="search" placeholder="Search products"></p>
+</body></html>"""
+
+FIND_CANVAS_HTML = """<html><head><title>Find canvas</title></head><body style="margin:0;padding:20px;font-family:sans-serif">
+  <h1>Canvas</h1>
+  <div style="height:40px"></div>
+  <canvas id="c" width="700" height="500" style="display:block;background:#dde"></canvas>
+  <div style="height:900px"></div>
+  <script>
+    window.__clicks = [];
+    const c = document.getElementById('c');
+    c.addEventListener('click', (e) => { const r = c.getBoundingClientRect(); window.__clicks.push({ x: e.clientX - r.left, y: e.clientY - r.top }); });
+    const img = new Image();
+    img.onload = () => { c.getContext('2d').drawImage(img, 300, 150); window.__drawn = true; };
+    img.src = '/fixtures/pattern.png';
+  </script>
+</body></html>"""
+
+HTML_ROUTES["/find-images"] = FIND_IMAGES_HTML
+HTML_ROUTES["/find-canvas"] = FIND_CANVAS_HTML
 
 
 class VibiumTestHandler(BaseHTTPRequestHandler):
@@ -285,6 +366,14 @@ class VibiumTestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(TEXT_PAGE.encode())
+            return
+
+        if path in ("/fixtures/pattern.png", "/fixtures/decoy.png"):
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(DECOY_PNG if path.endswith("decoy.png") else PATTERN_PNG)
             return
 
         if path == "/set-cookie":

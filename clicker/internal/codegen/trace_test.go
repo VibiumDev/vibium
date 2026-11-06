@@ -94,7 +94,7 @@ func TestReadTraceEndToEndGenerate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "await vibe.find('#q').fill('it\\'s \"quoted\"');\n"
+	want := "await vibe.find({ css: '#q' }).fill('it\\'s \"quoted\"');\n"
 	if !strings.Contains(js, want) {
 		t.Errorf("output lacks %q\ngot:\n%s", want, js)
 	}

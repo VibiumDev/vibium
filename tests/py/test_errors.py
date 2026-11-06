@@ -120,7 +120,7 @@ async def test_element_not_found_raised(async_page, test_server):
 
     await async_page.go(test_server)
     with pytest.raises(vibium.ElementNotFoundError) as exc_info:
-        await async_page.find("#this-element-does-not-exist-at-all", timeout=1000)
+        await async_page.find(css="#this-element-does-not-exist-at-all", timeout=1000)
     assert exc_info.value.selector is not None
 
 
@@ -130,7 +130,7 @@ def test_element_not_found_sync(sync_page, test_server):
 
     sync_page.go(test_server)
     with pytest.raises(vibium.ElementNotFoundError):
-        sync_page.find("#this-element-does-not-exist-at-all", timeout=1000)
+        sync_page.find(css="#this-element-does-not-exist-at-all", timeout=1000)
 
 
 async def test_timeout_error_is_catchable_as_builtin(async_page, test_server):

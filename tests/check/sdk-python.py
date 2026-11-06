@@ -20,10 +20,10 @@ async def run_async():
         await page.context.recording.start(video=False, path=os.environ["CHECK_TEST_OUTPUT"])
         result = await page.check(claim)
         assert result["status"] == "passed"
-        assert await (await page.find("#name")).value() == "Updated"
+        assert await (await page.find(css="#name")).value() == "Updated"
         assert await page.evaluate("window.name") == "original"
         assert await page.evaluate("sessionStorage.getItem('builder')") == "preserved"
-        assert await (await other.find("#name")).value() == "Other"
+        assert await (await other.find(css="#name")).value() == "Other"
         await page.context.recording.stop()
         assert (await bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort=""))["status"] == "inconclusive"
     finally:
@@ -43,10 +43,10 @@ def run_sync():
         other.go(os.environ["CHECK_TEST_URL"] + "/other")
         page.context.recording.start(video=False, path=os.environ["CHECK_TEST_OUTPUT"])
         assert page.check(claim)["status"] == "passed"
-        assert page.find("#name").value() == "Updated"
+        assert page.find(css="#name").value() == "Updated"
         assert page.evaluate("window.name") == "original"
         assert page.evaluate("sessionStorage.getItem('builder')") == "preserved"
-        assert other.find("#name").value() == "Other"
+        assert other.find(css="#name").value() == "Other"
         page.context.recording.stop()
         assert bro.check("archive evidence", record=os.environ["CHECK_TEST_INPUT"], provider="local", model="archive-override", ai_base_url=os.environ["VIBIUM_AI_BASE_URL"], reasoning_effort="")["status"] == "inconclusive"
     finally:

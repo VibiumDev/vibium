@@ -27,7 +27,7 @@ for(const [label,B,P,sync] of [['async',Browser,Page,false],['sync',BrowserSync,
   }
   assert.strictEqual(await page.mainFrame(),page);
   if (!sync) {
-    const element = page.find('#fixture');
+    const element = page.find({ css: '#fixture' });
     assert.equal(typeof element.click, 'function');
     assert.equal(typeof element.set, 'function');
     await element;

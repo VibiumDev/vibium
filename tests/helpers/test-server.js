@@ -16,6 +16,44 @@
  */
 
 const http = require('http');
+const zlib = require('zlib');
+
+// A deterministic, feature-rich thumbnail for image-find tests: rectangles
+// and discs at many gray levels give SIFT plenty of corners and blobs. The
+// decoy uses another seed so it looks alike without corresponding.
+function makePatternPNG(seed, size = 96) {
+  let state = seed >>> 0;
+  const rand = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
+  const px = new Uint8Array(size * size * 3).fill(128);
+  const put = (x, y, v) => { if (x >= 0 && y >= 0 && x < size && y < size) { const i = (y * size + x) * 3; px[i] = v; px[i + 1] = v; px[i + 2] = v; } };
+  for (let n = 0; n < 60; n++) {
+    const w = 4 + Math.floor(rand() * 18), h = 4 + Math.floor(rand() * 18);
+    const x0 = Math.floor(rand() * (size - w)), y0 = Math.floor(rand() * (size - h));
+    const v = Math.floor(rand() * 256);
+    if (rand() < 0.5) {
+      for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) put(x, y, v);
+    } else {
+      const r = Math.min(w, h) / 2, cx = x0 + r, cy = y0 + r;
+      for (let y = y0; y < y0 + 2 * r; y++) for (let x = x0; x < x0 + 2 * r; x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) put(x, y, v);
+    }
+  }
+  const raw = Buffer.alloc((size * 3 + 1) * size);
+  for (let y = 0; y < size; y++) { raw[y * (size * 3 + 1)] = 0; Buffer.from(px.buffer, y * size * 3, size * 3).copy(raw, y * (size * 3 + 1) + 1); }
+  const crcTable = new Int32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c; }
+  const crc = (buf) => { let c = -1; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+const PATTERN_PNG = makePatternPNG(20261106);
+const DECOY_PNG = makePatternPNG(777);
 
 // --- HTML Pages ---
 
@@ -136,6 +174,36 @@ const EXAMPLE_HTML = `<html><head><title>Example Domain</title></head><body>
     domain in literature without prior coordination or asking for permission.</p>
     <p><a href="/more-information">More information...</a></p>
   </div>
+</body></html>`;
+
+const FIND_IMAGES_HTML = `<html><head><title>Find images</title></head><body style="margin:0;padding:20px;font-family:sans-serif">
+  <h1>Gallery</h1>
+  <p>Three copies of one thumbnail and a decoy.</p>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <img id="t1" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail">
+    <img id="t2" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail">
+    <img id="decoy" src="/fixtures/decoy.png" width="96" height="96" alt="Other thumbnail">
+  </div>
+  <div style="margin-top:40px"><img id="t3" src="/fixtures/pattern.png" width="96" height="96" alt="Product thumbnail"></div>
+  <p><button id="add" onclick="window.__added=(window.__added||0)+1">Add to Cart</button> <a id="more" href="/more-information">Learn more</a></p>
+  <p><input id="q" type="search" placeholder="Search products"></p>
+</body></html>`;
+
+// The pattern drawn into a canvas far larger than itself: the match cannot
+// snap to an element of its own size, so it stays a coordinate-backed ref.
+const FIND_CANVAS_HTML = `<html><head><title>Find canvas</title></head><body style="margin:0;padding:20px;font-family:sans-serif">
+  <h1>Canvas</h1>
+  <div style="height:40px"></div>
+  <canvas id="c" width="700" height="500" style="display:block;background:#dde"></canvas>
+  <div style="height:900px"></div>
+  <script>
+    window.__clicks = [];
+    const c = document.getElementById('c');
+    c.addEventListener('click', (e) => { const r = c.getBoundingClientRect(); window.__clicks.push({ x: e.clientX - r.left, y: e.clientY - r.top }); });
+    const img = new Image();
+    img.onload = () => { c.getContext('2d').drawImage(img, 300, 150); window.__drawn = true; };
+    img.src = '/fixtures/pattern.png';
+  </script>
 </body></html>`;
 
 const MORE_INFORMATION_HTML = `<html><head><title>More information</title></head><body>
@@ -268,6 +336,8 @@ const routes = {
   '/add_remove_elements/': ADD_REMOVE_HTML,
   '/example': EXAMPLE_HTML,
   '/more-information': MORE_INFORMATION_HTML,
+  '/find-images': FIND_IMAGES_HTML,
+  '/find-canvas': FIND_CANVAS_HTML,
   '/selectors': SELECTORS_HTML,
   '/combined-locator': COMBINED_LOCATOR_HTML,
   '/type-filter': TYPE_FILTER_HTML,
@@ -292,6 +362,12 @@ function handleRequest(req, res) {
     return;
   }
 
+  if (req.url === '/fixtures/pattern.png' || req.url === '/fixtures/decoy.png') {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+    res.end(req.url.endsWith('decoy.png') ? DECOY_PNG : PATTERN_PNG);
+    return;
+  }
+
   const html = routes[req.url] || routes['/'];
   res.writeHead(200, { 'Content-Type': 'text/html' });
   res.end(html);
@@ -311,7 +387,7 @@ function createTestServer() {
   });
 }
 
-module.exports = { createTestServer };
+module.exports = { createTestServer, makePatternPNG, PATTERN_PNG, DECOY_PNG };
 
 // Standalone mode: print URL and serve
 if (require.main === module) {

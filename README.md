@@ -72,6 +72,9 @@ vibium click @e1                      # click using ref
 vibium diff map                       # see what changed
 
 # Find elements (semantic — no CSS needed)
+vibium find "the Sign In button"      # find by description → @e1 (page names first, vision model if configured)
+vibium find css "button.primary"      # find by exact CSS
+vibium find image icon.png            # find where a picture appears
 vibium find text "Sign In"            # find by visible text
 vibium find label "Email"             # find by form label
 vibium find placeholder "Search"      # find by placeholder
@@ -150,7 +153,7 @@ await vibe.go('https://example.com')
 const png = await vibe.screenshot()
 await fs.writeFile('screenshot.png', png)
 
-const link = await vibe.find('a')
+const link = await vibe.find({ css: 'a' })
 await link.click()
 await bro.stop()
 ```
@@ -167,7 +170,7 @@ vibe.go('https://example.com')
 const png = vibe.screenshot()
 fs.writeFileSync('screenshot.png', png)
 
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 link.click()
 bro.stop()
 ```
@@ -196,7 +199,7 @@ async def main():
     with open("screenshot.png", "wb") as f:
         f.write(png)
 
-    link = await vibe.find("a")
+    link = await vibe.find(css="a")
     await link.click()
     await bro.stop()
 
@@ -215,7 +218,7 @@ png = vibe.screenshot()
 with open("screenshot.png", "wb") as f:
     f.write(png)
 
-link = vibe.find("a")
+link = vibe.find(css="a")
 link.click()
 bro.stop()
 ```
@@ -230,7 +233,7 @@ vibe.go("https://example.com");
 var png = vibe.screenshot();
 Files.write(Path.of("screenshot.png"), png);
 
-var link = vibe.find("a");
+var link = vibe.find(new SelectorOptions().css("a"));
 link.click();
 bro.stop();
 ```

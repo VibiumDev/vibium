@@ -228,7 +228,7 @@ describe('Sync API: Element finding', () => {
   test('find() locates element by CSS selector', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1.heading');
+    const heading = vibe.find({ css: 'h1.heading' });
     assert.ok(heading, 'Should return an ElementSync');
     assert.ok(heading.info, 'Should have info');
     assert.match(heading.info.tag, /^h1$/i);
@@ -245,7 +245,7 @@ describe('Sync API: Element finding', () => {
   test('findAll() returns an array', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/links`);
-    const links = vibe.findAll('a.link');
+    const links = vibe.findAll({ css: 'a.link' });
     assert.ok(Array.isArray(links), 'Should return an array');
     assert.strictEqual(links.length, 4);
   });
@@ -253,7 +253,7 @@ describe('Sync API: Element finding', () => {
   test('find() auto-waits for element', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const el = vibe.find('h1.heading');
+    const el = vibe.find({ css: 'h1.heading' });
     assert.ok(el, 'Should return an ElementSync');
   });
 });
@@ -263,7 +263,7 @@ describe('Sync API: findAll array', () => {
   test('length, [0], .at(-1), [i]', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/links`);
-    const items = vibe.findAll('a.link');
+    const items = vibe.findAll({ css: 'a.link' });
 
     assert.strictEqual(items.length, 4);
 
@@ -280,7 +280,7 @@ describe('Sync API: findAll array', () => {
   test('iteration with for...of', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/links`);
-    const items = vibe.findAll('a.link');
+    const items = vibe.findAll({ css: 'a.link' });
     let count = 0;
     for (const item of items) {
       count++;
@@ -295,16 +295,16 @@ describe('Sync API: Element interaction', () => {
   test('click() navigates via link', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const link = vibe.find('a[href="/subpage"]');
+    const link = vibe.find({ css: 'a[href="/subpage"]' });
     link.click();
-    vibe.find('h3'); // wait for subpage to load
+    vibe.find({ css: 'h3' }); // wait for subpage to load
     assert.strictEqual(vibe.title(), 'Subpage');
   });
 
   test('fill() and value()', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/inputs`);
-    const input = vibe.find('#text-input');
+    const input = vibe.find({ css: '#text-input' });
     input.fill('hello world');
     assert.strictEqual(input.value(), 'hello world');
   });
@@ -312,7 +312,7 @@ describe('Sync API: Element interaction', () => {
   test('type() appends text', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/inputs`);
-    const input = vibe.find('#text-input');
+    const input = vibe.find({ css: '#text-input' });
     input.type('12345');
     const value = vibe.evaluate("document.querySelector('#text-input').value");
     assert.strictEqual(value, '12345');
@@ -321,7 +321,7 @@ describe('Sync API: Element interaction', () => {
   test('set() and unset()', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/form`);
-    const checkbox = vibe.find('#agree');
+    const checkbox = vibe.find({ css: '#agree' });
     checkbox.set();
     checkbox.set(false);
     assert.strictEqual(checkbox.isSet(), false);
@@ -334,7 +334,7 @@ describe('Sync API: Element interaction', () => {
   test('selectOption()', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/form`);
-    const select = vibe.find('#color');
+    const select = vibe.find({ css: '#color' });
     select.selectOption('blue');
     assert.strictEqual(select.value(), 'blue');
   });
@@ -342,7 +342,7 @@ describe('Sync API: Element interaction', () => {
   test('hover()', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1');
+    const heading = vibe.find({ css: 'h1' });
     heading.hover();
     assert.ok(true, 'hover completed without error');
   });
@@ -350,7 +350,7 @@ describe('Sync API: Element interaction', () => {
   test('press() on element', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/inputs`);
-    const input = vibe.find('#text-input');
+    const input = vibe.find({ css: '#text-input' });
     input.click();
     input.press('a');
     const value = vibe.evaluate("document.querySelector('#text-input').value");
@@ -363,7 +363,7 @@ describe('Sync API: Element state', () => {
   test('text() returns textContent', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1.heading');
+    const heading = vibe.find({ css: 'h1.heading' });
     const text = heading.text();
     assert.ok(text.includes('Welcome to test-app'));
   });
@@ -371,7 +371,7 @@ describe('Sync API: Element state', () => {
   test('innerText() returns rendered text', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1.heading');
+    const heading = vibe.find({ css: 'h1.heading' });
     const text = heading.innerText();
     assert.ok(text.includes('Welcome to test-app'));
   });
@@ -379,7 +379,7 @@ describe('Sync API: Element state', () => {
   test('html() returns innerHTML', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const info = vibe.find('#info');
+    const info = vibe.find({ css: '#info' });
     const html = info.html();
     assert.ok(html.includes('Some info text'));
   });
@@ -387,14 +387,14 @@ describe('Sync API: Element state', () => {
   test('attr() returns attribute value', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const link = vibe.find('a[href="/subpage"]');
+    const link = vibe.find({ css: 'a[href="/subpage"]' });
     assert.strictEqual(link.attr('href'), '/subpage');
   });
 
   test('bounds() returns bounding box', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1');
+    const heading = vibe.find({ css: 'h1' });
     const box = heading.bounds();
     assert.ok(typeof box.x === 'number');
     assert.ok(typeof box.y === 'number');
@@ -405,21 +405,21 @@ describe('Sync API: Element state', () => {
   test('isVisible() returns true for visible elements', () => {
     const vibe = bro.page();
     vibe.go(baseURL);
-    const heading = vibe.find('h1');
+    const heading = vibe.find({ css: 'h1' });
     assert.strictEqual(heading.isVisible(), true);
   });
 
   test('isEnabled() returns true for enabled elements', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/form`);
-    const input = vibe.find('#name');
+    const input = vibe.find({ css: '#name' });
     assert.strictEqual(input.isEnabled(), true);
   });
 
   test('isEditable() returns true for editable elements', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/form`);
-    const input = vibe.find('#name');
+    const input = vibe.find({ css: '#name' });
     assert.strictEqual(input.isEditable(), true);
   });
 });
@@ -429,16 +429,16 @@ describe('Sync API: Scoped find', () => {
   test('element.find() scoped to parent', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/links`);
-    const nested = vibe.find('#nested');
-    const span = nested.find('.inner');
+    const nested = vibe.find({ css: '#nested' });
+    const span = nested.find({ css: '.inner' });
     assert.ok(span.text().includes('span'));
   });
 
   test('element.findAll() scoped to parent', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/links`);
-    const nested = vibe.find('#nested');
-    const spans = nested.findAll('.inner');
+    const nested = vibe.find({ css: '#nested' });
+    const spans = nested.findAll({ css: '.inner' });
     assert.strictEqual(spans.length, 2);
   });
 });
@@ -448,7 +448,7 @@ describe('Sync API: Keyboard, Mouse, Touch', () => {
   test('keyboard.type() types text', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/inputs`);
-    vibe.find('#text-input').click();
+    vibe.find({ css: '#text-input' }).click();
     vibe.keyboard.type('hello');
     const value = vibe.evaluate("document.querySelector('#text-input').value");
     assert.strictEqual(value, 'hello');
@@ -457,7 +457,7 @@ describe('Sync API: Keyboard, Mouse, Touch', () => {
   test('keyboard.press() presses a key', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/inputs`);
-    vibe.find('#text-input').click();
+    vibe.find({ css: '#text-input' }).click();
     vibe.keyboard.press('a');
     assert.ok(true, 'press completed');
   });
@@ -512,7 +512,7 @@ describe('Sync API: Viewport & emulation', () => {
   test('setContent() replaces page HTML', () => {
     const vibe = bro.page();
     vibe.setContent('<html><body><h1>Custom</h1></body></html>');
-    const heading = vibe.find('h1');
+    const heading = vibe.find({ css: 'h1' });
     assert.strictEqual(heading.text(), 'Custom');
   });
 
@@ -554,7 +554,7 @@ describe.requires('dialogs')('Sync API: Dialog auto-handling', () => {
     const vibe = bro.page();
     vibe.go(`${baseURL}/dialog`);
     vibe.onDialog('accept');
-    vibe.find('#alert-btn').click();
+    vibe.find({ css: '#alert-btn' }).click();
     assert.ok(true, 'Dialog was auto-accepted');
   });
 });
@@ -572,7 +572,7 @@ describe.requires('network')('Sync API: Route handler callback', () => {
       });
     });
     vibe.evaluate('doFetch()');
-    const text = vibe.find('#result').text();
+    const text = vibe.find({ css: '#result' }).text();
     const data = JSON.parse(text);
     assert.strictEqual(data.message, 'mocked');
     assert.strictEqual(data.count, 99);
@@ -601,7 +601,7 @@ describe.requires('network')('Sync API: Route handler callback', () => {
     });
     // fetch will fail — check that it doesn't hang
     vibe.evaluate('doFetch().catch(e => { document.getElementById("result").textContent = "ABORTED"; })');
-    const text = vibe.find('#result').text();
+    const text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(text, 'ABORTED');
   });
 
@@ -612,7 +612,7 @@ describe.requires('network')('Sync API: Route handler callback', () => {
       // No action — should default to continue
     });
     vibe.evaluate('doFetch()');
-    const text = vibe.find('#result').text();
+    const text = vibe.find({ css: '#result' }).text();
     const data = JSON.parse(text);
     assert.strictEqual(data.message, 'real data');
   });
@@ -623,7 +623,7 @@ describe.requires('network')('Sync API: Route handler callback', () => {
     // Static action (unchanged API)
     vibe.route('**/api/data', { status: 200, body: '{"static":true}' });
     vibe.evaluate('doFetch()');
-    const text = vibe.find('#result').text();
+    const text = vibe.find({ css: '#result' }).text();
     const data = JSON.parse(text);
     assert.strictEqual(data.static, true);
   });
@@ -635,14 +635,14 @@ describe.requires('network')('Sync API: Route handler callback', () => {
       route.fulfill({ status: 200, body: '{"handler":"active"}' });
     });
     vibe.evaluate('doFetch()');
-    let text = vibe.find('#result').text();
+    let text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(JSON.parse(text).handler, 'active');
 
     // Remove the route — clear result first
     vibe.evaluate('document.getElementById("result").textContent = ""');
     vibe.unroute('**/api/data');
     vibe.evaluate('doFetch()');
-    text = vibe.find('#result').text();
+    text = vibe.find({ css: '#result' }).text();
     const data = JSON.parse(text);
     assert.strictEqual(data.message, 'real data', 'Should get real data after unroute');
   });
@@ -660,7 +660,7 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
       capturedMessage = dialog.message();
       dialog.accept();
     });
-    vibe.find('#alert-btn').click();
+    vibe.find({ css: '#alert-btn' }).click();
     assert.strictEqual(capturedType, 'alert');
     assert.strictEqual(capturedMessage, 'hello');
   });
@@ -671,8 +671,8 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
     vibe.onDialog((dialog) => {
       dialog.dismiss();
     });
-    vibe.find('#confirm-btn').click();
-    const text = vibe.find('#result').text();
+    vibe.find({ css: '#confirm-btn' }).click();
+    const text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(text, 'false');
   });
 
@@ -682,8 +682,8 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
     vibe.onDialog((dialog) => {
       dialog.accept();
     });
-    vibe.find('#confirm-btn').click();
-    const text = vibe.find('#result').text();
+    vibe.find({ css: '#confirm-btn' }).click();
+    const text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(text, 'true');
   });
 
@@ -697,8 +697,8 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
         dialog.dismiss();
       }
     });
-    vibe.find('#prompt-btn').click();
-    const text = vibe.find('#result').text();
+    vibe.find({ css: '#prompt-btn' }).click();
+    const text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(text, 'Claude');
   });
 
@@ -708,8 +708,8 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
     vibe.onDialog(() => {
       // No action — default dismiss
     });
-    vibe.find('#confirm-btn').click();
-    const text = vibe.find('#result').text();
+    vibe.find({ css: '#confirm-btn' }).click();
+    const text = vibe.find({ css: '#result' }).text();
     assert.strictEqual(text, 'false');
   });
 
@@ -722,7 +722,7 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
       dialog.accept();
     });
     // prompt('Enter name:') has no default → empty string
-    vibe.find('#prompt-btn').click();
+    vibe.find({ css: '#prompt-btn' }).click();
     assert.strictEqual(defaultVal, '');
   });
 
@@ -730,7 +730,7 @@ describe.requires('dialogs')('Sync API: Dialog handler callback', () => {
     const vibe = bro.newPage();
     vibe.go(`${baseURL}/prompt`);
     vibe.onDialog('accept');
-    vibe.find('#alert-btn').click();
+    vibe.find({ css: '#alert-btn' }).click();
     assert.ok(true, 'Static accept still works');
   });
 });
@@ -789,7 +789,7 @@ describe.requires('navigation-capture')('Sync API: Capture navigation', () => {
     const vibe = bro.newPage();
     vibe.go(`${baseURL}/nav-test`);
     const result = vibe.capture.navigation(() => {
-      vibe.find('#link').click();
+      vibe.find({ css: '#link' }).click();
     });
     assert.ok(result.url.includes('/page2'), `Should include /page2, got: ${result.url}`);
   });
@@ -801,7 +801,7 @@ describe.requires('downloads')('Sync API: Capture download', () => {
     const vibe = bro.newPage();
     vibe.go(`${baseURL}/download`);
     const result = vibe.capture.download(() => {
-      vibe.find('#download-link').click();
+      vibe.find({ css: '#download-link' }).click();
     });
     assert.ok(result.url.includes('/download-file'), `Should include /download-file, got: ${result.url}`);
     assert.strictEqual(result.suggestedFilename, 'test.txt');
@@ -828,7 +828,7 @@ describe.requires('network')('Sync API: Capture event', () => {
     const vibe = bro.newPage();
     vibe.go(`${baseURL}/nav-test`);
     const result = vibe.capture.event('navigation', () => {
-      vibe.find('#link').click();
+      vibe.find({ css: '#link' }).click();
     });
     assert.ok(result.data, 'Should have event data');
   });
@@ -841,9 +841,9 @@ describe('Sync API: Full checkpoint', () => {
     assert.strictEqual(vibe.title(), 'Test App');
     assert.ok(vibe.url().includes('127.0.0.1'));
 
-    const link = vibe.find('a[href="/subpage"]');
+    const link = vibe.find({ css: 'a[href="/subpage"]' });
     link.click();
-    vibe.find('h3'); // wait for subpage to load
+    vibe.find({ css: 'h3' }); // wait for subpage to load
     assert.strictEqual(vibe.title(), 'Subpage');
 
     const png = vibe.screenshot();

@@ -14,10 +14,10 @@ async def run_async():
         assert callable(bro) and callable(page)
         result = await page('change name')
         assert result['status'] == 'completed' and result['goal'] == 'change name'
-        assert await (await page.find('#name')).value() == 'Updated'
+        assert await (await page.find(css='#name')).value() == 'Updated'
         assert await page.evaluate('window.name') == 'original'
         assert await page.evaluate("sessionStorage.getItem('builder')") == 'preserved'
-        assert await (await other.find('#name')).value() == 'Other'
+        assert await (await other.find(css='#name')).value() == 'Other'
         assert (await page.check('the name persisted'))['status'] == 'passed'
         overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', ai_base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
         assert (await page.run('change name', **overrides))['status'] == 'completed'
@@ -41,10 +41,10 @@ def run_sync():
         assert callable(bro) and callable(page)
         result = page('change name')
         assert result['status'] == 'completed' and result['goal'] == 'change name'
-        assert page.find('#name').value() == 'Updated'
+        assert page.find(css='#name').value() == 'Updated'
         assert page.evaluate('window.name') == 'original'
         assert page.evaluate("sessionStorage.getItem('builder')") == 'preserved'
-        assert other.find('#name').value() == 'Other'
+        assert other.find(css='#name').value() == 'Other'
         assert page.check('the name persisted')['status'] == 'passed'
         overrides = dict(provider='google' if os.environ['VIBIUM_AI_PROVIDER'] == 'anthropic' else 'anthropic', model='run-model', ai_base_url=os.environ['VIBIUM_AI_BASE_URL'], reasoning_effort='')
         assert (page.run('change name', **overrides))['status'] == 'completed'

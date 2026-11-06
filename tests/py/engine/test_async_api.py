@@ -36,14 +36,14 @@ async def test_page_eval_executes_js(async_page, test_server):
 
 async def test_page_find_locates_element(async_page, test_server):
     await async_page.go(test_server)
-    el = await async_page.find("h1")
+    el = await async_page.find(css="h1")
     text = await el.text()
     assert "Welcome" in text
 
 
 async def test_element_click(async_page, test_server):
     await async_page.go(test_server)
-    link = await async_page.find('a[href="/subpage"]')
+    link = await async_page.find(css='a[href="/subpage"]')
     await link.click()
     await async_page.wait_for_url("**/subpage")
     title = await async_page.title()
@@ -52,7 +52,7 @@ async def test_element_click(async_page, test_server):
 
 async def test_element_type(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.type("hello")
     val = await inp.value()
     assert val == "hello"
@@ -60,6 +60,6 @@ async def test_element_type(async_page, test_server):
 
 async def test_element_text(async_page, test_server):
     await async_page.go(test_server)
-    p = await async_page.find("#info")
+    p = await async_page.find(css="#info")
     text = await p.text()
     assert text == "Some info text"

@@ -36,7 +36,7 @@ async function fileInputPage() {
 describe('Upload: setFiles path validation', () => {
   test('a nonexistent path rejects instead of attaching a zero-byte file', async () => {
     const vibe = await fileInputPage();
-    const input = await vibe.find('#f');
+    const input = await vibe.find({ css: '#f' });
 
     await assert.rejects(
       input.setFiles([path.join(tmpdir, 'definitely-not-here.pdf')]),
@@ -49,7 +49,7 @@ describe('Upload: setFiles path validation', () => {
 
   test('a directory rejects', async () => {
     const vibe = await fileInputPage();
-    const input = await vibe.find('#f');
+    const input = await vibe.find({ css: '#f' });
     await assert.rejects(input.setFiles([tmpdir]), /is a directory/);
   });
 
@@ -58,7 +58,7 @@ describe('Upload: setFiles path validation', () => {
     fs.writeFileSync(real, 'content');
 
     const vibe = await fileInputPage();
-    const input = await vibe.find('#m');
+    const input = await vibe.find({ css: '#m' });
     await assert.rejects(
       input.setFiles([real, path.join(tmpdir, 'missing.txt')]),
       /does not exist/
@@ -73,7 +73,7 @@ describe('Upload: setFiles path validation', () => {
     fs.writeFileSync(real, 'seven b');
 
     const vibe = await fileInputPage();
-    const input = await vibe.find('#f');
+    const input = await vibe.find({ css: '#f' });
     await input.setFiles([real]);
 
     const got = await vibe.evaluate(

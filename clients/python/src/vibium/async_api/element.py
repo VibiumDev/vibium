@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from .._locator import ImageInput, handle_selector, info_from, locator_params, resolved_handle, reusable_params
 from .._types import BoundingBox, ElementInfo
 
 if TYPE_CHECKING:
@@ -206,6 +207,11 @@ class Element:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -215,35 +221,37 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
-        params: Dict[str, Any] = {
-            "context": self._context,
-            "scope": self._selector,
-            "timeout": timeout,
-        }
-        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
-                         ("placeholder", placeholder), ("alt", alt), ("title", title),
-                         ("testid", testid), ("xpath", xpath), ("near", near)]:
-            if val is not None:
-                params[key] = val
-
+        """Find a child element; the forms are those of page.find, scoped to this element."""
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context
+        params["scope"] = self._selector
         result = await self._client.send("vibium:element.find", params)
-        info = ElementInfo(
-            tag=result["tag"],
-            text=result["text"],
-            box=BoundingBox(**result["box"]),
-        )
-        child_selector = selector or ""
+        if resolved_handle(params):
+            return Element(self._client, self._context, handle_selector(result), info_from(result))
         # The child keeps the scope so re-resolution stays inside the parent (#779).
-        child_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
-        return Element(self._client, self._context, child_selector, info, None, child_params)
+        return Element(self._client, self._context, params.get("selector", ""), info_from(result), None, reusable_params(params))
 
     async def find_all(
         self,
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -253,25 +261,28 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        params: Dict[str, Any] = {
-            "context": self._context,
-            "scope": self._selector,
-            "timeout": timeout,
-        }
-        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
-                         ("placeholder", placeholder), ("alt", alt), ("title", title),
-                         ("testid", testid), ("xpath", xpath), ("near", near)]:
-            if val is not None:
-                params[key] = val
-
+        """Find all child elements; the forms are those of page.find_all, scoped to this element."""
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context
+        params["scope"] = self._selector
         result = await self._client.send("vibium:element.findAll", params)
-        sel_str = selector or ""
-        # The children keep the scope so re-resolution stays inside the parent (#779).
-        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
+        resolved = resolved_handle(params)
+        reuse = reusable_params(params)
         elements = []
         for el in result["elements"]:
-            info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))
-            elements.append(Element(self._client, self._context, sel_str, info, el.get("index"), sel_params))
+            if resolved:
+                elements.append(Element(self._client, self._context, handle_selector(el), info_from(el)))
+            else:
+                elements.append(Element(self._client, self._context, params.get("selector", ""), info_from(el), el.get("index"), reuse))
         return elements

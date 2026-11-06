@@ -140,9 +140,10 @@ func TestCheckCLIRejectsInvalidSetupBeforeLaunch(t *testing.T) {
 }
 
 func TestCloseClearsBrowserSpecificState(t *testing.T) {
-	h := &Handlers{activeContext: "old-tab", refMaps: map[string]map[string]string{"old-tab": {"@e1": "button"}}, lastMaps: map[string]string{"old-tab": "old-map"}}
+	h := &Handlers{activeContext: "old-tab", lastMaps: map[string]string{"old-tab": "old-map"}}
+	h.refs.For("old-tab").Register(api.RefEntry{Selector: "button", Label: "[button]", Source: api.SourceDOM})
 	h.Close()
-	if h.activeContext != "" || h.refMaps != nil || h.lastMaps != nil {
+	if h.activeContext != "" || h.refs.For("old-tab").Len() != 0 || h.lastMaps != nil {
 		t.Fatal("closed browser retained tab or element state")
 	}
 }

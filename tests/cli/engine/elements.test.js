@@ -30,7 +30,8 @@ after(() => {
 
 describe('CLI: Elements', () => {
   test('find command locates element and returns @ref', () => {
-    const result = execSync(`${VIBIUM} find ${baseURL}/example "a"`, {
+    execSync(`${VIBIUM} go ${baseURL}/example`, { encoding: 'utf-8', timeout: 30000 });
+    const result = execSync(`${VIBIUM} find css "a"`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -106,14 +107,14 @@ describe('CLI: shadow DOM pierce', () => {
 
     // Plain CSS cannot cross the boundary — the baseline the issue documents.
     assert.throws(
-      () => execSync(`${VIBIUM} find "my-card p" --timeout 2s`, {
+      () => execSync(`${VIBIUM} find css "my-card p" --timeout 2s`, {
         encoding: 'utf-8', timeout: 30000, stdio: 'pipe',
       }),
       /not found/,
     );
 
-    assert.match(execSync(`${VIBIUM} find "my-card >> p"`, { encoding: 'utf-8', timeout: 30000 }), /shadow text/);
-    assert.match(execSync(`${VIBIUM} find "my-card >>> #deep"`, { encoding: 'utf-8', timeout: 30000 }), /Deep Button/);
+    assert.match(execSync(`${VIBIUM} find css "my-card >> p"`, { encoding: 'utf-8', timeout: 30000 }), /shadow text/);
+    assert.match(execSync(`${VIBIUM} find css "my-card >>> #deep"`, { encoding: 'utf-8', timeout: 30000 }), /Deep Button/);
   });
 
   test('wait and focus resolve a pierced selector (#748)', () => {
@@ -166,7 +167,7 @@ describe('CLI: shadow DOM pierce', () => {
 
   test('find --all refs inside a shadow root click the found element (#748)', () => {
     execSync(`${VIBIUM} go ${baseURL}/shadow-refs`, { encoding: 'utf-8', timeout: 30000 });
-    const out = execSync(`${VIBIUM} find --all "x-panel >> div > button"`, { encoding: 'utf-8', timeout: 30000 });
+    const out = execSync(`${VIBIUM} find css --all "x-panel >> div > button"`, { encoding: 'utf-8', timeout: 30000 });
     assert.strictEqual(clickAndRead(refFor(out, '\\[button\\] "C"')), 'shadow:C');
   });
 

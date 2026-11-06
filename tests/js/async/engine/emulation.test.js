@@ -45,7 +45,7 @@ describe('JS Emulation', () => {
   test('setContent() replaces page HTML', async () => {
     const vibe = await bro.page();
     await vibe.setContent('<html><body><h1>Hello Vibium</h1></body></html>');
-    const el = await vibe.find('h1');
+    const el = await vibe.find({ css: 'h1' });
     const text = await el.text();
     assert.strictEqual(text, 'Hello Vibium', `h1 text should be "Hello Vibium", got "${text}"`);
   });

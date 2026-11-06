@@ -52,7 +52,7 @@ async def test_xpath_nested(async_page, test_server):
 async def test_combined_locator_click(async_page, test_server):
     """A selector + text locator acts on the element it found (#777)."""
     await async_page.go(test_server + "/combined-locator")
-    el = await async_page.find("form button", text="Go")
+    el = await async_page.find(css="form button", text="Go")
     assert "Go now" in el.info.text
     await el.click()
     out = await async_page.evaluate("document.getElementById('out').textContent")
@@ -62,8 +62,8 @@ async def test_combined_locator_click(async_page, test_server):
 async def test_combined_locator_drag_to(async_page, test_server):
     """drag_to reaches a target found by selector + text (#777)."""
     await async_page.go(test_server + "/combined-locator")
-    target = await async_page.find("form button", text="Go")
-    src = await async_page.find("#src")
+    target = await async_page.find(css="form button", text="Go")
+    src = await async_page.find(css="#src")
     await src.drag_to(target)
     out = await async_page.evaluate("document.getElementById('out').textContent")
     assert out == "go-now"

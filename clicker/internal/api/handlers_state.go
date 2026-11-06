@@ -37,6 +37,19 @@ func (r *Router) handleVibiumElHighlight(session *BrowserSession, cmd bidiComman
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+	if ep.Visual != nil {
+		s := NewAPISession(r, session, context)
+		info, err := VisualElementInfo(s, context, ep.Visual)
+		if err == nil {
+			err = HighlightBox(s, context, info.Box)
+		}
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"highlighted": true})
+		return
+	}
 
 	script, args := buildElStateScript(ep, `(() => {
 		const prevOutline = el.style.outline;
@@ -205,6 +218,17 @@ func (r *Router) handleVibiumElBounds(session *BrowserSession, cmd bidiCommand) 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if ep.Visual != nil {
+		info, err := VisualElementInfo(NewAPISession(r, session, context), context, ep.Visual)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{
+			"x": info.Box.X, "y": info.Box.Y, "width": info.Box.Width, "height": info.Box.Height,
+		})
 		return
 	}
 

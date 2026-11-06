@@ -14,7 +14,7 @@ async def test_download_fires(fresh_async_browser, test_server):
     await vibe.go(test_server + "/download")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = await vibe.find("#download-link")
+    link = await vibe.find(css="#download-link")
     await link.click()
     await vibe.wait(1000)
     assert len(downloads) >= 1
@@ -26,7 +26,7 @@ async def test_download_url(fresh_async_browser, test_server):
     await vibe.go(test_server + "/download")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = await vibe.find("#download-link")
+    link = await vibe.find(css="#download-link")
     await link.click()
     await vibe.wait(1000)
     assert len(downloads) >= 1
@@ -39,7 +39,7 @@ async def test_download_save_as(fresh_async_browser, test_server):
     await vibe.go(test_server + "/download")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = await vibe.find("#download-link")
+    link = await vibe.find(css="#download-link")
     await link.click()
     await vibe.wait(1000)
     assert len(downloads) >= 1
@@ -67,7 +67,7 @@ async def test_set_files(fresh_async_browser, test_server):
         temp_path = f.name
 
     try:
-        inp = await vibe.find("#file-input")
+        inp = await vibe.find(css="#file-input")
         await inp.set_files([temp_path])
         # Verify file was set
         name = await vibe.evaluate("document.getElementById('file-input').files[0]?.name")
@@ -84,7 +84,7 @@ async def test_remove_download_listeners(fresh_async_browser, test_server):
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
     vibe.remove_all_listeners("download")
-    link = await vibe.find("#download-link")
+    link = await vibe.find(css="#download-link")
     await link.click()
     await vibe.wait(1000)
     assert len(downloads) == 0

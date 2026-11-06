@@ -51,7 +51,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     assert.ok(paragraphs.length > 0, 'Should find at least one paragraph');
   });
 
@@ -62,7 +62,7 @@ describe('Element Finding', () => {
     // timeout 0 means a single immediate check, so "none" comes back fast
     // instead of after the default 30s wait.
     const start = Date.now();
-    const none = await vibe.findAll('#definitely-not-on-this-page', { timeout: 0 });
+    const none = await vibe.findAll({ css: '#definitely-not-on-this-page' }, { timeout: 0 });
     assert.deepStrictEqual(none, [], 'Should resolve to an empty array, not throw');
     assert.ok(Date.now() - start < 5000, 'timeout 0 should not wait out the default');
   });
@@ -71,7 +71,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     const first = paragraphs[0];
     assert.ok(first, 'Should return first element');
     assert.ok(first.info.tag === 'p', 'First element should be a <p>');
@@ -81,7 +81,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     const last = paragraphs.at(-1);
     assert.ok(last, 'Should return last element');
     assert.ok(last.info.tag === 'p', 'Last element should be a <p>');
@@ -91,7 +91,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     const zeroth = paragraphs[0];
     assert.ok(zeroth, 'Should return element at index 0');
     assert.ok(zeroth.info.tag === 'p', 'Element at index 0 should be a <p>');
@@ -101,7 +101,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     const count = paragraphs.length;
     assert.ok(typeof count === 'number', 'length should return a number');
     assert.ok(count > 0, 'length should be > 0');
@@ -113,10 +113,10 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const body = await vibe.find('body');
+    const body = await vibe.find({ css: 'body' });
     assert.ok(body, 'Should find body');
 
-    const nested = await body.find('a');
+    const nested = await body.find({ css: 'a' });
     assert.ok(nested, 'Should find nested <a> inside body');
     assert.ok(nested.info.tag === 'a', 'Nested element should be an <a>');
   });
@@ -168,7 +168,7 @@ describe('Element Finding', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     let count = 0;
     for (const el of paragraphs) {
       assert.ok(el.info.tag === 'p', 'Each iterated element should be a <p>');
@@ -184,7 +184,7 @@ describe('Element highlight', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const el = await vibe.find('p');
+    const el = await vibe.find({ css: 'p' });
     await el.highlight();
 
     const outline = await vibe.evaluate('document.querySelector("p").style.outline');
@@ -197,7 +197,7 @@ describe('Stale findAll handles (#338)', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     const texts = paragraphs.map((el) => el.info.text);
     assert.strictEqual(texts.length, 3);
     assert.match(texts[0], /First paragraph/);
@@ -210,7 +210,7 @@ describe('Stale findAll handles (#338)', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const paragraphs = await vibe.findAll('p');
+    const paragraphs = await vibe.findAll({ css: 'p' });
     await vibe.evaluate('document.querySelectorAll("p").forEach(p => p.remove())');
 
     await assert.rejects(
@@ -224,7 +224,7 @@ describe('Stale findAll handles (#338)', () => {
 
     // A plain bad selector must not get the findAll explanation
     await assert.rejects(
-      () => vibe.find('#never-existed', { timeout: 500 }).then((el) => el.text()),
+      () => vibe.find({ css: '#never-existed' }, { timeout: 500 }).then((el) => el.text()),
       (err) => {
         assert.doesNotMatch(err.message, /findAll/, `bad-selector error must stay plain, got: ${err.message}`);
         return true;

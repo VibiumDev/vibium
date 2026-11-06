@@ -84,11 +84,11 @@ class WireContractTest {
     @Test
     void findIsScopedToTheParentElement() {
         page.go(server.baseUrl() + "/links");
-        Element nested = page.find("#nested");
+        Element nested = page.find(new SelectorOptions().css("#nested"));
 
         // info() is what the engine resolved under the scope, so this asserts the
         // scoping itself rather than a second, unscoped lookup.
-        Element inner = nested.find("span");
+        Element inner = nested.find(new SelectorOptions().css("span"));
         assertEquals("span", inner.info().tag());
         assertEquals("Nested span", inner.info().text());
     }
@@ -97,10 +97,10 @@ class WireContractTest {
     void findAllIsScopedToTheParentElement() {
         page.go(server.baseUrl() + "/links");
 
-        List<Element> allLinks = page.findAll("a");
+        List<Element> allLinks = page.findAll(new SelectorOptions().css("a"));
         assertEquals(4, allLinks.size(), "page has four links in total");
 
-        List<Element> nestedSpans = page.find("#nested").findAll("span");
+        List<Element> nestedSpans = page.find(new SelectorOptions().css("#nested")).findAll(new SelectorOptions().css("span"));
         assertEquals(2, nestedSpans.size(), "only the two spans inside #nested are in scope");
     }
 
@@ -154,7 +154,7 @@ class WireContractTest {
             started.countDown();
         });
 
-        page.find("#download-link").click();
+        page.find(new SelectorOptions().css("#download-link")).click();
         assertTrue(started.await(30, TimeUnit.SECONDS), "onDownload should fire");
         assertEquals("test.txt", seen.get().suggestedFilename());
 

@@ -36,7 +36,7 @@ const COMMANDS = {
   // never starts a line with '{'.
   'mouse click': { argv: ['mouse', 'click'], short: 'Click at coordinates or current position', executed: /^\{/m },
   'mouse move': { argv: ['mouse', 'move'], short: 'Move the mouse to coordinates', executed: /^\{/m },
-  tap: { argv: ['tap'], short: 'Tap a touchscreen at coordinates', executed: /^\{/m },
+  tap: { argv: ['tap'], short: 'Tap a touchscreen at coordinates or on an element', executed: /^\{/m },
   swipe: { argv: ['swipe'], short: 'Swipe a touchscreen in a direction or from one point to another', executed: /^\{/m },
   'long-press': { argv: ['long-press'], short: 'Press and hold a touchscreen at coordinates', executed: /^\{/m },
   window: { argv: ['window'], short: 'Get or set the OS browser window size, position, or state', executed: /^\{/m },

@@ -68,12 +68,21 @@ func (r jsRenderer) find(l *locator) string {
 }
 
 func (r jsRenderer) locatorArg(l *locator) string {
-	if len(l.semantic) == 0 {
-		return jsString(l.selector)
+	if l.bare() {
+		return jsString(l.description)
 	}
-	parts := make([]string, len(l.semantic))
-	for i, s := range l.semantic {
-		parts[i] = fmt.Sprintf("%s: %s", s.key, jsString(s.value))
+	var parts []string
+	if l.selector != "" {
+		parts = append(parts, "css: "+jsString(l.selector))
+	}
+	if l.description != "" {
+		parts = append(parts, "description: "+jsString(l.description))
+	}
+	if l.image {
+		parts = append(parts, "image: "+jsString(imagePlaceholder))
+	}
+	for _, s := range l.semantic {
+		parts = append(parts, fmt.Sprintf("%s: %s", s.key, jsString(s.value)))
 	}
 	return "{ " + strings.Join(parts, ", ") + " }"
 }

@@ -47,6 +47,9 @@ runbooks).
 
 | Reader's goal | Document |
 |---------------|----------|
+| Find an element by description or picture | [Finding things by sight](tutorials/finding-things-by-sight.md) |
+| Migrate `find` from CSS to descriptions | [Vibium Find: Natural Language by Default](how-to-guides/find-by-description-and-image.md) |
+| Understand how find resolves, and its matcher | [How find by intent works](explanation/find-by-intent.md) |
 | Record a browser session | [Recording browser sessions](tutorials/recording.md) |
 | Generate a script from a recording | [Record, then codegen](tutorials/recording.md#generate-a-script-from-a-recording) |
 | Look up codegen flags and the action mapping | [Codegen reference](reference/codegen.md) |

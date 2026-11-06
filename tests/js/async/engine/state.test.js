@@ -30,7 +30,7 @@ describe('Element State: text and content', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const text = await h1.text();
     assert.strictEqual(text, 'Example Domain');
   });
@@ -39,7 +39,7 @@ describe('Element State: text and content', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const text = await h1.innerText();
     assert.strictEqual(text, 'Example Domain');
   });
@@ -48,7 +48,7 @@ describe('Element State: text and content', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const html = await h1.html();
     assert.strictEqual(html, 'Example Domain');
   });
@@ -57,7 +57,7 @@ describe('Element State: text and content', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.fill('testuser');
     const val = await input.value();
     assert.strictEqual(val, 'testuser');
@@ -69,7 +69,7 @@ describe('Element State: attributes', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const href = await link.attr('href');
     assert.ok(href.includes('/more-information'), `href should contain /more-information, got: ${href}`);
   });
@@ -78,7 +78,7 @@ describe('Element State: attributes', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const val = await h1.attr('data-nonexistent');
     assert.strictEqual(val, null);
   });
@@ -87,7 +87,7 @@ describe('Element State: attributes', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const attr = await link.attr('href');
     const getAttribute = await link.getAttribute('href');
     assert.strictEqual(attr, getAttribute);
@@ -99,7 +99,7 @@ describe('Element State: bounds', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const box = await h1.bounds();
     assert.ok(typeof box.x === 'number', 'x should be a number');
     assert.ok(typeof box.y === 'number', 'y should be a number');
@@ -111,7 +111,7 @@ describe('Element State: bounds', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const bounds = await h1.bounds();
     const boundingBox = await h1.boundingBox();
     assert.deepStrictEqual(bounds, boundingBox);
@@ -123,7 +123,7 @@ describe('Element State: visibility', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const visible = await h1.isVisible();
     assert.strictEqual(visible, true);
   });
@@ -132,7 +132,7 @@ describe('Element State: visibility', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const hidden = await h1.isHidden();
     assert.strictEqual(hidden, false);
   });
@@ -143,7 +143,7 @@ describe('Element State: enabled/checked/editable', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     const enabled = await input.isEnabled();
     assert.strictEqual(enabled, true);
   });
@@ -152,7 +152,7 @@ describe('Element State: enabled/checked/editable', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/checkboxes`);
 
-    const checkboxes = await vibe.findAll('input[type="checkbox"]');
+    const checkboxes = await vibe.findAll({ css: 'input[type="checkbox"]' });
     // First checkbox is unchecked, second is checked
     const firstChecked = await checkboxes[0].isSet();
     const secondChecked = await checkboxes[1].isSet();
@@ -164,7 +164,7 @@ describe('Element State: enabled/checked/editable', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     const editable = await input.isEditable();
     assert.strictEqual(editable, true);
   });
@@ -175,7 +175,7 @@ describe('Element State: screenshot', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const buf = await link.screenshot();
     assert.ok(buf.length > 0, 'Screenshot buffer should not be empty');
     // PNG magic bytes
@@ -191,7 +191,7 @@ describe('Page Waiting', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     assert.ok(h1, 'find should return an element (auto-waits)');
     const text = await h1.text();
     assert.strictEqual(text, 'Example Domain');
@@ -240,7 +240,7 @@ describe('Fluent chaining: state methods', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const text = await vibe.find('h1').text();
+    const text = await vibe.find({ css: 'h1' }).text();
     assert.strictEqual(text, 'Example Domain');
   });
 
@@ -248,7 +248,7 @@ describe('Fluent chaining: state methods', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const href = await vibe.find('a').attr('href');
+    const href = await vibe.find({ css: 'a' }).attr('href');
     assert.ok(href.includes('/more-information'));
   });
 
@@ -256,7 +256,7 @@ describe('Fluent chaining: state methods', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/example`);
 
-    const visible = await vibe.find('h1').isVisible();
+    const visible = await vibe.find({ css: 'h1' }).isVisible();
     assert.strictEqual(visible, true);
   });
 });
@@ -268,7 +268,7 @@ describe('Element State Checkpoint', () => {
     const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/example`);
 
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const linkText = await link.text();
     console.log('text:', linkText);
     assert.ok(linkText.length > 0, 'link text should not be empty');
@@ -286,12 +286,12 @@ describe('Element State Checkpoint', () => {
     const box = await link.bounds();
     assert.ok(box.width > 0 && box.height > 0);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     console.log('html:', await h1.html());
     assert.strictEqual(await h1.html(), 'Example Domain');
 
     // Wait for element (find auto-waits)
-    await vibe.find('h1');
+    await vibe.find({ css: 'h1' });
 
     // Element screenshot
     const buf = await link.screenshot();

@@ -75,7 +75,7 @@ describe('Selector Strategies', () => {
     try {
       await vibe.go(`${baseURL}/combined-locator`);
       const target = await vibe.find({ selector: 'form button', text: 'Go' });
-      await (await vibe.find('#src')).dragTo(target);
+      await (await vibe.find({ css: '#src' })).dragTo(target);
       assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'go-now');
     } finally {
       await vibe.go(`${baseURL}/selectors`);
@@ -112,8 +112,8 @@ describe('Selector Strategies', () => {
   test('a scoped child re-resolves inside its parent (#779)', async () => {
     try {
       await vibe.go(`${baseURL}/nested-scope`);
-      const parent = await vibe.find('#b');
-      await (await parent.find('.act')).click();
+      const parent = await vibe.find({ css: '#b' });
+      await (await parent.find({ css: '.act' })).click();
       assert.strictEqual(await vibe.evaluate("document.getElementById('out').textContent"), 'B');
     } finally {
       await vibe.go(`${baseURL}/selectors`);
@@ -132,17 +132,17 @@ describe('Selector Strategies', () => {
   test('element methods resolve a pierced selector (#748)', async () => {
     await vibe.go(`${baseURL}/shadow`);
     try {
-      const input = await vibe.find('my-card >> #i');
+      const input = await vibe.find({ css: 'my-card >> #i' });
       await input.focus();
       assert.strictEqual(await vibe.evaluate("document.querySelector('my-card').shadowRoot.activeElement.id"), 'i');
       await input.waitUntil('visible', { timeout: 2000 });
       // findAll elements re-resolve by index.
-      const [button] = await vibe.findAll('my-card >> button');
+      const [button] = await vibe.findAll({ css: 'my-card >> button' });
       await button.focus();
       assert.strictEqual(await vibe.evaluate("document.querySelector('my-card').shadowRoot.activeElement.id"), 'b');
 
       await vibe.go(`${baseURL}/shadow-refs`);
-      const [file] = await vibe.findAll('x-panel >> input');
+      const [file] = await vibe.findAll({ css: 'x-panel >> input' });
       await file.setFiles([__filename]);
       assert.strictEqual(await vibe.evaluate("document.querySelector('x-panel').shadowRoot.querySelector('input').files[0].name"), require('node:path').basename(__filename));
     } finally {

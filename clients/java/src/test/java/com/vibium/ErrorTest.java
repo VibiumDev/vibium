@@ -2,7 +2,7 @@ package com.vibium;
 
 import com.vibium.engine.TestServer;
 import com.vibium.errors.*;
-import com.vibium.types.FindOptions;
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import com.vibium.types.WaitOptions;
 import org.junit.jupiter.api.*;
@@ -40,7 +40,7 @@ class ErrorTest {
     @Test
     void testElementNotFound() {
         assertThrows(ElementNotFoundException.class, () -> {
-            page.find("#nonexistent", new FindOptions().timeout(1000));
+            page.find(new SelectorOptions().css("#nonexistent").timeout(1000));
         });
     }
 
