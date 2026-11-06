@@ -66,7 +66,10 @@ func newSwipeCmd() *cobra.Command {
   # Phone (Roadie): open the app switcher
 
   vibium swipe down --from top
-  # Phone (Roadie): pull down from the top edge
+  # Phone (Roadie): Notification Center, or the Android notification shade
+
+  vibium swipe down --from 400,0
+  # iPhone (Roadie): Control Center, pulled from near the top-right corner
 
   vibium swipe up --from 200,600 --duration 600
   # Swipe up from (200, 600) over 600ms

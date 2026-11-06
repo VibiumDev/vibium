@@ -1251,7 +1251,7 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_swipe",
-			Description: "Swipe a touch pointer, finger held down for the move (for touchscreen devices and phones). Give a direction, or x1, y1, x2, y2. A direction swipe starts at the viewport center, or at an edge with from, and moves half the viewport unless distance says otherwise. On a phone through Roadie, from: bottom with direction: up goes home, and from: top with direction: down pulls down from the top edge",
+			Description: "Swipe a touch pointer, finger held down for the move (for touchscreen devices and phones). Give a direction, or x1, y1, x2, y2. A direction swipe starts at the viewport center, or at an edge with from, and moves half the viewport unless distance says otherwise. On a phone through Roadie, from: bottom with direction: up goes home, from: top with direction: down opens Notification Center or the notification shade, and fromX near the right edge with fromY: 0 opens Control Center on an iPhone",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

@@ -156,7 +156,8 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 - `vibium tap <x> <y>` — tap at coordinates
 - `vibium swipe <up|down|left|right>` — swipe from the viewport center, half the viewport (`--from top|bottom|left|right|x,y`, `--distance px`, `--speed slow|normal|fast|px/s`, `--hold ms`)
 - `vibium swipe up --from bottom` — on a phone: home; add `--speed slow --hold 500` for the app switcher
-- `vibium swipe down --from top` — on a phone: pull down from the top edge (notifications, Control Center)
+- `vibium swipe down --from top` — on a phone: Notification Center / notification shade
+- `vibium swipe down --from <x>,0` — on an iPhone, with x near the right edge: Control Center
 - `vibium swipe <x1> <y1> <x2> <y2>` — swipe from one point to another (`--duration ms`, default 300)
 - `vibium long-press <x> <y>` — press and hold (`--duration ms`, default 500)
 
