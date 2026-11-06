@@ -1,5 +1,5 @@
 export { browser, firefox, chrome, Browser, StartOptions } from './browser';
-export { Page, Keyboard, Mouse, Touch, ScreenshotOptions, A11yNode, FindOptions } from './page';
+export { Page, Keyboard, Mouse, Touch, SwipeDirection, SwipeOptions, ScreenshotOptions, A11yNode, FindOptions } from './page';
 export { Clock, ClockInstallOptions } from './clock';
 export { BrowserContext, Cookie, SetCookieParam, StorageState, OriginState } from './context';
 export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary } from './recording';

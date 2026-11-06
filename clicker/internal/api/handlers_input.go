@@ -420,37 +420,28 @@ func touchPointerActions(actions []map[string]interface{}, context string) map[s
 	}
 }
 
-// handleTouchSwipe handles vibium:touch.swipe — a touch drag from (x1,y1) to
-// (x2,y2) over duration ms (the finger stays down for the move, so the gesture
-// reads as a swipe/fling rather than two taps).
+// handleTouchSwipe handles vibium:touch.swipe.
 func (r *Router) handleTouchSwipe(session *BrowserSession, cmd bidiCommand) {
-	x1, _ := cmd.Params["x1"].(float64)
-	y1, _ := cmd.Params["y1"].(float64)
-	x2, _ := cmd.Params["x2"].(float64)
-	y2, _ := cmd.Params["y2"].(float64)
-	duration := 300.0
-	if d, ok := cmd.Params["duration"].(float64); ok && d > 0 {
-		duration = d
+	opts, err := ParseSwipeOptions(cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
 	}
-
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
-	params := touchPointerActions([]map[string]interface{}{
-		{"type": "pointerMove", "x": int(x1), "y": int(y1), "duration": 0},
-		{"type": "pointerDown", "button": 0},
-		{"type": "pointerMove", "x": int(x2), "y": int(y2), "duration": int(duration)},
-		{"type": "pointerUp", "button": 0},
-	}, context)
-
-	if _, err := r.sendInternalCommand(session, "input.performActions", params); err != nil {
+	p, err := Swipe(NewAPISession(r, session, context), context, opts)
+	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{"swiped": true})
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{
+		"swiped": true,
+		"x1":     p.X1, "y1": p.Y1, "x2": p.X2, "y2": p.Y2,
+		"duration": p.Duration,
+	})
 }
 
 // handleTouchLongPress handles vibium:touch.longPress — a touch press held at

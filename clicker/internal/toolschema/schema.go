@@ -1251,10 +1251,32 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_swipe",
-			Description: "Swipe a touch pointer from one point to another, finger held down for the move (for touchscreen devices and phones)",
+			Description: "Swipe a touch pointer, finger held down for the move (for touchscreen devices and phones). Give a direction, or x1, y1, x2, y2. A direction swipe starts at the viewport center, or at an edge with from, and moves half the viewport unless distance says otherwise. On a phone through Roadie, from: bottom with direction: up goes home, from: top with direction: down opens Notification Center or the notification shade, and from: top-right with direction: down opens Control Center on an iPhone",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"direction": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"up", "down", "left", "right"},
+						"description": "Which way the finger moves. Instead of x1, y1, x2, y2",
+					},
+					"from": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "center"},
+						"description": "Where a direction swipe starts: an edge or corner of the viewport, or its center (default)",
+					},
+					"fromX": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate a direction swipe starts at, with fromY. Instead of from",
+					},
+					"fromY": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate a direction swipe starts at, with fromX",
+					},
+					"distance": map[string]interface{}{
+						"type":        "number",
+						"description": "How far a direction swipe moves, in pixels (default: half the viewport)",
+					},
 					"x1": map[string]interface{}{
 						"type":        "number",
 						"description": "X coordinate to start from",
@@ -1271,13 +1293,20 @@ func GetToolSchemas() []Tool {
 						"type":        "number",
 						"description": "Y coordinate to end at",
 					},
+					"speed": map[string]interface{}{
+						"type":        []string{"string", "number"},
+						"description": "slow, normal, fast, or pixels per second. Instead of duration",
+					},
 					"duration": map[string]interface{}{
 						"type":        "number",
 						"description": "How long the move takes in milliseconds (default: 300)",
 						"default":     300,
 					},
+					"hold": map[string]interface{}{
+						"type":        "number",
+						"description": "Milliseconds the finger rests at the end before lifting (a slow swipe up from the bottom with a hold opens the app switcher)",
+					},
 				},
-				"required":             []string{"x1", "y1", "x2", "y2"},
 				"additionalProperties": false,
 			},
 		},

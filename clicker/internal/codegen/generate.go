@@ -234,11 +234,46 @@ func mapAction(s Step) (c *call, skip bool, note string) {
 			return &call{recv: "mouse", method: method, args: argValues(s.Params, params)}, false, ""
 		}
 	case "touch":
+		if method == "swipe" && s.Params["direction"] != nil {
+			return &call{recv: "touch", method: "swipe", args: swipeArgs(s.Params)}, false, ""
+		}
 		if params, ok := touchArgs[method]; ok {
 			return &call{recv: "touch", method: method, args: argValues(s.Params, params)}, false, ""
 		}
 	}
 	return nil, false, "skipped unsupported action: " + s.Title
+}
+
+// option is a trailing named argument: a key in a JavaScript options object, a
+// keyword argument in Python.
+type option struct {
+	js, py       string
+	jsVal, pyVal interface{}
+}
+
+type options []option
+
+// pyTuple renders as a Python tuple; JavaScript never sees one.
+type pyTuple []interface{}
+
+func swipeArgs(p map[string]interface{}) []interface{} {
+	var opts options
+	if from, ok := p["from"]; ok {
+		opts = append(opts, option{"from", "from_", from, from})
+	} else if x, ok := p["fromX"]; ok {
+		opts = append(opts, option{"from", "from_",
+			map[string]interface{}{"x": x, "y": p["fromY"]}, pyTuple{x, p["fromY"]}})
+	}
+	for _, k := range [][2]string{{"distance", "distance"}, {"speed", "speed"}, {"duration", "duration_ms"}, {"hold", "hold_ms"}} {
+		if v, ok := p[k[0]]; ok {
+			opts = append(opts, option{k[0], k[1], v, v})
+		}
+	}
+	args := []interface{}{p["direction"]}
+	if len(opts) > 0 {
+		args = append(args, opts)
+	}
+	return args
 }
 
 // argValues reads params in client-argument order, dropping absent optional

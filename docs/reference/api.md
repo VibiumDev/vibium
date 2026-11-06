@@ -175,7 +175,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 115 | Tap at coordinates | `vibium:touch.tap` | `vibium tap <x> <y>` | `browser_tap` | `touch.tap(x, y)` | `touch.tap(x, y)` | `touch.tap(x, y)` |
-| 221 | Swipe between coordinates | `vibium:touch.swipe` | `vibium swipe <x1> <y1> <x2> <y2>` | `browser_swipe` | `touch.swipe(x1, y1, x2, y2, durationMs?)` | `touch.swipe(x1, y1, x2, y2, duration_ms?)` | ⬜ |
+| 221 | Swipe in a direction (up, down, left, right; from an edge or point; speed, hold) or between coordinates | `vibium:touch.swipe` | `vibium swipe <direction>` | `browser_swipe` | `touch.swipe(direction, opts?)` | `touch.swipe(direction, from_=, speed=, hold_ms=)` | ⬜ |
 | 222 | Long-press at coordinates | `vibium:touch.longPress` | `vibium long-press <x> <y>` | `browser_long_press` | `touch.longPress(x, y, durationMs?)` | `touch.long_press(x, y, duration_ms?)` | ⬜ |
 
 ## Clock

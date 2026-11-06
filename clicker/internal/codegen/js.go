@@ -106,6 +106,12 @@ func (r jsRenderer) literal(v interface{}) string {
 			parts = append(parts, fmt.Sprintf("%s: %s", jsObjectKey(k), r.literal(x[k])))
 		}
 		return "{ " + strings.Join(parts, ", ") + " }"
+	case options:
+		parts := make([]string, len(x))
+		for i, o := range x {
+			parts[i] = fmt.Sprintf("%s: %s", jsObjectKey(o.js), r.literal(o.jsVal))
+		}
+		return "{ " + strings.Join(parts, ", ") + " }"
 	}
 	return jsString(fmt.Sprint(v))
 }

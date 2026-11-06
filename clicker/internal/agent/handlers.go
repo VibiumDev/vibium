@@ -3995,38 +3995,30 @@ func (h *Handlers) browserTap(args map[string]interface{}) (*ToolsCallResult, er
 	}, nil
 }
 
-// browserSwipe drags a touch pointer from (x1, y1) to (x2, y2), finger held
-// down for the move. duration (ms) controls the move, default 300.
+// browserSwipe drags a touch pointer, finger held down for the move.
 func (h *Handlers) browserSwipe(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
 	}
 
-	x1, ok1 := argFloat(args, "x1")
-	y1, ok2 := argFloat(args, "y1")
-	x2, ok3 := argFloat(args, "x2")
-	y2, ok4 := argFloat(args, "y2")
-	if !ok1 || !ok2 || !ok3 || !ok4 {
-		return nil, fmt.Errorf("x1, y1, x2 and y2 are required")
+	opts, err := api.ParseSwipeOptions(args)
+	if err != nil {
+		return nil, err
 	}
-	duration := 300
-	if d, ok := argFloat(args, "duration"); ok && d > 0 {
-		duration = int(d)
-	}
-
 	s := h.newSession()
 	ctx, err := s.GetContextID()
 	if err != nil {
 		return nil, err
 	}
-	if err := api.TouchSwipe(s, ctx, int(x1), int(y1), int(x2), int(y2), duration); err != nil {
+	p, err := api.Swipe(s, ctx, opts)
+	if err != nil {
 		return nil, fmt.Errorf("failed to swipe: %w", err)
 	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", int(x1), int(y1), int(x2), int(y2)),
+			Text: fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", p.X1, p.Y1, p.X2, p.Y2),
 		}},
 	}, nil
 }
