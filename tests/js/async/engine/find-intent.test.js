@@ -18,7 +18,7 @@ for (const key of Object.keys(process.env)) {
 }
 process.env.VIBIUM_LOAD_AI_ENV = '0';
 
-let server, baseURL, bro, dir, patternPath;
+let server, baseURL, bro, vibe, dir, patternPath;
 
 before(async () => {
   ({ server, baseURL } = await createTestServer());
@@ -26,6 +26,9 @@ before(async () => {
   patternPath = path.join(dir, 'pattern.png');
   fs.writeFileSync(patternPath, PATTERN_PNG);
   bro = await browser.start({ headless: true });
+  // One page for the whole file: a new tab per test is what stalls on a
+  // loaded machine, and every test here navigates first anyway.
+  vibe = await bro.page();
 });
 
 after(async () => {
@@ -35,7 +38,6 @@ after(async () => {
 });
 
 async function gallery() {
-  const vibe = await bro.newPage();
   await vibe.go(`${baseURL}/find-images`);
   return vibe;
 }
@@ -126,7 +128,6 @@ describe('find: image', () => {
   });
 
   test('a region with no element of its own is driven by coordinates', async () => {
-    const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/find-canvas`);
     await vibe.waitForFunction('window.__drawn === true');
     const el = await vibe.find({ image: PATTERN_PNG });

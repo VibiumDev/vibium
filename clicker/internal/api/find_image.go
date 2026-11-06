@@ -47,7 +47,7 @@ func captureScreen(s Session, context string) (*screenCapture, error) {
 	if err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
 	}
-	w, h, err := ScreenSize(s, context)
+	w, h, err := captureSize(s, context)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +65,23 @@ func captureScreen(s Session, context string) (*screenCapture, error) {
 	}
 	c.state, _ = readPageState(s, context)
 	return c, nil
+}
+
+// captureSize is the CSS size of what a viewport screenshot shows: the
+// visual viewport, which excludes a classic scrollbar. window.innerWidth
+// includes the scrollbar, so scaling by it shifted every box rightward on
+// Linux and Windows while macOS overlay scrollbars hid the error.
+// documentElement.clientHeight is not an alternative: in quirks mode it is
+// the whole document.
+func captureSize(s Session, context string) (int, int, error) {
+	out, err := EvalSimpleScript(s, context, "() => window.visualViewport ? Math.round(visualViewport.width) + ',' + Math.round(visualViewport.height) : ''")
+	if err == nil {
+		var w, h int
+		if n, _ := fmt.Sscanf(out, "%d,%d", &w, &h); n == 2 && w > 0 && h > 0 {
+			return w, h, nil
+		}
+	}
+	return ScreenSize(s, context)
 }
 
 func readPageState(s Session, context string) (*PageState, bool) {
