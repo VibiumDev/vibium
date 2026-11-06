@@ -47,7 +47,7 @@ func newReadyCmd() *cobra.Command {
 	root := &cobra.Command{
 		Annotations: map[string]string{"standalone": "true"},
 		Use:         "ready", Short: "Check browser installation and AI setup",
-		Long:    "Check the selected local browser executable files, then test AI when configured. No browser or driver is launched.\nDoes not install browsers or change existing sessions. Missing AI is optional here; ready ai requires it.\nAI checks make up to two model requests (API charges may apply). Empty AI variables are loaded from ~/.config/vibium/ai.env unless VIBIUM_LOAD_AI_ENV=0.",
+		Long:    "Check the selected local browser executable files, then test AI when configured. No browser or driver is launched.\nDoes not install browsers or change existing sessions. Missing AI is optional here; ready ai requires it.\nAI checks make up to two model requests (API charges may apply). Empty AI variables are loaded from ~/.config/vibium/ai.env unless VIBIUM_LOAD_AI_ENV=0.\nAI settings are written by vibium setup ai and live in ~/.config/vibium/ai.env; the report names the file it used.",
 		Example: "  vibium ready\n  # Checks browser installation and configured AI; reports fixes or READY.\n  vibium ready --json\n  # Structured readiness results; exit 0 when requested checks pass, otherwise 1.",
 		Args:    cobra.NoArgs,
 	}
@@ -120,11 +120,11 @@ func runReadiness(cmd *cobra.Command, args []string, aiProbe func(context.Contex
 			result.Ready = result.Ready && part.Ready
 			result.Checks = append(result.Checks, part.Checks...)
 			result.Notes = append(result.Notes, part.Notes...)
-			if config.Validate() != nil {
-				result.Notes = append(result.Notes, readyEnvNote()...)
-			}
+			// Say where the settings came from on success too: the checks
+			// hide values, so this line is how a reader learns what to edit.
+			result.Notes = append(result.Notes, readyEnvNote()...)
 		} else {
-			result.Checks = append(result.Checks, setupCheck{"ai", "skipped", "AI is not configured; optional for direct browser automation.", "For Run or Check, configure VIBIUM_AI_PROVIDER and VIBIUM_AI_MODEL, then run vibium ready ai."})
+			result.Checks = append(result.Checks, setupCheck{"ai", "skipped", "AI is not configured; optional for direct browser automation.", "For Run, Check, or find by description, run vibium setup ai, then vibium ready ai."})
 			result.Notes = append(result.Notes, readyEnvNote()...)
 		}
 	}
@@ -165,9 +165,9 @@ func readyEnvNote() []string {
 		if ok, reason := envfile.Eligible(path); !ok {
 			return []string{"Found " + shown + " but did not load it: " + reason + ". Make it a regular file readable only by you: chmod 600 " + shown + "."}
 		}
-		return []string{"Loaded " + shown + " for empty AI variables. Nonempty process environment still wins."}
+		return []string{"AI settings: loaded " + shown + " for empty AI variables; nonempty process environment still wins. Change them with vibium setup ai, or edit that file."}
 	}
-	return []string{"No AI settings file yet. Run: vibium config init; edit " + shown + "."}
+	return []string{"No AI settings file yet. Run vibium setup ai, or vibium config init and edit " + shown + "."}
 }
 
 func writeReadiness(cmd *cobra.Command, result setupResult) {

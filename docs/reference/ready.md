@@ -14,9 +14,10 @@ Installed: chrome (stable) — /path/to/chrome
 [PASSED] browser.installation: chrome (stable) and its required executable files are installed.
 [SKIPPED] browser.connection: Browser launch and BiDi connectivity are not tested by readiness.
 [SKIPPED] ai: AI is not configured; optional for direct browser automation.
-  Fix: For Run or Check, configure VIBIUM_AI_PROVIDER and VIBIUM_AI_MODEL, then run vibium ready ai.
+  Fix: For Run, Check, or find by description, run vibium setup ai, then vibium ready ai.
 
 READY: Browser installation checks passed; launch and BiDi connectivity were not tested.
+No AI settings file yet. Run vibium setup ai, or vibium config init and edit ~/.config/vibium/ai.env.
 ```
 
 No AI settings means plain `ready` skips AI. Partially configured or failing AI
@@ -83,8 +84,10 @@ clears inherited endpoint/effort defaults. A conflicting provider argument
 and flag is an error. No per-call option changes later defaults.
 
 Vibium loads `~/.config/vibium/ai.env` for empty AI variables. Nonempty process
-environment still wins. If the file is missing, readiness points at
-`vibium config init`. Credentials and raw provider error bodies are not displayed.
+environment still wins. The report ends by naming the file it loaded, or by
+pointing at `vibium setup ai` when there is none, so you can see where a
+setting comes from and how to change it. Credentials and raw provider error
+bodies are not displayed.
 
 `ready ai` works with no browser installed and ignores browser settings.
 Use it before [checking an archive](../tutorials/check-from-a-recording.md).
