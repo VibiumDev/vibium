@@ -62,7 +62,8 @@ test('ready ai loads empty AI variables from ai.env and still hides the key', as
     const result = await run(env, args);
     assert.equal(result.code, 1);
     assert.match(result.stdout, /VIBIUM_AI_MODEL/);
-    assert.match(result.stdout, /Loaded ~\/\.config\/vibium\/ai\.env/);
+    assert.match(result.stdout, /loaded ~\/\.config\/vibium\/ai\.env/);
+    assert.match(result.stdout, /vibium setup ai/);
     assert.doesNotMatch(result.stdout, /No AI settings file yet/);
     assert.doesNotMatch(result.stdout, /does not load it automatically/);
     assert.doesNotMatch(result.stdout + result.stderr, /secret-file-marker/);
@@ -93,7 +94,7 @@ test('ready ai names the skipped ai.env instead of claiming it loaded', { skip: 
   assert.match(result.stdout, /Found ~\/\.config\/vibium\/ai\.env but did not load it/);
   assert.match(result.stdout, /0644/);
   assert.match(result.stdout, /chmod 600/);
-  assert.doesNotMatch(result.stdout, /Loaded ~\/\.config\/vibium\/ai\.env/);
+  assert.doesNotMatch(result.stdout, /loaded ~\/\.config\/vibium\/ai\.env/);
   assert.doesNotMatch(result.stdout + result.stderr, /secret-file-marker/);
   noBrowser(env);
 });
