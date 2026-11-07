@@ -47,15 +47,12 @@ func captureScreen(s Session, context string) (*screenCapture, error) {
 	if err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
 	}
-	w, h, err := captureSize(s, context)
-	if err != nil {
-		return nil, err
-	}
-	c := &screenCapture{img: img, data: data, width: img.Bounds().Dx(), height: img.Bounds().Dy(), cssW: w, cssH: h}
-	c.scaleX = float64(c.width) / float64(w)
-	c.scaleY = float64(c.height) / float64(h)
-	if c.scaleX <= 0 || c.scaleY <= 0 {
+	c := &screenCapture{img: img, data: data, width: img.Bounds().Dx(), height: img.Bounds().Dy()}
+	if c.width == 0 || c.height == 0 {
 		return nil, fmt.Errorf("screenshot failed: empty image")
+	}
+	if err := c.measure(s, context); err != nil {
+		return nil, err
 	}
 	if len(data) > vlmScreenshotLimit {
 		var buf bytes.Buffer
@@ -67,21 +64,39 @@ func captureScreen(s Session, context string) (*screenCapture, error) {
 	return c, nil
 }
 
-// captureSize is the CSS size of what a viewport screenshot shows: the
-// visual viewport, which excludes a classic scrollbar. window.innerWidth
-// includes the scrollbar, so scaling by it shifted every box rightward on
-// Linux and Windows while macOS overlay scrollbars hid the error.
-// documentElement.clientHeight is not an alternative: in quirks mode it is
-// the whole document.
-func captureSize(s Session, context string) (int, int, error) {
-	out, err := EvalSimpleScript(s, context, "() => window.visualViewport ? Math.round(visualViewport.width) + ',' + Math.round(visualViewport.height) : ''")
+// measure sets the CSS size the screenshot covers and the scale to it.
+// A classic scrollbar is inside innerWidth but outside the visual viewport,
+// and browsers differ on which one a screenshot covers (Chrome the visual
+// viewport, Firefox the window). The capture is at the device pixel ratio,
+// so the width whose ratio lands on the DPR is the one covered.
+// documentElement.clientWidth is no help: in quirks mode it is the document.
+func (c *screenCapture) measure(s Session, context string) error {
+	out, err := EvalSimpleScript(s, context, "() => [innerWidth, innerHeight, visualViewport ? visualViewport.width : innerWidth, visualViewport ? visualViewport.height : innerHeight, devicePixelRatio].join(',')")
+	var innerW, innerH, visualW, visualH, dpr float64
 	if err == nil {
-		var w, h int
-		if n, _ := fmt.Sscanf(out, "%d,%d", &w, &h); n == 2 && w > 0 && h > 0 {
-			return w, h, nil
+		if n, _ := fmt.Sscanf(out, "%g,%g,%g,%g,%g", &innerW, &innerH, &visualW, &visualH, &dpr); n != 5 {
+			err = fmt.Errorf("unexpected viewport metrics %q", out)
 		}
 	}
-	return ScreenSize(s, context)
+	if err != nil || innerW <= 0 || innerH <= 0 || dpr <= 0 {
+		w, h, err := ScreenSize(s, context)
+		if err != nil {
+			return err
+		}
+		c.cssW, c.cssH = w, h
+		c.scaleX, c.scaleY = float64(c.width)/float64(w), float64(c.height)/float64(h)
+		return nil
+	}
+	pick := func(px int, inner, visual float64) float64 {
+		if visual <= 0 || math.Abs(float64(px)/inner-dpr) <= math.Abs(float64(px)/visual-dpr) {
+			return inner
+		}
+		return visual
+	}
+	w, h := pick(c.width, innerW, visualW), pick(c.height, innerH, visualH)
+	c.cssW, c.cssH = int(math.Round(w)), int(math.Round(h))
+	c.scaleX, c.scaleY = float64(c.width)/w, float64(c.height)/h
+	return nil
 }
 
 func readPageState(s Session, context string) (*PageState, bool) {
@@ -131,8 +146,9 @@ func matchImage(s Session, context string, ref image.Image, shot *screenCapture,
 		}
 		f := Found{Label: visualLabel("", "image", box), Role: "image", Box: box, Index: i, Source: SourceImage, Method: "sift"}
 		if loc.Details {
+			// scale is per CSS pixel: a 2x screenshot of an unscaled image reports 1.
 			f.Details = map[string]interface{}{
-				"inliers": m.Inliers, "matched": m.Matched, "scale": round3(m.Scale), "rotation": round3(m.Rotation),
+				"inliers": m.Inliers, "matched": m.Matched, "scale": round3(m.Scale / shot.scaleX), "rotation": round3(m.Rotation),
 				"score": round3(m.Score), "refKeypoints": stats.RefKeypoints, "screenKeypoints": stats.ScreenKeypoints,
 			}
 		}
