@@ -113,8 +113,11 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium text` — get all page text
 - `vibium text "<selector>"` — get text of a specific element
 - `vibium html` — get page HTML (use `--outer` for outerHTML)
-- `vibium find "<selector>"` — find element, return `@e1` ref (clickable with `vibium click @e1`)
-- `vibium find "<selector>" --all` — find all matching elements → `@e1`, `@e2`, ... (`--limit N`)
+- `vibium find "<description>"` — find by what it is ("the Add to Cart button"), return an `@eN` ref (clickable with `vibium click @eN`); page names and roles first, then a vision model if one is configured
+- `vibium find "<description>" --all` — every match → `@e1`, `@e2`, ... (`--limit N`)
+- `vibium find css "<selector>"` — exact CSS; what a bare string meant before. `vibium find tag h1` for a tag
+- `vibium find image <file.png>` — where a reference picture appears; matched locally, model only as fallback (`--strategy cv` keeps it local; `--all` for every copy; `--json` for boxes)
+- `--strategy auto|cv|vlm|tree`, `--details` for method and raw scores, `--provider/--model` to override the AI settings for one call
 - `vibium find text "Sign In"` — find element by text content → `@e1`
 - `vibium find label "Email"` — find input by label → `@e1`
 - `vibium find placeholder "Search"` — find by placeholder → `@e1`
@@ -129,7 +132,7 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 - `vibium a11y-tree` — accessibility tree (`--everything` for all nodes)
 
 ### Interaction
-- `vibium click "<selector>"` — click an element (also accepts `@ref` from map)
+- `vibium click "<selector>"` — click an element (also accepts `@ref` from find or map)
 - `vibium dblclick "<selector>"` — double-click an element
 - `vibium type "<selector>" "<text>"` — type into an input (appends to existing value)
 - `vibium type "<text>"` — type into whatever has focus (a focused field, or a device with no DOM)
@@ -153,7 +156,7 @@ vibium go https://example.com && vibium map && vibium click @e3 && vibium diff m
 
 ### Touch Primitives
 For touchscreen devices and phones (for example driving a phone through Roadie).
-- `vibium tap <x> <y>` — tap at coordinates
+- `vibium tap <x> <y>` — tap at coordinates; `vibium tap @e1` taps an element from find or map
 - `vibium swipe <up|down|left|right>` — swipe from the viewport center, half the viewport (`--from top|bottom|left|right|top-right|…|x,y`, `--distance px`, `--speed slow|normal|fast|px/s`, `--hold ms`)
 - `vibium swipe up --from bottom` — on a phone: home; add `--speed slow --hold 500` for the app switcher
 - `vibium swipe down --from top` — on a phone: Notification Center / notification shade
@@ -294,6 +297,17 @@ vibium map --selector "nav"        # Only map elements in <nav>
 vibium map --selector "#sidebar"   # Only map elements in #sidebar
 vibium map --selector "form"       # Only map form controls
 ```
+
+### Find by intent, interact by reference
+```sh
+vibium find "the Add to Cart button"   # → @e1 [button] "Add to Cart"   (page tree; no model call)
+vibium click @e1
+vibium find "the red Save button"      # needs sight: a vision model if VIBIUM_AI_* is set, else a clear error
+vibium find css "button.primary"       # exact CSS, never a model
+vibium find image thumbnail.png --all --json   # every copy, with bounding boxes
+vibium tap @e2                         # tap a ref on a touchscreen
+```
+A bare string is a description, not a selector: `vibium find h1` looks for something named "h1". Use `find css h1`.
 
 ### Semantic find (no CSS selectors needed)
 ```sh

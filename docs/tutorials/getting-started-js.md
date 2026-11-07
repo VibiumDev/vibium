@@ -120,7 +120,7 @@ fs.writeFileSync('screenshot.png', png)
 console.log('Saved screenshot.png')
 
 // Find and click the link
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 console.log('Found link:', link.text())
 link.click()
 console.log('Clicked!')

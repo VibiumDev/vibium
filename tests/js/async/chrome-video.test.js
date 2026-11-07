@@ -69,7 +69,7 @@ describe('Chrome video recording', () => {
       await vibe.go(baseURL);
 
       await vibe.context.recording.start({ path: null });
-      await vibe.find('a[href="/login"]', { timeout: 5000 });
+      await vibe.find({ css: 'a[href="/login"]' }, { timeout: 5000 });
       const result = await vibe.context.recording.stop();
       assert.ok(result.bytes.length > 0, 'Recording should still deliver');
       assert.ok(result.videoUnavailable, 'Result should say why there is no video');

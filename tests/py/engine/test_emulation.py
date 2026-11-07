@@ -27,7 +27,7 @@ async def test_set_viewport(async_page, test_server):
 
 async def test_set_content(async_page, test_server):
     await async_page.set_content("<h1>Injected</h1>")
-    el = await async_page.find("h1")
+    el = await async_page.find(css="h1")
     text = await el.text()
     assert text == "Injected"
 
@@ -143,6 +143,6 @@ async def test_set_content_replaces(async_page, test_server):
     await async_page.go(test_server)
     assert await async_page.title() == "Test App"
     await async_page.set_content("<h1>Replaced</h1>")
-    el = await async_page.find("h1")
+    el = await async_page.find(css="h1")
     text = await el.text()
     assert text == "Replaced"

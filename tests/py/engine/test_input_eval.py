@@ -9,7 +9,7 @@ pytestmark = pytest.mark.capability("core")
 
 async def test_keyboard_type(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.type("typed via keyboard")
@@ -18,7 +18,7 @@ async def test_keyboard_type(async_page, test_server):
 
 async def test_keyboard_press(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.press("a")
@@ -27,7 +27,7 @@ async def test_keyboard_press(async_page, test_server):
 
 async def test_keyboard_down_up(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.down("Shift")
@@ -40,7 +40,7 @@ async def test_keyboard_down_up(async_page, test_server):
 
 async def test_mouse_click(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     box = await inp.bounds()
     await async_page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await async_page.keyboard.type("mouse click")
@@ -132,7 +132,7 @@ async def test_expose(async_page, test_server):
 async def test_checkpoint(async_page, test_server):
     """End-to-end: keyboard, mouse, eval, screenshot."""
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.type("checkpoint")

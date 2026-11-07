@@ -65,12 +65,21 @@ func (r pyRenderer) find(l *locator) string {
 // locatorArg renders the recorded locator form: a positional CSS selector or
 // semantic keyword arguments.
 func (r pyRenderer) locatorArg(l *locator) string {
-	if len(l.semantic) == 0 {
-		return pyString(l.selector)
+	if l.bare() {
+		return pyString(l.description)
 	}
-	parts := make([]string, len(l.semantic))
-	for i, s := range l.semantic {
-		parts[i] = fmt.Sprintf("%s=%s", s.key, pyString(s.value))
+	var parts []string
+	if l.selector != "" {
+		parts = append(parts, "css="+pyString(l.selector))
+	}
+	if l.description != "" {
+		parts = append(parts, "description="+pyString(l.description))
+	}
+	if l.image {
+		parts = append(parts, "image="+pyString(imagePlaceholder))
+	}
+	for _, s := range l.semantic {
+		parts = append(parts, fmt.Sprintf("%s=%s", s.key, pyString(s.value)))
 	}
 	return strings.Join(parts, ", ")
 }

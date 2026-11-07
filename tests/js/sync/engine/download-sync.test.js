@@ -62,7 +62,7 @@ describe('Sync API: onDownload', () => {
       downloads.push(dl);
     });
 
-    vibe.find('#download-link').click();
+    vibe.find({ css: '#download-link' }).click();
     waitForDownload(vibe, downloads);
 
     assert.ok(downloads.length >= 1, `Expected at least 1 download, got ${downloads.length}`);
@@ -79,7 +79,7 @@ describe('Sync API: onDownload', () => {
       downloads.push(dl);
     });
 
-    vibe.find('#download-link').click();
+    vibe.find({ css: '#download-link' }).click();
     waitForDownload(vibe, downloads);
 
     assert.ok(downloads.length >= 1);
@@ -98,7 +98,7 @@ describe('Sync API: onDownload', () => {
 
     vibe.removeAllListeners('download');
 
-    vibe.find('#download-link').click();
+    vibe.find({ css: '#download-link' }).click();
     vibe.wait(1000);
 
     assert.strictEqual(downloads.length, 0, 'Should not capture downloads after removeAllListeners');
@@ -113,7 +113,7 @@ describe('Sync API: onDownload', () => {
       downloads.push(dl);
     });
 
-    vibe.find('#download-link').click();
+    vibe.find({ css: '#download-link' }).click();
     waitForDownload(vibe, downloads);
 
     assert.ok(downloads.length >= 1);
@@ -126,7 +126,7 @@ describe('Sync API: onDownload', () => {
     vibe.go(`${baseURL}/download?name=captured.txt`);
 
     const result = vibe.capture.download(() => {
-      vibe.find('#download-link').click();
+      vibe.find({ css: '#download-link' }).click();
     });
 
     assert.ok(result.url.includes('/download-file'));

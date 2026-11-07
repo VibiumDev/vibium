@@ -7,6 +7,7 @@ from ..run import RunResult
 
 import shutil
 import warnings
+from .._locator import ImageInput
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .._types import A11yNode
@@ -193,6 +194,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -202,11 +208,20 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
+        """Find an element; see the async page.find for the forms."""
         async_el = self._loop.run(self._async.find(
-            selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+            selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
         return Element(async_el, self._loop)
 
@@ -215,6 +230,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -224,20 +244,22 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all matching elements.
-
-        Each element carries a snapshot of its tag, text, and box taken at
-        find_all time, readable via el.info with no further round trips:
-        [el.info.text for el in els]. Live reads like el.text() re-resolve
-        the element and fail if the page has changed since find_all.
-        """
-        async_elements = self._loop.run(self._async.find_all(
-            selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+        """Find all matching elements; see the async page.find_all."""
+        async_els = self._loop.run(self._async.find_all(
+            selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
-        return [Element(el, self._loop) for el in async_elements]
+        return [Element(e, self._loop) for e in async_els]
 
     # --- Waiting ---
 

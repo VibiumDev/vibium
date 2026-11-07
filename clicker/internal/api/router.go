@@ -104,6 +104,7 @@ type BrowserSession struct {
 	recorder           *Recorder
 	lastContext        string     // last browsing context resolved by a command
 	lastURL            string     // last known page URL, updated from load/navigation events
+	refs               RefTables  // @eN tables, one per browsing context
 	lastElementBox     *BoxInfo   // last resolved element box, for recording
 	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
 	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
@@ -459,6 +460,12 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		if cmd.modelDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
 			session.dispatchMu.Lock()
 			defer session.dispatchMu.Unlock()
+		}
+
+		// A client may address an element by the @eN ref a find returned.
+		if err := ResolveRefParams(session.refs.For(commandContextParam(cmd.Params)), cmd.Method, cmd.Params); err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
 		}
 
 		var callId string

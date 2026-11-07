@@ -34,8 +34,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 14 | Get current URL | `vibium:page.url` | `vibium url` | `browser_get_url` | `page.url()` | `page.url()` | `page.url()` |
 | 15 | Get page title | `vibium:page.title` | `vibium title` | `browser_get_title` | `page.title()` | `page.title()` | `page.title()` |
 | 16 | Get page HTML | `vibium:page.content` | — | — | `page.content()` | `page.content()` | `page.content()` |
-| 17 | Find a single element | `vibium:page.find` | `vibium find <sel>` | `browser_find` | `page.find(sel, opts?)` | `page.find(sel, **opts)` | `page.find(sel, options?)` |
-| 18 | Find all matching elements | `vibium:page.findAll` | `vibium find --all <sel>` | `browser_find_all` | `page.findAll(sel, opts?)` | `page.find_all(sel, **opts)` | `page.findAll(sel, options?)` |
+| 17 | Find a single element by description (a bare string), css, tag, semantic locator, or reference image; strategy auto, cv, vlm, or tree | `vibium:page.find` | `vibium find <description>` | `browser_find` | `page.find(locator, opts?)` | `page.find(locator, **opts)` | `page.find(locator, options?)` |
+| 18 | Find all matching elements, same locator forms | `vibium:page.findAll` | `vibium find --all <description>` | `browser_find_all` | `page.findAll(locator, opts?)` | `page.find_all(locator, **opts)` | `page.findAll(locator, options?)` |
 | 19 | Take a page screenshot | `vibium:page.screenshot` | `vibium screenshot` | `browser_screenshot` | `page.screenshot(opts?)` | `page.screenshot(opts?)` | `page.screenshot(options?)` |
 | 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf(opts?)` | `page.pdf(**opts)` | `page.pdf(options?)` |
 | 21 | Evaluate JavaScript | `vibium:page.eval` | `vibium eval <expr>` | `browser_evaluate` | `page.evaluate(expr)` | `page.evaluate(expr)` | `page.evaluate(expr)` |
@@ -304,6 +304,10 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 206 | Find by title attribute | — | `vibium find title <val>` | — | — | — | — |
 | 207 | Find by test id | — | `vibium find testid <val>` | — | — | — | — |
 | 208 | Find by XPath | — | `vibium find xpath <val>` | — | — | — | — |
+| 225 | Find by CSS selector, explicitly | — | `vibium find css <val>` | — | — | — | — |
+| 226 | Find by HTML tag | — | `vibium find tag <val>` | — | — | — | — |
+| 227 | Find by description, explicitly | — | `vibium find description <val>` | — | — | — | — |
+| 228 | Find where a reference image appears | — | `vibium find image <path>` | — | — | — | — |
 | 209 | Diagnostic: launch the browser directly | — | `vibium launch-test` | — | — | — | — |
 | 210 | Diagnostic: test a websocket endpoint | — | `vibium ws-test <url>` | — | — | — | — |
 | 211 | Diagnostic: test a BiDi endpoint | — | `vibium bidi-test <url>` | — | — | — | — |

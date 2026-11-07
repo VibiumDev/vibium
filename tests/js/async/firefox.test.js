@@ -147,11 +147,11 @@ describe('JS Firefox', () => {
       const title = await vibe.evaluate('document.title');
       assert.match(title, /The Internet/i, 'Should load the test page');
 
-      const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
+      const link = await vibe.find({ css: 'a[href="/login"]' }, { timeout: 5000 });
       await link.click();
       // find() waits out the navigation; url() right after click races
       // Firefox's transient about:blank
-      const form = await vibe.find('#login', { timeout: 10000 });
+      const form = await vibe.find({ css: '#login' }, { timeout: 10000 });
       assert.ok(form, 'Click should navigate to the login page');
       assert.match(await vibe.url(), /login/, 'Should be on the login page');
 
@@ -176,9 +176,9 @@ describe('JS Firefox', () => {
 
       // Keep the video fixture free of credential fields: visiting the login
       // page intentionally suppresses visual artifacts under recorder privacy.
-      const link = await vibe.find('a[href="/checkboxes"]', { timeout: 5000 });
+      const link = await vibe.find({ css: 'a[href="/checkboxes"]' }, { timeout: 5000 });
       await link.click();
-      await vibe.find('#checkboxes', { timeout: 10000 });
+      await vibe.find({ css: '#checkboxes' }, { timeout: 10000 });
 
       const result = await vibe.context.recording.stop();
       assert.strictEqual(result.path, zipPath, 'Result should carry the delivery path');

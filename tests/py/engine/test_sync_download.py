@@ -20,7 +20,7 @@ def test_download_fires(sync_browser, test_server):
     vibe.go(test_server + "/download")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
     _wait_for_download(vibe, downloads)
     assert len(downloads) >= 1
@@ -34,7 +34,7 @@ def test_download_url_filename(sync_browser, test_server):
     vibe.go(test_server + "/download?name=named.txt")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
     _wait_for_download(vibe, downloads)
     assert len(downloads) >= 1
@@ -49,7 +49,7 @@ def test_remove_download_listeners(sync_browser, test_server):
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
     vibe.remove_all_listeners("download")
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
     vibe.wait(1000)
     assert len(downloads) == 0

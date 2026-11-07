@@ -274,58 +274,76 @@ public class Element {
 
     // ── Scoped Finding ──────────────────────────────────────────
 
-    /** Find a child element by CSS selector. */
-    public Element find(String childSelector) {
-        return find(childSelector, (FindOptions) null);
+    /** Find a child element by natural-language description, scoped to this element. */
+    public Element find(String description) {
+        return find(description, (FindOptions) null);
     }
 
-    /** Find a child element by CSS selector with options. */
-    public Element find(String childSelector, FindOptions options) {
-        JsonObject params = scopedParams();
-        params.addProperty("selector", childSelector);
+    /** Find a child element by description with options. */
+    public Element find(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
         if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+            locator.timeout(options.timeout());
         }
-        JsonObject result = client.send("vibium:element.find", params);
-        // The child keeps the scope so re-resolution stays inside the parent (#779).
-        return elementFromResult(result, childSelector, scopedLocator(null));
+        return find(locator, true);
     }
 
-    /** Find a child element by semantic selector. */
+    /** Find a child element by locator (css, tag, semantic fields, description, or image), scoped to this element. */
     public Element find(SelectorOptions childOptions) {
+        return find(childOptions, false);
+    }
+
+    private Element find(SelectorOptions childOptions, boolean bare) {
         JsonObject params = scopedParams();
         for (Map.Entry<String, Object> entry : childOptions.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:element.find", params);
-        return elementFromResult(result, "", scopedLocator(childOptions));
-    }
-
-    /** Find all child elements by CSS selector. */
-    public List<Element> findAll(String childSelector) {
-        return findAll(childSelector, (FindOptions) null);
-    }
-
-    /** Find all child elements by CSS selector with options. */
-    public List<Element> findAll(String childSelector, FindOptions options) {
-        JsonObject params = scopedParams();
-        params.addProperty("selector", childSelector);
-        if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+        if (childOptions.resolvedHandle()) {
+            return elementFromResult(result, Page.handleSelector(result));
         }
-        JsonObject result = client.send("vibium:element.findAll", params);
-        // The children keep the scope so re-resolution stays inside the parent (#779).
-        return elementsFromResult(result, childSelector, scopedLocator(null));
+        // The child keeps the scope so re-resolution stays inside the parent (#779).
+        return elementFromResult(result, childOptions.css() != null ? childOptions.css() : "", scopedLocator(childOptions));
     }
 
-    /** Find all child elements by semantic selector. */
+    /** Find all child elements by description, scoped to this element. */
+    public List<Element> findAll(String description) {
+        return findAll(description, (FindOptions) null);
+    }
+
+    /** Find all child elements by description with options. */
+    public List<Element> findAll(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
+        if (options != null && options.timeout() != null) {
+            locator.timeout(options.timeout());
+        }
+        return findAll(locator, true);
+    }
+
+    /** Find all child elements by locator, scoped to this element. */
     public List<Element> findAll(SelectorOptions childOptions) {
+        return findAll(childOptions, false);
+    }
+
+    private List<Element> findAll(SelectorOptions childOptions, boolean bare) {
         JsonObject params = scopedParams();
         for (Map.Entry<String, Object> entry : childOptions.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:element.findAll", params);
-        return elementsFromResult(result, "", scopedLocator(childOptions));
+        if (childOptions.resolvedHandle()) {
+            List<Element> elements = new ArrayList<>();
+            JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new JsonArray();
+            for (int i = 0; i < arr.size(); i++) {
+                JsonObject el = arr.get(i).getAsJsonObject();
+                elements.add(new Element(client, contextId, Page.handleSelector(el), 0, parseElementInfo(el), null));
+            }
+            return elements;
+        }
+        // The children keep the scope so re-resolution stays inside the parent (#779).
+        return elementsFromResult(result, childOptions.css() != null ? childOptions.css() : "", scopedLocator(childOptions));
     }
 
     // ── Internal ────────────────────────────────────────────────
@@ -411,6 +429,12 @@ public class Element {
     private ElementInfo parseElementInfo(JsonObject obj) {
         String tag = obj.has("tag") ? obj.get("tag").getAsString() : "";
         String txt = obj.has("text") ? obj.get("text").getAsString() : "";
+        String ref = obj.has("ref") && !obj.get("ref").isJsonNull() ? obj.get("ref").getAsString() : null;
+        String role = obj.has("role") && !obj.get("role").isJsonNull() ? obj.get("role").getAsString() : null;
+        String name = obj.has("name") && !obj.get("name").isJsonNull() ? obj.get("name").getAsString() : null;
+        String source = obj.has("source") && !obj.get("source").isJsonNull() ? obj.get("source").getAsString() : null;
+        String resolved = obj.has("selector") && !obj.get("selector").isJsonNull() ? obj.get("selector").getAsString() : null;
+
         BoundingBox box = null;
         if (obj.has("box") && obj.get("box").isJsonObject()) {
             JsonObject b = obj.getAsJsonObject("box");
@@ -421,7 +445,7 @@ public class Element {
                 b.get("height").getAsDouble()
             );
         }
-        return new ElementInfo(tag, txt, box);
+        return new ElementInfo(tag, txt, box, ref, role, name, source, resolved);
     }
 
     @Override

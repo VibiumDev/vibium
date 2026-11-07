@@ -24,6 +24,11 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// find --json answers with an array of refs; render it like the text form.
+function refs(r) {
+  return r.result.map((m) => `${m.ref} ${m.label}`).join('\n');
+}
+
 // `daemon status` exits non-zero when nothing is running, which is the contract.
 // Use this where the output matters but the exit code is expected to be non-zero.
 function clickerAllowExit(args, opts = {}) {
@@ -117,10 +122,10 @@ describe('Daemon: Multi-step workflow', () => {
     );
 
     // Find element on same page (no URL needed — session persists)
-    const findResult = clickerJSON(`find ${baseURL}/example "h1"`);
+    const findResult = clickerJSON('find css "h1"');
     assert.strictEqual(findResult.ok, true, 'Find should succeed');
     assert.ok(
-      findResult.result.includes('h1'),
+      refs(findResult).includes('h1'),
       'Should find h1 element'
     );
   });

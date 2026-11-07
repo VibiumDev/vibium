@@ -42,7 +42,7 @@ func ConfigFromParams(role string, params map[string]interface{}) (Config, error
 // ResolveConfig uses shared AI defaults without mutating the process environment.
 // Switching provider clears provider-specific defaults before applying options.
 func ResolveConfig(role string, overrides Overrides) (Config, error) {
-	if role != "check" && role != "run" {
+	if role != "check" && role != "run" && role != "find" {
 		return Config{}, fmt.Errorf("unknown model operation")
 	}
 	c := Config{Role: role}

@@ -5,6 +5,7 @@ import com.vibium.Page;
 import com.vibium.Element;
 import com.vibium.Browser;
 
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import org.junit.jupiter.api.*;
 
@@ -43,7 +44,7 @@ class PageFindTest {
     @Test
     void testFindBySelector() {
         page.go(server.baseUrl());
-        Element heading = page.find("h1");
+        Element heading = page.find(new SelectorOptions().css("h1"));
         assertNotNull(heading);
         assertTrue(heading.text().contains("Welcome"));
     }
@@ -51,7 +52,7 @@ class PageFindTest {
     @Test
     void testFindAll() {
         page.go(server.baseUrl() + "/links");
-        List<Element> links = page.findAll(".link");
+        List<Element> links = page.findAll(new SelectorOptions().css(".link"));
         assertEquals(4, links.size());
     }
 

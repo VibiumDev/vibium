@@ -12,6 +12,7 @@ import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
 import { DialogSync, DialogData } from './dialog';
 import { ElementInfo, SelectorOptions } from '../element';
+import { bridgeLocator } from './locator';
 import { A11yNode, ScreenshotOptions, PdfOptions, FindOptions } from '../page';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
@@ -206,12 +207,12 @@ export class PageSync {
   // --- Finding ---
 
   find(selector: string | SelectorOptions, options?: FindOptions): ElementSync {
-    const result = this._bridge.call<{ elementId: number; info: ElementInfo }>('page.find', [this._pageId, selector, options]);
+    const result = this._bridge.call<{ elementId: number; info: ElementInfo }>('page.find', [this._pageId, bridgeLocator(selector), options]);
     return new ElementSync(this._bridge, result.elementId, result.info);
   }
 
   findAll(selector: string | SelectorOptions, options?: FindOptions): ElementSync[] {
-    const result = this._bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('page.findAll', [this._pageId, selector, options]);
+    const result = this._bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('page.findAll', [this._pageId, bridgeLocator(selector), options]);
     return result.elements.map(e => new ElementSync(this._bridge, e.elementId, e.info));
   }
 

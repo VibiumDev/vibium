@@ -231,30 +231,42 @@ public class Page {
 
     // ── Finding Elements ────────────────────────────────────────
 
-    /** Find a single element by CSS selector. */
-    public Element find(String selector) {
-        return find(selector, (FindOptions) null);
+    /**
+     * Find a single element by natural-language description, e.g.
+     * "the Add to Cart button". For an exact locator use
+     * {@link #find(SelectorOptions)} with css, tag, role, text, or image.
+     */
+    public Element find(String description) {
+        return find(description, (FindOptions) null);
     }
 
-    /** Find a single element by CSS selector with options. */
-    public Element find(String selector, FindOptions options) {
-        JsonObject params = contextParams();
-        params.addProperty("selector", selector);
+    /** Find a single element by description with options. */
+    public Element find(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
         if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+            locator.timeout(options.timeout());
         }
-        JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, selector, 0);
+        return find(locator, true);
     }
 
-    /** Find a single element by semantic selector. */
+    /** Find a single element by locator: css, tag, semantic fields, a description, or a reference image. */
     public Element find(SelectorOptions options) {
+        return find(options, false);
+    }
+
+    // bare marks a description that came from a plain string, which the
+    // binary refuses when it reads like a selector.
+    private Element find(SelectorOptions options, boolean bare) {
         JsonObject params = contextParams();
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, "", 0, locatorParams(options));
+        if (options.resolvedHandle()) {
+            return elementFromResult(result, handleSelector(result), 0);
+        }
+        return elementFromResult(result, options.css() != null ? options.css() : "", 0, locatorParams(options));
     }
 
     /**
@@ -267,8 +279,8 @@ public class Page {
      * reads like {@link Element#text()} re-resolve the element and fail if
      * the page has changed since findAll.
      */
-    public List<Element> findAll(String selector) {
-        return findAll(selector, (FindOptions) null);
+    public List<Element> findAll(String description) {
+        return findAll(description, (FindOptions) null);
     }
 
     /**
@@ -276,14 +288,12 @@ public class Page {
      * the timeout for at least one match, then returns an empty list if
      * there is none. A timeout of 0 checks once without waiting.
      */
-    public List<Element> findAll(String selector, FindOptions options) {
-        JsonObject params = contextParams();
-        params.addProperty("selector", selector);
+    public List<Element> findAll(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
         if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+            locator.timeout(options.timeout());
         }
-        JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, selector);
+        return findAll(locator, true);
     }
 
     /**
@@ -292,12 +302,26 @@ public class Page {
      * is none.
      */
     public List<Element> findAll(SelectorOptions options) {
+        return findAll(options, false);
+    }
+
+    private List<Element> findAll(SelectorOptions options, boolean bare) {
         JsonObject params = contextParams();
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, "", locatorParams(options));
+        if (options.resolvedHandle()) {
+            List<Element> elements = new ArrayList<>();
+            JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new JsonArray();
+            for (int i = 0; i < arr.size(); i++) {
+                JsonObject el = arr.get(i).getAsJsonObject();
+                elements.add(new Element(client, contextId, handleSelector(el), 0, parseElementInfo(el), null));
+            }
+            return elements;
+        }
+        return elementsFromResult(result, options.css() != null ? options.css() : "", locatorParams(options));
     }
 
     // ── Screenshots & PDF ───────────────────────────────────────
@@ -902,9 +926,22 @@ public class Page {
         return elements;
     }
 
+    /** The selector a found element is addressed by: its DOM selector, or its @ref for a visual match. */
+    static String handleSelector(JsonObject result) {
+        if (result.has("selector") && !result.get("selector").isJsonNull()) return result.get("selector").getAsString();
+        if (result.has("ref") && !result.get("ref").isJsonNull()) return result.get("ref").getAsString();
+        return "";
+    }
+
     private ElementInfo parseElementInfo(JsonObject obj) {
         String tag = obj.has("tag") ? obj.get("tag").getAsString() : "";
         String text = obj.has("text") ? obj.get("text").getAsString() : "";
+        String ref = obj.has("ref") && !obj.get("ref").isJsonNull() ? obj.get("ref").getAsString() : null;
+        String role = obj.has("role") && !obj.get("role").isJsonNull() ? obj.get("role").getAsString() : null;
+        String name = obj.has("name") && !obj.get("name").isJsonNull() ? obj.get("name").getAsString() : null;
+        String source = obj.has("source") && !obj.get("source").isJsonNull() ? obj.get("source").getAsString() : null;
+        String resolved = obj.has("selector") && !obj.get("selector").isJsonNull() ? obj.get("selector").getAsString() : null;
+
         BoundingBox box = null;
         if (obj.has("box") && obj.get("box").isJsonObject()) {
             JsonObject b = obj.getAsJsonObject("box");
@@ -915,7 +952,7 @@ public class Page {
                 b.get("height").getAsDouble()
             );
         }
-        return new ElementInfo(tag, text, box);
+        return new ElementInfo(tag, text, box, ref, role, name, source, resolved);
     }
 
     static Object jsonToJava(JsonElement el) {

@@ -135,13 +135,13 @@ loop:
 This means your code doesn't need retry logic. When you write:
 
 ```javascript
-await page.find('#submit').click();
+await page.find({ css: '#submit' }).click();
 ```
 
 Vibium will automatically wait up to 30 seconds for the element to become clickable. You can customize the timeout per-action:
 
 ```javascript
-await page.find('#submit').click({ timeout: 5000 }); // 5 seconds
+await page.find({ css: '#submit' }).click({ timeout: 5000 }); // 5 seconds
 ```
 
 ## Element Finding
@@ -153,8 +153,8 @@ Before actionability checks can run, Vibium needs to locate the element. It supp
 The simplest case — pass a CSS selector string:
 
 ```javascript
-await page.find('button.submit').click();
-await page.find('#login-form input[type="email"]').fill('user@example.com');
+await page.find({ css: 'button.submit' }).click();
+await page.find({ css: '#login-form input[type="email"]' }).fill('user@example.com');
 ```
 
 Internally this uses `document.querySelector()` (or `querySelectorAll()` with an `index` param).

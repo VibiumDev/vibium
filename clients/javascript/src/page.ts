@@ -3,6 +3,7 @@ import { RunOptions, RunResult, sendRun } from './run';
 import { CheckOptions, CheckResult, sendCheck } from './check';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
+import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
 import { BrowserContext } from './context';
 import { Route } from './route';
 import { Request, Response } from './network';
@@ -52,21 +53,6 @@ export interface PdfOptions {
   shrinkToFit?: boolean;
 }
 
-interface VibiumFindResult {
-  tag: string;
-  text: string;
-  box: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
-interface VibiumFindAllResult {
-  elements: Array<{ tag: string; text: string; box: { x: number; y: number; width: number; height: number }; index: number }>;
-  count: number;
-}
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -824,42 +810,35 @@ export class Page {
     return result.value;
   }
 
-  /** Find an element by CSS selector or semantic options. Waits for element to exist. */
+  /**
+   * Find an element. A string is a natural-language description; an options
+   * object gives an exact locator (css, tag, role, text, ...) or a reference
+   * image. Waits for the element to exist.
+   */
   find(selector: string | SelectorOptions, options?: FindOptions): FluentElement {
     const promise = (async () => {
       const params: Record<string, unknown> = {
         context: this.contextId,
         timeout: options?.timeout,
+        ...(await locatorParams(selector)),
       };
+      if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      debug('page.find', { ...params, image: params.image ? '<image>' : undefined });
 
-      if (typeof selector === 'string') {
-        debug('page.find', { selector, timeout: options?.timeout });
-        params.selector = selector;
-      } else {
-        debug('page.find', { ...selector, timeout: options?.timeout });
-        Object.assign(params, selector);
-        if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      const result = await this.client.send<FoundElement>('vibium:page.find', params);
+      const info = infoFrom(result);
+      if (resolvedHandle(selector)) {
+        return new Element(this.client, this.contextId, handleSelector(result), info);
       }
-
-      const result = await this.client.send<VibiumFindResult>('vibium:page.find', params);
-
-      const info: ElementInfo = {
-        tag: result.tag,
-        text: result.text,
-        box: result.box,
-      };
-
-      const selectorStr = typeof selector === 'string' ? selector : '';
-      const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
-      return new Element(this.client, this.contextId, selectorStr, info, undefined, selectorParams);
+      return new Element(this.client, this.contextId, cssOf(params), info, undefined, reusableParams(params));
     })();
     return fluent(promise);
   }
 
   /**
-   * Find all elements matching a CSS selector or semantic options. Waits up
-   * to the timeout for at least one match, then returns an empty array if
-   * there is none. A timeout of 0 checks once without waiting.
+   * Find all elements matching a description, image, css, or semantic
+   * options. Waits up to the timeout for at least one match, then returns an
+   * empty array if there is none. A timeout of 0 checks once without waiting.
    *
    * Each element carries a snapshot of its tag, text, and box taken at
    * findAll time, readable via `el.info` with no further round trips:
@@ -870,24 +849,18 @@ export class Page {
     const params: Record<string, unknown> = {
       context: this.contextId,
       timeout: options?.timeout,
+      ...(await locatorParams(selector)),
     };
+    if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+    debug('page.findAll', { ...params, image: params.image ? '<image>' : undefined });
 
-    if (typeof selector === 'string') {
-      debug('page.findAll', { selector, timeout: options?.timeout });
-      params.selector = selector;
-    } else {
-      debug('page.findAll', { ...selector, timeout: options?.timeout });
-      Object.assign(params, selector);
-      if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
-    }
-
-    const result = await this.client.send<VibiumFindAllResult>('vibium:page.findAll', params);
-
-    const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    const result = await this.client.send<{ elements: FoundElement[]; count: number }>('vibium:page.findAll', params);
+    const resolved = resolvedHandle(selector);
+    const reuse = reusableParams(params);
     return result.elements.map((el) => {
-      const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
-      return new Element(this.client, this.contextId, selectorStr, info, el.index, selectorParams);
+      const info = infoFrom(el);
+      if (resolved) return new Element(this.client, this.contextId, handleSelector(el), info);
+      return new Element(this.client, this.contextId, cssOf(params), info, el.index, reuse);
     });
   }
 

@@ -96,7 +96,7 @@ describe('Daemon CLI: Codegen', () => {
     assert.ok(script.includes('// group: log in'), 'Should carry the group as a comment');
     assert.ok(script.includes(".fill('tom\\'s name')"), 'Should escape the quoted username');
     assert.ok(script.includes(".fill('[REDACTED]')"), 'Password values stay redacted');
-    assert.ok(script.includes("find('button[type=submit]').click()"), 'Should replay the click');
+    assert.ok(script.includes("find({ css: 'button[type=submit]' }).click()"), 'Should replay the click');
     assert.ok(script.includes('await bro.stop();'), 'Should stop the browser');
   });
 
@@ -105,7 +105,7 @@ describe('Daemon CLI: Codegen', () => {
     assert.ok(script.includes('from vibium import browser'), 'Should import the Python client');
     assert.ok(script.includes('bro = browser.start()'), 'Should start a browser');
     assert.ok(script.includes(`vibe.go('${baseURL}/login')`), 'Should replay the navigation');
-    assert.ok(script.includes("vibe.find('#username').fill('tom\\'s name')"), 'Should replay the fill');
+    assert.ok(script.includes("vibe.find(css='#username').fill('tom\\'s name')"), 'Should replay the fill');
     assert.ok(script.includes('# group: log in'), 'Should carry the group as a comment');
     assert.ok(script.includes('bro.stop()'), 'Should stop the browser');
     assert.ok(!script.includes('await'), 'Sync Python has no await');

@@ -23,6 +23,11 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// find --json answers with an array of refs; render it like the text form.
+function refs(r) {
+  return r.result.map((m) => `${m.ref} ${m.label}`).join('\n');
+}
+
 function stopDaemon() {
   try {
     execSync(`${VIBIUM} daemon stop`, { encoding: 'utf-8', timeout: 10000 });
@@ -73,9 +78,10 @@ describe('Daemon: Rapid sequential commands', () => {
     assert.strictEqual(evalResult.ok, true);
     assert.ok(evalResult.result.includes('Example Domain'));
 
-    const find = clickerJSON(`find ${baseURL}/example "h1"`);
+    clickerJSON(`go ${baseURL}/example`);
+    const find = clickerJSON('find css "h1"');
     assert.strictEqual(find.ok, true);
-    assert.ok(find.result.includes('h1'));
+    assert.ok(refs(find).includes('h1'));
   });
 });
 
@@ -86,7 +92,7 @@ describe('Daemon: Error recovery', () => {
 
     // Find with nonexistent selector
     try {
-      clickerJSON(`find ${baseURL}/example ".nonexistent-element-xyz"`);
+      clickerJSON('find css ".nonexistent-element-xyz" --timeout 2s');
       assert.fail('Should have thrown');
     } catch (e) {
       // Expected — command exits non-zero on error in --json mode

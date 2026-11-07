@@ -419,7 +419,7 @@ await vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 await ctx.recording.stopGroup()
 
 await ctx.recording.startGroup('check out')
-await vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+await vibe.find({ css: 'a[href="/cart"]' }).click()   // the cart icon has no accessible name — CSS fallback
 await vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
 await vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
 await vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
@@ -443,7 +443,7 @@ vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 ctx.recording.stopGroup()
 
 ctx.recording.startGroup('check out')
-vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+vibe.find({ css: 'a[href="/cart"]' }).click()   // the cart icon has no accessible name — CSS fallback
 vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
 vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
 vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
@@ -469,7 +469,7 @@ await vibe.find(role='button', text='Add to Cart').click()
 await ctx.recording.stop_group()
 
 await ctx.recording.start_group('check out')
-await vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+await vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
 await vibe.find(role='button', text='Proceed to Checkout').click()
 await vibe.find(label='Unit Designation').fill('VAR-347')
 await vibe.find(label='Service Bay').fill('Bay 14-C')
@@ -495,7 +495,7 @@ vibe.find(role='button', text='Add to Cart').click()
 ctx.recording.stop_group()
 
 ctx.recording.start_group('check out')
-vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
 vibe.find(role='button', text='Proceed to Checkout').click()
 vibe.find(label='Unit Designation').fill('VAR-347')
 vibe.find(label='Service Bay').fill('Bay 14-C')

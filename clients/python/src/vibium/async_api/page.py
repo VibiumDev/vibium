@@ -15,6 +15,7 @@ import weakref
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .. import errors
+from .._locator import ImageInput, handle_selector, info_from, locator_params, resolved_handle, reusable_params
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
@@ -302,6 +303,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -311,27 +317,47 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
-        """Find an element by CSS selector or semantic options."""
-        params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
-                         ("placeholder", placeholder), ("alt", alt), ("title", title),
-                         ("testid", testid), ("xpath", xpath), ("near", near)]:
-            if val is not None:
-                params[key] = val
+        """Find an element.
 
+        A bare string is a natural-language description: find("the Add to Cart
+        button"). Exact locators are keywords: css="h1", tag="h1",
+        role="button", text="Add to Cart", and the rest. image= locates a
+        reference picture (a path or PNG/JPEG bytes) on screen.
+
+        strategy: "auto" (default) uses page evidence first and a vision model
+        only when needed and configured; "cv" is local image matching only;
+        "vlm" is the vision model only; "tree" is the page tree only. provider,
+        model, ai_base_url and reasoning_effort override the AI settings for
+        this call, as for check and run.
+        """
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context_id
         result = await self._client.send("vibium:page.find", params)
-        info = ElementInfo(tag=result["tag"], text=result["text"], box=BoundingBox(**result["box"]))
-        sel_str = selector or ""
-        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
-        return Element(self._client, self._context_id, sel_str, info, None, sel_params)
+        if resolved_handle(params):
+            return Element(self._client, self._context_id, handle_selector(result), info_from(result))
+        return Element(self._client, self._context_id, params.get("selector", ""), info_from(result), None, reusable_params(params))
 
     async def find_all(
         self,
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -341,27 +367,34 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all elements matching a selector or semantic options.
+        """Find all elements matching a description, image, css, or semantic
+        locator; see find for the forms.
 
         Waits up to the timeout for at least one match, then returns an empty
         list if there is none. A timeout of 0 checks once without waiting.
         """
-        params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        for key, val in [("selector", selector), ("role", role), ("text", text), ("label", label),
-                         ("placeholder", placeholder), ("alt", alt), ("title", title),
-                         ("testid", testid), ("xpath", xpath), ("near", near)]:
-            if val is not None:
-                params[key] = val
-
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context_id
         result = await self._client.send("vibium:page.findAll", params)
-        sel_str = selector or ""
-        sel_params = {k: v for k, v in params.items() if k not in ("context", "timeout")}
+        resolved = resolved_handle(params)
+        reuse = reusable_params(params)
         elements = []
         for el in result["elements"]:
-            info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))
-            elements.append(Element(self._client, self._context_id, sel_str, info, el.get("index"), sel_params))
+            if resolved:
+                elements.append(Element(self._client, self._context_id, handle_selector(el), info_from(el)))
+            else:
+                elements.append(Element(self._client, self._context_id, params.get("selector", ""), info_from(el), el.get("index"), reuse))
         return elements
 
     # --- Waiting ---

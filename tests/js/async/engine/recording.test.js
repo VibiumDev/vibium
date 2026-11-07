@@ -123,7 +123,7 @@ describe('Recording: basic start/stop', () => {
 
       await ctx.recording.start({ path: null, name: 'basic-test' });
       await vibe.go(baseURL);
-      await vibe.find('#btn').click();
+      await vibe.find({ css: '#btn' }).click();
       await vibe.wait(200);
       const { bytes: zipBuffer } = await ctx.recording.stop();
 
@@ -173,7 +173,7 @@ describe('Recording: basic start/stop', () => {
 
       await vibe.context.recording.start({ path: null, name: 'context-shortcut' });
       await vibe.go(baseURL);
-      await vibe.find('#btn').click();
+      await vibe.find({ css: '#btn' }).click();
       await vibe.wait(200);
       const { bytes: zipBuffer } = await vibe.context.recording.stop();
 
@@ -256,7 +256,7 @@ describe('Recording: screenshots', () => {
       await vibe.go(baseURL);
       // Wait for some screenshots to be captured
       await vibe.wait(500);
-      await vibe.find('#btn').click();
+      await vibe.find({ css: '#btn' }).click();
       await vibe.wait(500);
       const { bytes: zipBuffer } = await ctx.recording.stop();
 
@@ -296,7 +296,7 @@ describe('Recording: snapshots', () => {
 
       await ctx.recording.start({ path: null, snapshots: true });
       await vibe.go(baseURL);
-      await vibe.find('#btn').click();
+      await vibe.find({ css: '#btn' }).click();
       await vibe.wait(200);
       const { bytes: zipBuffer } = await ctx.recording.stop();
 
@@ -421,7 +421,7 @@ describe('Recording: groups', () => {
       await vibe.go(baseURL);
 
       await ctx.recording.startGroup('login flow');
-      await vibe.find('#btn').click();
+      await vibe.find({ css: '#btn' }).click();
       await vibe.wait(200);
       await ctx.recording.stopGroup();
 

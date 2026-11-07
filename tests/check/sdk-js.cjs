@@ -16,11 +16,11 @@ const { browser } = require('../../clients/javascript/dist/' + (process.env.CHEC
     await page.context.recording.start({ video: false, path: process.env.CHECK_TEST_OUTPUT });
     const result = await page.check('changing my display name persists after refresh');
     assert.equal(result.status, 'passed');
-    assert.equal(await (await page.find('#name')).value(), 'Updated');
+    assert.equal(await (await page.find({ css: '#name' })).value(), 'Updated');
     assert.equal(await page.evaluate('window.name'), 'original');
     assert.equal(await page.evaluate("localStorage.getItem('builder')"), 'preserved');
     assert.equal(await page.evaluate("sessionStorage.getItem('builder')"), 'preserved');
-    assert.equal(await (await other.find('#name')).value(), 'Other');
+    assert.equal(await (await other.find({ css: '#name' })).value(), 'Other');
     await page.context.recording.stop();
     const archive = await bro.check('archive evidence', { record: process.env.CHECK_TEST_INPUT, provider: 'local', model: 'archive-override', aiBaseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' });
     assert.equal(archive.status, 'inconclusive');
