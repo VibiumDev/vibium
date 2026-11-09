@@ -14,15 +14,18 @@ public class RecordingResult {
     private final Long durationMs;
     private final List<Map<String, Object>> videos;
     private final String videoUnavailable;
+    private final List<Map<String, Object>> audio;
 
     public RecordingResult(String path, byte[] bytes, Integer steps, Long durationMs,
-                           List<Map<String, Object>> videos, String videoUnavailable) {
+                           List<Map<String, Object>> videos, String videoUnavailable,
+                           List<Map<String, Object>> audio) {
         this.path = path;
         this.bytes = bytes;
         this.steps = steps;
         this.durationMs = durationMs;
         this.videos = videos == null ? Collections.emptyList() : videos;
         this.videoUnavailable = videoUnavailable;
+        this.audio = audio == null ? Collections.emptyList() : audio;
     }
 
     /** Where the zip landed; null when it was returned inline instead. */
@@ -40,4 +43,7 @@ public class RecordingResult {
 
     /** Why no video was recorded (video omitted on an engine without support), or null. */
     public String videoUnavailable() { return videoUnavailable; }
+
+    /** The recorded audio tracks (direction, durationMs, error). */
+    public List<Map<String, Object>> audio() { return audio; }
 }

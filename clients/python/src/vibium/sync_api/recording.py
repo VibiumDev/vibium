@@ -29,13 +29,14 @@ class Recording:
         format: Optional[str] = None,
         quality: Optional[float] = None,
         video: Optional[Union[bool, Dict[str, Any]]] = None,
+        audio: Optional[Dict[str, Any]] = None,
         path: Optional[str] = _UNSET,
     ) -> None:
         self._loop.run(self._async.start(name=name, screenshots=screenshots,
                                           snapshots=snapshots, sources=sources,
                                           title=title, bidi=bidi,
                                           format=format, quality=quality,
-                                          video=video, path=path))
+                                          video=video, audio=audio, path=path))
 
     def stop(self, path: Optional[str] = None) -> RecordingResult:
         return self._loop.run(self._async.stop(path=path))

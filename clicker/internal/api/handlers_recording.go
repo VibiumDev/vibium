@@ -60,7 +60,16 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// the recording does not start at all.
 	sess := NewAPISession(r, session, lastContext)
 	CaptureRecordingSecrets(sess, recorder, nil)
+
+	// Audio first: it has nothing to unwind, while a failed video start
+	// after it only needs the subscriptions closed again.
+	if err := StartRecordingAudio(recorder, opts); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
 	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport); err != nil {
+		StopRecordingAudio(recorder)
+		recorder.RemoveEngineFile()
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -99,6 +108,7 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 	// Finalize the video first so Stop() can move the engine's file into the
 	// zip. A dead screencast is recorded in the manifest, not an error here.
 	StopRecordingVideo(NewAPISession(r, session, ""), recorder)
+	StopRecordingAudio(recorder)
 
 	// Stop recording and get zip data
 	zipData, err := recorder.Stop()

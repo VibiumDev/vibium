@@ -30,6 +30,8 @@ class RecordingResult:
     videos: List[Dict[str, Any]] = field(default_factory=list)
     video_unavailable: Optional[str] = None
     """Why no video was recorded (video omitted on an engine without support)."""
+    audio: List[Dict[str, Any]] = field(default_factory=list)
+    """Audio track summaries: direction ("output"/"input"), durationMs, error."""
 
 
 def _result_from_wire(result: Dict[str, Any]) -> RecordingResult:
@@ -41,6 +43,7 @@ def _result_from_wire(result: Dict[str, Any]) -> RecordingResult:
         duration_ms=result.get("durationMs"),
         videos=result.get("videos") or [],
         video_unavailable=result.get("videoUnavailable"),
+        audio=result.get("audio") or [],
     )
 
 
@@ -78,6 +81,7 @@ class Recording:
         format: Optional[str] = None,
         quality: Optional[float] = None,
         video: Optional[Union[bool, Dict[str, Any]]] = None,
+        audio: Optional[Dict[str, Any]] = None,
         path: Optional[str] = _UNSET,
     ) -> None:
         """Start recording.
@@ -93,6 +97,11 @@ class Recording:
                 {"remote": "keep"} records anyway and leaves the video on
                 the remote host — the result carries its path there, and
                 retrieval and cleanup are yours.
+            audio: Audio tracks from a roadie source, e.g.
+                {"source": "http://roadie.local:8000"}. The recording captures
+                the target's speaker output and mic input as WAV tracks in the
+                zip. Browsers expose no audio, so this is the only audio
+                source; start fails if it cannot deliver. Omitted: no audio.
             path: Where the recording zip lands at stop. Defaults to a
                 timestamped record-YYYYMMDD-HHMMSS.zip in the working
                 directory so a rerun never clobbers the previous one. None
@@ -124,6 +133,8 @@ class Recording:
                 }
             else:
                 params["video"] = video
+        if audio is not None:
+            params["audio"] = audio
         if path is _UNSET:
             path = _default_record_path(name)
         if path is not None:

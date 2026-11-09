@@ -38,6 +38,10 @@ func newRecordCmd() *cobra.Command {
   vibium record start --video=false
   # Record without video
 
+  vibium record start --audio-source http://roadie.local:8000
+  # Record a roadie target's speaker and mic as audio tracks
+  # Recording "record" started (video: on, audio: on, ...), saving to record-20261109-101500.zip
+
   vibium record start --screenshots=false
   # Record without screenshots
 
@@ -108,6 +112,9 @@ func newRecordCmd() *cobra.Command {
 			if videoRemote, _ := cmd.Flags().GetString("video-remote"); videoRemote != "" {
 				callArgs["video_remote"] = videoRemote
 			}
+			if audioSource, _ := cmd.Flags().GetString("audio-source"); audioSource != "" {
+				callArgs["audio_source"] = audioSource
+			}
 			// The daemon is a separate long-lived process whose working
 			// directory is not the user's, so resolve against this shell
 			// before the path goes over the socket (#119) — including the
@@ -140,6 +147,7 @@ func newRecordCmd() *cobra.Command {
 	startCmd.Flags().String("video-size", "", "Video dimensions as WxH, e.g. 1280x720 (default: viewport)")
 	startCmd.Flags().Int("video-fps", 0, "Video frame rate (engine default if omitted)")
 	startCmd.Flags().String("video-remote", "", "On a remote connection, \"keep\" records anyway and leaves the video on the remote host")
+	startCmd.Flags().String("audio-source", "", "Roadie base URL; records the target's speaker and mic streams as audio tracks")
 	startCmd.Flags().StringP("output", "o", "", "Where the recording ZIP lands at stop (default: record-<timestamp>.zip)")
 
 	stopCmd := &cobra.Command{

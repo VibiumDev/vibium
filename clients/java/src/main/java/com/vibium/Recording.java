@@ -103,13 +103,19 @@ public class Recording {
             videos = GSON.fromJson(result.get("videos"),
                 new TypeToken<List<Map<String, Object>>>() {}.getType());
         }
+        List<Map<String, Object>> audio = null;
+        if (result.has("audio")) {
+            audio = GSON.fromJson(result.get("audio"),
+                new TypeToken<List<Map<String, Object>>>() {}.getType());
+        }
         return new RecordingResult(
             result.has("path") ? result.get("path").getAsString() : null,
             result.has("data") ? Base64.getDecoder().decode(result.get("data").getAsString()) : null,
             result.has("steps") ? result.get("steps").getAsInt() : null,
             result.has("durationMs") ? result.get("durationMs").getAsLong() : null,
             videos,
-            result.has("videoUnavailable") ? result.get("videoUnavailable").getAsString() : null);
+            result.has("videoUnavailable") ? result.get("videoUnavailable").getAsString() : null,
+            audio);
     }
 
     /**

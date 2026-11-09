@@ -32,6 +32,7 @@ type RecordingStartOptions struct {
 	Format      string  `json:"format"`  // "png" or "jpeg" (default "jpeg")
 	Quality     float64 `json:"quality"` // 0.0-1.0 for JPEG (default 0.5)
 	Video       VideoOptions
+	Audio       AudioOptions
 	Path        string // declared delivery path; "" = bytes-only, lost on close
 }
 
@@ -122,6 +123,13 @@ func ParseRecordingOptions(params map[string]interface{}) RecordingStartOptions 
 			opts.Video.RemoteKeep = true
 		}
 	}
+	// audio: {source}. Always explicit — the engines offer no audio — so a
+	// named source that cannot deliver fails the start.
+	if a, ok := params["audio"].(map[string]interface{}); ok {
+		if src, ok := a["source"].(string); ok {
+			opts.Audio.Source = src
+		}
+	}
 	if p, ok := params["path"].(string); ok {
 		opts.Path = p
 	}
@@ -164,12 +172,20 @@ type VideoSummary struct {
 	Error      string
 }
 
+// AudioSummary is one entry of the audio array in the recording.stop result.
+type AudioSummary struct {
+	Direction  string
+	DurationMs int64
+	Error      string
+}
+
 // RecordingSummary is the metadata carried by the recording.stop result.
 type RecordingSummary struct {
 	Steps            int
 	DurationMs       int64
 	Videos           []VideoSummary
 	VideoUnavailable string
+	Audio            []AudioSummary
 }
 
 // ResultFields renders the summary as wire result fields: steps, durationMs,
@@ -178,6 +194,20 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 	fields := map[string]interface{}{
 		"steps":      s.Steps,
 		"durationMs": s.DurationMs,
+	}
+	if len(s.Audio) > 0 {
+		audio := make([]interface{}, 0, len(s.Audio))
+		for _, a := range s.Audio {
+			entry := map[string]interface{}{
+				"direction":  a.Direction,
+				"durationMs": a.DurationMs,
+			}
+			if a.Error != "" {
+				entry["error"] = a.Error
+			}
+			audio = append(audio, entry)
+		}
+		fields["audio"] = audio
 	}
 	if s.VideoUnavailable != "" {
 		fields["videoUnavailable"] = s.VideoUnavailable
@@ -248,6 +278,10 @@ type Recorder struct {
 	video            *VideoTrack
 	videoUnavailable string // engine reason video could not start (auto mode)
 
+	// Audio tracks (roadie source folded into the recording)
+	audio        []*AudioTrack
+	audioCapture *audioCapture
+
 	// Screenshot goroutine control
 	screenshotStop chan struct{}
 	screenshotWg   sync.WaitGroup
@@ -298,6 +332,8 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.groupStack = nil
 	t.video = nil
 	t.videoUnavailable = ""
+	t.audio = nil
+	t.audioCapture = nil
 	t.chunkIndex = 0
 	t.startTime = time.Now().UnixMilli()
 	t.monotonicBase = t.startTime
@@ -370,6 +406,9 @@ func (t *Recorder) Stop() ([]byte, error) {
 			log.Debug("failed to delete engine video temp", "path", t.video.EnginePath, "error", rmErr)
 		}
 		t.video.EnginePath = ""
+	}
+	if err == nil {
+		t.removeAudioSpoolsLocked()
 	}
 	return data, err
 }
@@ -457,6 +496,38 @@ func (t *Recorder) RemoveEngineFile() {
 		}
 		t.video.EnginePath = ""
 	}
+	t.removeAudioSpoolsLocked()
+}
+
+// SetAudioCapture attaches the audio source subscriptions to the recording.
+func (t *Recorder) SetAudioCapture(ac *audioCapture) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.audioCapture = ac
+}
+
+// AudioCapture returns the recording's live audio subscriptions, nil when
+// audio is off or already finished.
+func (t *Recorder) AudioCapture() *audioCapture {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.audioCapture
+}
+
+// FinishAudio finalizes the audio tracks: stamps offsets from the recording's
+// t0 and durations from the spooled byte counts.
+func (t *Recorder) FinishAudio(tracks []*AudioTrack) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, track := range tracks {
+		track.OffsetMs = float64(track.StartedAt - t.monotonicBase)
+		if track.OffsetMs < 0 {
+			track.OffsetMs = 0
+		}
+		track.DurationMs = audioDurationMs(track)
+	}
+	t.audio = tracks
+	t.audioCapture = nil
 }
 
 // Summary reports the stop-result metadata: step count, recording duration,
@@ -486,6 +557,13 @@ func (t *Recorder) Summary() RecordingSummary {
 			vs.RemotePath = t.video.EnginePath
 		}
 		s.Videos = append(s.Videos, vs)
+	}
+	for _, track := range t.audio {
+		s.Audio = append(s.Audio, AudioSummary{
+			Direction:  track.Direction,
+			DurationMs: track.DurationMs,
+			Error:      track.Error,
+		})
 	}
 	return s
 }
@@ -1405,6 +1483,14 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 			if err := t.writeVideoEntriesLocked(zw, now, includeVideo); err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	// Audio entries are additive too. Chunk zips carry no audio; the tracks
+	// belong to the session zip.
+	if len(t.audio) > 0 && includeVideo {
+		if err := t.writeAudioEntriesLocked(zw, now); err != nil {
+			return nil, err
 		}
 	}
 

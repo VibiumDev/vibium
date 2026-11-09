@@ -1,5 +1,6 @@
 package com.vibium.types;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -20,6 +21,7 @@ public class RecordingOptions {
     private Integer videoHeight;
     private Integer videoFrameRate;
     private String videoRemote;
+    private String audioSource;
     private String path;
 
     public RecordingOptions name(String name) { this.name = name; return this; }
@@ -75,6 +77,14 @@ public class RecordingOptions {
      * Retrieval and cleanup are the caller's. Implies video on.
      */
     public RecordingOptions videoRemote(String mode) { this.videoRemote = mode; return this; }
+
+    /**
+     * Base URL of a roadie host (e.g. "http://roadie.local:8000"). The
+     * recording captures the target's speaker output and mic input as WAV
+     * tracks in the zip. Browsers expose no audio, so this is the only audio
+     * source; start fails if it cannot deliver.
+     */
+    public RecordingOptions audioSource(String source) { this.audioSource = source; return this; }
     /** Where the recording zip lands at stop (default: timestamped record-YYYYMMDD-HHMMSS.zip). */
     public RecordingOptions path(String path) { this.path = path; return this; }
 
@@ -101,6 +111,7 @@ public class RecordingOptions {
         } else if (video != null) {
             params.put("video", true);
         }
+        if (audioSource != null) params.put("audio", Collections.singletonMap("source", audioSource));
         if (path != null) params.put("path", path);
         return params;
     }

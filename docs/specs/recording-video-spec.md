@@ -45,7 +45,9 @@ await recording.stop({ path: 'checkout-failure-run1234.zip' });  // override win
   durationMs, videos | videoUnavailable}); the zip bytes are included
   only for bytes-only recordings — file-mode stops never buffer the
   archive.
-- `audio` is reserved, not exposed; Firefox 154 rejects it.
+- Engine audio is not exposed; Firefox 154 rejects the screencast audio
+  track. `audio` records from a roadie source instead; see
+  recording-audio-spec.md.
 - The flat `format`/`quality` options remain screenshot-only.
 
 ## Wire protocol

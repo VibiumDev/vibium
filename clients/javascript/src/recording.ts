@@ -16,6 +16,16 @@ export interface RecordingVideoOptions {
   remote?: 'keep';
 }
 
+export interface RecordingAudioOptions {
+  /**
+   * Base URL of a roadie host (e.g. 'http://roadie.local:8000'). The
+   * recording captures the target's speaker output and mic input as WAV
+   * tracks in the zip. Browsers expose no audio, so this is the only
+   * audio source; start fails if it cannot deliver.
+   */
+  source: string;
+}
+
 export interface RecordingStartOptions {
   name?: string;
   screenshots?: boolean;
@@ -34,6 +44,8 @@ export interface RecordingStartOptions {
    * `false`: off.
    */
   video?: boolean | RecordingVideoOptions;
+  /** Audio tracks from a roadie source. Omitted: no audio. */
+  audio?: RecordingAudioOptions;
   /**
    * Where the recording zip lands at stop. Defaults to a timestamped
    * record-YYYYMMDD-HHMMSS.zip in the working directory, so a rerun never
@@ -60,6 +72,14 @@ export interface RecordingVideoSummary {
   error?: string;
 }
 
+export interface RecordingAudioSummary {
+  /** 'output' is the target's speaker; 'input' is the mixed mic stream. */
+  direction: 'output' | 'input';
+  durationMs: number;
+  /** Set when the stream died; the zip delivered without or with a partial track. */
+  error?: string;
+}
+
 export interface RecordingResult {
   /** Where the zip landed. Absent for bytes-only recordings. */
   path?: string;
@@ -70,6 +90,7 @@ export interface RecordingResult {
   videos?: RecordingVideoSummary[];
   /** Why no video was recorded (video omitted on an engine without support). */
   videoUnavailable?: string;
+  audio?: RecordingAudioSummary[];
 }
 
 /**

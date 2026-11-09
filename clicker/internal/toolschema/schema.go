@@ -1620,6 +1620,10 @@ func GetToolSchemas() []Tool {
 						"enum":        []string{"keep"},
 						"description": "On a remote browser connection, \"keep\" records anyway and leaves the video on the remote host; the stop result reports its remote path. Retrieval and cleanup are the caller's.",
 					},
+					"audio_source": map[string]interface{}{
+						"type":        "string",
+						"description": "Base URL of a roadie host (e.g. http://roadie.local:8000). Records the target's speaker output and mic input as audio tracks in the ZIP. Fails at start if the source cannot deliver; browsers expose no audio, so omitting this means no audio.",
+					},
 					"path": map[string]interface{}{
 						"type":        "string",
 						"description": "Where the recording ZIP lands at stop (default: a timestamped record-<timestamp>.zip in the server's working directory, or ~/Documents/Vibium when that isn't writable)",

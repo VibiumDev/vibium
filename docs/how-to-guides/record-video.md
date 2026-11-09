@@ -142,8 +142,11 @@ either way.
 
 Video dimensions default to the viewport. Explicit dimensions that mismatch
 the window aspect are letterboxed by the engine. `frameRate` uses the
-engine's default when omitted. Firefox produces WebM; audio is not exposed
-(Firefox 154 rejects it: "The audio track is not supported").
+engine's default when omitted. Firefox produces WebM; page audio is not
+exposed (Firefox 154 rejects it: "The audio track is not supported"). A
+roadie-controlled target can be recorded with audio instead: `audio:
+{source: '<roadie url>'}` captures its speaker and mic streams as WAV
+tracks in the zip (see docs/specs/recording-audio-spec.md).
 
 Firefox writes the file as a live stream, so the WebM header carries no duration. Every player we tried plays it fine, but some show an unknown or zero duration until playback starts.
 

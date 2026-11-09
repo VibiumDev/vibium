@@ -4198,6 +4198,9 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 			args["video"] = video
 		}
 	}
+	if src, ok := args["audio_source"].(string); ok && src != "" {
+		args["audio"] = map[string]interface{}{"source": src}
+	}
 
 	opts := api.ParseRecordingOptions(args)
 	if opts.Name == "" {
@@ -4227,7 +4230,14 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	recorder.Start(opts, viewport)
 	api.CaptureRecordingSecrets(h.newSession(), recorder, nil)
 
+	// Audio first: it has nothing to unwind, while a failed video start
+	// after it only needs the subscriptions closed again.
+	if err := api.StartRecordingAudio(recorder, opts); err != nil {
+		return nil, err
+	}
 	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+		api.StopRecordingAudio(recorder)
+		recorder.RemoveEngineFile()
 		return nil, err
 	}
 	h.recorder = recorder
@@ -4260,11 +4270,16 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		videoState = "unavailable"
 	}
 
+	audioState := ""
+	if opts.Audio.Source != "" {
+		audioState = ", audio: on"
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Recording %q started (video: %s, screenshots: %v, snapshots: %v), saving to %s",
-				name, videoState, opts.Screenshots, opts.Snapshots, opts.Path),
+			Text: fmt.Sprintf("Recording %q started (video: %s%s, screenshots: %v, snapshots: %v), saving to %s",
+				name, videoState, audioState, opts.Screenshots, opts.Snapshots, opts.Path),
 		}},
 	}, nil
 }
@@ -4287,6 +4302,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 	// Finalize the video first so Stop() can move the engine's file into
 	// the zip. A dead screencast is recorded in the manifest, not an error.
 	api.StopRecordingVideo(h.newSession(), h.recorder)
+	api.StopRecordingAudio(h.recorder)
 
 	// Path precedence: stop.path > start.path.
 	path, _ := args["path"].(string)

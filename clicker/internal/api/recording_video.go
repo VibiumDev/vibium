@@ -158,6 +158,7 @@ func FinalizeRecordingOnClose(s Session, recorder *Recorder) {
 		return
 	}
 	StopRecordingVideo(s, recorder)
+	StopRecordingAudio(recorder)
 	if recorder.IsRecording() && recorder.Options().Path != "" {
 		if zipData, err := recorder.Stop(); err == nil {
 			WriteRecordToFile(zipData, recorder.Options().Path)
@@ -175,6 +176,7 @@ func FinalizeRecordingOffline(recorder *Recorder) {
 	if recorder == nil {
 		return
 	}
+	StopRecordingAudio(recorder)
 	if recorder.IsRecording() && recorder.Options().Path != "" {
 		recorder.FinishVideo("", "browser connection lost before the screencast could be stopped")
 		if zipData, err := recorder.Stop(); err == nil {
@@ -192,7 +194,21 @@ func RecordingSavedSentence(path string, s RecordingSummary) string {
 	if len(s.Videos) > 0 && s.Videos[0].Error == "" && s.Videos[0].DurationMs > 0 {
 		msg += fmt.Sprintf(", %ds video", (s.Videos[0].DurationMs+500)/1000)
 	}
+	var audioMs int64
+	for _, a := range s.Audio {
+		if a.Error == "" && a.DurationMs > audioMs {
+			audioMs = a.DurationMs
+		}
+	}
+	if audioMs > 0 {
+		msg += fmt.Sprintf(", %ds audio", (audioMs+500)/1000)
+	}
 	msg += ")"
+	for _, a := range s.Audio {
+		if a.Error != "" {
+			msg += fmt.Sprintf(" — audio %s error: %s", a.Direction, a.Error)
+		}
+	}
 	if s.VideoUnavailable != "" {
 		msg += " — video unavailable: " + s.VideoUnavailable
 	} else if len(s.Videos) > 0 && s.Videos[0].Error != "" {

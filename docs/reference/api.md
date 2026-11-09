@@ -202,7 +202,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record group start <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` | `recording.startGroup(name, location?)` |
 | 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record group stop` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` | `recording.stopGroup()` |
 
-`recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md).
+`recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), an `audio` option (`{source}`, a roadie base URL) that adds the target's speaker and mic streams as WAV tracks, and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, audio?, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md) and the [audio spec](../specs/recording-audio-spec.md).
 
 ## Route
 
