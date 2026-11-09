@@ -4281,6 +4281,13 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		h.recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
 	}
 
+	// An upload that cannot happen is refused before anything stops, so
+	// the recording keeps going and the caller can stop it another way.
+	upload, err := api.ResolveUpload(args["upload"], h.connectURL, h.connectHeaders)
+	if err != nil {
+		return nil, err
+	}
+
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
 
@@ -4311,10 +4318,19 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 
 	h.recorder = nil
 
+	text := api.RecordingSavedSentence(path, summary)
+	if upload != nil {
+		up, err := api.UploadRecording(context.Background(), *upload, zipData, api.UploadName(path, ""))
+		if err != nil {
+			return nil, fmt.Errorf("%w (the recording was saved to %s)", err, path)
+		}
+		text += "\n" + api.UploadSentence(up)
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: api.RecordingSavedSentence(path, summary),
+			Text: text,
 		}},
 	}, nil
 }

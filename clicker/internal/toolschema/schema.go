@@ -1630,13 +1630,17 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_record_stop",
-			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded)",
+			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded). With upload, the ZIP also goes to the Record Store of the station the browser is connected through.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
 						"description": "Output file path (overrides the path declared at start; default: record.zip)",
+					},
+					"upload": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Also upload the ZIP to the station the browser is connected through (its Record Store) and report its URL. Needs a remote connection with an API key; the file is saved locally either way.",
 					},
 				},
 				"additionalProperties": false,

@@ -413,6 +413,19 @@ describe('MCP Server: Browser Tools', () => {
     );
   });
 
+  test('browser_record_stop with upload needs a station', async () => {
+    const zip = require('node:path').join(require('node:os').tmpdir(), `mcp-record-upload-${process.pid}.zip`);
+    const started = await client.call('tools/call', { name: 'browser_record_start', arguments: { path: zip } });
+    assert.ok(started.result && !started.result.isError, 'recording starts');
+    const refused = await client.call('tools/call', { name: 'browser_record_stop', arguments: { upload: true } });
+    assert.ok(refused.result && refused.result.isError, 'an upload with no station is refused');
+    assert.match(refused.result.content[0].text, /needs a station/);
+    const stopped = await client.call('tools/call', { name: 'browser_record_stop', arguments: {} });
+    assert.ok(stopped.result && !stopped.result.isError, 'the recording is still there to stop');
+    assert.match(stopped.result.content[0].text, /Saved /);
+    require('node:fs').rmSync(zip, { force: true });
+  });
+
   test('browser_stop closes session', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_stop',

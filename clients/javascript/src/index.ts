@@ -2,7 +2,7 @@ export { browser, firefox, chrome, Browser, StartOptions } from './browser';
 export { Page, Keyboard, Mouse, Touch, SwipeDirection, SwipeOptions, ScreenshotOptions, A11yNode, FindOptions } from './page';
 export { Clock, ClockInstallOptions } from './clock';
 export { BrowserContext, Cookie, SetCookieParam, StorageState, OriginState } from './context';
-export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary } from './recording';
+export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary, RecordingUpload } from './recording';
 export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FindStrategy, FluentElement, fluent } from './element';
 export { Route } from './route';
 export { Request, Response } from './network';
