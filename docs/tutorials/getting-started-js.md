@@ -71,9 +71,9 @@ This creates a folder and a `package.json` file.
 npm install vibium
 ```
 
-Chrome for Testing downloads to a platform-specific cache the first time you
-launch a browser, which might take a minute. To fetch it now instead:
-`npx vibium setup browser`.
+The install downloads Chrome for Testing to a platform-specific cache, which
+might take a minute. If that step was skipped or failed, Chrome downloads the
+first time you launch a browser. To fetch it yourself: `npx vibium setup browser`.
 
 | Platform | Cache path |
 |----------|------------|
@@ -156,7 +156,7 @@ Check your folder - there's now a `screenshot.png` file!
 | `bro.page()` | Gets the default page (tab) |
 | `vibe.go(url)` | Navigates to a URL |
 | `vibe.screenshot()` | Captures the page as PNG |
-| `vibe.find(selector)` | Finds an element by CSS selector |
+| `vibe.find({ css: 'a' })` | Finds an element by CSS selector |
 | `link.click()` | Clicks the element |
 | `bro.stop()` | Closes the browser |
 
