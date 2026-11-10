@@ -97,6 +97,7 @@ if (!isPrerelease) {
   for (const relative of [
     "README.md",
     "docs/tutorials/getting-started-java.md",
+    "docs/tutorials/remote-browser.md",
   ]) {
     update(relative, (source) =>
       source
