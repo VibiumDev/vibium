@@ -55,6 +55,34 @@ async def test_swipe(async_browser):
     assert up["y"] == 100
 
 
+async def test_swipe_direction(async_browser):
+    page = await async_browser.new_page()
+    await page.set_content(RECORDER)
+    w, h = await page.evaluate("[window.innerWidth, window.innerHeight]")
+
+    await page.touch.swipe("down", from_="top", speed="fast")
+
+    ev = await page.evaluate("window.__ev")
+    down = next(e for e in ev if e["type"] == "pointerdown")
+    up = ev[-1]
+    assert (down["x"], down["y"]) == (w // 2, 0)
+    assert up["type"] == "pointerup"
+    assert (up["x"], up["y"]) == (w // 2, (h + 1) // 2)
+
+
+async def test_swipe_direction_from_point(async_browser):
+    page = await async_browser.new_page()
+    await page.set_content(RECORDER)
+
+    await page.touch.swipe("right", from_=(50, 60), distance=100, duration_ms=150)
+
+    ev = await page.evaluate("window.__ev")
+    down = next(e for e in ev if e["type"] == "pointerdown")
+    up = ev[-1]
+    assert (down["x"], down["y"]) == (50, 60)
+    assert (up["type"], up["x"], up["y"]) == ("pointerup", 150, 60)
+
+
 async def test_long_press(async_browser):
     page = await async_browser.new_page()
     await page.set_content(RECORDER)

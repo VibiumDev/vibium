@@ -419,7 +419,7 @@ await vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 await ctx.recording.stopGroup()
 
 await ctx.recording.startGroup('check out')
-await vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+await vibe.find({ css: 'a[href="/cart"]' }).click()   // the cart icon has no accessible name — CSS fallback
 await vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
 await vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
 await vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
@@ -443,7 +443,7 @@ vibe.find({ role: 'button', text: 'Add to Cart' }).click()
 ctx.recording.stopGroup()
 
 ctx.recording.startGroup('check out')
-vibe.find('a[href="/cart"]').click()   // the cart icon has no accessible name — CSS fallback
+vibe.find({ css: 'a[href="/cart"]' }).click()   // the cart icon has no accessible name — CSS fallback
 vibe.find({ role: 'button', text: 'Proceed to Checkout' }).click()
 vibe.find({ label: 'Unit Designation' }).fill('VAR-347')
 vibe.find({ label: 'Service Bay' }).fill('Bay 14-C')
@@ -469,7 +469,7 @@ await vibe.find(role='button', text='Add to Cart').click()
 await ctx.recording.stop_group()
 
 await ctx.recording.start_group('check out')
-await vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+await vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
 await vibe.find(role='button', text='Proceed to Checkout').click()
 await vibe.find(label='Unit Designation').fill('VAR-347')
 await vibe.find(label='Service Bay').fill('Bay 14-C')
@@ -495,7 +495,7 @@ vibe.find(role='button', text='Add to Cart').click()
 ctx.recording.stop_group()
 
 ctx.recording.start_group('check out')
-vibe.find('a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
+vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
 vibe.find(role='button', text='Proceed to Checkout').click()
 vibe.find(label='Unit Designation').fill('VAR-347')
 vibe.find(label='Service Bay').fill('Bay 14-C')
@@ -672,6 +672,67 @@ vibium record stop
 
 ---
 
+## Generate a Script from a Recording
+
+A recording already carries the full action stream, so you can turn one
+take into a starting script: click through a flow once, then let codegen
+write the code.
+
+**1. Record.** Drive the flow by hand, with `vibium run`, or from a client —
+every command lands in the trace:
+
+```bash
+vibium record start
+vibium go https://var.parts
+vibium find text "Vibium Battery Pack"
+vibium click @e1
+vibium record stop -o take.zip
+```
+
+**2. Generate.** Emit JavaScript (default) or Python:
+
+```bash
+vibium codegen -i take.zip -o replay.mjs
+vibium codegen -i take.zip --language python -o replay.py
+```
+
+The JavaScript script replays the recorded locators through the `vibium`
+client:
+
+```javascript
+import { browser } from 'vibium';
+
+const bro = await browser.start();
+const vibe = await bro.page();
+
+await vibe.go('https://var.parts');
+await vibe.find({ text: 'Vibium Battery Pack' }).click();
+
+await bro.stop();
+```
+
+Action groups from `startGroup()` become comments, failed actions are
+skipped with a comment, and read-only queries (`text`, `isVisible`, …) are
+dropped — the script replays what changed the page.
+
+**3. Edit.** The script is a starting point, not a verbatim transcript.
+Swap recorded one-off values for your own, add assertions, or pass options
+like `browser.start({ headless: true })`.
+
+**4. Run.**
+
+```bash
+npm install vibium && node replay.mjs
+pip install vibium && python replay.py
+```
+
+The JavaScript output uses top-level `await`, so keep the `.mjs` extension
+(or run it in a `"type": "module"` package). See the
+[Codegen reference](../reference/codegen.md) for the full action mapping
+and limitations.
+
+---
+
 ## Viewing Recordings
 
 Open a recording in [Record Player](https://player.vibium.dev):
@@ -776,4 +837,5 @@ vibe.context().recording().start(
 
 - [Record Video](../how-to-guides/record-video.md) — the video track: engine support, Firefox channels, options
 - [Recording Format](../reference/recording-format.md) — detailed spec of the zip structure
+- [Codegen reference](../reference/codegen.md) — flags, action mapping, and limits for `vibium codegen`
 - [Getting Started](getting-started-js.md) — first steps with Vibium

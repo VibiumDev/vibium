@@ -263,6 +263,8 @@ func (v *apiModelTools) Dispatch(ctx context.Context, name string, args map[stri
 	case "browser_type":
 		method = "vibium:element.type"
 		handler = v.r.handleVibiumType
+		params["value"] = params["text"]
+		delete(params, "text")
 	case "browser_press":
 		method = "vibium:element.press"
 		handler = v.r.handleVibiumPress

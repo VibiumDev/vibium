@@ -21,10 +21,10 @@ class CheckSDK {
             CheckResult result = page.check("changing my display name persists after refresh");
             check(result.status().equals("passed"));
             check(!result.evidence().isEmpty());
-            check(page.find("#name").value().equals("Updated"));
+            check(page.find(new SelectorOptions().css("#name")).value().equals("Updated"));
             check(page.evaluate("window.name").equals("original"));
             check(page.evaluate("sessionStorage.getItem('builder')").equals("preserved"));
-            check(other.find("#name").value().equals("Other"));
+            check(other.find(new SelectorOptions().css("#name")).value().equals("Other"));
             page.context().recording().stop();
             check(bro.check("archive evidence", archive).status().equals("inconclusive"));
         } finally { bro.stop(); }

@@ -24,6 +24,12 @@ export interface StartOptions {
    * where the browser is already running elsewhere.
    */
   args?: string[];
+  /**
+   * Persistent browser profile directory, created if missing and reused
+   * across sessions (cookies, logins survive). Omit for the default: a
+   * temporary profile wiped on close. Ignored in connect mode.
+   */
+  userDataDir?: string;
 }
 
 export interface BrowserSync { (goal: string, options?: RunOptions): RunResult; }

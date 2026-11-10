@@ -6,7 +6,7 @@ Both use a model to choose from Vibium’s existing browser operations.
 | Operation | You provide | You get back |
 |-----------|-------------|--------------|
 | Run | A goal: “Change the timezone and save it.” | `completed` or `not_completed`, with evidence |
-| Check | A claim: “The saved timezone survives a reload.” | PASS, FAIL, or INCONCLUSIVE, with evidence |
+| Check | A claim: “The saved timezone survives a reload.” | PASS, FAIL, or REVIEW, with evidence |
 
 For example, with your app running at `http://localhost:3000`:
 
@@ -81,7 +81,7 @@ commands. Live Run and Check currently reject remote browser connections.
 ## Results you can inspect
 
 Check returns PASS when its evidence supports the claim, FAIL when evidence
-contradicts it, and INCONCLUSIVE when it cannot decide. Configuration, provider,
+contradicts it, and REVIEW when it cannot decide. Configuration, provider,
 or browser failures return an execution error. For automated gating, inspect
 the JSON status: all three completed verdicts exit with code zero.
 

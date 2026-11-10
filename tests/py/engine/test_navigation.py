@@ -46,7 +46,7 @@ async def test_content(async_page, test_server):
 
 async def test_wait_for_url(async_page, test_server):
     await async_page.go(test_server)
-    link = await async_page.find('a[href="/subpage"]')
+    link = await async_page.find(css='a[href="/subpage"]')
     await link.click()
     await async_page.wait_for_url("**/subpage")
     assert "/subpage" in await async_page.url()

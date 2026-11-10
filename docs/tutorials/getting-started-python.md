@@ -100,7 +100,7 @@ with open("screenshot.png", "wb") as f:
 print("Saved screenshot.png")
 
 # Find and click the link
-link = vibe.find("a")
+link = vibe.find(css="a")
 print("Found link:", link.text())
 link.click()
 print("Clicked!")

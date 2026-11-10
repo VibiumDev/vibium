@@ -101,7 +101,8 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 		args := buildElSemanticArgs(ep)
 		script := `
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -126,14 +127,15 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 
 	script := `
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 			let el;
 			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
+				const all = pierceQueryAll(root, selector);
 				el = all[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			return el || null;
 		}
@@ -158,6 +160,7 @@ type ElementParams struct {
 	Context     string
 	Timeout     time.Duration
 	Force       bool
+	Visual      *RefEntry // a coordinate-backed ref; Selector is ignored
 }
 
 // withDefaultTimeout returns ep with a default timeout applied when it is unset
@@ -203,6 +206,9 @@ func ExtractElementParams(params map[string]interface{}) ElementParams {
 	if force, ok := params["force"].(bool); ok {
 		ep.Force = force
 	}
+	if e, ok := params["visualRef"].(*RefEntry); ok {
+		ep.Visual = e
+	}
 
 	return ep
 }
@@ -226,14 +232,15 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 		}
 		script := `
 			(scope, selector, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 				let el;
 				if (hasIndex) {
-					const all = root.querySelectorAll(selector);
+					const all = pierceQueryAll(root, selector);
 					el = all[index];
 				} else {
-					el = root.querySelector(selector);
+					el = pierceQuery(root, selector);
 				}
 				if (!el) return null;
 				if (el.scrollIntoViewIfNeeded) {
@@ -270,7 +277,8 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 
 	script := `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 	` + semanticMatchesHelper() + `
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -452,6 +460,13 @@ func staleIndexHint(err error, ep ElementParams) error {
 
 // ResolveElement finds an element using the given params, polling until found or timeout.
 func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, error) {
+	if ep.Visual != nil {
+		info, err := VisualElementInfo(s, context, ep.Visual)
+		if err == nil {
+			s.SetLastElementBox(&info.Box)
+		}
+		return info, err
+	}
 	ep = ep.withDefaultTimeout()
 	script, args := buildActionFindScript(ep)
 	info, err := WaitForElementWithScript(s, context, script, args, ep.Timeout)
@@ -463,6 +478,9 @@ func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, 
 
 // ResolveElementRef finds an element and returns its BiDi sharedId.
 func ResolveElementRef(s Session, context string, ep ElementParams) (string, error) {
+	if ep.Visual != nil {
+		return "", fmt.Errorf("%s: %w", ep.Visual.Ref, ErrVisualUnsupported)
+	}
 	ep = ep.withDefaultTimeout()
 	script, args := buildRefFindScript(ep)
 	deadline := time.Now().Add(ep.Timeout)

@@ -31,6 +31,12 @@ Setup prompts for provider, model, and (when needed) an API key. The key is
 not echoed, and Enter skips it; setup then ends by naming the file to put it
 in. openai-compatible and local also prompt for a base URL.
 
+For OpenAI models the wizard also writes `VIBIUM_AI_REASONING_EFFORT` when
+the model family needs one for function tools (gpt-5 and gpt-6 need `none`),
+and prints the value it writes. Other families keep the provider default.
+gpt-6.1 models support function tools only on OpenAI's Responses API, which
+Vibium does not use yet; the wizard warns and leaves the effort unset.
+
 It writes `~/.config/vibium/ai.env` at mode 0600. If that file already exists,
 the previous copy is kept as `ai.env.bak`. The setup process uses those values
 immediately so the following `ready` check in the same run sees them. Later

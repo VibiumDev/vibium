@@ -31,6 +31,7 @@ var firefoxPrefs = map[string]interface{}{
 	"startup.homepage_welcome_url":                "about:blank",
 	"startup.homepage_welcome_url.additional":     "",
 	"browser.newtabpage.enabled":                  false,
+	"browser.startup.page":                        0,
 	"app.update.disabledForTesting":               true,
 	"app.update.auto":                             false,
 	"datareporting.policy.dataSubmissionEnabled":  false,
@@ -70,19 +71,35 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	}
 	log.Debug("using port", "port", port)
 
-	profileDir, err := os.MkdirTemp("", "vibium-firefox-profile-")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create profile dir: %w", err)
+	var profileDir string
+	persistent := opts.UserDataDir != ""
+	if persistent {
+		profileDir, err = prepareUserDataDir(opts.UserDataDir)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		profileDir, err = os.MkdirTemp("", "vibium-firefox-profile-")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create profile dir: %w", err)
+		}
+	}
+	// A persistent profile is the user's; failed-launch cleanup may only
+	// remove a temp profile this launch created (#715).
+	cleanupProfile := func() {
+		if !persistent {
+			os.RemoveAll(profileDir)
+		}
 	}
 	if err := writeFirefoxPrefs(profileDir); err != nil {
-		os.RemoveAll(profileDir)
+		cleanupProfile()
 		return nil, fmt.Errorf("failed to write profile prefs: %w", err)
 	}
 	var xdgConfigHome string
 	if runtime.GOOS == "linux" {
 		xdgConfigHome, err = prepareFirefoxXDG(profileDir)
 		if err != nil {
-			os.RemoveAll(profileDir)
+			cleanupProfile()
 			return nil, fmt.Errorf("failed to prepare Firefox directories: %w", err)
 		}
 	}
@@ -105,7 +122,9 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 	// Open on about:blank instead of Firefox's chrome-privileged blanktab.
 	// The startup tab otherwise lives in the parent process until a
 	// navigation, where script-backed commands are refused and, on Firefox
-	// 155, browsingContext.activate is rejected as privileged scope.
+	// 155, browsingContext.activate is rejected as privileged scope. Firefox
+	// 159+ still opens blanktab despite this argument; browser.startup.page=0
+	// above prevents that.
 	args = append(args, "about:blank")
 
 	cmd := exec.Command(firefoxPath, args...)
@@ -118,7 +137,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		cmd.Stderr = pw
 	}
 	if err := cmd.Start(); err != nil {
-		os.RemoveAll(profileDir)
+		cleanupProfile()
 		return nil, fmt.Errorf("failed to start firefox: %w", err)
 	}
 
@@ -129,7 +148,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		killProcessTree(cmd.Process.Pid)
 		cmd.Wait()
 		process.Untrack(cmd)
-		os.RemoveAll(profileDir)
+		cleanupProfile()
 		return nil, fmt.Errorf("firefox failed to start: %w", err)
 	}
 
@@ -143,7 +162,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		killProcessTree(cmd.Process.Pid)
 		cmd.Wait()
 		process.Untrack(cmd)
-		os.RemoveAll(profileDir)
+		cleanupProfile()
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -154,6 +173,7 @@ func launchFirefox(opts LaunchOptions) (*LaunchResult, error) {
 		BrowserCmd:  cmd,
 		Port:        port,
 		UserDataDir: profileDir,
+		Persistent:  persistent,
 		Engine:      "firefox",
 	}, nil
 }
@@ -237,17 +257,46 @@ func connectFirefoxBidi(wsURL string, timeout time.Duration) (*bidi.Connection, 
 
 // writeFirefoxPrefs writes user.js into the profile directory. Keys are
 // sorted so the file is identical run to run and diffs stay readable.
+// Idempotent on a persistent profile: lines for prefs vibium does not set are
+// kept verbatim, so an existing profile gets the BiDi-required prefs without
+// losing its own (#715).
 func writeFirefoxPrefs(profileDir string) error {
+	path := filepath.Join(profileDir, "user.js")
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	var b []byte
+	for _, line := range strings.Split(strings.TrimRight(string(existing), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if key, ok := userPrefKey(line); ok {
+			if _, ours := firefoxPrefs[key]; ours {
+				continue
+			}
+		}
+		b = append(b, []byte(line+"\n")...)
+	}
 	keys := make([]string, 0, len(firefoxPrefs))
 	for k := range firefoxPrefs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	var b []byte
 	for _, k := range keys {
 		b = append(b, []byte(fmt.Sprintf("user_pref(%q, %s);\n", k, prefValue(firefoxPrefs[k])))...)
 	}
-	return os.WriteFile(filepath.Join(profileDir, "user.js"), b, 0644)
+	return os.WriteFile(path, b, 0644)
+}
+
+// userPrefKey extracts the pref name from a `user_pref("name", value);` line.
+func userPrefKey(line string) (string, bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(line), `user_pref("`)
+	if !found {
+		return "", false
+	}
+	key, _, found := strings.Cut(rest, `"`)
+	return key, found
 }
 
 func prefValue(v interface{}) string {

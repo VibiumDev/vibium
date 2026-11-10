@@ -335,7 +335,7 @@ The engine dismisses every dialog itself while no dialog handler is registered �
 
 ### Exposed Functions
 
-`page.expose(name, fn)` with a host function sends `vibium:page.exposeFunction {context, name}`. The engine installs a preload that defines `window[name]` as a promise-returning stub: each call parks its promise under a sequence number and posts `{name, seq, args}` through a script channel. The engine forwards that as a `vibium:expose.call {name, seq, args, context, realm}` event. The client looks the name up in its per-page function map, runs the host function, and sends `vibium:expose.result {context, realm, seq, result | error}`; the engine then settles the parked promise inside the calling realm. Always reply, whatever the outcome — an unanswered call leaves the page's promise pending forever — and reply with an error for a name the page calls that this page never exposed. Arguments and results cross as JSON.
+`page.expose(name, fn)` with a host function sends `vibium:page.exposeFunction {context, name}`. The engine installs a preload that defines `window[name]` as a promise-returning stub: each call parks its promise under a sequence number and posts `{name, seq, args}` through a script channel. The engine forwards that as a `vibium:expose.call {name, seq, args, context, realm}` event. The client looks the name up in its per-page function map, runs the host function, and sends `vibium:expose.result {context, realm, seq, result | error}`; the engine then settles the parked promise inside the calling realm. Always reply, whatever the outcome — an unanswered call leaves the page's promise pending forever — and reply with an error for a name the page calls that this page never exposed. Arguments and results cross as JSON. The `realm` field addresses the reply; it is not an origin check. The binding exists in every browsing context, so any page the browser visits can call an exposed function — host functions MUST treat their arguments as untrusted input.
 
 The string form (`vibium:page.expose`) keeps its old meaning: the string is JS source that defines `window[name]` inside the page, with no host round trip.
 
@@ -388,7 +388,7 @@ The JS client provides some aliases for Playwright compatibility and discoverabi
 
 2. **Three levels exist, most users see two.** `Browser` → `Context` → `Page`. But `browser.newPage()` skips the context layer by using a default context internally. Only call `browser.newContext()` when you need isolation (multi-user, test-per-context).
 
-3. **One find, two signatures.** `find('.css')` for CSS (terse, 80% of cases). `find({role: 'button', text: 'Submit'})` for semantic (autocomplete, type-safe, combinable). In Python: `find(role='button', text='Submit')`. Playwright needs 8 separate methods and chaining to do what Vibium does with one method and two signatures.
+3. **One find, two signatures.** `find('the submit button')` for a description (what a person would say). `find({css: '.submit'})`, `find({role: 'button', text: 'Submit'})`, and `find({image: 'icon.png'})` for an exact locator or a picture (autocomplete, type-safe, combinable). In Python: `find(css='.submit')`, `find(role='button', text='Submit')`. Playwright needs 8 separate methods and chaining to do what Vibium does with one method and two signatures.
 
 4. **Events via `.on*()` methods.** `page.onDialog(fn)` not `page.on('dialog', fn)`. More discoverable, better autocomplete.
 
@@ -427,7 +427,7 @@ Before releasing a new client, verify:
 - [ ] `browser.start()` launches a visible browser
 - [ ] `browser.start(headless=True)` launches headless
 - [ ] `page.go(url)` navigates and waits for load
-- [ ] `page.find("selector")` returns an Element
+- [ ] `page.find("description")` and `page.find(css="selector")` return an Element
 - [ ] `element.click()` performs a click
 - [ ] `element.fill("text")` fills an input
 - [ ] `page.screenshot()` returns image bytes

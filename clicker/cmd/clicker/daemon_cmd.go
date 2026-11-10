@@ -277,6 +277,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 		ScreenshotDir:  screenshotDir,
 		Engine:         engineName,
 		Headless:       headless,
+		UserDataDir:    userDataDir,
 		IdleTimeout:    idleTimeout,
 		ConnectURL:     connectURL,
 		ConnectHeaders: connectHeaders,
@@ -342,18 +343,16 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		args = append(args, "--engine="+engineName)
 	}
 
-	// Forward connect flags to child process
-	if connectFlag != "" {
-		args = append(args, fmt.Sprintf("--connect=%s", connectFlag))
-	}
-	for _, h := range headerFlags {
-		args = append(args, fmt.Sprintf("--connect-header=%s", h))
-	}
-	if capsFlag != "" {
-		args = append(args, fmt.Sprintf("--connect-caps=%s", capsFlag))
+	// Connect config reaches the child through its environment, where
+	// resolveConnect reads it, because argv would leak the secrets to ps.
+	connectURL, connectHeaders, _ := resolveConnect(connectFlag, headerFlags, capsFlag)
+	capsJSON := capsFlag
+	if capsJSON == "" {
+		capsJSON = os.Getenv("VIBIUM_CONNECT_CAPS")
 	}
 
 	cmd := exec.Command(exe, args...)
+	cmd.Env = connectSpawnEnv(connectURL, connectHeaders, capsJSON)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -368,6 +367,11 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 
 	// Poll for socket availability
 	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
+		// Stop the process we just spawned. A daemon that is merely slow to
+		// bind (cold browser launch, in-process install) would otherwise come
+		// up moments after this reports failure: a leaked background process
+		// that follow-up commands silently find and use (#724).
+		stopSpawnedDaemon(cmd)
 		fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
 		os.Exit(1)
 	}
@@ -381,6 +385,30 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		return
 	}
 	fmt.Printf("Daemon started (pid %d)\n", cmd.Process.Pid)
+}
+
+// stopSpawnedDaemon terminates a daemon this process started but gave up
+// waiting on. SIGTERM first so the daemon's own shutdown path (browser
+// teardown, socket and pid cleanup) runs; kill when the signal cannot be
+// delivered (Windows) or the daemon is too wedged to act on it.
+func stopSpawnedDaemon(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if cmd.Process.Signal(syscall.SIGTERM) != nil {
+		cmd.Process.Kill()
+	}
+	done := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		cmd.Process.Kill()
+		<-done
+	}
 }
 
 // waitForSocket polls until the socket is connectable or timeout.

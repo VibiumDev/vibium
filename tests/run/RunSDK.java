@@ -13,10 +13,10 @@ class RunSDK {
             page.context().recording().start(new RecordingOptions().video(false).path(System.getenv("RUN_TEST_OUTPUT")));
             RunResult result = page.run("change name");
             check(result.status().equals("completed") && result.goal().equals("change name") && !result.evidence().isEmpty());
-            check(page.find("#name").value().equals("Updated"));
+            check(page.find(new SelectorOptions().css("#name")).value().equals("Updated"));
             check(page.evaluate("window.name").equals("original"));
             check(page.evaluate("sessionStorage.getItem('builder')").equals("preserved"));
-            check(other.find("#name").value().equals("Other"));
+            check(other.find(new SelectorOptions().css("#name")).value().equals("Other"));
             check(page.check("the name persisted").status().equals("passed"));
             String provider = System.getenv("VIBIUM_AI_PROVIDER").equals("anthropic") ? "google" : "anthropic";
             String endpoint = System.getenv("VIBIUM_AI_BASE_URL");

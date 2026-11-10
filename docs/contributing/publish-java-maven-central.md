@@ -193,7 +193,7 @@ public class Test {
         try {
             var page = bro.page();
             page.go("data:text/html,<h1>ok</h1>");
-            if (!page.find("h1").text().equals("ok")) throw new AssertionError();
+            if (!page.find(new SelectorOptions().css("h1")).text().equals("ok")) throw new AssertionError();
             System.out.println("Vibium OK");
         } finally {
             bro.stop();

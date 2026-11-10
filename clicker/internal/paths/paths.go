@@ -267,10 +267,6 @@ func GetChromeExecutable() (string, error) {
 // GetChromeExecutableForChannel resolves the executable of a specific
 // channel. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
 func GetChromeExecutableForChannel(channel string) (string, error) {
-	// linux-arm64 has no Chrome for Testing build; use the system browser (#638).
-	if UseSystemChrome() {
-		return SystemChromeExecutable()
-	}
 	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
@@ -288,9 +284,6 @@ func GetChromedriverPath() (string, error) {
 // GetChromedriverPathForChannel resolves the chromedriver of a specific
 // channel, from the same version directory as the executable.
 func GetChromedriverPathForChannel(channel string) (string, error) {
-	if UseSystemChrome() {
-		return SystemChromedriverPath()
-	}
 	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
@@ -453,15 +446,26 @@ func FirefoxPathInVersion(versionDir string) string {
 
 // getPlatformString returns the platform string used by Chrome for Testing.
 func getPlatformString() string {
-	switch runtime.GOOS {
+	return platformStringFor(runtime.GOOS, runtime.GOARCH)
+}
+
+// platformStringFor maps a Go GOOS/GOARCH to the Chrome for Testing platform
+// token. Chrome for Testing publishes linux-arm64 from 153.0.8001.0 on, so
+// aarch64 Linux downloads its own build like any other platform rather than
+// an x86 one that cannot exec (#638, #675).
+func platformStringFor(goos, goarch string) string {
+	switch goos {
 	case "darwin":
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			return "mac-arm64"
 		}
 		return "mac-x64"
 	case "windows":
 		return "win64"
 	default: // linux
+		if goarch == "arm64" {
+			return "linux-arm64"
+		}
 		return "linux64"
 	}
 }
@@ -471,10 +475,35 @@ func GetPlatformString() string {
 	return getPlatformString()
 }
 
-// GetDaemonDir returns the directory for daemon files (socket, PID).
-// This reuses the cache directory since daemon files are ephemeral.
+// GetDaemonDir returns the directory for daemon runtime files (socket, PID):
+// VIBIUM_RUNTIME_DIR, else $XDG_RUNTIME_DIR/vibium, else a private per-user
+// directory under the OS temp dir. Not the cache dir: cache paths are often
+// long and a Unix socket path caps at ~104 bytes. Windows has no socket, so
+// its PID file stays with the cache.
 func GetDaemonDir() (string, error) {
-	return GetCacheDir()
+	if runtime.GOOS == "windows" {
+		return GetCacheDir()
+	}
+	if dir := os.Getenv("VIBIUM_RUNTIME_DIR"); dir != "" {
+		return mkRuntimeDir(dir)
+	}
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		return mkRuntimeDir(filepath.Join(xdg, "vibium"))
+	}
+	// os.TempDir is per-user on macOS; on Linux /tmp is shared, so the uid
+	// suffix plus the owner check in mkRuntimeDir keeps the socket private.
+	return mkRuntimeDir(filepath.Join(os.TempDir(), fmt.Sprintf("vibium-%d", os.Getuid())))
+}
+
+// mkRuntimeDir creates dir owner-only and refuses one another user controls.
+func mkRuntimeDir(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := checkRuntimeDir(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // SessionName returns the daemon session name from the VIBIUM_SESSION
@@ -522,7 +551,7 @@ func maxSocketPathLen() int {
 }
 
 // GetSocketPath returns the platform-specific socket path for the daemon.
-// macOS/Linux: ~/Library/Caches/vibium/vibium[-<session>].sock or ~/.cache/vibium/vibium[-<session>].sock
+// macOS/Linux: <runtime dir>/vibium[-<session>].sock (see GetDaemonDir)
 // Windows: \\.\pipe\vibium[-<session>] (named pipe)
 func GetSocketPath() (string, error) {
 	suffix, err := sessionSuffix()
@@ -540,7 +569,7 @@ func GetSocketPath() (string, error) {
 	// Binding a socket beyond sun_path's capacity fails deep inside daemon
 	// startup; reject it here with an actionable message instead.
 	if len(path) > maxSocketPathLen() {
-		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or point VIBIUM_CACHE_DIR at a shorter path", path, len(path), maxSocketPathLen())
+		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or set VIBIUM_RUNTIME_DIR to a shorter path", path, len(path), maxSocketPathLen())
 	}
 	return path, nil
 }

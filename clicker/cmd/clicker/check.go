@@ -52,7 +52,7 @@ func newCheckCmd() *cobra.Command {
 		Short: "Check a claim in a live browser or an existing recording with an independent model",
 		Long:  "Check a claim in a live browser or an existing recording with an independent model.\nCheck provider setup first with: vibium ready ai.\nCloses a browser it starts after saving evidence; reuses and preserves an existing browser.\nUse --keep-open to leave a newly started browser open.",
 		Example: `  vibium check "changing my display name persists after refresh"
-  # Returns PASS, FAIL, or INCONCLUSIVE with concise evidence.
+  # Returns PASS, FAIL, or REVIEW with concise evidence.
   vibium check "changing my display name persists after refresh" -o verification.zip
   # Saves the live verification in a new recording ZIP.
   vibium check "https://example.com is up" -o status.zip --keep-open
@@ -71,6 +71,7 @@ func newCheckCmd() *cobra.Command {
 			}
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: true, Result: result})
+				exitExpected(cmd, "passed", result.Status)
 				return
 			}
 			fmt.Printf("CHECK: %s\n\n%s\n\n%s\n", result.Claim, result.Verdict(), result.Summary)
@@ -83,6 +84,7 @@ func newCheckCmd() *cobra.Command {
 			if files.report != "" {
 				fmt.Printf("Report saved to %s\n", files.report)
 			}
+			exitExpected(cmd, "passed", result.Status)
 		},
 	}
 	cmd.Flags().StringVarP(&files.input, "input", "i", "", "Read an existing Vibium recording or Playwright trace ZIP; no browser is launched")
@@ -90,16 +92,41 @@ func newCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&files.report, "report", "", "Save the verdict and concise evidence as a new JSON file")
 	cmd.Flags().Bool("keep-open", false, "Leave a browser started by Check open after the run (existing browsers are always preserved)")
 	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
+	cmd.Flags().String("expect", "", "Gate automation on the verdict: with pass, FAIL exits 2 and REVIEW exits 3 (execution errors keep exit 1)")
 	addModelFlags(cmd)
 	cmd.Example += "\n  vibium check \"checkout completes\" --base-url http://localhost:3000\n  # Verifies the claim against that site; a page already on its origin keeps its state."
+	cmd.Example += "\n  vibium check \"checkout completes\" --expect pass\n  # Exits 0 on PASS, 2 on FAIL, 3 on REVIEW for CI gating."
 	return cmd
+}
+
+// exitExpected applies the --expect exit contract after the result is
+// printed. Exit 1 stays reserved for execution errors.
+func exitExpected(cmd *cobra.Command, expected, status string) {
+	if expect, _ := cmd.Flags().GetString("expect"); expect == "" || status == expected {
+		return
+	}
+	if status == "failed" || status == "not_completed" {
+		os.Exit(2)
+	}
+	os.Exit(3)
+}
+
+// validateExpect rejects unknown --expect values before any model action.
+func validateExpect(cmd *cobra.Command, allowed string) error {
+	if expect, _ := cmd.Flags().GetString("expect"); expect != "" && expect != allowed {
+		return fmt.Errorf("--expect accepts only %s", allowed)
+	}
+	return nil
 }
 
 // Return errors before printing them so all artifact cleanup runs before the
 // CLI's printError exits the process.
-func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *ai.Result, err error) {
-	if err = files.validate(cmd); err != nil {
-		return
+func runCheck(cmd *cobra.Command, claim string, files operationFiles) (*ai.Result, error) {
+	if err := files.validate(cmd); err != nil {
+		return nil, err
+	}
+	if err := validateExpect(cmd, "pass"); err != nil {
+		return nil, err
 	}
 	keepOpen, _ := cmd.Flags().GetBool("keep-open")
 	if files.input != "" && cmd.Flags().Changed("keep-open") {
@@ -107,18 +134,41 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *a
 	}
 	config, err := ai.ResolveConfig("check", modelOverrides(cmd))
 	if err != nil {
-		return result, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
+		return nil, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
 	}
 	baseSite, _ := cmd.Flags().GetString("base-url")
 	req := check.Request{Claim: claim, Record: files.input, Output: files.output, BaseSite: baseSite, Config: config}
-	if err = req.Validate(); err != nil {
-		return
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
+	return runWithReport(files.report, func() (*ai.Result, error) {
+		// Keep browser startup and cleanup inside the daemon's serialized Check
+		// request. A separate browser_start call cannot safely establish ownership.
+		run := func() (*ai.Result, error) {
+			if files.input == "" {
+				return daemon.CheckWithBrowser(req, agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
+			}
+			return daemon.Check(req)
+		}
+		result, err := run()
+		if isConnectionError(err) {
+			daemon.CleanStale()
+			if err = autoStartDaemon(); err == nil {
+				result, err = run()
+			}
+		}
+		return result, err
+	})
+}
+
+// runWithReport reserves the report path before the operation runs; any
+// failure removes the reserved file.
+func runWithReport[T any](path string, operation func() (*T, error)) (result *T, err error) {
 	var report *os.File
-	if files.report != "" {
-		report, err = os.OpenFile(files.report, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if path != "" {
+		report, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err != nil {
-			return
+			return nil, err
 		}
 		defer func() {
 			closeErr := report.Close()
@@ -126,29 +176,12 @@ func runCheck(cmd *cobra.Command, claim string, files operationFiles) (result *a
 				err = closeErr
 			}
 			if err != nil {
-				os.Remove(files.report)
+				os.Remove(path)
 			}
 		}()
 	}
-	// Keep browser startup and cleanup inside the daemon's serialized Check
-	// request. A separate browser_start call cannot safely establish ownership.
-	run := func() (*ai.Result, error) {
-		if files.input == "" {
-			return daemon.CheckWithBrowser(req, agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen})
-		}
-		return daemon.Check(req)
-	}
-	result, err = run()
-	if isConnectionError(err) {
-		daemon.CleanStale()
-		if err = autoStartDaemon(); err == nil {
-			result, err = run()
-		}
-	}
-	if err != nil {
-		return
-	}
-	if report != nil {
+	result, err = operation()
+	if err == nil && report != nil {
 		err = json.NewEncoder(report).Encode(result)
 	}
 	return

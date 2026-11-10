@@ -34,8 +34,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 14 | Get current URL | `vibium:page.url` | `vibium url` | `browser_get_url` | `page.url()` | `page.url()` | `page.url()` |
 | 15 | Get page title | `vibium:page.title` | `vibium title` | `browser_get_title` | `page.title()` | `page.title()` | `page.title()` |
 | 16 | Get page HTML | `vibium:page.content` | — | — | `page.content()` | `page.content()` | `page.content()` |
-| 17 | Find a single element | `vibium:page.find` | `vibium find <sel>` | `browser_find` | `page.find(sel, opts?)` | `page.find(sel, **opts)` | `page.find(sel, options?)` |
-| 18 | Find all matching elements | `vibium:page.findAll` | `vibium find --all <sel>` | `browser_find_all` | `page.findAll(sel, opts?)` | `page.find_all(sel, **opts)` | `page.findAll(sel, options?)` |
+| 17 | Find a single element by description (a bare string), css, tag, semantic locator, or reference image; strategy auto, cv, vlm, or tree | `vibium:page.find` | `vibium find <description>` | `browser_find` | `page.find(locator, opts?)` | `page.find(locator, **opts)` | `page.find(locator, options?)` |
+| 18 | Find all matching elements, same locator forms | `vibium:page.findAll` | `vibium find --all <description>` | `browser_find_all` | `page.findAll(locator, opts?)` | `page.find_all(locator, **opts)` | `page.findAll(locator, options?)` |
 | 19 | Take a page screenshot | `vibium:page.screenshot` | `vibium screenshot` | `browser_screenshot` | `page.screenshot(opts?)` | `page.screenshot(opts?)` | `page.screenshot(options?)` |
 | 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf(opts?)` | `page.pdf(**opts)` | `page.pdf(options?)` |
 | 21 | Evaluate JavaScript | `vibium:page.eval` | `vibium eval <expr>` | `browser_evaluate` | `page.evaluate(expr)` | `page.evaluate(expr)` | `page.evaluate(expr)` |
@@ -175,7 +175,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 115 | Tap at coordinates | `vibium:touch.tap` | `vibium tap <x> <y>` | `browser_tap` | `touch.tap(x, y)` | `touch.tap(x, y)` | `touch.tap(x, y)` |
-| 221 | Swipe between coordinates | `vibium:touch.swipe` | `vibium swipe <x1> <y1> <x2> <y2>` | `browser_swipe` | `touch.swipe(x1, y1, x2, y2, durationMs?)` | `touch.swipe(x1, y1, x2, y2, duration_ms?)` | ⬜ |
+| 221 | Swipe in a direction (up, down, left, right; from an edge or point; speed, hold) or between coordinates | `vibium:touch.swipe` | `vibium swipe <direction>` | `browser_swipe` | `touch.swipe(direction, opts?)` | `touch.swipe(direction, from_=, speed=, hold_ms=)` | ⬜ |
 | 222 | Long-press at coordinates | `vibium:touch.longPress` | `vibium long-press <x> <y>` | `browser_long_press` | `touch.longPress(x, y, durationMs?)` | `touch.long_press(x, y, duration_ms?)` | ⬜ |
 
 ## Clock
@@ -196,13 +196,15 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 124 | Start recording | `vibium:recording.start` | `vibium record start` | `browser_record_start` | `recording.start(opts?)` | `recording.start(opts?)` | `recording.start(options?)` |
-| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?)` | `recording.stop(path?)` |
+| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?, upload?)` | `recording.stop(path?)` |
 | 126 | Start a recording chunk | `vibium:recording.startChunk` | `vibium record chunk start` | `browser_record_start_chunk` | `recording.startChunk(opts?)` | `recording.start_chunk(opts?)` | `recording.startChunk(options?)` |
 | 127 | Stop a recording chunk | `vibium:recording.stopChunk` | `vibium record chunk stop` | `browser_record_stop_chunk` | `recording.stopChunk(opts?)` | `recording.stop_chunk(path?)` | `recording.stopChunk(path?)` |
 | 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record group start <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` | `recording.startGroup(name, location?)` |
 | 129 | Stop a logical group | `vibium:recording.stopGroup` | `vibium record group stop` | `browser_record_stop_group` | `recording.stopGroup()` | `recording.stop_group()` | `recording.stopGroup()` |
 
 `recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md).
+
+`recording.stop` also takes `upload`: `true` sends the zip to the Record Store of the station the browser is connected through, and a station URL names one. It needs the API key the connection was made with (`VIBIUM_CONNECT_API_KEY`), the zip still lands at its path either way, and the result gains `upload: {url, sha256, size, hold, device, event}` saying where the station put it and which hold it filed it under. The CLI form is `vibium record stop --upload` (or `--upload-to URL`), the MCP tool takes `upload: true`, and the SDKs take `upload` on `stop()`.
 
 ## Route
 
@@ -304,6 +306,10 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 206 | Find by title attribute | — | `vibium find title <val>` | — | — | — | — |
 | 207 | Find by test id | — | `vibium find testid <val>` | — | — | — | — |
 | 208 | Find by XPath | — | `vibium find xpath <val>` | — | — | — | — |
+| 225 | Find by CSS selector, explicitly | — | `vibium find css <val>` | — | — | — | — |
+| 226 | Find by HTML tag | — | `vibium find tag <val>` | — | — | — | — |
+| 227 | Find by description, explicitly | — | `vibium find description <val>` | — | — | — | — |
+| 228 | Find where a reference image appears | — | `vibium find image <path>` | — | — | — | — |
 | 209 | Diagnostic: launch the browser directly | — | `vibium launch-test` | — | — | — | — |
 | 210 | Diagnostic: test a websocket endpoint | — | `vibium ws-test <url>` | — | — | — | — |
 | 211 | Diagnostic: test a BiDi endpoint | — | `vibium bidi-test <url>` | — | — | — | — |
@@ -331,15 +337,17 @@ The JS and Python module-level `browser.check` launcher requires `record` and
 uses the existing pipe runtime without launching a browser. Browser instances
 and Page instances use the current live session unless `record` is supplied.
 Page instances pin their own context. The result contains `status` (`passed`,
-`failed`, or `inconclusive`), `claim`, `summary`, and concise `evidence`.
-Operational errors raise exceptions instead of returning a verdict.
+`failed`, or `inconclusive`), `claim`, `summary`, concise `evidence`, and on
+inconclusive MAY include a machine-readable `reason`. Operational errors
+raise exceptions instead of returning a verdict.
 
 CLI `-i`/`--input` maps to the runtime `record` field. CLI `-o`/`--output`
 saves a live recording, `--report` writes a JSON verdict, and `--json` controls
 stdout. See the [Check reference](check.md) for configuration and examples.
 
 Run is live-only and returns `completed` or `not_completed` with a goal,
-summary, and evidence. Execution errors remain errors. Configure its provider
+summary, and evidence; `not_completed` MAY include a machine-readable
+`reason`. Execution errors remain errors. Configure its provider
 with `VIBIUM_AI_*` and check it with `vibium ready ai`.
 See [Run](../how-to-guides/run.md).
 

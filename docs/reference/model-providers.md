@@ -229,7 +229,13 @@ See [Anthropic tool calls](https://platform.claude.com/docs/en/agents-and-tools/
 and [Gemini API schemas](https://ai.google.dev/api/generate-content).
 
 Reasoning-effort settings are supported for OpenAI, xAI, and compatible
-endpoints. Leave them unset for Anthropic and Google; extended
+endpoints. OpenAI gpt-5 and gpt-6 models need `none` for Chat Completions
+function tools; `vibium setup ai` writes that default for them and says so.
+Other OpenAI model families keep the provider default. gpt-6.1 models accept
+function tools only on OpenAI's Responses API, which Vibium does not use yet.
+No reasoning effort makes them work; `vibium ready ai` reports this.
+Choose another model, such as `gpt-5.6-sol`.
+Leave reasoning-effort settings unset for Anthropic and Google; extended
 thinking is not requested from Anthropic. Free-form assistant text accompanying
 tool calls and readable reasoning are discarded. Gemini's opaque function-call
 signatures are retained only in memory during that invocation and returned to

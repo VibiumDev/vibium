@@ -124,7 +124,7 @@ describe('JS Frames', () => {
     assert.ok(url.includes('/frame1'), `Frame URL should contain /frame1, got ${url}`);
 
     // find() works on frame
-    const h1 = await frame.find('h1');
+    const h1 = await frame.find({ css: 'h1' });
     const text = await h1.text();
     assert.strictEqual(text, 'Frame 1 Content', `h1 text should be "Frame 1 Content", got "${text}"`);
   });

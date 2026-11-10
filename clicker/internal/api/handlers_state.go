@@ -37,6 +37,19 @@ func (r *Router) handleVibiumElHighlight(session *BrowserSession, cmd bidiComman
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+	if ep.Visual != nil {
+		s := NewAPISession(r, session, context)
+		info, err := VisualElementInfo(s, context, ep.Visual)
+		if err == nil {
+			err = HighlightBox(s, context, info.Box)
+		}
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"highlighted": true})
+		return
+	}
 
 	script, args := buildElStateScript(ep, `(() => {
 		const prevOutline = el.style.outline;
@@ -205,6 +218,17 @@ func (r *Router) handleVibiumElBounds(session *BrowserSession, cmd bidiCommand) 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if ep.Visual != nil {
+		info, err := VisualElementInfo(NewAPISession(r, session, context), context, ep.Visual)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{
+			"x": info.Box.X, "y": info.Box.Y, "width": info.Box.Width, "height": info.Box.Height,
+		})
 		return
 	}
 
@@ -808,7 +832,7 @@ func EvalBoolScript(s Session, context, script string, args []map[string]interfa
 	}
 
 	if len(val) > 6 && val[:6] == "error:" {
-		return false, fmt.Errorf(val[6:])
+		return false, errors.New(val[6:])
 	}
 
 	return val == "true", nil
@@ -946,7 +970,7 @@ func GetCount(s Session, context, selector string) (int, error) {
 	// Return the count as a string: parseScriptResult unmarshals the BiDi result
 	// value into a Go string field, so a bare numeric result fails with "cannot
 	// unmarshal number ... into ... string" (issue #149).
-	expr := fmt.Sprintf(`() => String(document.querySelectorAll(%q).length)`, selector)
+	expr := fmt.Sprintf(`() => { %s return String(pierceQueryAll(document, %q).length); }`, PierceQueryJS(), selector)
 	val, err := EvalSimpleScript(s, context, expr)
 	if err != nil {
 		return 0, err

@@ -1,4 +1,5 @@
 import { BiDiClient } from './bidi';
+import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -13,7 +14,21 @@ export interface ElementInfo {
   tag: string;
   text: string;
   box: BoundingBox;
+  /** The @eN ref find registered; the CLI and MCP address the same element by it. */
+  ref?: string;
+  role?: string;
+  /** Accessible name. */
+  name?: string;
+  /** What backs the match: dom, tree, image, or vlm. */
+  source?: string;
+  /** The DOM selector of a DOM-backed match. Absent for a visual region. */
+  selector?: string;
+  /** Diagnostics, when the find asked for details. */
+  details?: Record<string, unknown>;
 }
+
+/** How a find resolves. */
+export type FindStrategy = 'auto' | 'cv' | 'vlm' | 'tree';
 
 export interface ActionOptions {
   /** Timeout in milliseconds for actionability checks. Default: 30000 */
@@ -21,6 +36,31 @@ export interface ActionOptions {
 }
 
 export interface SelectorOptions {
+  /** Natural-language description, e.g. 'the Add to Cart button'. Stands alone. */
+  description?: string;
+  /** Reference image to locate on screen: a file path, a data: URL, or PNG/JPEG bytes. Stands alone. */
+  image?: string | Uint8Array;
+  /** CSS selector. Exact; never sent to a model. */
+  css?: string;
+  /** Same as css. */
+  selector?: string;
+  /** HTML tag name. */
+  tag?: string;
+  /** Accessible-name filter: the text, label, alt, or aria-label a person reads the element by. */
+  name?: string;
+  /**
+   * auto (default): page evidence first, a vision model only when needed
+   * and configured. cv: local image matching only. vlm: vision model only.
+   * tree: the page's DOM/accessibility tree only.
+   */
+  strategy?: FindStrategy;
+  /** Include diagnostics in info.details. */
+  details?: boolean;
+  /** Per-call AI overrides, as for check and run. */
+  provider?: string;
+  model?: string;
+  aiBaseURL?: string;
+  reasoningEffort?: string;
   role?: string;
   text?: string;
   label?: string;
@@ -59,10 +99,11 @@ export class Element {
 
   /** Build the common params sent to vibium: commands for element resolution. */
   private commandParams(extra?: Record<string, unknown>): Record<string, unknown> {
+    // An object locator's own selector replaces the '' placeholder.
     return {
+      selector: this.selector,
       ...this._params,
       context: this.context,
-      selector: this.selector,
       index: this._index,
       ...extra,
     };
@@ -71,8 +112,8 @@ export class Element {
   /** Params that identify this element as a target (e.g. dragTo). */
   private toParams(): Record<string, unknown> {
     return {
-      ...this._params,
       selector: this.selector,
+      ...this._params,
       index: this._index,
     };
   }
@@ -110,8 +151,9 @@ export class Element {
    * Waits for element to be visible, stable, receive events, enabled, and editable.
    */
   async type(text: string, options?: ActionOptions): Promise<void> {
+    // "value" is the payload key; "text" would collide with a text filter.
     await this.client.send('vibium:element.type', this.commandParams({
-      text,
+      value: text,
       timeout: options?.timeout,
     }));
   }
@@ -328,54 +370,38 @@ export class Element {
         context: this.context,
         scope: this.selector,
         timeout: options?.timeout,
+        ...(await locatorParams(selector)),
       };
+      if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
 
-      if (typeof selector === 'string') {
-        params.selector = selector;
-      } else {
-        Object.assign(params, selector);
-        if (selector.timeout) params.timeout = selector.timeout;
+      const result = await this.client.send<FoundElement>('vibium:element.find', params);
+      const info = infoFrom(result);
+      if (resolvedHandle(selector)) {
+        return new Element(this.client, this.context, handleSelector(result), info);
       }
-
-      const result = await this.client.send<{
-        tag: string;
-        text: string;
-        box: BoundingBox;
-      }>('vibium:element.find', params);
-
-      const info: ElementInfo = { tag: result.tag, text: result.text, box: result.box };
-      const childSelector = typeof selector === 'string' ? selector : '';
-      const childParams = typeof selector === 'string' ? { selector } : { ...selector };
-      return new Element(this.client, this.context, childSelector, info, undefined, childParams);
+      // The child keeps the scope so re-resolution stays inside the parent (#779).
+      return new Element(this.client, this.context, cssOf(params), info, undefined, reusableParams(params));
     })();
     return fluent(promise);
   }
 
-  /** Find all child elements by CSS selector or semantic options. Scoped to this element. */
+  /** Find all child elements by description, image, css, or semantic options. Scoped to this element. */
   async findAll(selector: string | SelectorOptions, options?: { timeout?: number }): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.context,
       scope: this.selector,
       timeout: options?.timeout,
+      ...(await locatorParams(selector)),
     };
+    if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
 
-    if (typeof selector === 'string') {
-      params.selector = selector;
-    } else {
-      Object.assign(params, selector);
-      if (selector.timeout) params.timeout = selector.timeout;
-    }
-
-    const result = await this.client.send<{
-      elements: Array<{ tag: string; text: string; box: BoundingBox; index: number }>;
-      count: number;
-    }>('vibium:element.findAll', params);
-
-    const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    const result = await this.client.send<{ elements: FoundElement[] }>('vibium:element.findAll', params);
+    const resolved = resolvedHandle(selector);
+    const childParams = reusableParams(params);
     return result.elements.map((el) => {
-      const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
-      return new Element(this.client, this.context, selectorStr, info, el.index, selectorParams);
+      const info = infoFrom(el);
+      if (resolved) return new Element(this.client, this.context, handleSelector(el), info);
+      return new Element(this.client, this.context, cssOf(params), info, el.index, childParams);
     });
   }
 

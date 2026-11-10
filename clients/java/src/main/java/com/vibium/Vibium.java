@@ -87,6 +87,7 @@ public final class Vibium {
             options.engine(),
             options.channel(),
             options.headless(),
+            options.userDataDir(),
             connectURL,
             connectHeaders,
             connectCaps

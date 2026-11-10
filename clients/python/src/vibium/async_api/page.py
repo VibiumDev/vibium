@@ -12,9 +12,10 @@ import logging
 import re
 import warnings
 import weakref
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .. import errors
+from .._locator import ImageInput, handle_selector, info_from, locator_params, resolved_handle, reusable_params
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
@@ -117,12 +118,18 @@ class Mouse:
     def __init__(self, client: BiDiClient, context_id: str) -> None:
         self._client = client
         self._context_id = context_id
+        # Last pointer position, so wheel() scrolls where the mouse is rather
+        # than at (0, 0). Updated by every action that repositions it (#726).
+        self._last_x: float = 0
+        self._last_y: float = 0
 
     async def click(self, x: float, y: float) -> None:
         await self._client.send("vibium:mouse.click", {"context": self._context_id, "x": x, "y": y})
+        self._last_x, self._last_y = x, y
 
     async def move(self, x: float, y: float) -> None:
         await self._client.send("vibium:mouse.move", {"context": self._context_id, "x": x, "y": y})
+        self._last_x, self._last_y = x, y
 
     async def down(self) -> None:
         await self._client.send("vibium:mouse.down", {"context": self._context_id})
@@ -132,7 +139,7 @@ class Mouse:
 
     async def wheel(self, delta_x: float, delta_y: float) -> None:
         await self._client.send("vibium:mouse.wheel", {
-            "context": self._context_id, "x": 0, "y": 0,
+            "context": self._context_id, "x": self._last_x, "y": self._last_y,
             "deltaX": delta_x, "deltaY": delta_y,
         })
 
@@ -149,18 +156,42 @@ class Touch:
 
     async def swipe(
         self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
+        x1: Union[float, str],
+        y1: Optional[float] = None,
+        x2: Optional[float] = None,
+        y2: Optional[float] = None,
         duration_ms: Optional[int] = None,
+        *,
+        from_: Union[str, Tuple[float, float], None] = None,
+        distance: Optional[float] = None,
+        speed: Union[str, float, None] = None,
+        hold_ms: Optional[int] = None,
     ) -> None:
-        """Swipe from (x1, y1) to (x2, y2). The finger stays down for the move,
-        so the gesture reads as a swipe/fling rather than two taps. duration_ms
-        controls how long the move takes (default 300)."""
-        params: dict = {"context": self._context_id, "x1": x1, "y1": y1, "x2": x2, "y2": y2}
-        if duration_ms is not None:
-            params["duration"] = duration_ms
+        """Swipe in a direction, or from (x1, y1) to (x2, y2). The finger stays
+        down for the move, so the gesture reads as a swipe/fling rather than
+        two taps.
+
+            swipe("up")                                # from the center, half the viewport
+            swipe("up", from_="bottom", speed="fast")  # phone home gesture via Roadie
+            swipe(40, 100, 240, 100, 200)              # coordinates, 200ms
+
+        from_ is an edge ("top", "bottom", "left", "right"), a corner
+        ("top-left", "top-right", "bottom-left", "bottom-right"), "center", or
+        an (x, y) point. speed is "slow", "normal", "fast", or pixels per second.
+        duration_ms defaults to 300. hold_ms rests at the end before lifting."""
+        params: dict = {"context": self._context_id}
+        if isinstance(x1, str):
+            params["direction"] = x1
+        else:
+            params.update({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+        if isinstance(from_, str):
+            params["from"] = from_
+        elif from_ is not None:
+            params["fromX"], params["fromY"] = from_
+        for key, value in (("distance", distance), ("speed", speed),
+                           ("duration", duration_ms), ("hold", hold_ms)):
+            if value is not None:
+                params[key] = value
         await self._client.send("vibium:touch.swipe", params)
 
     async def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
@@ -272,6 +303,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -281,32 +317,47 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
-        """Find an element by CSS selector or semantic options."""
-        params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
+        """Find an element.
 
+        A bare string is a natural-language description: find("the Add to Cart
+        button"). Exact locators are keywords: css="h1", tag="h1",
+        role="button", text="Add to Cart", and the rest. image= locates a
+        reference picture (a path or PNG/JPEG bytes) on screen.
+
+        strategy: "auto" (default) uses page evidence first and a vision model
+        only when needed and configured; "cv" is local image matching only;
+        "vlm" is the vision model only; "tree" is the page tree only. provider,
+        model, ai_base_url and reasoning_effort override the AI settings for
+        this call, as for check and run.
+        """
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context_id
         result = await self._client.send("vibium:page.find", params)
-        info = ElementInfo(tag=result["tag"], text=result["text"], box=BoundingBox(**result["box"]))
-        sel_str = selector or ""
-        sel_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "timeout")
-        }
-        return Element(self._client, self._context_id, sel_str, info, None, sel_params)
+        if resolved_handle(params):
+            return Element(self._client, self._context_id, handle_selector(result), info_from(result))
+        return Element(self._client, self._context_id, params.get("selector", ""), info_from(result), None, reusable_params(params))
 
     async def find_all(
         self,
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -316,32 +367,34 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        """Find all elements matching a selector or semantic options.
+        """Find all elements matching a description, image, css, or semantic
+        locator; see find for the forms.
 
         Waits up to the timeout for at least one match, then returns an empty
         list if there is none. A timeout of 0 checks once without waiting.
         """
-        params: Dict[str, Any] = {"context": self._context_id, "timeout": timeout}
-        if selector is not None:
-            params["selector"] = selector
-        else:
-            for key, val in [("role", role), ("text", text), ("label", label),
-                             ("placeholder", placeholder), ("alt", alt), ("title", title),
-                             ("testid", testid), ("xpath", xpath), ("near", near)]:
-                if val is not None:
-                    params[key] = val
-
+        params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
+        params["context"] = self._context_id
         result = await self._client.send("vibium:page.findAll", params)
-        sel_str = selector or ""
-        sel_params = {"selector": selector} if selector else {
-            k: v for k, v in params.items() if k not in ("context", "timeout")
-        }
+        resolved = resolved_handle(params)
+        reuse = reusable_params(params)
         elements = []
         for el in result["elements"]:
-            info = ElementInfo(tag=el["tag"], text=el["text"], box=BoundingBox(**el["box"]))
-            elements.append(Element(self._client, self._context_id, sel_str, info, el.get("index"), sel_params))
+            if resolved:
+                elements.append(Element(self._client, self._context_id, handle_selector(el), info_from(el)))
+            else:
+                elements.append(Element(self._client, self._context_id, params.get("selector", ""), info_from(el), el.get("index"), reuse))
         return elements
 
     # --- Waiting ---

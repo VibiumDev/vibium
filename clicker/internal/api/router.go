@@ -50,8 +50,14 @@ type BrowserSession struct {
 	// (vibium pipe --connect starts its internal ids at 1000000, so a nested
 	// router's commands were being swallowed here — #158).
 	abandonedInternal map[int]struct{} // id -> response channel
-	internalCmdsMu    sync.Mutex
-	nextInternalID    int
+	// Forwarded client commands are renumbered from nextInternalID before
+	// they reach the browser, so a client id can never collide with an
+	// in-flight internal command in the browser's single id namespace — a
+	// nested vibium client numbers its commands from the same base (#723).
+	// browser-side id -> the client's original id, restored on the response.
+	forwardedIDs   map[int]int
+	internalCmdsMu sync.Mutex
+	nextInternalID int
 
 	// WebSocket monitoring state
 	wsPreloadScriptID string // "" if not installed
@@ -98,6 +104,7 @@ type BrowserSession struct {
 	recorder           *Recorder
 	lastContext        string     // last browsing context resolved by a command
 	lastURL            string     // last known page URL, updated from load/navigation events
+	refs               RefTables  // @eN tables, one per browsing context
 	lastElementBox     *BoxInfo   // last resolved element box, for recording
 	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
 	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
@@ -155,6 +162,7 @@ type Router struct {
 	connectHeaders http.Header
 	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
 	browserArgs    []string               // extra engine flags for a locally launched browser (#640)
+	userDataDir    string                 // persistent profile dir for a locally launched browser (#715)
 	// signer, when set, signs every outgoing request with Web Bot Auth so a
 	// site in Cloudflare's Verified Bots program can recognize the agent (#28).
 	// nil disables signing and leaves the request path untouched.
@@ -165,6 +173,10 @@ type Router struct {
 // launched browser. Call once before any client connects. No effect in
 // connect mode, where the browser is someone else's.
 func (r *Router) SetBrowserArgs(args []string) { r.browserArgs = args }
+
+// SetUserDataDir sets a persistent profile directory for a locally launched
+// browser (#715). Same contract as SetBrowserArgs.
+func (r *Router) SetUserDataDir(dir string) { r.userDataDir = dir }
 
 // NewRouter creates a new router. Web Bot Auth signing turns on here, from the
 // environment, so every entry path that builds a router (pipe, daemon, serve,
@@ -246,9 +258,10 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Launching browser for client %d...\n", client.ID())
 
 		launchResult, err = browser.Launch(browser.LaunchOptions{
-			Engine:   r.engine,
-			Headless: r.headless,
-			Args:     r.browserArgs,
+			Engine:      r.engine,
+			Headless:    r.headless,
+			Args:        r.browserArgs,
+			UserDataDir: r.userDataDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to launch browser for client %d: %v\n", client.ID(), err)
@@ -287,6 +300,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		stopChan:          make(chan struct{}),
 		internalCmds:      make(map[int]chan json.RawMessage),
 		abandonedInternal: make(map[int]struct{}),
+		forwardedIDs:      make(map[int]int),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
 		dialogManual:      make(map[string]struct{}),
@@ -351,6 +365,29 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// client command navigates, so the first request is already signed (#28).
 	if r.signer != nil {
 		r.installSignatureIntercept(session)
+	}
+}
+
+// closePersistentBrowser asks the browser itself to exit so a persistent
+// profile is flushed before any process-level teardown (#715). Firefox
+// implements BiDi natively, so browser.close is its clean shutdown. Chrome
+// gets CDP Browser.close through chromedriver's goog:cdp extension instead:
+// chromedriver's own teardown (BiDi browser.close included) hard-kills the
+// browser, and only Chrome's own shutdown writes the profile out. No reply is
+// expected on that path — the mapper dies with the browser — so the timeout
+// is the normal exit. An immediate error means an engine without the
+// extension; fall back to the spec command rather than closing nothing.
+func (r *Router) closePersistentBrowser(session *BrowserSession) {
+	if session.LaunchResult.Engine == "firefox" {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
+		return
+	}
+	_, err := r.sendInternalCommandWithTimeout(session, "goog:cdp.sendCommand", map[string]interface{}{
+		"method": "Browser.close",
+		"params": map[string]interface{}{},
+	}, 2*time.Second)
+	if err != nil && !strings.Contains(err.Error(), "timeout waiting for response") {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
 	}
 }
 
@@ -423,6 +460,12 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		if cmd.modelDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
 			session.dispatchMu.Lock()
 			defer session.dispatchMu.Unlock()
+		}
+
+		// A client may address an element by the @eN ref a find returned.
+		if err := ResolveRefParams(session.refs.For(commandContextParam(cmd.Params)), cmd.Method, cmd.Params); err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
 		}
 
 		var callId string
@@ -972,10 +1015,57 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	}
 
-	// Forward standard BiDi commands to browser
+	// Forward standard BiDi commands to browser, renumbered so the client's
+	// id cannot collide with an internal command's (#723). The response gets
+	// the client's id back in routeBrowserToClient.
+	if cmd.ID > 0 {
+		if remapped, ok := session.remapForwardedCommand(msg, cmd.ID); ok {
+			msg = remapped
+		}
+	}
 	if err := session.BidiConn.Send(msg); err != nil {
 		fmt.Fprintf(os.Stderr, "[router] Failed to send to browser for client %d: %v\n", client.ID(), err)
 	}
+}
+
+// remapForwardedCommand rewrites a client command's id to a fresh id from the
+// internal counter and records the mapping for the response. A message that
+// cannot be rewritten is forwarded as-is, the pre-#723 behavior.
+func (s *BrowserSession) remapForwardedCommand(msg string, clientID int) (string, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return "", false
+	}
+	s.internalCmdsMu.Lock()
+	browserID := s.nextInternalID
+	s.nextInternalID++
+	s.forwardedIDs[browserID] = clientID
+	s.internalCmdsMu.Unlock()
+	fields["id"], _ = json.Marshal(browserID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		s.internalCmdsMu.Lock()
+		delete(s.forwardedIDs, browserID)
+		s.internalCmdsMu.Unlock()
+		return "", false
+	}
+	return string(out), true
+}
+
+// restoreClientID puts the client's original id back on a response to a
+// forwarded command. On a marshal failure the browser-side id stays: the
+// client gets a response it cannot match, but the reader loop stays correct.
+func restoreClientID(msg string, clientID int) string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return msg
+	}
+	fields["id"], _ = json.Marshal(clientID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return msg
+	}
+	return string(out)
 }
 
 // getContext retrieves the active browsing context. It checks lastContext first
@@ -1104,6 +1194,16 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		if err := json.Unmarshal([]byte(msg), &resp); err == nil && resp.ID > 0 {
 			session.internalCmdsMu.Lock()
 			ch, isInternal := session.internalCmds[resp.ID]
+			if isInternal {
+				// Delete before sending, like bidi.Client: with the entry
+				// gone a second response with this id cannot match it, so
+				// the cap-1 send can never block this loop (#723).
+				delete(session.internalCmds, resp.ID)
+			}
+			clientID, isForwarded := session.forwardedIDs[resp.ID]
+			if isForwarded {
+				delete(session.forwardedIDs, resp.ID)
+			}
 			session.internalCmdsMu.Unlock()
 
 			if isInternal {
@@ -1122,6 +1222,10 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			session.internalCmdsMu.Unlock()
 			if abandoned {
 				continue
+			}
+
+			if isForwarded {
+				msg = restoreClientID(msg, clientID)
 			}
 
 			// A browser reply about to be forwarded answers a client command.
@@ -1424,6 +1528,15 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		}
 	}
 
+	// A persistent profile (#715) needs the browser to exit on its own or
+	// the profile writes it has not flushed (cookies, localStorage) are
+	// lost: every process-level teardown chromedriver runs is a hard kill.
+	// Ask the browser to close itself while the connection still routes;
+	// LaunchResult.Close then waits for the exit before killing anything.
+	if alive && session.LaunchResult != nil && session.LaunchResult.Persistent {
+		r.closePersistentBrowser(session)
+	}
+
 	// Signal the routing goroutine to stop
 	if alive {
 		close(session.stopChan)
@@ -1443,6 +1556,15 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 
+	// Close the browser before the BiDi connection: chromedriver reacts to
+	// its BiDi socket closing by force-killing Chrome, which loses profile
+	// writes a persistent session (#715) needs flushed. Close quits the
+	// session gracefully first; the dead socket below is then harmless.
+	// LaunchResult is nil for remote sessions, whose browser is not ours.
+	if session.LaunchResult != nil {
+		session.LaunchResult.Close()
+	}
+
 	// Close BiDi connection
 	if session.BidiConn != nil {
 		session.BidiConn.Close()
@@ -1457,11 +1579,6 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
-	}
-
-	// Close browser
-	if session.LaunchResult != nil {
-		session.LaunchResult.Close()
 	}
 
 	fmt.Fprintf(os.Stderr, "[router] Browser session closed for client %d\n", session.Client.ID())

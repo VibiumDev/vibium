@@ -43,7 +43,7 @@ async function main() {
   await vibe.go('http://localhost:3000');
 
   const download = await vibe.capture.download(async () => {
-    await vibe.find('#dl-link').click();
+    await vibe.find({ css: '#dl-link' }).click();
   });
 
   console.log(download.suggestedFilename()); // hello.txt
@@ -66,7 +66,7 @@ const vibe = bro.page();
 vibe.go('http://localhost:3000');
 
 const result = vibe.capture.download(() => {
-  vibe.find('#dl-link').click();
+  vibe.find({ css: '#dl-link' }).click();
 });
 
 console.log(result.suggestedFilename); // hello.txt
@@ -93,7 +93,7 @@ const vibe = await bro.page();
 await vibe.go(baseURL);
 
 const download = await vibe.capture.download(async () => {
-  await vibe.find('#dl-link').click();
+  await vibe.find({ css: '#dl-link' }).click();
 });
 
 assert.ok(download.url().includes('/file'));
@@ -125,7 +125,7 @@ const vibe = bro.page();
 vibe.go(baseURL);
 
 const result = vibe.capture.download(() => {
-  vibe.find('#dl-link').click();
+  vibe.find({ css: '#dl-link' }).click();
 });
 
 assert.ok(result.url.includes('/file'));
@@ -160,7 +160,7 @@ await vibe.go(baseURL);
 const downloads = [];
 vibe.onDownload((dl) => downloads.push(dl));
 
-await vibe.find('#dl-link').click();
+await vibe.find({ css: '#dl-link' }).click();
 await vibe.wait(1000);
 
 assert.ok(downloads.length >= 1);
@@ -183,7 +183,7 @@ vibe.go(baseURL);
 const downloads = [];
 vibe.onDownload((dl) => downloads.push(dl));
 
-vibe.find('#dl-link').click();
+vibe.find({ css: '#dl-link' }).click();
 vibe.wait(2000);
 
 assert.ok(downloads.length >= 1);
@@ -240,7 +240,7 @@ bro = browser.start()
 vibe = bro.page()
 vibe.go("http://localhost:3000")
 
-result = vibe.capture.download(lambda: vibe.find("#dl-link").click())
+result = vibe.capture.download(lambda: vibe.find(css="#dl-link").click())
 
 print(result["suggested_filename"])  # hello.txt
 result.save_as("/tmp/hello.txt")
@@ -261,7 +261,7 @@ async def main():
     await vibe.go("http://localhost:3000")
 
     async with vibe.capture.download() as cap:
-        el = await vibe.find("#dl-link")
+        el = await vibe.find(css="#dl-link")
         await el.click()
 
     download = cap.value
@@ -292,7 +292,7 @@ bro = browser.start(headless=True)
 vibe = bro.page()
 vibe.go(base_url)
 
-result = vibe.capture.download(lambda: vibe.find("#dl-link").click())
+result = vibe.capture.download(lambda: vibe.find(css="#dl-link").click())
 
 assert "/file" in result["url"]
 assert result["suggested_filename"] == "hello.txt"
@@ -324,7 +324,7 @@ vibe = await bro.page()
 await vibe.go(base_url)
 
 async with vibe.capture.download() as cap:
-    el = await vibe.find("#dl-link")
+    el = await vibe.find(css="#dl-link")
     await el.click()
 
 download = cap.value
@@ -360,7 +360,7 @@ vibe.go(base_url)
 downloads = []
 vibe.on_download(lambda dl: downloads.append(dl))
 
-vibe.find("#dl-link").click()
+vibe.find(css="#dl-link").click()
 
 # The download event arrives asynchronously; poll briefly for it.
 deadline = time.time() + 15
@@ -389,7 +389,7 @@ await vibe.go(base_url)
 downloads = []
 vibe.on_download(lambda dl: downloads.append(dl))
 
-el = await vibe.find("#dl-link")
+el = await vibe.find(css="#dl-link")
 await el.click()
 await asyncio.sleep(1)
 

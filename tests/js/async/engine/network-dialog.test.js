@@ -475,7 +475,7 @@ describe.requires('navigation-capture')('Capture: navigation', () => {
     const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/nav-test`);
 
-    const link = await vibe.find('#link');
+    const link = await vibe.find({ css: '#link' });
     const url = await vibe.capture.navigation(async () => {
       await link.click();
     });
@@ -492,7 +492,7 @@ describe.requires('downloads')('Capture: download', () => {
     const vibe = await bro.newPage();
     await vibe.go(`${baseURL}/download`);
 
-    const link = await vibe.find('#download-link');
+    const link = await vibe.find({ css: '#download-link' });
     const download = await vibe.capture.download(async () => {
       await link.click();
     });

@@ -150,7 +150,7 @@ public class Hello {
         System.out.println("Saved screenshot.png");
 
         // Find and click the link
-        var link = vibe.find("a");
+        var link = vibe.find(new SelectorOptions().css("a"));
         System.out.println("Found link: " + link.text());
         link.click();
         System.out.println("Clicked!");

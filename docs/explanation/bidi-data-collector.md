@@ -201,8 +201,8 @@ Verify that form data is properly encoded before it hits the server:
 ```javascript
 const reqPromise = page.capture.request('**/submit');
 
-await page.find('#name').fill('Jane Doe');
-await page.find('#email').fill('jane@example.com');
+await page.find({ css: '#name' }).fill('Jane Doe');
+await page.find({ css: '#email' }).fill('jane@example.com');
 await page.find({ role: 'button', text: 'Submit' }).click();
 
 const req = await reqPromise;

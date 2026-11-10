@@ -1,0 +1,26 @@
+{
+  "ref": "ui-ref.png",
+  "screen": "ui-screen.png",
+  "boxes": [
+    [
+      320,
+      170,
+      80,
+      80
+    ],
+    [
+      500,
+      262,
+      100,
+      100
+    ]
+  ],
+  "scales": [
+    1,
+    1.25
+  ],
+  "notes": "mock window; icons at 190,166 and 460,170 are decoys from other seeds",
+  "absent": {
+    "ui-absent.png": true
+  }
+}

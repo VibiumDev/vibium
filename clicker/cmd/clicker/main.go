@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,7 +16,8 @@ import (
 	"github.com/vibium/clicker/internal/paths"
 )
 
-// connectFromEnv reads VIBIUM_CONNECT_URL and VIBIUM_CONNECT_API_KEY from the environment.
+// connectFromEnv reads VIBIUM_CONNECT_URL, VIBIUM_CONNECT_API_KEY, and
+// VIBIUM_CONNECT_HEADERS from the environment.
 // Returns the connect URL and any headers to send with the WebSocket connection.
 func connectFromEnv() (string, http.Header) {
 	url := os.Getenv("VIBIUM_CONNECT_URL")
@@ -26,8 +28,54 @@ func connectFromEnv() (string, http.Header) {
 		headers = make(http.Header)
 		headers.Set("Authorization", "Bearer "+apiKey)
 	}
+	for _, line := range strings.Split(os.Getenv("VIBIUM_CONNECT_HEADERS"), "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if headers == nil {
+			headers = make(http.Header)
+		}
+		headers.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+	}
 
 	return url, headers
+}
+
+// headersEnvValue encodes headers as newline-separated "Key: value" lines
+// for VIBIUM_CONNECT_HEADERS.
+func headersEnvValue(headers http.Header) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var lines []string
+	for _, key := range keys {
+		for _, value := range headers[key] {
+			lines = append(lines, key+": "+value)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// connectSpawnEnv builds the environment for an internal daemon spawn.
+// Connect secrets MUST travel here, not on argv: argv is world-readable.
+func connectSpawnEnv(connectURL string, headers http.Header, capsJSON string) []string {
+	env := os.Environ()
+	if connectURL != "" {
+		env = append(env, "VIBIUM_CONNECT_URL="+connectURL)
+	}
+	if value := headersEnvValue(headers); value != "" {
+		env = append(env, "VIBIUM_CONNECT_HEADERS="+value)
+	}
+	if capsJSON != "" {
+		env = append(env, "VIBIUM_CONNECT_CAPS="+capsJSON)
+	}
+	return env
 }
 
 // connectCapsFromEnv reads VIBIUM_CONNECT_CAPS, a JSON object of extra
@@ -57,15 +105,17 @@ var version = "dev"
 
 // Global flags
 var (
-	headless      bool
-	verbose       bool
-	jsonOutput    bool
-	session       string
-	engineName    string
-	engineChannel string
-	headlessSet   bool
-	engineSet     bool
-	channelSet    bool
+	headless       bool
+	verbose        bool
+	jsonOutput     bool
+	session        string
+	engineName     string
+	engineChannel  string
+	userDataDir    string
+	headlessSet    bool
+	engineSet      bool
+	channelSet     bool
+	userDataDirSet bool
 )
 
 // defaultEngine returns the browser engine to launch when --engine is not given.
@@ -89,6 +139,17 @@ func applyGlobalFlags(cmd *cobra.Command) error {
 	headlessSet = cmd.Flags().Changed("headless")
 	engineSet = cmd.Flags().Changed("engine") || os.Getenv("VIBIUM_ENGINE") != ""
 	channelSet = cmd.Flags().Changed("channel") || os.Getenv("VIBIUM_ENGINE_CHANNEL") != ""
+	userDataDirSet = cmd.Flags().Changed("user-data-dir")
+	// Resolved here, not at launch: the daemon that launches runs with its
+	// own working directory, so a relative path must be anchored to the
+	// invoking command's.
+	if userDataDir != "" {
+		abs, err := filepath.Abs(userDataDir)
+		if err != nil {
+			return err
+		}
+		userDataDir = abs
+	}
 	// Enable logging only if --verbose is used
 	if verbose {
 		log.Setup(log.LevelVerbose)
@@ -194,6 +255,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.PersistentFlags().BoolVar(&headless, "headless", false, "Hide browser window (visible by default)")
 	rootCmd.PersistentFlags().StringVar(&engineName, "engine", defaultEngine(), "Browser engine to launch: chrome or firefox (env: VIBIUM_ENGINE)")
 	rootCmd.PersistentFlags().StringVar(&engineChannel, "channel", os.Getenv("VIBIUM_ENGINE_CHANNEL"), "Engine release channel to install and run (env: VIBIUM_ENGINE_CHANNEL); firefox: release (default) or beta; chrome: stable (default), beta, dev, or canary")
+	rootCmd.PersistentFlags().StringVar(&userDataDir, "user-data-dir", "", "Persistent browser profile directory, created if missing and reused across runs; default is a temp profile wiped on close")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.PersistentFlags().StringVar(&session, "session", "", "Named daemon session for isolated concurrent use (env: VIBIUM_SESSION)")
@@ -272,6 +334,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newFrameCmd())
 	rootCmd.AddCommand(newUploadCmd())
 	rootCmd.AddCommand(newRecordCmd())
+	rootCmd.AddCommand(newCodegenCmd())
 	rootCmd.AddCommand(newDownloadCmd())
 
 	// Subcommand groups

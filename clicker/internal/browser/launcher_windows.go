@@ -50,6 +50,14 @@ func killBrowserProfileProcesses(profileDir string) {
 	}
 }
 
+// waitProcessGroupIdle gives the browser the grace period to finish the exit
+// the session teardown's BiDi browser.close started, so it can flush a
+// persistent profile. Windows has no process groups to poll, so this sleeps
+// out the budget; the force kill that follows in Close finishes the tree.
+func waitProcessGroupIdle(pid int, timeout time.Duration) {
+	time.Sleep(timeout)
+}
+
 // waitForProcessDead polls until the given PID has exited or timeout is reached.
 func waitForProcessDead(pid int, timeout time.Duration) {
 	// Brief initial sleep to let the OS reap process table entries

@@ -41,7 +41,7 @@ async function narrowFieldPage() {
 describe('Type/press: caret moves to the end of the value (#488)', () => {
   test('type appends when the value is wider than the field', async () => {
     const vibe = await narrowFieldPage();
-    const input = await vibe.find('#n');
+    const input = await vibe.find({ css: '#n' });
     await input.fill(ALPHABET);
     await input.type('XX');
     assert.strictEqual(await input.value(), ALPHABET + 'XX');
@@ -49,7 +49,7 @@ describe('Type/press: caret moves to the end of the value (#488)', () => {
 
   test('press acts on the last character, whatever the field width', async () => {
     const vibe = await narrowFieldPage();
-    const input = await vibe.find('#n');
+    const input = await vibe.find({ css: '#n' });
     await input.fill(ALPHABET);
     await input.press('Backspace');
     assert.strictEqual(await input.value(), ALPHABET.slice(0, -1));
@@ -57,7 +57,7 @@ describe('Type/press: caret moves to the end of the value (#488)', () => {
 
   test('type appends in contenteditable', async () => {
     const vibe = await narrowFieldPage();
-    const ce = await vibe.find('#ce');
+    const ce = await vibe.find({ css: '#ce' });
     await ce.type(ALPHABET);
     await ce.type('XX');
     assert.strictEqual(await ce.text(), ALPHABET + 'XX');
@@ -65,7 +65,7 @@ describe('Type/press: caret moves to the end of the value (#488)', () => {
 
   test('type into an empty field is unchanged', async () => {
     const vibe = await narrowFieldPage();
-    const input = await vibe.find('#n');
+    const input = await vibe.find({ css: '#n' });
     await input.type('hello');
     assert.strictEqual(await input.value(), 'hello');
   });

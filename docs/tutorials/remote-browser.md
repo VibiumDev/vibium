@@ -120,7 +120,7 @@ const page = await bro.page()
 
 await page.go('https://example.com')
 console.log(await page.title())          // "Example Domain"
-console.log(await page.find('h1').text()) // "Example Domain"
+console.log(await page.find({ css: 'h1' }).text()) // "Example Domain"
 
 await bro.stop()
 ```
@@ -135,7 +135,7 @@ const page = bro.page()
 
 page.go('https://example.com')
 console.log(page.title())        // "Example Domain"
-console.log(page.find('h1').text())  // "Example Domain"
+console.log(page.find({ css: 'h1' }).text())  // "Example Domain"
 
 bro.stop()
 ```
@@ -154,7 +154,7 @@ page = await bro.page()
 
 await page.go("https://example.com")
 print(await page.title())          # "Example Domain"
-print(await page.find("h1").text())    # "Example Domain"
+print(await page.find(css="h1").text())    # "Example Domain"
 
 await bro.stop()
 ```
@@ -169,7 +169,7 @@ page = bro.page()
 
 page.go("https://example.com")
 print(page.title())          # "Example Domain"
-print(page.find("h1").text())    # "Example Domain"
+print(page.find(css="h1").text())    # "Example Domain"
 
 bro.stop()
 ```

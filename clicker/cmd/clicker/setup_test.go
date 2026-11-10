@@ -270,6 +270,54 @@ func TestSetupAIAnnouncesReasoningEffort(t *testing.T) {
 	}
 }
 
+// The default effort follows the model family instead of a blanket none;
+// gpt-6.1 models reject every effort with Chat Completions function tools,
+// so the wizard leaves the effort unset and warns (#621).
+func TestSetupAIReasoningEffortPerModel(t *testing.T) {
+	home := setupTestEnv(t)
+	oldJSON := jsonOutput
+	jsonOutput = false
+	t.Cleanup(func() { jsonOutput = oldJSON })
+	path := filepath.Join(home, ".config", "vibium", "ai.env")
+	for _, tc := range []struct{ model, effort, note string }{
+		{"gpt-5.6-sol", "none", ""},
+		{"gpt-6-sol", "none", ""},
+		{"gpt-6.1-sol", "", "Responses API"},
+		{"gpt-4.1-mini", "", ""},
+	} {
+		t.Setenv("VIBIUM_AI_PROVIDER", "")
+		t.Setenv("VIBIUM_AI_MODEL", "")
+		t.Setenv("VIBIUM_AI_REASONING_EFFORT", "") // applyWrittenAI exports the previous row's effort
+		os.Remove(path)
+		os.Remove(path + ".bak")
+		// Provider 1 (openai), the model, Enter to skip the key.
+		in := bytes.NewBufferString("1\n" + tc.model + "\n\n")
+		out := &bytes.Buffer{}
+		ui := &setupUI{in: in, out: out, err: out, interactive: true}
+		sec := setupAI(&cobra.Command{}, ui, false)
+		if sec.Status != "done" {
+			t.Fatalf("%s: %+v", tc.model, sec)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		written := strings.Contains(string(body), "export VIBIUM_AI_REASONING_EFFORT=")
+		if tc.effort == "" && written {
+			t.Fatalf("%s: unwanted effort written: %s", tc.model, body)
+		}
+		if tc.effort != "" && !strings.Contains(string(body), "export VIBIUM_AI_REASONING_EFFORT='"+tc.effort+"'") {
+			t.Fatalf("%s: effort not written: %s", tc.model, body)
+		}
+		if announced := strings.Contains(out.String(), "Reasoning effort: "); announced != (tc.effort != "") {
+			t.Fatalf("%s: announcement mismatch:\n%s", tc.model, out.String())
+		}
+		if tc.note != "" && !strings.Contains(out.String(), tc.note) {
+			t.Fatalf("%s: missing %q:\n%s", tc.model, tc.note, out.String())
+		}
+	}
+}
+
 func TestParseSelectChoice(t *testing.T) {
 	// Digits map onto setupProviders; the accepted range must follow the
 	// list so adding a provider never silently truncates the menu.

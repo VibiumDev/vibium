@@ -47,6 +47,24 @@ func TestReplaceEnv(t *testing.T) {
 
 // user.js must come out identical run to run: map iteration order previously
 // made every launch write the prefs in a different order (#318).
+// TestFirefoxPrefsStartOnBlankPage guards browser.startup.page=0: without it
+// Firefox 159+ starts on the privileged chrome://browser/content/blanktab.html
+// despite the about:blank argument. CI pins an earlier Firefox, so no browser
+// test fails if it is dropped.
+func TestFirefoxPrefsStartOnBlankPage(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFirefoxPrefs(dir); err != nil {
+		t.Fatalf("writeFirefoxPrefs() error = %v", err)
+	}
+	userJS, err := os.ReadFile(filepath.Join(dir, "user.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(userJS), `user_pref("browser.startup.page", 0);`) {
+		t.Errorf("user.js does not set browser.startup.page to 0:\n%s", userJS)
+	}
+}
+
 func TestWriteFirefoxPrefsSortedAndDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	if err := writeFirefoxPrefs(dir); err != nil {

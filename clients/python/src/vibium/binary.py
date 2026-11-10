@@ -181,6 +181,7 @@ class VibiumProcess:
         headless: bool = False,
         engine: Optional[str] = None,
         channel: Optional[str] = None,
+        user_data_dir: Optional[str] = None,
         executable_path: Optional[str] = None,
         connect_url: Optional[str] = None,
         connect_headers: Optional[dict] = None,
@@ -194,6 +195,8 @@ class VibiumProcess:
             engine: Browser engine to launch: "chrome" (default) or "firefox".
             channel: Release channel of the engine to install and run, e.g.
                 "beta". Currently honored by Firefox only.
+            user_data_dir: Persistent profile directory for the launched
+                browser, created if missing and never deleted.
             executable_path: Path to vibium binary (default: auto-detect).
             connect_url: Remote BiDi WebSocket URL to connect to instead of launching a local browser.
             connect_headers: HTTP headers for the WebSocket connection (e.g. auth tokens).
@@ -211,6 +214,8 @@ class VibiumProcess:
             args.extend(["--engine", engine])
         if channel:
             args.extend(["--channel", channel])
+        if user_data_dir:
+            args.extend(["--user-data-dir", user_data_dir])
         if headless:
             args.append("--headless")
         if connect_url:

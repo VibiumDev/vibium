@@ -30,7 +30,7 @@ describe('Keyboard: page-level input', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Click the input to focus it
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
 
     // Type via page.keyboard
@@ -44,7 +44,7 @@ describe('Keyboard: page-level input', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('hello');
 
@@ -59,7 +59,7 @@ describe('Keyboard: page-level input', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('hello');
 
@@ -80,7 +80,7 @@ describe('Mouse: page-level input', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Find the username input bounds and click it via mouse
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     const bounds = await input.bounds();
     const cx = bounds.x + bounds.width / 2;
     const cy = bounds.y + bounds.height / 2;
@@ -97,7 +97,7 @@ describe('Mouse: page-level input', () => {
     await vibe.go(`${baseURL}/hovers`);
 
     // Get first figure position
-    const figure = await vibe.find('.figure');
+    const figure = await vibe.find({ css: '.figure' });
     const bounds = await figure.bounds();
     const cx = bounds.x + bounds.width / 2;
     const cy = bounds.y + bounds.height / 2;
@@ -137,6 +137,33 @@ describe('Mouse: page-level input', () => {
       scrollY = await vibe.evaluate('window.scrollY;');
     }
     assert.ok(scrollY > 0, `Page should have scrolled down, scrollY: ${scrollY}`);
+  });
+
+  test('mouse.wheel() scrolls at the last mouse position, not (0,0) (#726)', async () => {
+    // Own page so the shared page's mouse state stays untouched; close it on
+    // the way out or the extra renderer starves the screenshot captures below
+    // on the 4-core CI runner (three merge-queue timeouts before the close).
+    const vibe = await bro.newPage();
+    try {
+      await vibe.setContent(`<body style="margin:0;height:3000px"><script>
+        window.__wheel = null;
+        document.addEventListener('wheel', (e) => { window.__wheel = { x: e.clientX, y: e.clientY }; }, { passive: true });
+      </script></body>`);
+
+      await vibe.mouse.move(250, 180);
+      await vibe.mouse.wheel(0, 100);
+
+      let pos = null;
+      for (let i = 0; i < 20 && !pos; i++) {
+        pos = await vibe.evaluate('window.__wheel');
+        if (!pos) await vibe.wait(100);
+      }
+      assert.ok(pos, 'a wheel event should have fired');
+      assert.strictEqual(pos.x, 250, 'wheel should land at the last mouse x');
+      assert.strictEqual(pos.y, 180, 'wheel should land at the last mouse y');
+    } finally {
+      await vibe.close();
+    }
   });
 });
 
@@ -356,12 +383,12 @@ describe('Input & Eval Checkpoint', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Use keyboard.type via page.keyboard
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('tomsmith');
 
     // Use mouse.click to click password field
-    const pwInput = await vibe.find('#password');
+    const pwInput = await vibe.find({ css: '#password' });
     const pwBounds = await pwInput.bounds();
     await vibe.mouse.click(
       pwBounds.x + pwBounds.width / 2,
@@ -381,7 +408,7 @@ describe('Input & Eval Checkpoint', () => {
     assert.ok(shot.length > 100, 'Screenshot should have content');
 
     // Submit the form
-    const btn = await vibe.find('button[type="submit"]');
+    const btn = await vibe.find({ css: 'button[type="submit"]' });
     await btn.click();
     await vibe.waitForURL('**/secure');
 

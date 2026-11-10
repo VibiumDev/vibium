@@ -62,7 +62,8 @@ test('ready ai loads empty AI variables from ai.env and still hides the key', as
     const result = await run(env, args);
     assert.equal(result.code, 1);
     assert.match(result.stdout, /VIBIUM_AI_MODEL/);
-    assert.match(result.stdout, /Loaded ~\/\.config\/vibium\/ai\.env/);
+    assert.match(result.stdout, /loaded ~\/\.config\/vibium\/ai\.env/);
+    assert.match(result.stdout, /vibium setup ai/);
     assert.doesNotMatch(result.stdout, /No AI settings file yet/);
     assert.doesNotMatch(result.stdout, /does not load it automatically/);
     assert.doesNotMatch(result.stdout + result.stderr, /secret-file-marker/);
@@ -93,7 +94,7 @@ test('ready ai names the skipped ai.env instead of claiming it loaded', { skip: 
   assert.match(result.stdout, /Found ~\/\.config\/vibium\/ai\.env but did not load it/);
   assert.match(result.stdout, /0644/);
   assert.match(result.stdout, /chmod 600/);
-  assert.doesNotMatch(result.stdout, /Loaded ~\/\.config\/vibium\/ai\.env/);
+  assert.doesNotMatch(result.stdout, /loaded ~\/\.config\/vibium\/ai\.env/);
   assert.doesNotMatch(result.stdout + result.stderr, /secret-file-marker/);
   noBrowser(env);
 });
@@ -148,6 +149,26 @@ test('provider authentication failure gives a fix, exit 1, and no leaked respons
   assert.match(check.fix, /API key/);
   assert.doesNotMatch(result.stdout + result.stderr, /secret-api-marker/);
   assert.equal(fixture.requests(), 1);
+  noBrowser(env);
+});
+
+test('reasoning-effort failure names the configured model and a workable remedy', async t => {
+  const fixture = await provider(t, (req, res) => {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'secret-api-marker', param: 'reasoning_effort' } }));
+  });
+  const env = environment(t, { VIBIUM_AI_PROVIDER: 'openai', VIBIUM_AI_MODEL: 'gpt-6.1-sol',
+    VIBIUM_AI_BASE_URL: fixture.url, OPENAI_API_KEY: 'secret-api-marker' });
+  const result = await run(env);
+  assert.equal(result.code, 1);
+  const check = JSON.parse(result.stdout).result.checks.find(c => c.name === 'provider');
+  assert.equal(check.status, 'failed');
+  assert.match(check.message, /HTTP 400 in reasoning_effort/);
+  // gpt-6.1 rejects every effort with Chat Completions function tools (#621):
+  // the fix states that plainly instead of suggesting effort values.
+  assert.match(check.fix, /gpt-6\.1-sol .* Responses API/);
+  assert.doesNotMatch(check.fix, /REASONING_EFFORT/);
+  assert.doesNotMatch(result.stdout + result.stderr, /secret-api-marker/);
   noBrowser(env);
 });
 

@@ -364,7 +364,7 @@ func WaitForActionable(s Session, context string, ep ElementParams, checks []Act
 func resolveWithActionability(s Session, context string, ep ElementParams, checks []ActionCheck) (*ElementInfo, error) {
 	// Timeout normalization (auto-wait default) happens in ResolveElement /
 	// WaitForActionable, which both branches below funnel through.
-	if ep.Force || len(checks) == 0 {
+	if ep.Force || len(checks) == 0 || ep.Visual != nil {
 		return ResolveElement(s, context, ep)
 	}
 	info, err := WaitForActionable(s, context, ep, checks)

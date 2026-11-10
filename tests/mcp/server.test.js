@@ -22,12 +22,13 @@ class MCPClient {
     this.resolvers = [];
   }
 
-  start() {
+  start(env) {
     return new Promise((resolve, reject) => {
       // --headless: without it every suite's lazy browser launch opens a
       // visible, focus-stealing Chrome window during the parallel test phase.
       this.proc = spawn(VIBIUM, ['mcp', '--headless'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: env || process.env,
       });
 
       this.proc.stdout.on('data', (data) => {
@@ -321,6 +322,38 @@ describe('MCP Server: Browser Tools', () => {
     );
   });
 
+  test('browser_find narrows a semantic locator with a selector (#780)', async () => {
+    // Text alone picks the shorter link; the selector restricts to the form.
+    await client.call('tools/call', {
+      name: 'browser_evaluate',
+      arguments: { expression: `document.open();document.write('<a id="go" href="#">Go</a><form><button id="stop">Stop</button><button id="go-now">Go now</button></form>');document.close();'ready'` },
+    });
+
+    const combined = await client.call('tools/call', {
+      name: 'browser_find',
+      arguments: { selector: 'form button', text: 'Go' },
+    });
+    assert.ok(!combined.result.isError, 'Combined find should succeed');
+    assert.ok(
+      combined.result.content[0].text.includes('Go now'),
+      `Should pick the form button, got: ${combined.result.content[0].text}`
+    );
+
+    const textOnly = await client.call('tools/call', {
+      name: 'browser_find',
+      arguments: { text: 'Go' },
+    });
+    assert.ok(
+      !textOnly.result.content[0].text.includes('Go now'),
+      'Text alone should still pick the shorter link match'
+    );
+
+    await client.call('tools/call', {
+      name: 'browser_navigate',
+      arguments: { url: `${baseURL}/example` },
+    });
+  });
+
   test('browser_evaluate executes JavaScript', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_evaluate',
@@ -378,6 +411,19 @@ describe('MCP Server: Browser Tools', () => {
       urlText.includes('/more-information'),
       `Should land on /more-information after clicking the link, got: ${urlText}`
     );
+  });
+
+  test('browser_record_stop with upload needs a station', async () => {
+    const zip = require('node:path').join(require('node:os').tmpdir(), `mcp-record-upload-${process.pid}.zip`);
+    const started = await client.call('tools/call', { name: 'browser_record_start', arguments: { path: zip } });
+    assert.ok(started.result && !started.result.isError, 'recording starts');
+    const refused = await client.call('tools/call', { name: 'browser_record_stop', arguments: { upload: true } });
+    assert.ok(refused.result && refused.result.isError, 'an upload with no station is refused');
+    assert.match(refused.result.content[0].text, /needs a station/);
+    const stopped = await client.call('tools/call', { name: 'browser_record_stop', arguments: {} });
+    assert.ok(stopped.result && !stopped.result.isError, 'the recording is still there to stop');
+    assert.match(stopped.result.content[0].text, /Saved /);
+    require('node:fs').rmSync(zip, { force: true });
   });
 
   test('browser_stop closes session', async () => {
@@ -567,6 +613,33 @@ describe('MCP Server: New Tools', () => {
       response.result.content[0].text.includes('Pressed'),
       'Should confirm key press'
     );
+  });
+
+  test('browser_type with no selector types into the focused element', async () => {
+    await client.call('tools/call', {
+      name: 'browser_navigate',
+      arguments: { url: `${baseURL}/login` },
+    });
+    await client.call('tools/call', {
+      name: 'browser_focus',
+      arguments: { selector: '#username' },
+    });
+    const typed = await client.call('tools/call', {
+      name: 'browser_type',
+      arguments: { text: 'calc' },
+    });
+    assert.ok(typed.result, 'Should have result');
+    assert.ok(!typed.result.isError, 'Should not be an error');
+    assert.ok(
+      typed.result.content[0].text.includes('focused'),
+      'Should say the text went to the focused element'
+    );
+
+    const value = await client.call('tools/call', {
+      name: 'browser_get_value',
+      arguments: { selector: '#username' },
+    });
+    assert.strictEqual(value.result.content[0].text, 'calc', 'The focused field got the text');
   });
 
   test('browser_list_pages returns page list', async () => {
@@ -1229,6 +1302,32 @@ describe('MCP Server: Touch gestures', () => {
     assert.match(summary, /true\|40\|true\|pointerup\|240/, 'drags a held touch pointer from start to end');
   });
 
+  test('browser_swipe with a direction starts at the named edge', async () => {
+    await setup();
+    const [, h] = JSON.parse(await evalText('JSON.stringify([window.innerWidth, window.innerHeight])'));
+    const swipe = await tool('browser_swipe', { direction: 'right', from: 'left', distance: 150 });
+    assert.ok(!swipe.result.isError, 'swipe should not error');
+    const y = Math.floor(h / 2);
+    assert.match(swipe.result.content[0].text, new RegExp(`Swiped from \\(0, ${y}\\) to \\(150, ${y}\\)`));
+    const summary = await evalText("(function(){var e=window.__ev;var d=e.find(x=>x.type==='pointerdown');var u=e[e.length-1];return [d.x,d.y,u.type,u.x,u.y].join('|')})()");
+    assert.strictEqual(summary, `0|${y}|pointerup|150|${y}`);
+  });
+
+  test('browser_swipe from a corner starts on the corner pixel', async () => {
+    await setup();
+    const [w] = JSON.parse(await evalText('JSON.stringify([window.innerWidth, window.innerHeight])'));
+    const swipe = await tool('browser_swipe', { direction: 'down', from: 'top-right', distance: 100 });
+    assert.ok(!swipe.result.isError, 'swipe should not error');
+    const summary = await evalText("(function(){var e=window.__ev;var d=e.find(x=>x.type==='pointerdown');var u=e[e.length-1];return [d.x,d.y,u.type,u.x,u.y].join('|')})()");
+    assert.strictEqual(summary, `${w - 1}|0|pointerup|${w - 1}|100`);
+  });
+
+  test('browser_swipe rejects an unknown direction', async () => {
+    const swipe = await tool('browser_swipe', { direction: 'sideways' });
+    assert.ok(swipe.result.isError, 'should be an error');
+    assert.match(swipe.result.content[0].text, /direction must be one of up, down, left, right/);
+  });
+
   test('browser_long_press holds a touch pointer then releases', async () => {
     await setup();
     const lp = await tool('browser_long_press', { x: 120, y: 120, duration: 300 });
@@ -1276,5 +1375,100 @@ describe('MCP Server: select empty value (#730)', () => {
     });
     assert.ok(!check.result.isError, 'evaluate should not error');
     assert.match(check.result.content[0].text, /SELECTED_EMPTY/, 'the empty-value option should be selected');
+  });
+});
+
+describe('MCP Server: find by intent', () => {
+  /** @type {MCPClient} */
+  let client;
+  let pattern;
+
+  before(async () => {
+    const env = { ...process.env, VIBIUM_LOAD_AI_ENV: '0' };
+    for (const key of Object.keys(env)) {
+      if (key.startsWith('VIBIUM_AI_') || /_API_KEY$/.test(key)) delete env[key];
+    }
+    pattern = require('../helpers/test-server').PATTERN_PNG.toString('base64');
+    client = new MCPClient();
+    await client.start(env);
+    await client.call('initialize', {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-find', version: '1.0.0' },
+    });
+    await client.call('tools/call', { name: 'browser_navigate', arguments: { url: `${baseURL}/find-images` } });
+  });
+
+  after(async () => {
+    await client.call('tools/call', { name: 'browser_stop', arguments: {} });
+    client.stop();
+  });
+
+  const tool = (name, args) => client.call('tools/call', { name, arguments: args });
+
+  test('the find tools declare the locator contract', async () => {
+    const list = await client.call('tools/list', {});
+    const find = list.result.tools.find((t) => t.name === 'browser_find');
+    const all = list.result.tools.find((t) => t.name === 'browser_find_all');
+    for (const t of [find, all]) {
+      for (const key of ['description', 'image', 'css', 'selector', 'tag', 'role', 'strategy', 'details']) {
+        assert.ok(t.inputSchema.properties[key], `${t.name} should accept ${key}`);
+      }
+      assert.deepStrictEqual(t.inputSchema.properties.strategy.enum, ['auto', 'cv', 'vlm', 'tree']);
+    }
+    assert.ok(all.inputSchema.properties.limit);
+  });
+
+  test('a description resolves in the tree and returns a structured ref', async () => {
+    const r = await tool('browser_find', { description: 'the Add to Cart button' });
+    assert.ok(!r.result.isError, r.result.content[0].text);
+    assert.match(r.result.content[0].text, /^@e\d+ \[button\] "Add to Cart"$/);
+    const [m] = r.result.structuredContent;
+    assert.strictEqual(m.source, 'tree');
+    assert.strictEqual(m.tag, 'button');
+    assert.ok(m.selector, 'a DOM-backed match carries its selector');
+    const click = await tool('browser_click', { selector: m.ref });
+    assert.ok(!click.result.isError, click.result.content[0].text);
+  });
+
+  test('selector and css are exact and never call a model', async () => {
+    const css = await tool('browser_find', { css: 'h1' });
+    assert.match(css.result.content[0].text, /\[h1\] "Gallery"/);
+    const sel = await tool('browser_find', { selector: 'h1' });
+    assert.strictEqual(sel.result.structuredContent[0].ref, css.result.structuredContent[0].ref, 'the same element keeps its ref');
+    const bad = await tool('browser_find', { css: 'h1', strategy: 'vlm' });
+    assert.ok(bad.result.isError);
+    assert.match(bad.result.content[0].text, /never by a model/);
+  });
+
+  test('a CSS-looking description is a miss that names the css form', async () => {
+    const r = await tool('browser_find', { description: 'h1', timeout: 300 });
+    assert.ok(r.result.isError);
+    assert.match(r.result.content[0].text, /css/);
+    assert.match(r.result.content[0].text, /none is configured/);
+  });
+
+  test('an image is matched locally and every copy gets a ref', async () => {
+    const r = await tool('browser_find_all', { image: pattern, details: true });
+    assert.ok(!r.result.isError, r.result.content[0].text);
+    const matches = r.result.structuredContent;
+    assert.strictEqual(matches.length, 3);
+    for (const m of matches) {
+      assert.strictEqual(m.source, 'image');
+      assert.strictEqual(m.box.width, 96);
+      assert.strictEqual(m.details.method, 'sift');
+    }
+    const none = await tool('browser_find_all', { image: require('../helpers/test-server').makePatternPNG(4242).toString('base64'), timeout: 300 });
+    assert.ok(!none.result.isError);
+    assert.deepStrictEqual(none.result.structuredContent, []);
+    const vlm = await tool('browser_find', { image: pattern, strategy: 'vlm' });
+    assert.ok(vlm.result.isError);
+    assert.match(vlm.result.content[0].text, /configured vision model/);
+  });
+
+  test('image rejects anything but PNG or JPEG bytes', async () => {
+    const r = await tool('browser_find', { image: Buffer.from('not an image').toString('base64') });
+    assert.ok(r.result.isError);
+    assert.match(r.result.content[0].text, /PNG or JPEG/);
   });
 });

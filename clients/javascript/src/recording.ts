@@ -47,6 +47,25 @@ export interface RecordingStartOptions {
 export interface RecordingStopOptions {
   /** Overrides the path declared at start. */
   path?: string;
+  /**
+   * Also upload the zip to a station's Record Store: `true` for the station
+   * the browser is connected through, or a station URL. Needs the API key
+   * the connection was made with; the zip still lands at its path either
+   * way, and the result's `upload` says where it went.
+   */
+  upload?: boolean | string;
+}
+
+export interface RecordingUpload {
+  /** Where the station serves the file. */
+  url: string;
+  sha256: string;
+  size: number;
+  /** The hold the recording was filed under, when the station knows one. */
+  hold?: string;
+  device?: string;
+  /** The id of the file event the station signed for it. */
+  event?: string;
 }
 
 export interface RecordingVideoSummary {
@@ -70,6 +89,8 @@ export interface RecordingResult {
   videos?: RecordingVideoSummary[];
   /** Why no video was recorded (video omitted on an engine without support). */
   videoUnavailable?: string;
+  /** Where the zip was uploaded, when stop() asked for it. */
+  upload?: RecordingUpload;
 }
 
 /**
@@ -131,6 +152,9 @@ export class Recording {
     if (options.path) {
       const path = await import('path');
       params.path = path.resolve(options.path);
+    }
+    if (options.upload !== undefined && options.upload !== false) {
+      params.upload = options.upload;
     }
     const { data, ...rest } = await this.client.send<{ data?: string } & RecordingResult>(
       'vibium:recording.stop', params);

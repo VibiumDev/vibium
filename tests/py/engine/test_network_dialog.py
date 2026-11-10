@@ -37,7 +37,7 @@ async def test_route_abort(net_browser, test_server):
     await vibe.route("**/api/data", handler)
     await vibe.evaluate("doFetch().catch(() => document.getElementById('result').textContent = 'aborted')")
     await vibe.wait(500)
-    result = await (await vibe.find("#result")).text()
+    result = await (await vibe.find(css="#result")).text()
     assert "aborted" in result or result == ""
     await vibe.close()
 
@@ -317,7 +317,7 @@ async def test_auto_dismiss(net_browser, test_server):
 async def test_capture_navigation(net_browser, test_server):
     vibe = await net_browser.new_page()
     await vibe.go(test_server + "/nav-test")
-    link = await vibe.find("#link")
+    link = await vibe.find(css="#link")
     async with vibe.capture.navigation() as info:
         await link.click()
     assert info.value is not None
@@ -333,7 +333,7 @@ async def test_capture_download(net_browser, test_server):
     # Own filename so a repeated test.txt in this session cannot come back
     # deduplicated ("test(1).txt") on Firefox.
     await vibe.go(test_server + "/download?name=net-captured.txt")
-    link = await vibe.find("#download-link")
+    link = await vibe.find(css="#download-link")
     async with vibe.capture.download() as info:
         await link.click()
     assert info.value is not None

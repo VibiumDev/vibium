@@ -19,10 +19,10 @@ const { browser } = require('../../clients/javascript/dist/' + (process.env.RUN_
     assert.equal(typeof page, 'function');
     const result = await page('change name');
     assert.equal(result.status, 'completed'); assert.equal(result.goal, 'change name'); assert.ok(result.evidence.length);
-    assert.equal(await (await page.find('#name')).value(), 'Updated');
+    assert.equal(await (await page.find({ css: '#name' })).value(), 'Updated');
     assert.equal(await page.evaluate('window.name'), 'original');
     assert.equal(await page.evaluate("sessionStorage.getItem('builder')"), 'preserved');
-    assert.equal(await (await other.find('#name')).value(), 'Other');
+    assert.equal(await (await other.find({ css: '#name' })).value(), 'Other');
     assert.equal((await page.check('the name persisted')).status, 'passed');
     const overrides = { provider: process.env.VIBIUM_AI_PROVIDER === 'anthropic' ? 'google' : 'anthropic', model: 'run-model', aiBaseURL: process.env.VIBIUM_AI_BASE_URL, reasoningEffort: '' };
     assert.equal((await page.run('change name', overrides)).status, 'completed');

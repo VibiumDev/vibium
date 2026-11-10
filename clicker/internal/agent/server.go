@@ -106,6 +106,8 @@ type ToolsCallParams struct {
 type ToolsCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+	// Structured is the machine-readable result, when a tool has one.
+	Structured interface{} `json:"structuredContent,omitempty"`
 }
 
 type Content struct {
@@ -152,9 +154,10 @@ type Server struct {
 
 // ServerOptions configures the MCP server.
 type ServerOptions struct {
-	ScreenshotDir  string      // Directory for saving screenshots (empty = disabled)
-	Engine         string      // Browser to launch: "chrome" (default) or "firefox"
-	Headless       bool        // Launch browsers without a visible window
+	ScreenshotDir  string                 // Directory for saving screenshots (empty = disabled)
+	Engine         string                 // Browser to launch: "chrome" (default) or "firefox"
+	Headless       bool                   // Launch browsers without a visible window
+	UserDataDir    string                 // Persistent profile dir for local launches (empty = temp profile)
 	ConnectURL     string                 // Remote BiDi WebSocket URL (empty = local browser)
 	ConnectHeaders http.Header            // Headers for remote WebSocket connection
 	ConnectCaps    map[string]interface{} // Extra alwaysMatch capabilities for classic endpoints
@@ -165,7 +168,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 	return &Server{
 		reader:   bufio.NewReader(os.Stdin),
 		writer:   os.Stdout,
-		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders, opts.ConnectCaps),
+		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.UserDataDir, opts.ConnectURL, opts.ConnectHeaders, opts.ConnectCaps),
 		version:  version,
 		busy:     make(chan struct{}, 1),
 	}

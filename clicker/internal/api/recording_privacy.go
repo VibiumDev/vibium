@@ -30,7 +30,8 @@ func marshalRecordingEvent(event map[string]interface{}) ([]byte, error) {
 func secretField(name string) bool {
 	name = strings.ToLower(strings.NewReplacer("-", "", "_", "", " ", "").Replace(name))
 	switch name {
-	case "authorization", "proxyauthorization", "cookie", "setcookie", "password", "passwd", "apikey", "xapikey", "accesstoken", "refreshtoken", "idtoken", "token", "clientsecret":
+	case "authorization", "proxyauthorization", "cookie", "setcookie", "password", "passwd", "apikey", "xapikey", "accesstoken", "refreshtoken", "idtoken", "token", "clientsecret",
+		"secret", "bearer", "csrf", "csrftoken", "xsrftoken", "xxsrftoken", "xcsrftoken", "sessionid", "sessiontoken", "sessionkey", "authtoken", "privatekey":
 		return true
 	}
 	return false

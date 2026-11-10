@@ -82,3 +82,56 @@ func TestRecordingRedactsEarlierObservationsAndOmitsSensitiveVisuals(t *testing.
 		}
 	}
 }
+
+// Field names a defensive pass found missing from the redaction list: a page
+// or endpoint using these names leaked the value into the exported trace.
+func TestSecretFieldCoversCommonCredentialNames(t *testing.T) {
+	secret := []string{
+		"secret", "SECRET", "Bearer", "csrf", "csrf_token", "X-CSRF-Token",
+		"X-XSRF-TOKEN", "sessionid", "session_id", "session_token",
+		"session-key", "auth_token", "private_key",
+	}
+	for _, name := range secret {
+		if !secretField(name) {
+			t.Errorf("secretField(%q) = false, want true", name)
+		}
+	}
+
+	// Ordinary fields must stay readable or traces lose their value.
+	plain := []string{"session", "user", "id", "content-type", "accept", "name", "value"}
+	for _, name := range plain {
+		if secretField(name) {
+			t.Errorf("secretField(%q) = true, want false", name)
+		}
+	}
+}
+
+// Console text in the verifier payload leaves the machine, so a page that
+// logs a captured credential must have it masked there too, not only in the
+// written trace (#746).
+func TestBrowserObservationsRedactKnownSecretsInConsoleText(t *testing.T) {
+	rec := NewRecorder()
+	rec.RegisterSecret("tok-9f8e7d6c5b4a")
+	rec.events = append(rec.events, recordEvent{
+		"method": "log.entryAdded",
+		"time":   1.0,
+		"params": map[string]interface{}{
+			"source": map[string]interface{}{"context": "page-1"},
+			"level":  "info",
+			"type":   "console",
+			"text":   "auth ok with tok-9f8e7d6c5b4a",
+		},
+	})
+
+	obs := rec.BrowserObservations("console", "page-1")
+	if len(obs) != 1 {
+		t.Fatalf("expected one console observation, got %d", len(obs))
+	}
+	text, _ := obs[0]["text"].(string)
+	if strings.Contains(text, "tok-9f8e7d6c5b4a") {
+		t.Fatalf("console observation leaks a registered secret: %q", text)
+	}
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("console observation lost its text instead of masking it: %q", text)
+	}
+}

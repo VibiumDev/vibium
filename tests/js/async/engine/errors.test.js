@@ -34,7 +34,7 @@ describe('Error types', () => {
   test('find() on a missing element rejects with ElementNotFoundError', async () => {
     await vibe.setContent('<p>nothing else here</p>');
     await assert.rejects(
-      () => vibe.find('#never-existed', { timeout: 500 }),
+      () => vibe.find({ css: '#never-existed' }, { timeout: 500 }),
       (err) => {
         assert.ok(
           err instanceof ElementNotFoundError,

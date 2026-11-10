@@ -50,6 +50,59 @@ const (
 // against. The schema cannot express per-engine enums, so the handler does
 // that half; what matters here is that a real channel is never refused at
 // the schema and a removed one never lingers (#525).
+// findSchema is the one locator contract both find tools share.
+func findSchema(all bool) map[string]interface{} {
+	str := func(desc string) map[string]interface{} {
+		return map[string]interface{}{"type": "string", "description": desc}
+	}
+	props := map[string]interface{}{
+		"description": str("Natural-language description of the element, e.g. \"the Add to Cart button\". Stands alone."),
+		"image":       str("Reference image as base64 PNG or JPEG (a data: URL is accepted), up to 4 MB. Stands alone. Matched locally; see strategy."),
+		"css":         str("CSS selector; exact, never sent to a model. Next to a semantic locator it restricts the candidates"),
+		"selector":    str("Same as css"),
+		"tag":         str("HTML tag name, e.g. \"h1\""),
+		"name":        str("Accessible name filter: the text, label, alt, or aria-label a person would read the element by"),
+		"role":        str("ARIA role to match (e.g., \"button\", \"link\", \"textbox\", \"heading\", \"checkbox\")"),
+		"text":        str("Find element containing this text"),
+		"label":       str("Find input by associated label text or aria-label"),
+		"placeholder": str("Find element by placeholder attribute"),
+		"testid":      str("Find element by data-testid attribute"),
+		"xpath":       str("Find element by XPath expression"),
+		"alt":         str("Find element by alt attribute"),
+		"title":       str("Find element by title attribute"),
+		"strategy": map[string]interface{}{
+			"type":        "string",
+			"enum":        []string{"auto", "cv", "vlm", "tree"},
+			"description": "auto (default): local evidence first, a vision model only when needed and configured. cv: local image matching only, nothing leaves the machine. vlm: vision model only; needs a configured provider. tree: the page's DOM/accessibility tree only",
+		},
+		"details": map[string]interface{}{
+			"type":        "boolean",
+			"description": "Include diagnostics: method, whether a model was called, provider and model, raw scores",
+		},
+		"timeout": map[string]interface{}{
+			"type":        "number",
+			"description": "Timeout in milliseconds (default: 30000)",
+			"default":     30000,
+		},
+		"provider":        str("AI provider override for this call (same as vibium_check)"),
+		"model":           str("Model override for this call; a vision-capable model"),
+		"aiBaseURL":       str("AI provider base URL override for this call"),
+		"reasoningEffort": str("Reasoning effort override for this call"),
+	}
+	if all {
+		props["limit"] = map[string]interface{}{
+			"type":        "number",
+			"description": "Maximum number of elements to return (default: 10)",
+			"default":     10,
+		}
+	}
+	return map[string]interface{}{
+		"type":                 "object",
+		"properties":           props,
+		"additionalProperties": false,
+	}
+}
+
 func channelEnum() []string {
 	seen := map[string]bool{}
 	var out []string
@@ -92,6 +145,10 @@ func GetToolSchemas() []Tool {
 						"description": "Release channel of the selected engine; chrome: stable (default), beta, dev, canary; firefox: release (default), beta",
 						"enum":        channelEnum(),
 					},
+					"userDataDir": map[string]interface{}{
+						"type":        "string",
+						"description": "Persistent browser profile directory, created if missing and reused across sessions (cookies, logins survive); omit for a temporary profile wiped on close",
+					},
 				},
 				"additionalProperties": false,
 			},
@@ -133,13 +190,13 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_type",
-			Description: "Type text into an element by CSS selector. Waits for element to be visible, stable, enabled, and editable.",
+			Description: "Type text into an element by CSS selector, or, with no selector, into whatever has focus. With a selector, waits for the element to be visible, stable, enabled, and editable.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"selector": map[string]interface{}{
 						"type":        "string",
-						"description": "CSS selector for the element to type into",
+						"description": "CSS selector for the element to type into. Omit it to type into the focused element, or on a device with no DOM.",
 					},
 					"text": map[string]interface{}{
 						"type":        "string",
@@ -151,7 +208,7 @@ func GetToolSchemas() []Tool {
 						"default":     30000,
 					},
 				},
-				"required":             []string{"selector", "text"},
+				"required":             []string{"text"},
 				"additionalProperties": false,
 			},
 		},
@@ -181,54 +238,13 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_find",
-			Description: "Find an element and return its info (tag, text, bounding box). Use a CSS selector or a semantic locator (role, text, label, placeholder, testid, xpath, alt, title). Combine role with text or other locators to narrow results.",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"selector": map[string]interface{}{
-						"type":        "string",
-						"description": "CSS selector for the element to find",
-					},
-					"role": map[string]interface{}{
-						"type":        "string",
-						"description": "ARIA role to match (e.g., \"button\", \"link\", \"textbox\", \"heading\", \"checkbox\")",
-					},
-					"text": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element containing this text",
-					},
-					"label": map[string]interface{}{
-						"type":        "string",
-						"description": "Find input by associated label text or aria-label",
-					},
-					"placeholder": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element by placeholder attribute",
-					},
-					"testid": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element by data-testid attribute",
-					},
-					"xpath": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element by XPath expression",
-					},
-					"alt": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element by alt attribute",
-					},
-					"title": map[string]interface{}{
-						"type":        "string",
-						"description": "Find element by title attribute",
-					},
-					"timeout": map[string]interface{}{
-						"type":        "number",
-						"description": "Timeout in milliseconds (default: 30000)",
-						"default":     30000,
-					},
-				},
-				"additionalProperties": false,
-			},
+			Description: "Find one element and register it as an @eN ref for later tools. Give a natural-language description, a reference image, or an exact locator: css (a CSS selector), tag, or a semantic locator (role, text, label, placeholder, testid, xpath, alt, title); role combines with text and the others. A description is matched against the page's names and roles first; when that is not enough and an AI provider is configured, the screenshot goes to a vision model. An image is matched locally first and only then, if a provider is configured, sent to the model with the screenshot. Explicit locators never call a model.",
+			InputSchema: findSchema(false),
+		},
+		{
+			Name:        "browser_find_all",
+			Description: "Find every element matching a description, reference image, or locator, each registered as an @eN ref. Returns an empty list when nothing matches.",
+			InputSchema: findSchema(true),
 		},
 		{
 			Name:        "browser_evaluate",
@@ -270,26 +286,6 @@ func GetToolSchemas() []Tool {
 						"default":     false,
 					},
 				},
-				"additionalProperties": false,
-			},
-		},
-		{
-			Name:        "browser_find_all",
-			Description: "Find all elements matching a CSS selector and return their info (tag, text, bounding box)",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"selector": map[string]interface{}{
-						"type":        "string",
-						"description": "CSS selector to match elements",
-					},
-					"limit": map[string]interface{}{
-						"type":        "number",
-						"description": "Maximum number of elements to return (default: 10)",
-						"default":     10,
-					},
-				},
-				"required":             []string{"selector"},
 				"additionalProperties": false,
 			},
 		},
@@ -1228,10 +1224,14 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_tap",
-			Description: "Tap a touch pointer at coordinates (for touchscreen devices and phones)",
+			Description: "Tap a touch pointer at coordinates, or on an element given as a selector or @ref (for touchscreen devices and phones)",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"selector": map[string]interface{}{
+						"type":        "string",
+						"description": "CSS selector or @ref to tap at its center, instead of x and y",
+					},
 					"x": map[string]interface{}{
 						"type":        "number",
 						"description": "X coordinate to tap at",
@@ -1241,16 +1241,37 @@ func GetToolSchemas() []Tool {
 						"description": "Y coordinate to tap at",
 					},
 				},
-				"required":             []string{"x", "y"},
 				"additionalProperties": false,
 			},
 		},
 		{
 			Name:        "browser_swipe",
-			Description: "Swipe a touch pointer from one point to another, finger held down for the move (for touchscreen devices and phones)",
+			Description: "Swipe a touch pointer, finger held down for the move (for touchscreen devices and phones). Give a direction, or x1, y1, x2, y2. A direction swipe starts at the viewport center, or at an edge with from, and moves half the viewport unless distance says otherwise. On a phone through Roadie, from: bottom with direction: up goes home, from: top with direction: down opens Notification Center or the notification shade, and from: top-right with direction: down opens Control Center on an iPhone",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"direction": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"up", "down", "left", "right"},
+						"description": "Which way the finger moves. Instead of x1, y1, x2, y2",
+					},
+					"from": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "center"},
+						"description": "Where a direction swipe starts: an edge or corner of the viewport, or its center (default)",
+					},
+					"fromX": map[string]interface{}{
+						"type":        "number",
+						"description": "X coordinate a direction swipe starts at, with fromY. Instead of from",
+					},
+					"fromY": map[string]interface{}{
+						"type":        "number",
+						"description": "Y coordinate a direction swipe starts at, with fromX",
+					},
+					"distance": map[string]interface{}{
+						"type":        "number",
+						"description": "How far a direction swipe moves, in pixels (default: half the viewport)",
+					},
 					"x1": map[string]interface{}{
 						"type":        "number",
 						"description": "X coordinate to start from",
@@ -1267,13 +1288,20 @@ func GetToolSchemas() []Tool {
 						"type":        "number",
 						"description": "Y coordinate to end at",
 					},
+					"speed": map[string]interface{}{
+						"type":        []string{"string", "number"},
+						"description": "slow, normal, fast, or pixels per second. Instead of duration",
+					},
 					"duration": map[string]interface{}{
 						"type":        "number",
 						"description": "How long the move takes in milliseconds (default: 300)",
 						"default":     300,
 					},
+					"hold": map[string]interface{}{
+						"type":        "number",
+						"description": "Milliseconds the finger rests at the end before lifting (a slow swipe up from the bottom with a hold opens the app switcher)",
+					},
 				},
-				"required":             []string{"x1", "y1", "x2", "y2"},
 				"additionalProperties": false,
 			},
 		},
@@ -1602,13 +1630,17 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "browser_record_stop",
-			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded)",
+			Description: "Stop recording and save to a Playwright-compatible trace ZIP file (with the video track when one was recorded). With upload, the ZIP also goes to the Record Store of the station the browser is connected through.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
 						"description": "Output file path (overrides the path declared at start; default: record.zip)",
+					},
+					"upload": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Also upload the ZIP to the station the browser is connected through (its Record Store) and report its URL. Needs a remote connection with an API key; the file is saved locally either way.",
 					},
 				},
 				"additionalProperties": false,

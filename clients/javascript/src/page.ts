@@ -3,6 +3,7 @@ import { RunOptions, RunResult, sendRun } from './run';
 import { CheckOptions, CheckResult, sendCheck } from './check';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
+import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
 import { BrowserContext } from './context';
 import { Route } from './route';
 import { Request, Response } from './network';
@@ -52,21 +53,6 @@ export interface PdfOptions {
   shrinkToFit?: boolean;
 }
 
-interface VibiumFindResult {
-  tag: string;
-  text: string;
-  box: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
-interface VibiumFindAllResult {
-  elements: Array<{ tag: string; text: string; box: { x: number; y: number; width: number; height: number }; index: number }>;
-  count: number;
-}
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -173,6 +159,10 @@ export class Keyboard {
 export class Mouse {
   private client: BiDiClient;
   private contextId: string;
+  // Last pointer position, so wheel() scrolls where the mouse is rather than
+  // at (0, 0). Updated by every action that repositions the pointer (#726).
+  private lastX = 0;
+  private lastY = 0;
 
   constructor(client: BiDiClient, contextId: string) {
     this.client = client;
@@ -186,6 +176,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Move mouse to (x, y) coordinates. */
@@ -195,6 +187,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Press mouse button down. */
@@ -211,16 +205,34 @@ export class Mouse {
     });
   }
 
-  /** Scroll the mouse wheel. */
+  /** Scroll the mouse wheel at the current pointer position. */
   async wheel(deltaX: number, deltaY: number): Promise<void> {
     await this.client.send('vibium:mouse.wheel', {
       context: this.contextId,
-      x: 0,
-      y: 0,
+      x: this.lastX,
+      y: this.lastY,
       deltaX,
       deltaY,
     });
   }
+}
+
+export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface SwipeOptions {
+  /** Start at an edge or corner of the viewport, its center (default), or a point. */
+  from?:
+    | 'top' | 'bottom' | 'left' | 'right'
+    | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    | 'center' | { x: number; y: number };
+  /** Pixels to move (default: half the viewport). */
+  distance?: number;
+  /** 'slow', 'normal', 'fast', or pixels per second. Instead of duration. */
+  speed?: 'slow' | 'normal' | 'fast' | number;
+  /** Milliseconds the move takes (default 300). */
+  duration?: number;
+  /** Milliseconds to rest at the end before lifting. */
+  hold?: number;
 }
 
 /** Page-level touch input. */
@@ -243,25 +255,33 @@ export class Touch {
   }
 
   /**
-   * Swipe from (x1, y1) to (x2, y2). The finger stays down for the move, so
-   * the gesture reads as a swipe/fling rather than two taps. durationMs
-   * controls how long the move takes (default 300).
+   * Swipe in a direction, or from (x1, y1) to (x2, y2). The finger stays down
+   * for the move, so the gesture reads as a swipe/fling rather than two taps.
+   *
+   *   swipe('up')                                   // from the center, half the viewport
+   *   swipe('up', { from: 'bottom', speed: 'fast' }) // phone home gesture via Roadie
+   *   swipe(40, 100, 240, 100, 200)                 // coordinates, 200ms
    */
+  async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<void>;
+  async swipe(x1: number, y1: number, x2: number, y2: number, durationMs?: number): Promise<void>;
   async swipe(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
+    a: SwipeDirection | number,
+    b?: SwipeOptions | number,
+    x2?: number,
+    y2?: number,
     durationMs?: number,
   ): Promise<void> {
-    await this.client.send('vibium:touch.swipe', {
-      context: this.contextId,
-      x1,
-      y1,
-      x2,
-      y2,
-      ...(durationMs !== undefined ? { duration: durationMs } : {}),
-    });
+    let params: Record<string, unknown>;
+    if (typeof a === 'string') {
+      const { from, ...rest } = (b as SwipeOptions | undefined) ?? {};
+      params = { direction: a, ...rest };
+      if (typeof from === 'string') params.from = from;
+      else if (from) Object.assign(params, { fromX: from.x, fromY: from.y });
+    } else {
+      params = { x1: a, y1: b, x2, y2 };
+      if (durationMs !== undefined) params.duration = durationMs;
+    }
+    await this.client.send('vibium:touch.swipe', { context: this.contextId, ...params });
   }
 
   /**
@@ -790,42 +810,35 @@ export class Page {
     return result.value;
   }
 
-  /** Find an element by CSS selector or semantic options. Waits for element to exist. */
+  /**
+   * Find an element. A string is a natural-language description; an options
+   * object gives an exact locator (css, tag, role, text, ...) or a reference
+   * image. Waits for the element to exist.
+   */
   find(selector: string | SelectorOptions, options?: FindOptions): FluentElement {
     const promise = (async () => {
       const params: Record<string, unknown> = {
         context: this.contextId,
         timeout: options?.timeout,
+        ...(await locatorParams(selector)),
       };
+      if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      debug('page.find', { ...params, image: params.image ? '<image>' : undefined });
 
-      if (typeof selector === 'string') {
-        debug('page.find', { selector, timeout: options?.timeout });
-        params.selector = selector;
-      } else {
-        debug('page.find', { ...selector, timeout: options?.timeout });
-        Object.assign(params, selector);
-        if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      const result = await this.client.send<FoundElement>('vibium:page.find', params);
+      const info = infoFrom(result);
+      if (resolvedHandle(selector)) {
+        return new Element(this.client, this.contextId, handleSelector(result), info);
       }
-
-      const result = await this.client.send<VibiumFindResult>('vibium:page.find', params);
-
-      const info: ElementInfo = {
-        tag: result.tag,
-        text: result.text,
-        box: result.box,
-      };
-
-      const selectorStr = typeof selector === 'string' ? selector : '';
-      const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
-      return new Element(this.client, this.contextId, selectorStr, info, undefined, selectorParams);
+      return new Element(this.client, this.contextId, cssOf(params), info, undefined, reusableParams(params));
     })();
     return fluent(promise);
   }
 
   /**
-   * Find all elements matching a CSS selector or semantic options. Waits up
-   * to the timeout for at least one match, then returns an empty array if
-   * there is none. A timeout of 0 checks once without waiting.
+   * Find all elements matching a description, image, css, or semantic
+   * options. Waits up to the timeout for at least one match, then returns an
+   * empty array if there is none. A timeout of 0 checks once without waiting.
    *
    * Each element carries a snapshot of its tag, text, and box taken at
    * findAll time, readable via `el.info` with no further round trips:
@@ -836,24 +849,18 @@ export class Page {
     const params: Record<string, unknown> = {
       context: this.contextId,
       timeout: options?.timeout,
+      ...(await locatorParams(selector)),
     };
+    if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+    debug('page.findAll', { ...params, image: params.image ? '<image>' : undefined });
 
-    if (typeof selector === 'string') {
-      debug('page.findAll', { selector, timeout: options?.timeout });
-      params.selector = selector;
-    } else {
-      debug('page.findAll', { ...selector, timeout: options?.timeout });
-      Object.assign(params, selector);
-      if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
-    }
-
-    const result = await this.client.send<VibiumFindAllResult>('vibium:page.findAll', params);
-
-    const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    const result = await this.client.send<{ elements: FoundElement[]; count: number }>('vibium:page.findAll', params);
+    const resolved = resolvedHandle(selector);
+    const reuse = reusableParams(params);
     return result.elements.map((el) => {
-      const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
-      return new Element(this.client, this.contextId, selectorStr, info, el.index, selectorParams);
+      const info = infoFrom(el);
+      if (resolved) return new Element(this.client, this.contextId, handleSelector(el), info);
+      return new Element(this.client, this.contextId, cssOf(params), info, el.index, reuse);
     });
   }
 

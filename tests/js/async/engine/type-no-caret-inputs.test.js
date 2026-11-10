@@ -26,28 +26,28 @@ async function page(html) {
 describe('Type/press on inputs with no selection API (#507)', () => {
   test('type appends into number instead of splicing', async () => {
     const vibe = await page('<input id="n" type="number" value="1234567890" style="width:100px">');
-    const input = await vibe.find('#n');
+    const input = await vibe.find({ css: '#n' });
     await input.type('99');
     assert.strictEqual(await input.value(), '123456789099');
   });
 
   test('type appends into email instead of splicing', async () => {
     const vibe = await page('<input id="e" type="email" value="abcdefghij" style="width:100px">');
-    const input = await vibe.find('#e');
+    const input = await vibe.find({ css: '#e' });
     await input.type('99');
     assert.strictEqual(await input.value(), 'abcdefghij99');
   });
 
   test('press acts on the last character, not the click point', async () => {
     const vibe = await page('<input id="n" type="number" value="1234567890" style="width:100px">');
-    const input = await vibe.find('#n');
+    const input = await vibe.find({ css: '#n' });
     await input.press('Backspace');
     assert.strictEqual(await input.value(), '123456789');
   });
 
   test('a segmented date input is refused, not corrupted', async () => {
     const vibe = await page('<input id="d" type="date" value="2020-01-02">');
-    const input = await vibe.find('#d');
+    const input = await vibe.find({ css: '#d' });
     await assert.rejects(() => input.type('99'));
     assert.strictEqual(await input.value(), '2020-01-02');
   });

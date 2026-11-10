@@ -332,12 +332,19 @@ func setupAI(cmd *cobra.Command, ui *setupUI, quick bool) setupSection {
 	if provider == "openai" || provider == "xai" || provider == "openai-compatible" {
 		effort = os.Getenv("VIBIUM_AI_REASONING_EFFORT")
 		if effort == "" && provider == "openai" {
-			effort = "none"
+			// Model families differ: a blanket none breaks models that
+			// reject it (#621).
+			effort = ai.OpenAIEffortDefault(model)
 		}
 		// Say what gets written; a silent default sends users debugging the
 		// provider when the model rejects it (#621).
 		if effort != "" {
 			ui.println("Reasoning effort: %s (writes VIBIUM_AI_REASONING_EFFORT; override with --reasoning-effort or by editing ai.env).", effort)
+		}
+	}
+	if provider == "openai" {
+		if problem := ai.OpenAIChatToolsProblem(model); problem != "" {
+			ui.println("Note: %s", problem)
 		}
 	}
 

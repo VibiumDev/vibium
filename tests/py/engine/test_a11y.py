@@ -9,28 +9,28 @@ pytestmark = pytest.mark.capability("core")
 
 async def test_role_link(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    link = await async_page.find("a")
+    link = await async_page.find(css="a")
     role = await link.role()
     assert role == "link"
 
 
 async def test_role_heading(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    h1 = await async_page.find("h1")
+    h1 = await async_page.find(css="h1")
     role = await h1.role()
     assert role == "heading"
 
 
 async def test_role_explicit(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    btn = await async_page.find("button[aria-label='Close dialog']")
+    btn = await async_page.find(css="button[aria-label='Close dialog']")
     role = await btn.role()
     assert role == "button"
 
 
 async def test_role_chain(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    el = await async_page.find("input#username")
+    el = await async_page.find(css="input#username")
     role = await el.role()
     assert role == "textbox"
 
@@ -39,35 +39,35 @@ async def test_role_chain(async_page, test_server):
 
 async def test_label_link(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    link = await async_page.find("a")
+    link = await async_page.find(css="a")
     lbl = await link.label()
     assert "subpage" in lbl.lower()
 
 
 async def test_label_aria_label(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    btn = await async_page.find("button[aria-label='Close dialog']")
+    btn = await async_page.find(css="button[aria-label='Close dialog']")
     lbl = await btn.label()
     assert lbl == "Close dialog"
 
 
 async def test_label_aria_labelledby(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    inp = await async_page.find("input[aria-labelledby='desc']")
+    inp = await async_page.find(css="input[aria-labelledby='desc']")
     lbl = await inp.label()
     assert "Description" in lbl or "desc" in lbl.lower()
 
 
 async def test_label_for(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    inp = await async_page.find("#username")
+    inp = await async_page.find(css="#username")
     lbl = await inp.label()
     assert "Username" in lbl or "username" in lbl.lower()
 
 
 async def test_label_chain(async_page, test_server):
     await async_page.go(test_server + "/a11y")
-    nav = await async_page.find("nav")
+    nav = await async_page.find(css="nav")
     lbl = await nav.label()
     assert "Main navigation" in lbl
 

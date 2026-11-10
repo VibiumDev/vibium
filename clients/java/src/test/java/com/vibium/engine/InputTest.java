@@ -4,6 +4,7 @@ import com.vibium.Vibium;
 import com.vibium.Page;
 import com.vibium.Browser;
 
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import org.junit.jupiter.api.*;
 
@@ -40,18 +41,18 @@ class InputTest {
     @Test
     void testKeyboardType() {
         page.go(server.baseUrl() + "/inputs");
-        page.find("#text-input").click();
+        page.find(new SelectorOptions().css("#text-input")).click();
         page.keyboard().type("hello");
-        assertEquals("hello", page.find("#text-input").value());
+        assertEquals("hello", page.find(new SelectorOptions().css("#text-input")).value());
     }
 
     @Test
     void testKeyboardPress() {
         page.go(server.baseUrl() + "/inputs");
-        page.find("#text-input").fill("abc");
-        page.find("#text-input").click();
+        page.find(new SelectorOptions().css("#text-input")).fill("abc");
+        page.find(new SelectorOptions().css("#text-input")).click();
         page.keyboard().press("Backspace");
-        assertEquals("ab", page.find("#text-input").value());
+        assertEquals("ab", page.find(new SelectorOptions().css("#text-input")).value());
     }
 
     @Test

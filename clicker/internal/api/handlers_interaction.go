@@ -99,16 +99,21 @@ func (r *Router) handleVibiumFill(session *BrowserSession, cmd bidiCommand) {
 // handleVibiumType handles the vibium:element.type command with actionability checks.
 // Clicks to focus and types text (does NOT clear first).
 func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
-	// Extract text-to-type BEFORE ExtractElementParams, since "text" is also
-	// a semantic selector param. Remove it from params to avoid collision.
-	text, _ := cmd.Params["text"].(string)
-	paramsCopy := make(map[string]interface{})
-	for k, v := range cmd.Params {
-		if k != "text" {
-			paramsCopy[k] = v
+	// "value" carries the text to type, leaving "text" as a locator filter
+	// (#778). Without it, "text" is the payload and is removed from the
+	// params so an old client's payload is not read as a filter.
+	text, hasValue := cmd.Params["value"].(string)
+	params := cmd.Params
+	if !hasValue {
+		text, _ = cmd.Params["text"].(string)
+		params = make(map[string]interface{})
+		for k, v := range cmd.Params {
+			if k != "text" {
+				params[k] = v
+			}
 		}
 	}
-	ep := ExtractElementParams(paramsCopy)
+	ep := ExtractElementParams(params)
 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {

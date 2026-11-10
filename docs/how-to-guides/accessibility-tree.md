@@ -187,7 +187,7 @@ await vibe.setContent(`
 
 await vibe.find({ role: 'button', label: 'Sign in' }).click()
 
-const result = await vibe.find('#result')
+const result = await vibe.find({ css: '#result' })
 assert.strictEqual(await result.text(), 'signed in')
 ```
 
@@ -200,7 +200,7 @@ vibe.setContent(`
 
 vibe.find({ role: 'button', label: 'Sign in' }).click()
 
-assert.strictEqual(vibe.find('#result').text(), 'signed in')
+assert.strictEqual(vibe.find({ css: '#result' }).text(), 'signed in')
 ```
 
 <!-- test: async "find({ role, text }) + click for button text" -->
@@ -212,7 +212,7 @@ await vibe.setContent(`
 
 await vibe.find({ role: 'button', text: 'Submit' }).click()
 
-const result = await vibe.find('#result')
+const result = await vibe.find({ css: '#result' })
 assert.strictEqual(await result.text(), 'done')
 ```
 
@@ -225,7 +225,7 @@ vibe.setContent(`
 
 vibe.find({ role: 'button', text: 'Submit' }).click()
 
-assert.strictEqual(vibe.find('#result').text(), 'done')
+assert.strictEqual(vibe.find({ css: '#result' }).text(), 'done')
 ```
 
 ### CSS selectors
@@ -239,9 +239,9 @@ await vibe.setContent(`
   <input id="user" type="text" />
 `)
 
-await vibe.find('#user').fill('alice')
+await vibe.find({ css: '#user' }).fill('alice')
 
-const input = await vibe.find('#user')
+const input = await vibe.find({ css: '#user' })
 assert.strictEqual(await input.value(), 'alice')
 ```
 
@@ -252,16 +252,16 @@ vibe.setContent(`
   <input id="user" type="text" />
 `)
 
-vibe.find('#user').fill('alice')
+vibe.find({ css: '#user' }).fill('alice')
 
-assert.strictEqual(vibe.find('#user').value(), 'alice')
+assert.strictEqual(vibe.find({ css: '#user' }).value(), 'alice')
 ```
 
 <!-- test: async "CSS find + text() works for reading state" -->
 ```javascript
 await vibe.setContent('<h1>Welcome</h1>')
 
-const heading = await vibe.find('h1')
+const heading = await vibe.find({ css: 'h1' })
 assert.strictEqual(await heading.text(), 'Welcome')
 ```
 
@@ -269,7 +269,7 @@ assert.strictEqual(await heading.text(), 'Welcome')
 ```javascript
 vibe.setContent('<h1>Welcome</h1>')
 
-assert.strictEqual(vibe.find('h1').text(), 'Welcome')
+assert.strictEqual(vibe.find({ css: 'h1' }).text(), 'Welcome')
 ```
 
 ### Using tree data in code
@@ -292,7 +292,7 @@ assert.strictEqual(btn.name, 'Sign in')
 
 await vibe.find({ role: 'button', label: btn.name }).click()
 
-const result = await vibe.find('#result')
+const result = await vibe.find({ css: '#result' })
 assert.strictEqual(await result.text(), 'signed in')
 ```
 
@@ -310,7 +310,7 @@ assert.ok(btn, 'tree should contain a button')
 assert.strictEqual(btn.name, 'Sign in')
 
 vibe.find({ role: 'button', label: btn.name }).click()
-assert.strictEqual(vibe.find('#result').text(), 'signed in')
+assert.strictEqual(vibe.find({ css: '#result' }).text(), 'signed in')
 ```
 
 The tree also exposes element state. For example, you can check whether a checkbox is already checked:
@@ -478,13 +478,13 @@ const btn = findByRole(tree, 'button')
 console.log(`Found: ${btn.role} "${btn.name}"`) // Found: button "Sign in"
 
 // 3. Fill inputs using CSS selectors
-vibe.find('#user').fill('alice')
+vibe.find({ css: '#user' }).fill('alice')
 
 // 4. Click using the name discovered from the tree
 vibe.find({ role: 'button', label: btn.name }).click()
 
 // 5. Read state using CSS selectors
-console.log('Heading:', vibe.find('h1').text())
+console.log('Heading:', vibe.find({ css: 'h1' }).text())
 
 bro.stop()
 ```
@@ -521,13 +521,13 @@ async function main() {
   console.log(`Found: ${btn.role} "${btn.name}"`) // Found: button "Sign in"
 
   // 3. Fill inputs using CSS selectors
-  await vibe.find('#user').fill('alice')
+  await vibe.find({ css: '#user' }).fill('alice')
 
   // 4. Click using the name discovered from the tree
   await vibe.find({ role: 'button', label: btn.name }).click()
 
   // 5. Read state using CSS selectors
-  console.log('Heading:', await vibe.find('h1').text())
+  console.log('Heading:', await vibe.find({ css: 'h1' }).text())
 
   await bro.stop()
 }
@@ -550,10 +550,10 @@ assert.strictEqual(tree.role, 'WebArea')
 const btn = findByRole(tree, 'button')
 assert.strictEqual(btn.name, 'Sign in')
 
-await vibe.find('#user').fill('alice')
+await vibe.find({ css: '#user' }).fill('alice')
 await vibe.find({ role: 'button', label: btn.name }).click()
 
-const heading = await vibe.find('h1')
+const heading = await vibe.find({ css: 'h1' })
 assert.strictEqual(await heading.text(), 'Welcome')
 ```
 
@@ -571,10 +571,10 @@ assert.strictEqual(tree.role, 'WebArea')
 
 const btn = findByRole(tree, 'button')
 
-vibe.find('#user').fill('alice')
+vibe.find({ css: '#user' }).fill('alice')
 vibe.find({ role: 'button', label: btn.name }).click()
 
-assert.strictEqual(vibe.find('h1').text(), 'Welcome')
+assert.strictEqual(vibe.find({ css: 'h1' }).text(), 'Welcome')
 ```
 
 ---
@@ -842,7 +842,7 @@ await vibe.set_content("""
 el = await vibe.find(role="button", label="Sign in")
 await el.click()
 
-result = await vibe.find("#result")
+result = await vibe.find(css="#result")
 assert await result.text() == "signed in"
 ```
 
@@ -855,7 +855,7 @@ vibe.set_content("""
 
 vibe.find(role="button", label="Sign in").click()
 
-assert vibe.find("#result").text() == "signed in"
+assert vibe.find(css="#result").text() == "signed in"
 ```
 
 <!-- test: async "find(role, text) + click for button text" -->
@@ -868,7 +868,7 @@ await vibe.set_content("""
 el = await vibe.find(role="button", text="Submit")
 await el.click()
 
-result = await vibe.find("#result")
+result = await vibe.find(css="#result")
 assert await result.text() == "done"
 ```
 
@@ -881,7 +881,7 @@ vibe.set_content("""
 
 vibe.find(role="button", text="Submit").click()
 
-assert vibe.find("#result").text() == "done"
+assert vibe.find(css="#result").text() == "done"
 ```
 
 ### CSS selectors
@@ -895,10 +895,10 @@ await vibe.set_content("""
   <input id="user" type="text" />
 """)
 
-inp = await vibe.find("#user")
+inp = await vibe.find(css="#user")
 await inp.fill("alice")
 
-inp = await vibe.find("#user")
+inp = await vibe.find(css="#user")
 assert await inp.value() == "alice"
 ```
 
@@ -909,16 +909,16 @@ vibe.set_content("""
   <input id="user" type="text" />
 """)
 
-vibe.find("#user").fill("alice")
+vibe.find(css="#user").fill("alice")
 
-assert vibe.find("#user").value() == "alice"
+assert vibe.find(css="#user").value() == "alice"
 ```
 
 <!-- test: async "CSS find + text() works for reading state" -->
 ```python
 await vibe.set_content("<h1>Welcome</h1>")
 
-heading = await vibe.find("h1")
+heading = await vibe.find(css="h1")
 assert await heading.text() == "Welcome"
 ```
 
@@ -926,7 +926,7 @@ assert await heading.text() == "Welcome"
 ```python
 vibe.set_content("<h1>Welcome</h1>")
 
-assert vibe.find("h1").text() == "Welcome"
+assert vibe.find(css="h1").text() == "Welcome"
 ```
 
 ### Using tree data in code
@@ -950,7 +950,7 @@ assert btn["name"] == "Sign in"
 el = await vibe.find(role="button", label=btn["name"])
 await el.click()
 
-result = await vibe.find("#result")
+result = await vibe.find(css="#result")
 assert await result.text() == "signed in"
 ```
 
@@ -968,7 +968,7 @@ assert btn, "tree should contain a button"
 assert btn["name"] == "Sign in"
 
 vibe.find(role="button", label=btn["name"]).click()
-assert vibe.find("#result").text() == "signed in"
+assert vibe.find(css="#result").text() == "signed in"
 ```
 
 The tree also exposes element state. For example, you can check whether a checkbox is already checked:
@@ -1136,13 +1136,13 @@ btn = find_by_role(tree, "button")
 print(f'Found: {btn["role"]} "{btn["name"]}"')  # Found: button "Sign in"
 
 # 3. Fill inputs using CSS selectors
-vibe.find("#user").fill("alice")
+vibe.find(css="#user").fill("alice")
 
 # 4. Click using the name discovered from the tree
 vibe.find(role="button", label=btn["name"]).click()
 
 # 5. Read state using CSS selectors
-print("Heading:", vibe.find("h1").text())
+print("Heading:", vibe.find(css="h1").text())
 
 bro.stop()
 ```
@@ -1181,7 +1181,7 @@ async def main():
     print(f'Found: {btn["role"]} "{btn["name"]}"')
 
     # 3. Fill inputs using CSS selectors
-    inp = await vibe.find("#user")
+    inp = await vibe.find(css="#user")
     await inp.fill("alice")
 
     # 4. Click using the name discovered from the tree
@@ -1189,7 +1189,7 @@ async def main():
     await el.click()
 
     # 5. Read state using CSS selectors
-    heading = await vibe.find("h1")
+    heading = await vibe.find(css="h1")
     print("Heading:", await heading.text())
 
     await bro.stop()
@@ -1212,12 +1212,12 @@ assert tree["role"] == "WebArea"
 btn = find_by_role(tree, "button")
 assert btn["name"] == "Sign in"
 
-inp = await vibe.find("#user")
+inp = await vibe.find(css="#user")
 await inp.fill("alice")
 el = await vibe.find(role="button", label=btn["name"])
 await el.click()
 
-heading = await vibe.find("h1")
+heading = await vibe.find(css="h1")
 assert await heading.text() == "Welcome"
 ```
 
@@ -1235,10 +1235,10 @@ assert tree["role"] == "WebArea"
 
 btn = find_by_role(tree, "button")
 
-vibe.find("#user").fill("alice")
+vibe.find(css="#user").fill("alice")
 vibe.find(role="button", label=btn["name"]).click()
 
-assert vibe.find("h1").text() == "Welcome"
+assert vibe.find(css="h1").text() == "Welcome"
 ```
 
 ---

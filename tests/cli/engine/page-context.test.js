@@ -152,7 +152,7 @@ describe('CLI: active context reaches script-backed commands', () => {
     assert.strictEqual(backOnHome, '/', 'eval should follow the switch back to page 0');
 
     execSync(`${VIBIUM} page switch 1`, { encoding: 'utf-8', timeout: 30000 });
-    const found = execSync(`${VIBIUM} find h2`, { encoding: 'utf-8', timeout: 30000 });
+    const found = execSync(`${VIBIUM} find css h2`, { encoding: 'utf-8', timeout: 30000 });
     assert.match(found, /Login/, 'find should search the active page');
 
     execSync(`${VIBIUM} page close`, { encoding: 'utf-8', timeout: 30000 });

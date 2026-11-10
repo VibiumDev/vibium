@@ -91,7 +91,7 @@ describe('Downloads: page.onDownload', () => {
         }),
       );
 
-      await vibe.find('#download-link').click();
+      await vibe.find({ css: '#download-link' }).click();
       await withTimeout(firstDownload, 5000, 'onDownload to fire');
 
       assert.strictEqual(downloads[0].suggestedFilename(), 'test-file.txt');
@@ -111,7 +111,7 @@ describe('Downloads: page.onDownload', () => {
         }),
       );
 
-      await vibe.find('#download-link').click();
+      await vibe.find({ css: '#download-link' }).click();
       await withTimeout(firstDownload, 5000, 'onDownload to fire');
 
       assert.ok(downloads[0].url().includes('/download'), `Expected URL to contain /download, got: ${downloads[0].url()}`);
@@ -133,7 +133,7 @@ describe('Downloads: page.onDownload', () => {
         }),
       );
 
-      await vibe.find('#download-link').click();
+      await vibe.find({ css: '#download-link' }).click();
       await withTimeout(firstDownload, 5000, 'onDownload to fire');
 
       await downloads[0].saveAs(savePath);
@@ -157,7 +157,7 @@ describe('Element: el.setFiles', () => {
     fs.writeFileSync(testFile, 'test upload content');
     const vibe = await freshPage();
     try {
-      await vibe.find('#file-input').setFiles([testFile]);
+      await vibe.find({ css: '#file-input' }).setFiles([testFile]);
       // setFiles may resolve before the change-event handler runs in Chrome
       // and updates #file-name. Poll the DOM instead of sleeping.
       await vibe.waitForFunction(
@@ -165,7 +165,7 @@ describe('Element: el.setFiles', () => {
         { timeout: 5000 },
       );
 
-      const fileName = await vibe.find('#file-name').text();
+      const fileName = await vibe.find({ css: '#file-name' }).text();
       assert.strictEqual(fileName, 'upload-test.txt');
     } finally {
       await vibe.close();
@@ -193,7 +193,7 @@ describe('removeAllListeners for download', () => {
       const probe = (req) => { if (req.url === '/download') resolveDownloadHit(); };
       server.on('request', probe);
       try {
-        await vibe.find('#download-link').click();
+        await vibe.find({ css: '#download-link' }).click();
         await withTimeout(downloadHit, 5000, 'download request to reach server');
       } finally {
         server.off('request', probe);

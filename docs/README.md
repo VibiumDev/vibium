@@ -42,3 +42,15 @@ runbooks).
 | Run a check and save evidence | [Check a live browser or saved recording](how-to-guides/check.md) |
 | Look up options, configuration, and language APIs | [Check reference](reference/check.md) |
 | Understand Run, Check, and their browser architecture | [How Run and Check work](explanation/run-check-webdriver-bidi-architecture.md) |
+
+## Recording
+
+| Reader's goal | Document |
+|---------------|----------|
+| Find an element by description or picture | [Finding things by sight](tutorials/finding-things-by-sight.md) |
+| Migrate `find` from CSS to descriptions | [Vibium Find: Natural Language by Default](how-to-guides/find-by-description-and-image.md) |
+| Understand how find resolves, and its matcher | [How find by intent works](explanation/find-by-intent.md) |
+| Record a browser session | [Recording browser sessions](tutorials/recording.md) |
+| Generate a script from a recording | [Record, then codegen](tutorials/recording.md#generate-a-script-from-a-recording) |
+| Look up codegen flags and the action mapping | [Codegen reference](reference/codegen.md) |
+| Look up the recording zip format | [Recording file format](reference/recording-format.md) |

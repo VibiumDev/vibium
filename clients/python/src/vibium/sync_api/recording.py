@@ -37,8 +37,8 @@ class Recording:
                                           format=format, quality=quality,
                                           video=video, path=path))
 
-    def stop(self, path: Optional[str] = None) -> RecordingResult:
-        return self._loop.run(self._async.stop(path=path))
+    def stop(self, path: Optional[str] = None, upload: Union[bool, str] = False) -> RecordingResult:
+        return self._loop.run(self._async.stop(path=path, upload=upload))
 
     def start_chunk(self, name: Optional[str] = None, title: Optional[str] = None) -> None:
         self._loop.run(self._async.start_chunk(name=name, title=title))
