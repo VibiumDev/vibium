@@ -200,9 +200,10 @@ func TestSayAndListenThroughRoadie(t *testing.T) {
 }
 
 func TestRoadieDroppedAudioKeepsItsPlaceInTime(t *testing.T) {
-	// Roadie drops the second chunk. The reply must still be timed from
-	// the chunk times, not from a count of samples.
-	f := &fakeRoadie{audio: true, thinkMs: 640, dropAt: 2}
+	// Roadie drops a chunk between the question and the reply. The reply
+	// must still be timed from the chunk times, not from a count of
+	// samples, and the result must say that audio went missing.
+	f := &fakeRoadie{audio: true, thinkMs: 640, dropAt: 8}
 	h := roadieHandlers(t, f)
 	clip := filepath.Join(t.TempDir(), "q.wav")
 	os.WriteFile(clip, speech.Audio{SampleRate: 16000, Channels: 1, Samples: toneSamples(300, 500*time.Millisecond)}.WAV(), 0o600)
