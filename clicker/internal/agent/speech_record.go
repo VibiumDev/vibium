@@ -50,8 +50,11 @@ func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
 	at := h.recorder.TimelineMs(time.Now())
 	rec.offset = now - at
 	source := t.Name()
-	if _, ok := t.(*roadieAudio); ok {
+	switch t.(type) {
+	case *roadieAudio:
 		source = "roadie"
+	case *browserAudio:
+		source = "page"
 	}
 	h.recorder.SetAudioClock(t.Name(), map[string]interface{}{
 		"source": source,

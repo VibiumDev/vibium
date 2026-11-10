@@ -68,6 +68,9 @@ func (h *Handlers) speechTarget(name string) (speech.Target, error) {
 		if h.sessionAudio != nil && h.sessionAudio.client == client {
 			return h.sessionAudio, nil
 		}
+		if h.pageAudio != nil && h.pageAudio.client == client {
+			return h.pageAudio, nil
+		}
 		if target, ok := h.roadieAudioFor(client); ok {
 			h.sessionAudio = target
 			return target, nil

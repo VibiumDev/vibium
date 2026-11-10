@@ -30,6 +30,8 @@ type Handlers struct {
 	audioMu      sync.Mutex
 	audioSink    *roadieCapture // where roadie:audio.chunk events go
 	sessionAudio *roadieAudio   // the session's audio, once found
+	pageAudio    *browserAudio  // a browser session's audio, when its script is installed
+	pageSink     *browserCapture
 	audioRec     *audioRecording
 	speechCallID string                 // the recorded step a say or listen belongs to
 	speechResult map[string]interface{} // what that step's after event carries
@@ -1098,11 +1100,20 @@ func (h *Handlers) startPromptTracking() {
 		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
+
+	// Every page of a browser session gets a virtual microphone and an
+	// audio tap, so say and listen work without setup.
+	h.pageAudio = nil
+	if h.installBrowserAudio(client) {
+		b := &browserAudio{h: h, client: client}
+		b.tap = speech.NewTap(b.open)
+		h.pageAudio = b
+	}
 }
 
 // handleBidiEvent is the single BiDi event handler for the agent session.
 func (h *Handlers) handleBidiEvent(msg string) {
-	if h.audioEvent(msg) {
+	if h.audioEvent(msg) || h.pageAudioEvent(msg) {
 		return
 	}
 	h.sessionMu.Lock()
