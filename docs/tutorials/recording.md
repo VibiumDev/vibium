@@ -388,10 +388,12 @@ vibium go https://var.parts
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 
 vibium record stop
 ```
+
+Each `find` prints the ref to use next. Refs count up across finds on a page, so the second `find` here prints `@e2`.
 
 </details>
 
@@ -519,21 +521,21 @@ vibium record group start 'pick a part'
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 vibium record group stop
 
 vibium record group start 'check out'
 vibium click 'a[href="/cart"]'   # the cart icon has no accessible name — CSS fallback
 vibium find role button --name "Proceed to Checkout"
-vibium click @e1
+vibium click @e3
 vibium find label "Unit Designation"
-vibium fill @e1 "VAR-347"
+vibium fill @e4 "VAR-347"
 vibium find label "Service Bay"
-vibium fill @e1 "Bay 14-C"
+vibium fill @e5 "Bay 14-C"
 vibium find text "Lunar VAR Facility"
-vibium click @e1
+vibium click @e6
 vibium find role button --name "Proceed to Payment"
-vibium click @e1
+vibium click @e7
 vibium record group stop
 
 vibium record stop
@@ -761,12 +763,12 @@ vibium go https://var.parts
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 
 # Action groups
 vibium record group start 'pick a part'
 vibium find text "Vibium Battery Pack"
-vibium click @e1
+vibium click @e3
 vibium record group stop
 
 # Chunks

@@ -313,14 +313,15 @@ A bare string is a description, not a selector: `vibium find h1` looks for somet
 ### Semantic find (no CSS selectors needed)
 ```sh
 vibium find text "Sign In"             # → @e1 [button] "Sign In"
-vibium find label "Email"              # → @e1 [input] placeholder="Email"
-vibium click @e1                       # Click the found element
-vibium find placeholder "Search..."    # → @e1 [input] placeholder="Search..."
-vibium find testid "submit-btn"        # → @e1 [button] "Submit"
-vibium find alt "Company logo"         # → @e1 [img] alt="Company logo"
-vibium find title "Close"              # → @e1 [button] title="Close"
-vibium find xpath "//a[@href='/about']"  # → @e1 [a] "About"
+vibium find label "Email"              # → @e2 [input] placeholder="Email"
+vibium click @e2                       # Click the found element
+vibium find placeholder "Search..."    # → @e3 [input] placeholder="Search..."
+vibium find testid "submit-btn"        # → @e4 [button] "Submit"
+vibium find alt "Company logo"         # → @e5 [img] alt="Company logo"
+vibium find title "Close"              # → @e6 [button] title="Close"
+vibium find xpath "//a[@href='/about']"  # → @e7 [a] "About"
 ```
+Refs count up across `find` and `map` calls on a page, and an element found again keeps its ref. Use the ref each `find` prints, not `@e1`. `go`, `back`, `forward` and `reload` start the numbering over.
 
 ### Authentication with state persistence
 ```sh
