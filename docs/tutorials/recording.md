@@ -803,6 +803,7 @@ vibium record stop
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `path` | string | start's `path` | Overrides the path declared at start |
+| `upload` | boolean \| string | — | `true` also uploads the zip to the Record Store of the connected station; a URL names another station |
 
 `stop()` returns a result object: `path`, `steps`, `durationMs`, `videos` (or `videoUnavailable`), and — for bytes-only recordings — the zip itself (`bytes` in JS, `data` in Python). `stopChunk()` returns the same shape; without a `path` the chunk comes back inline.
 
