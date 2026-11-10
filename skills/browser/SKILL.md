@@ -207,6 +207,7 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 ### Recording
 - `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path` — defaults to a timestamped `record-<date>.zip`, so reruns never overwrite)
 - `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path; the output names the saved file). `--upload` also sends the ZIP to the Record Store of the station the session is connected through and prints its URL (`--upload-to URL` names another station); it needs the API key the connection was made with
+- `vibium codegen -i record.zip` — print a JavaScript script that replays a recording (`-l python`, `-o file`); reads the zip offline, no browser needed
 
 Recordings can include a video track of the session (Firefox 154+, local
 browsers). By default video is recorded when the engine supports it and
@@ -458,6 +459,7 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 | `--json` | Output as JSON |
 | `-v, --verbose` | Debug logging |
 | `--session <name>` | Isolated daemon + browser for concurrent use (env: `VIBIUM_SESSION`) |
+| `--user-data-dir <dir>` | Persistent browser profile, created if missing and reused across runs (default: a temp profile wiped on close) |
 
 ## Tips
 

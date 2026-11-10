@@ -817,6 +817,8 @@ vibium record stop
 | `record start` | `--video-fps N` | Video frame rate |
 | `record start` | `-o, --output PATH` | Where the zip lands at stop (default: `record-<timestamp>.zip`) |
 | `record stop` | `-o, --output PATH` | Overrides the path declared at start |
+| `record stop` | `--upload` | Also upload the zip to the Record Store of the station the session is connected through |
+| `record stop` | `--upload-to URL` | Upload to this station instead, with the API key from `VIBIUM_CONNECT_API_KEY` |
 
 ### Java
 
