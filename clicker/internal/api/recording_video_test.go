@@ -403,6 +403,14 @@ func TestSavedSentenceShapes(t *testing.T) {
 		t.Fatalf("sentence = %q", withVideo)
 	}
 
+	withSound := RecordingSavedSentence("record.zip", RecordingSummary{
+		Steps:  23,
+		Videos: []VideoSummary{{DurationMs: 14200, Audio: true}},
+	})
+	if withSound != "Saved record.zip (23 steps, 14s video with sound)" {
+		t.Fatalf("sentence = %q", withSound)
+	}
+
 	unavailable := RecordingSavedSentence("record.zip", RecordingSummary{
 		Steps:            3,
 		VideoUnavailable: "no engine",

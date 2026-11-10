@@ -70,8 +70,20 @@ vibium record stop -o phone.zip
 - Expect about 3 MB a minute for a still screen and 8 MB a minute for one
   that moves.
 
-Sound is separate. `vibium say` and `vibium listen` put their audio under
-`audio/` in the same zip.
+The video has sound when the recording does. What `vibium say` sent and
+what the device played are mixed into the file's audio track. So
+`video/screen.mp4` plays with its sound in any player, outside the zip.
+
+```bash
+vibium say "Come here, Watson"
+vibium listen
+vibium record stop -o phone.zip
+# Saved phone.zip (5 steps, 41s video with sound)
+unzip phone.zip video/screen.mp4
+```
+
+The same audio is also under `audio/` in the zip, one file per clip and
+one for what was heard.
 
 The Record Player shows the video in place of the screenshots. It keeps
 the video in step with the timeline and plays the sound with it.

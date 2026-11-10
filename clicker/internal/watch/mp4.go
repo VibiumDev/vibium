@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+
+	"github.com/vibium/clicker/internal/aac"
 )
 
 // clock is the MP4 track's timescale, and RTP's for video.
@@ -23,7 +25,8 @@ type frame struct {
 }
 
 // mp4File writes one H.264 video track: the frames as they arrive, the
-// index once at the end. Nothing is re-encoded.
+// index once at the end. The video is not re-encoded. Sound, when there is
+// any, goes in after the video as a second track.
 type mp4File struct {
 	path     string
 	f        *os.File
@@ -70,11 +73,21 @@ type mp4Info struct {
 	Shift         int64 // ticks the first frame moved from its arrival
 	Frames        int
 	Bytes         int64
+	Sound         bool
+}
+
+// sound is the audio track: AAC frames in one run after the video.
+type sound struct {
+	sizes   []uint32
+	bytes   int64
+	samples int // without the encoder's delay
 }
 
 // finish writes the index. end is when recording stopped, in ticks since
-// the first frame arrived.
-func (m *mp4File) finish(end int64) (mp4Info, error) {
+// the first frame arrived. audio gives the samples, at aac.Rate, for the
+// stretch the video covers: it starts shift ticks after the first frame
+// arrived and is length ticks long.
+func (m *mp4File) finish(end int64, audio func(shift, length int64) []int16) (mp4Info, error) {
 	defer m.f.Close()
 	if m.err != nil {
 		return mp4Info{}, m.err
@@ -102,21 +115,41 @@ func (m *mp4File) finish(end int64) (mp4Info, error) {
 		total += d
 	}
 
-	moov := m.moov(width, height, durs, total)
+	var snd *sound
+	if audio != nil {
+		pcm := audio(shift, total)
+		pcm = pcm[:min(len(pcm), int(total*aac.Rate/clock))]
+		if len(pcm) > 0 {
+			snd = &sound{samples: len(pcm)}
+			for _, f := range aac.Encode(pcm) {
+				if _, err := m.w.Write(f); err != nil {
+					return mp4Info{}, err
+				}
+				snd.sizes = append(snd.sizes, uint32(len(f)))
+				snd.bytes += int64(len(f))
+			}
+		}
+	}
+
+	moov := m.moov(width, height, durs, total, snd)
 	if _, err := m.w.Write(moov); err != nil {
 		return mp4Info{}, err
 	}
 	if err := m.w.Flush(); err != nil {
 		return mp4Info{}, err
 	}
+	data := m.bytes
+	if snd != nil {
+		data += snd.bytes
+	}
 	size := make([]byte, 8)
-	binary.BigEndian.PutUint64(size, uint64(mdatHeader+m.bytes))
+	binary.BigEndian.PutUint64(size, uint64(mdatHeader+data))
 	if _, err := m.f.WriteAt(size, m.head-8); err != nil {
 		return mp4Info{}, err
 	}
 	return mp4Info{
 		Width: width, Height: height, Duration: total, Shift: shift,
-		Frames: len(m.frames), Bytes: m.head + m.bytes + int64(len(moov)),
+		Frames: len(m.frames), Bytes: m.head + data + int64(len(moov)), Sound: snd != nil,
 	}, nil
 }
 
@@ -153,12 +186,17 @@ func timeline(frames []frame, window int64) (times []int64, shift int64) {
 	return times, shift
 }
 
-func (m *mp4File) moov(width, height int, durs []uint32, total int64) []byte {
-	matrix := cat(u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000))
+var matrix = cat(u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000))
+
+func (m *mp4File) moov(width, height int, durs []uint32, total int64, snd *sound) []byte {
 	ms := uint32(total * 1000 / clock)
+	tracks := uint32(1)
+	if snd != nil {
+		tracks = 2
+	}
 
 	mvhd := full("mvhd", 0, 0, u32(0), u32(0), u32(1000), u32(ms),
-		u32(0x10000), u16(0x100), make([]byte, 10), matrix, make([]byte, 24), u32(2))
+		u32(0x10000), u16(0x100), make([]byte, 10), matrix, make([]byte, 24), u32(tracks+1))
 	tkhd := full("tkhd", 0, 3, u32(0), u32(0), u32(1), u32(0), u32(ms),
 		make([]byte, 8), u16(0), u16(0), u16(0), u16(0), matrix, u32(uint32(width)<<16), u32(uint32(height)<<16))
 	mdhd := full("mdhd", 0, 0, u32(0), u32(0), u32(clock), u32(uint32(total)), u16(0x55c4), u16(0))
@@ -200,7 +238,51 @@ func (m *mp4File) moov(width, height int, durs []uint32, total int64) []byte {
 		full("stco", 0, 0, u32(1), u32(uint32(m.head))))
 
 	trak := box("trak", tkhd, box("mdia", mdhd, hdlr, box("minf", vmhd, dinf, stbl)))
-	return box("moov", mvhd, trak)
+	if snd == nil {
+		return box("moov", mvhd, trak)
+	}
+	return box("moov", mvhd, trak, snd.trak(m.head+m.bytes))
+}
+
+// trak is the audio track's index. Its frames start at offset in the file.
+func (s *sound) trak(offset int64) []byte {
+	ms := uint32(int64(s.samples) * 1000 / aac.Rate)
+	n := uint32(len(s.sizes))
+	var stsz []byte
+	var biggest uint32
+	for _, size := range s.sizes {
+		stsz = append(stsz, u32(size)...)
+		biggest = max(biggest, size)
+	}
+	// bitRate is bits a second for frames of this many bytes each.
+	bitRate := func(frame int64) uint32 { return uint32(frame * 8 * aac.Rate / aac.FrameSize) }
+
+	tkhd := full("tkhd", 0, 3, u32(0), u32(0), u32(2), u32(0), u32(ms),
+		make([]byte, 8), u16(0), u16(0), u16(0x100), u16(0), matrix, u32(0), u32(0))
+	// A decoder gives the encoder's delay first. The edit starts after it.
+	edts := box("edts", full("elst", 0, 0, u32(1), u32(ms), u32(aac.Delay), u16(1), u16(0)))
+	mdhd := full("mdhd", 0, 0, u32(0), u32(0), u32(aac.Rate), u32(n*aac.FrameSize), u16(0x55c4), u16(0))
+	hdlr := full("hdlr", 0, 0, u32(0), []byte("soun"), make([]byte, 12), []byte("SoundHandler\x00"))
+	smhd := full("smhd", 0, 0, u16(0), u16(0))
+	dinf := box("dinf", full("dref", 0, 0, u32(1), full("url ", 0, 1)))
+
+	config := cat([]byte{5, byte(len(aac.Config))}, aac.Config)
+	decoder := cat([]byte{4, byte(13 + len(config)), 0x40, 0x15, 0, 3, 0},
+		u32(bitRate(int64(biggest))), u32(bitRate(s.bytes)/n), config)
+	es := cat([]byte{3, byte(3 + len(decoder) + 3), 0, 0, 0}, decoder, []byte{6, 1, 2})
+	mp4a := box("mp4a", make([]byte, 6), u16(1), make([]byte, 8),
+		u16(1), u16(16), u32(0), u32(aac.Rate<<16), full("esds", 0, 0, es))
+
+	chunk := full("stco", 0, 0, u32(1), u32(uint32(offset)))
+	if offset > 0xffffffff {
+		chunk = full("co64", 0, 0, u32(1), u32(uint32(offset>>32)), u32(uint32(offset)))
+	}
+	stbl := box("stbl", full("stsd", 0, 0, u32(1), mp4a),
+		full("stts", 0, 0, u32(1), u32(n), u32(aac.FrameSize)),
+		full("stsc", 0, 0, u32(1), u32(1), u32(n), u32(1)),
+		full("stsz", 0, 0, u32(0), u32(n), stsz),
+		chunk)
+	return box("trak", tkhd, edts, box("mdia", mdhd, hdlr, box("minf", smhd, dinf, stbl)))
 }
 
 func u16(v uint16) []byte { return binary.BigEndian.AppendUint16(nil, v) }

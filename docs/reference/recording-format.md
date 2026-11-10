@@ -59,8 +59,14 @@ stores the H.264 it receives in an MP4, without re-encoding.
 {"version":1,"videos":[{"file":"video/screen.mp4","context":"screen","startedAt":1794285267660,"offsetMs":-120,"durationMs":43557,"width":444,"height":972,"mimeType":"video/mp4"}]}
 ```
 
-- `mimeType` is `video/mp4`. The file has one H.264 video track and no audio.
-  Sound is under `audio/`.
+- `mimeType` is `video/mp4`. The file has one H.264 video track.
+- `audio` is `true` when the file also has an audio track. The field is
+  absent when the recording said and heard nothing while the video ran.
+  - The track is everything the recording said and heard, mixed into one
+    channel. Each sound is at the time it sounded.
+  - The track is AAC-LC, mono, 16 kHz.
+  - The same audio stays under `audio/`, unmixed. A player that reads
+    `audio/` SHOULD mute the file.
 - `offsetMs` MAY be negative. The stream is joined just before the
   recording starts, so the video covers all of it.
 - `startedAt` is when the first frame arrived at the machine running Vibium.

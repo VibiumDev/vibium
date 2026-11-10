@@ -128,6 +128,10 @@ disabled, then an export.
     view it. A Roadie has one stream.
   - The manifest entry carries `mimeType: "video/mp4"` and `durationMs`.
     See [Recording format](../reference/recording-format.md#video-of-a-device).
+  - The file also carries the recording's audio as one AAC track: what
+    `say` sent and what was heard, mixed. Vibium encodes that track when
+    the recording stops. The manifest entry and the stop result then
+    carry `audio: true`, and the CLI says `14s video with sound`.
 
 ## Context binding
 

@@ -77,6 +77,8 @@ export interface RecordingVideoSummary {
   remotePath?: string;
   /** Set when the video pipeline died; the zip delivered without or with a partial video. */
   error?: string;
+  /** True when the video file also holds what the recording said and heard. */
+  audio?: boolean;
 }
 
 export interface RecordingResult {

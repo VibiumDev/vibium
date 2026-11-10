@@ -26,7 +26,7 @@ func record(t *testing.T, src Source) Info {
 	}
 	began := time.Now()
 	time.Sleep(700 * time.Millisecond)
-	info, err := rec.Stop()
+	info, err := rec.Stop(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

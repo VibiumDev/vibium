@@ -1,6 +1,7 @@
 // Package watch records the video a Vibium Station or a Roadie streams of
 // the device a session drives. It joins as a WebRTC viewer and writes the
-// H.264 it receives into an MP4, without decoding it.
+// H.264 it receives into an MP4, without decoding it. The recording's
+// sound can go into the same file.
 package watch
 
 import (
@@ -25,6 +26,8 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
+
+	"github.com/vibium/clicker/internal/aac"
 )
 
 // ErrNoStream says the remote end is neither a station nor a Roadie, so
@@ -55,7 +58,15 @@ type Info struct {
 	Bytes      int64
 	Gaps       int    // times the stream lost packets and waited for a key frame
 	Ended      string // why the stream stopped before the recording did, if it did
+	Sound      bool   // the file has an audio track
 }
+
+// SoundRate is the sample rate of the sound a file takes.
+const SoundRate = aac.Rate
+
+// Sound gives the sound that goes with a stretch of video: one channel of
+// samples at SoundRate, the first one at start. No samples means no sound.
+type Sound func(start time.Time, length time.Duration) []int16
 
 // Recording is a stream being written to a file.
 type Recording struct {
@@ -423,8 +434,9 @@ func (r *Recording) hangUp() {
 	}
 }
 
-// Stop ends the recording and finishes the file.
-func (r *Recording) Stop() (Info, error) {
+// Stop ends the recording and finishes the file. sound, when given, is
+// asked for the audio track once the video's span is known.
+func (r *Recording) Stop(sound Sound) (Info, error) {
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()
@@ -436,14 +448,19 @@ func (r *Recording) Stop() (Info, error) {
 	r.mu.Unlock()
 	r.hangUp()
 
-	got, err := file.finish(ticks(end.Sub(first)))
+	at := func(t int64) time.Duration { return time.Duration(t) * time.Second / clock }
+	var audio func(shift, length int64) []int16
+	if sound != nil {
+		audio = func(shift, length int64) []int16 { return sound(first.Add(at(shift)), at(length)) }
+	}
+	got, err := file.finish(ticks(end.Sub(first)), audio)
 	if err != nil {
 		os.Remove(file.path)
 		return Info{}, err
 	}
 	return Info{
 		Path:       file.path,
-		StartedAt:  first.Add(time.Duration(got.Shift) * time.Second / clock),
+		StartedAt:  first.Add(at(got.Shift)),
 		DurationMs: got.Duration * 1000 / clock,
 		Width:      got.Width,
 		Height:     got.Height,
@@ -451,6 +468,7 @@ func (r *Recording) Stop() (Info, error) {
 		Bytes:      got.Bytes,
 		Gaps:       gaps,
 		Ended:      ended,
+		Sound:      got.Sound,
 	}, nil
 }
 

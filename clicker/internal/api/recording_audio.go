@@ -33,6 +33,7 @@ type audioTrack struct {
 type audioClip struct {
 	id         string
 	sha        string
+	samples    []int16
 	wav        []byte
 	durationMs float64
 	meta       map[string]interface{}
@@ -70,7 +71,7 @@ func (t *Recorder) AddAudioClip(clip speech.Audio, meta map[string]interface{}) 
 			return c.id
 		}
 	}
-	c := &audioClip{id: fmt.Sprintf("out-%04d", len(t.audio.clips)+1), sha: sha, wav: mono.WAV(), durationMs: mono.DurationMs(), meta: meta}
+	c := &audioClip{id: fmt.Sprintf("out-%04d", len(t.audio.clips)+1), sha: sha, samples: mono.Samples, wav: mono.WAV(), durationMs: mono.DurationMs(), meta: meta}
 	t.audio.clips = append(t.audio.clips, c)
 	return c.id
 }
@@ -157,6 +158,42 @@ func (t *Recorder) AddAudioTranscript(entry map[string]interface{}) {
 		t.audio = &recordAudio{}
 	}
 	t.audio.transcripts = append(t.audio.transcripts, entry)
+}
+
+// mixAudioLocked adds up every track and every playing of a clip over a
+// stretch of the timeline, at speech.Rate. It returns nil when none of
+// them reaches into the stretch.
+func (t *Recorder) mixAudioLocked(fromMs float64, length time.Duration) []int16 {
+	if t.audio == nil {
+		return nil
+	}
+	out := make([]int16, int(length.Seconds()*speech.Rate))
+	found := false
+	add := func(samples []int16, atMs float64) {
+		if len(samples) == 0 {
+			return
+		}
+		at := int(math.Round((atMs - fromMs) * speech.Rate / 1000))
+		lo, hi := max(at, 0), min(at+len(samples), len(out))
+		for i := lo; i < hi; i++ {
+			out[i] = int16(max(-32768, min(32767, int32(out[i])+int32(samples[i-at]))))
+			found = true
+		}
+	}
+	for _, tr := range t.audio.tracks {
+		add(tr.samples, tr.startMs)
+	}
+	for _, c := range t.audio.clips {
+		for _, play := range c.plays {
+			if at, ok := play["startMs"].(float64); ok {
+				add(c.samples, at)
+			}
+		}
+	}
+	if !found {
+		return nil
+	}
+	return out
 }
 
 // AudioSummary is what a stop reports about the recording's audio.

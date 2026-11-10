@@ -1077,8 +1077,13 @@ recording started, as in `trace.trace`.
 
 A recording on a station or a Roadie session also holds the device's
 screen as `video/<context>.mp4`. Vibium takes it from the same stream a
-viewer watches. The file has no audio track. The audio above and the video
-share the recording timeline, so a player can run them together.
+viewer watches. The audio above and the video share the recording
+timeline, so a player can run them together.
+
+The file also has an audio track: every clip sent and everything heard,
+mixed into one channel as AAC. A person can play or post the file by
+itself and hear the recording. The track is absent when nothing sounded
+while the video ran.
 [Recording format](../reference/recording-format.md#video-of-a-device)
 describes the entry.
 
@@ -1115,7 +1120,7 @@ record.zip
 ├── audio/in-session.wav    # everything heard from the session
 ├── audio/out-0001.wav      # one file per distinct clip sent
 ├── video/index.json        # video manifest, on a station or a Roadie session
-└── video/screen.mp4        # the device's screen
+└── video/screen.mp4        # the device's screen, with the sound mixed in
 ```
 
 - Audio is WAV: PCM, 16-bit, mono, 16 kHz.
@@ -1260,6 +1265,7 @@ steps.
   screenshots.
 - The video follows the playhead. It plays, pauses, seeks and changes
   speed with it.
+- The player mutes the video. Its sound comes from `audio/`.
 - `offsetMs` places the video. The player's timeline starts at the first
   event. The video's first frame is at `offsetMs` minus that event's time.
 - The player shows the screenshots in three cases:

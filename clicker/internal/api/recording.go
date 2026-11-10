@@ -155,6 +155,8 @@ type VideoTrack struct {
 	// empty means the engine's WebM.
 	MimeType string
 	Gaps     int // times a stream video lost packets and froze until the next key frame
+	// Audio: the file also holds what the recording said and heard.
+	Audio bool
 }
 
 // VideoSummary is one entry of the videos array in the recording.stop result.
@@ -166,6 +168,7 @@ type VideoSummary struct {
 	// RemotePath is where a remote-keep video lives on the remote host.
 	RemotePath string
 	Error      string
+	Audio      bool
 }
 
 // RecordingSummary is the metadata carried by the recording.stop result.
@@ -205,6 +208,9 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 			}
 			if v.Error != "" {
 				entry["error"] = v.Error
+			}
+			if v.Audio {
+				entry["audio"] = true
 			}
 			videos = append(videos, entry)
 		}
@@ -499,6 +505,7 @@ func (t *Recorder) Summary() RecordingSummary {
 			Width:      t.video.Width,
 			Height:     t.video.Height,
 			Error:      t.video.Error,
+			Audio:      t.video.Audio,
 		}
 		if t.video.Remote {
 			vs.RemotePath = t.video.EnginePath
@@ -1480,6 +1487,9 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			entry["durationMs"] = t.video.DurationMs
 			if t.video.Gaps > 0 {
 				entry["gaps"] = t.video.Gaps
+			}
+			if t.video.Audio {
+				entry["audio"] = true
 			}
 		}
 		if t.video.Error != "" {

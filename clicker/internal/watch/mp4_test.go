@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/vibium/clicker/internal/aac"
 	"github.com/vibium/clicker/internal/watch/watchtest"
 )
 
@@ -106,7 +108,8 @@ func equal(a, b []int64) bool {
 	return true
 }
 
-// boxes walks an MP4's boxes, depth first, into a map by path.
+// boxes walks an MP4's boxes, depth first, into a map by path. A second
+// box at a path gets "#2" after its name.
 func boxes(t *testing.T, data []byte, path string, into map[string][]byte) {
 	t.Helper()
 	for len(data) >= 8 {
@@ -118,10 +121,14 @@ func boxes(t *testing.T, data []byte, path string, into map[string][]byte) {
 			t.Fatalf("%s/%s: size %d of %d", path, kind, size, len(data))
 		}
 		body := data[head:size]
-		into[path+kind] = body
+		name := path + kind
+		if _, again := into[name]; again {
+			name += "#2"
+		}
+		into[name] = body
 		switch kind {
 		case "moov", "trak", "mdia", "minf", "stbl":
-			boxes(t, body, path+kind+"/", into)
+			boxes(t, body, name+"/", into)
 		}
 		data = data[size:]
 	}
@@ -147,7 +154,7 @@ func TestMP4HoldsTheFramesAndTheirIndex(t *testing.T) {
 		payload = append(payload, u...)
 	}
 	// Stopped half a second after the last frame arrived.
-	info, err := m.finish(11*3000 + clock/2)
+	info, err := m.finish(11*3000+clock/2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +211,109 @@ func TestMP4WithNoFramesIsAnError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.finish(0); err == nil {
+	if _, err := m.finish(0, nil); err == nil {
 		t.Error("no error for a file without frames")
+	}
+}
+
+// videoFile writes the fixture's twelve frames, 3000 ticks apart, and
+// finishes half a second after the last one arrived.
+func videoFile(t *testing.T, audio func(shift, length int64) []int16) (mp4Info, []byte, map[string][]byte) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "out.mp4")
+	m, err := createMP4(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, u := range fixture(t) {
+		key, sps, pps := inspect(u)
+		if key && m.sps == nil {
+			m.sps, m.pps = sps, pps
+		}
+		m.add(u, frame{key: key, rtp: int64(i) * 3000, wall: int64(i)*3000 + 900})
+	}
+	info, err := m.finish(11*3000+900+clock/2, audio)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]byte{}
+	boxes(t, data, "", got)
+	return info, data, got
+}
+
+func TestMP4CarriesSoundAsASecondTrack(t *testing.T) {
+	pcm := make([]int16, aac.Rate)
+	for i := range pcm {
+		pcm[i] = int16(8000 * math.Sin(2*math.Pi*440*float64(i)/aac.Rate))
+	}
+	var askedShift, askedLength int64
+	info, data, got := videoFile(t, func(shift, length int64) []int16 {
+		askedShift, askedLength = shift, length
+		return pcm
+	})
+	if !info.Sound || int64(len(data)) != info.Bytes {
+		t.Errorf("info %+v for a file of %d bytes", info, len(data))
+	}
+	// The sound is asked for the video's own span.
+	if askedShift != info.Shift || askedLength != info.Duration {
+		t.Errorf("asked for %d ticks from %d, want %d from %d", askedLength, askedShift, info.Duration, info.Shift)
+	}
+	// A second of sound against less video is cut to the video's length.
+	kept := int(info.Duration * aac.Rate / clock)
+	frames := aac.Encode(pcm[:kept])
+	if kept >= len(pcm) || len(frames) == 0 {
+		t.Fatalf("the video is %d ticks, too long for this test", info.Duration)
+	}
+
+	video, sound := "moov/trak/", "moov/trak#2/"
+	if string(got[video+"mdia/hdlr"][8:12]) != "vide" || string(got[sound+"mdia/hdlr"][8:12]) != "soun" {
+		t.Fatalf("tracks are %q and %q", got[video+"mdia/hdlr"][8:12], got[sound+"mdia/hdlr"][8:12])
+	}
+	if next := binary.BigEndian.Uint32(got["moov/mvhd"][96:]); next != 3 {
+		t.Errorf("next track id %d, want 3", next)
+	}
+	stbl := sound + "mdia/minf/stbl/"
+	if n := binary.BigEndian.Uint32(got[stbl+"stsz"][8:]); int(n) != len(frames) {
+		t.Errorf("stsz counts %d frames, want %d", n, len(frames))
+	}
+	if n, d := binary.BigEndian.Uint32(got[stbl+"stts"][8:]), binary.BigEndian.Uint32(got[stbl+"stts"][12:]); int(n) != len(frames) || d != aac.FrameSize {
+		t.Errorf("stts has %d frames of %d samples", n, d)
+	}
+	off := int(binary.BigEndian.Uint32(got[stbl+"stco"][8:]))
+	if !bytes.Equal(data[off:off+len(frames[0])], frames[0]) {
+		t.Errorf("stco points at %d, which is not the first frame of sound", off)
+	}
+	if voff := int(binary.BigEndian.Uint32(got[video+"mdia/minf/stbl/stco"][8:])); off <= voff {
+		t.Errorf("the sound at %d is not after the video at %d", off, voff)
+	}
+	if !bytes.Contains(got[stbl+"stsd"], append([]byte{5, 2}, aac.Config...)) || !bytes.Contains(got[stbl+"stsd"], []byte("mp4a")) {
+		t.Errorf("stsd % x", got[stbl+"stsd"])
+	}
+	if rate := binary.BigEndian.Uint32(got[sound+"mdia/mdhd"][12:]); rate != aac.Rate {
+		t.Errorf("the track's clock is %d", rate)
+	}
+	// The edit skips the decoder's delay and lasts as long as the sound.
+	elst := got[sound+"edts"][8:]
+	if ms, skip := binary.BigEndian.Uint32(elst[8:]), binary.BigEndian.Uint32(elst[12:]); int(ms) != kept*1000/aac.Rate || skip != aac.Delay {
+		t.Errorf("the edit is %d ms from sample %d", ms, skip)
+	}
+}
+
+func TestMP4WithoutSoundHasOneTrack(t *testing.T) {
+	for name, audio := range map[string]func(shift, length int64) []int16{
+		"not asked": nil,
+		"none":      func(int64, int64) []int16 { return nil },
+	} {
+		info, data, got := videoFile(t, audio)
+		if info.Sound || int64(len(data)) != info.Bytes {
+			t.Errorf("%s: info %+v for a file of %d bytes", name, info, len(data))
+		}
+		if _, second := got["moov/trak#2"]; second {
+			t.Errorf("%s: the file has a second track", name)
+		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/vibium/clicker/internal/speech"
 	"github.com/vibium/clicker/internal/watch"
 )
 
@@ -93,7 +94,7 @@ func (t *Recorder) finishStreamLocked() bool {
 	}
 	v := t.stream
 	t.stream = nil
-	info, err := v.rec.Stop()
+	info, err := v.rec.Stop(t.videoSoundLocked)
 	if err != nil {
 		t.video.Error = "the device's video stream: " + err.Error()
 		return true
@@ -104,8 +105,20 @@ func (t *Recorder) finishStreamLocked() bool {
 	t.video.DurationMs = info.DurationMs
 	t.video.Width, t.video.Height = info.Width, info.Height
 	t.video.Gaps = info.Gaps
+	t.video.Audio = info.Sound
 	if info.Ended != "" {
 		t.video.Error = fmt.Sprintf("%s %.1f s into the recording", info.Ended, float64(info.DurationMs)/1000)
 	}
 	return true
+}
+
+// videoSoundLocked is what the recording said and heard over a stretch of
+// its video, as the one track the video's file carries. A viewer of the
+// file alone hears what the Record Player plays.
+func (t *Recorder) videoSoundLocked(start time.Time, length time.Duration) []int16 {
+	mix := t.mixAudioLocked(float64(start.UnixMicro())/1000-float64(t.monotonicBase), length)
+	if mix == nil {
+		return nil
+	}
+	return speech.Audio{SampleRate: speech.Rate, Channels: 1, Samples: mix}.Resample(watch.SoundRate).Samples
 }

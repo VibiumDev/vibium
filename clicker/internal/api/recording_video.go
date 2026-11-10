@@ -212,6 +212,9 @@ func RecordingSavedSentence(path string, s RecordingSummary) string {
 	msg := fmt.Sprintf("Saved %s (%d steps", path, s.Steps)
 	if len(s.Videos) > 0 && s.Videos[0].Error == "" && s.Videos[0].DurationMs > 0 {
 		msg += fmt.Sprintf(", %ds video", (s.Videos[0].DurationMs+500)/1000)
+		if s.Videos[0].Audio {
+			msg += " with sound"
+		}
 	}
 	msg += ")"
 	if s.VideoUnavailable != "" {
