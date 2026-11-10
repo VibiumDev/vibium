@@ -34,6 +34,43 @@ func TestSplitArgs(t *testing.T) {
 	}
 }
 
+func TestAnOptionWithNoValueIsDropped(t *testing.T) {
+	c := &Command{Line: "say -v {voice} -o {output} --data-format=LEI16@22050", Label: "system"}
+	argv, used, err := c.argv(map[string]string{"voice": "", "output": "/tmp/o.wav", "text": "hi"})
+	want := []string{"say", "-o", "/tmp/o.wav", "--data-format=LEI16@22050"}
+	if err != nil || !reflect.DeepEqual(argv, want) || used["voice"] || used["text"] {
+		t.Fatalf("%q %v %v", argv, used, err)
+	}
+	argv, _, _ = c.argv(map[string]string{"voice": "Samantha", "output": "/tmp/o.wav"})
+	if !reflect.DeepEqual(argv, []string{"say", "-v", "Samantha", "-o", "/tmp/o.wav", "--data-format=LEI16@22050"}) {
+		t.Fatalf("%q", argv)
+	}
+	// Text is never dropped, and neither is the "--" before it.
+	p := &Command{Line: "piper -m {voice} -f {output} -- {text}", Label: "piper"}
+	argv, _, _ = p.argv(map[string]string{"voice": "v.onnx", "output": "o.wav", "text": ""})
+	if !reflect.DeepEqual(argv, []string{"piper", "-m", "v.onnx", "-f", "o.wav", "--", ""}) {
+		t.Fatalf("%q", argv)
+	}
+}
+
+// On a Mac the system voice is the default. This runs the real say(1).
+func TestMacSystemVoice(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("say(1) is macOS")
+	}
+	c, err := SystemEnv().Say("system", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := c.Provider.Synthesize(context.Background(), SynthesisRequest{Text: "-5 degrees. Come here, Watson."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trimmed := a.Mono().Trim(clipPad); a.SampleRate != 22050 || trimmed.Duration() < time.Second || trimmed.Duration() > 10*time.Second {
+		t.Fatalf("%d Hz, %v of speech", a.SampleRate, trimmed.Duration())
+	}
+}
+
 func TestCommandSynthesizeThroughFileAndPipe(t *testing.T) {
 	fixture := filepath.Join(t.TempDir(), "fixture.wav")
 	os.WriteFile(fixture, Audio{SampleRate: 22050, Channels: 1, Samples: tone(22050, 300, -20, 500*time.Millisecond)}.WAV(), 0o600)
@@ -142,7 +179,13 @@ func TestWhisperCPPOutput(t *testing.T) {
 cat > "$out.json" <<'J'
 `+raw+`
 J`)
-	c := &Command{Line: fake + " -m {model} -f {input} -l {language} -ojf -of {output} -np", Label: "whisper.cpp", adapt: presets[1].adapt}
+	var whisper preset
+	for _, p := range presets {
+		if p.name == "whisper.cpp" {
+			whisper = p
+		}
+	}
+	c := &Command{Line: fake + " -m {model} -f {input} -l {language} -ojf -of {output} -np", Label: "whisper.cpp", adapt: whisper.adapt}
 	tr, err = c.Transcribe(context.Background(), TranscriptionRequest{Audio: Audio{SampleRate: Rate, Channels: 1, Samples: make([]int16, 1600)}, Model: "m.bin", Language: "en"})
 	if err != nil || tr.Text != "Come here, Watson." {
 		t.Fatalf("preset: %+v %v", tr, err)

@@ -6,7 +6,7 @@ import (
 )
 
 func envOf(vars map[string]string, onPath ...string) Env {
-	return Env{Getenv: func(k string) string { return vars[k] }, LookPath: func(name string) (string, error) {
+	return Env{OS: "linux", Getenv: func(k string) string { return vars[k] }, LookPath: func(name string) (string, error) {
 		for _, p := range onPath {
 			if p == name {
 				return "/usr/bin/" + name, nil
@@ -28,8 +28,48 @@ func TestOneOpenAIKeyConfiguresBothDirections(t *testing.T) {
 	}
 }
 
+func TestDefaultsGoFromSystemToLocalToHosted(t *testing.T) {
+	key := map[string]string{"OPENAI_API_KEY": "sk-test", "VIBIUM_SAY_VOICE": "", "VIBIUM_LISTEN_MODEL": "/models/tiny.bin"}
+	name := func(c Choice, err error) string {
+		if err != nil {
+			return Code(err)
+		}
+		return c.Provider.Name()
+	}
+	// A Mac with everything: it speaks with its own voice, and hears with
+	// the local engine. The key is not used.
+	mac := envOf(key, "say", "piper", "whisper-cli")
+	mac.OS = "darwin"
+	if got := name(mac.Say("", "", "")); got != "system" {
+		t.Errorf("a Mac should speak with the system voice first, got %s", got)
+	}
+	if got := name(mac.Listen("", "")); got != "whisper.cpp" {
+		t.Errorf("a local engine should come before a hosted one, got %s", got)
+	}
+	// The same key on a machine with nothing installed is what is left.
+	bare := envOf(key)
+	if got := name(bare.Say("", "", "")); got != "openai" {
+		t.Errorf("with no system or local speech the hosted key should be used, got %s", got)
+	}
+	// Linux has no built-in speech; a program named say there is not it.
+	linux := envOf(key, "say")
+	if got := name(linux.Say("", "", "")); got != "openai" {
+		t.Errorf("say on PATH outside macOS is not system speech, got %s", got)
+	}
+	if got := name(linux.Say("system", "", "")); got != "not_configured" {
+		t.Errorf("asking for system speech where there is none should say so, got %s", got)
+	}
+	// Asking for a level by name skips the ones above it.
+	if got := name(mac.Say("openai", "", "")); got != "openai" {
+		t.Errorf("a named provider should win over the default order, got %s", got)
+	}
+	if got := name(mac.Listen("system", "")); got != "not_configured" {
+		t.Errorf("macOS has no built-in transcription command, got %s", got)
+	}
+}
+
 func TestResolutionOrder(t *testing.T) {
-	// A flag beats the environment, which beats a key, which beats PATH.
+	// A flag beats the environment, which beats the default order.
 	vars := map[string]string{"OPENAI_API_KEY": "sk-test", "VIBIUM_LISTEN_PROVIDER": "whisper.cpp", "VIBIUM_LISTEN_MODEL": "/models/tiny.bin"}
 	e := envOf(vars, "whisper-cli", "piper")
 	c, err := e.Listen("", "")
@@ -40,9 +80,9 @@ func TestResolutionOrder(t *testing.T) {
 	if err != nil || c.Provider.Name() != "openai" || c.Model != "gpt-transcribe" {
 		t.Fatalf("a flag should win, and must not inherit the other provider's model: %+v %v", c, err)
 	}
-	c, err = e.Say("", "", "")
+	c, err = e.Say("openai", "", "")
 	if err != nil || c.Provider.Name() != "openai" {
-		t.Fatalf("a key should win over an engine on PATH: %+v %v", c, err)
+		t.Fatalf("a flag should win over an engine on PATH: %+v %v", c, err)
 	}
 	local := envOf(map[string]string{"VIBIUM_SAY_VOICE": "/voices/a.onnx"}, "piper")
 	c, err = local.Say("", "", "")

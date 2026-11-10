@@ -642,6 +642,9 @@ The contract is deliberately small. It can become a plugin protocol later.
 
 - The command line is split into arguments once, shell-style. No shell runs it.
 - Placeholders in braces are replaced inside arguments.
+- A placeholder that stands alone as an argument and has no value is
+  dropped, along with the option before it. `-v {voice}` disappears when
+  no voice is set.
 - Exit status 0 means success. Anything else fails the call.
 - On failure the last 2 KB of stderr go into the error message.
 - The environment is the engine's own, plus `VIBIUM_SPEECH_PROTOCOL=1`
@@ -703,6 +706,7 @@ Vibium does not install engines or download models.
 
 | Preset | Direction | Command line | Output adapter |
 |--------|-----------|--------------|----------------|
+| `system` on macOS | TTS | `say -v {voice} -o {output} --data-format=LEI16@22050`, text on stdin | WAV file |
 | `piper` | TTS | `piper -m {voice} -f {output} -- {text}` | WAV file |
 | `kitten` | TTS | `python3 -c <snippet> {model} {voice} {output}`, text on stdin | WAV file |
 | `whisper.cpp` | STT | `whisper-cli -m {model} -f {input} -l {language} -ojf -of {output} -np` | whisper.cpp JSON: segments and token times |
@@ -722,24 +726,52 @@ Defaults for each preset come from [Measurements](#measurements-on-a-raspberry-p
 
 ### Choosing a provider
 
-Each direction resolves on its own, in this order:
+Each direction resolves on its own.
 
-1. The call's `provider` option or `--provider` flag.
-2. `VIBIUM_SAY_PROVIDER` or `VIBIUM_LISTEN_PROVIDER`.
-3. A hosted provider whose key is set: `deepgram`, then `elevenlabs`, then `openai`.
-4. A preset whose program is on `PATH`: `piper`, then `kitten` for TTS; `whisper.cpp`, then `moonshine`, then `sherpa-onnx` for STT.
-5. Otherwise error `not_configured`, which names both ways to set one up.
+An explicit choice always wins: the call's `provider` option or
+`--provider` flag, then `VIBIUM_SAY_PROVIDER` or
+`VIBIUM_LISTEN_PROVIDER`, then a `VIBIUM_SAY_COMMAND` or
+`VIBIUM_LISTEN_COMMAND` on its own.
 
-So a machine with only `OPENAI_API_KEY` set needs no speech
-configuration at all. Both commands use OpenAI.
+With nothing chosen, the default goes through three levels. It takes the
+first one that exists on the machine.
 
-A hosted provider chosen this way receives the audio `listen` captures.
-Every result names the provider that was used. Set
-`VIBIUM_LISTEN_PROVIDER` to a local preset to keep audio on the machine.
+| Level | What | Why it comes here |
+|-------|------|-------------------|
+| 1. System | Speech the operating system has built in | Nothing to install, nothing to pay, nothing leaves the machine |
+| 2. Local | An open-source engine the user installed, found on `PATH` | Nothing to pay, nothing leaves the machine |
+| 3. Hosted | An API whose key is set: `deepgram`, then `elevenlabs`, then `openai` | Works anywhere a key is present |
+
+With no level available the call fails with `not_configured`, which
+names the ways to set one up.
+
+What each level holds today:
+
+| | `say` | `listen` |
+|---|-------|----------|
+| System, macOS | `say`, the system voice | none: macOS has no transcription command |
+| System, Windows | planned: the built-in synthesizer through PowerShell | none: the built-in recognizer is not accurate enough to assert on |
+| System, Linux | none | none |
+| Local | `piper`, then `kitten` | `whisper.cpp`, then `moonshine`, then `sherpa-onnx` |
+| Hosted | OpenAI `gpt-4o-mini-tts` | OpenAI `gpt-transcribe` |
+
+So on a Mac `vibium say "hello"` speaks with the system voice and needs
+no setup at all. On a machine with only `OPENAI_API_KEY` set, both
+commands use OpenAI.
+
+`--provider system`, a preset name, or a hosted name picks a level
+directly.
+
+A hosted provider chosen by default receives the audio `listen`
+captures. That happens only when no local way to transcribe exists.
+Every result names the provider that was used.
+
+The macOS `say` line was written from its manual and has not been run:
+the development machine is a Pi. A test runs it on macOS.
 
 ## Configuration
 
-With a hosted key in the environment, nothing else is needed.
+Most machines need none. See [Choosing a provider](#choosing-a-provider).
 
 Precedence is: call option or flag, then environment variable, then the
 config file, then the built-in default.
@@ -1306,6 +1338,7 @@ VAD on the same 21 clips, for onset and end error.
 
 | | Default | Why |
 |---|---------|-----|
+| System `say`, macOS | `say`, the system voice | Built in. Not measured: no Mac was at hand. |
 | Hosted `say` | OpenAI `gpt-4o-mini-tts`, voice `alloy` | Measured. One bad clip in 22, against six for the realtime model. First byte in half a second. Uses the key most users already have. Retired on 2027-01-06. |
 | Hosted `listen` | OpenAI `gpt-transcribe` | Measured. No word errors on replies. Under a second per reply. |
 | Local `say` | Piper, a medium voice | Fastest local engine measured. The default voice is `en_US-ljspeech-medium`, for its public-domain dataset. That voice is still to be measured. |
@@ -1573,3 +1606,10 @@ Each has a proposed answer. The spec is written as if that answer holds.
     providers, find the engines, and do one round trip through a WAV
     file. It is small and it helps a first-time user. Is it in the
     first version?
+13. **System speech on Windows.** Its built-in synthesizer can be run
+    through PowerShell. The command line is not written yet because it
+    could not be tried. Is Windows `say` wanted in the first version?
+14. **System transcription.** macOS can transcribe on the device, but
+    only through an API, not a command. Using it means Vibium ships a
+    small native helper for macOS. Is that wanted, or do local and
+    hosted `listen` cover it?

@@ -37,15 +37,29 @@ type adapter struct {
 
 type preset struct {
 	name, direction, program, line, install string
+	level                                   string // system or local
+	os                                      string // the one system it exists on; "" is any
+	needs                                   string // "voice" or "model" when the engine has no default
 	adapt                                   *adapter
 }
 
-// presets are built-in command lines for the recommended engines. A preset
-// is data: it holds no engine code.
+const (
+	levelSystem = "system"
+	levelLocal  = "local"
+)
+
+// presets are built-in command lines: speech the operating system ships,
+// and the recommended local engines. A preset is data: it holds no engine
+// code. Within a level the first one found on PATH wins.
 var presets = []preset{
-	{name: "piper", direction: "say", program: "piper", line: "piper -m {voice} -f {output} -- {text}",
+	// macOS speaks with say(1). It reads the text from stdin, so text
+	// that starts with a dash is not taken for an option.
+	{name: "system", direction: "say", level: levelSystem, os: "darwin", program: "say",
+		line: "say -v {voice} -o {output} --data-format=LEI16@22050"},
+	{name: "piper", direction: "say", level: levelLocal, program: "piper", line: "piper -m {voice} -f {output} -- {text}", needs: "voice",
 		install: "Install Piper (pip install piper-tts) and download a voice; the voice is the path to its .onnx file."},
-	{name: "whisper.cpp", direction: "listen", program: "whisper-cli", line: "whisper-cli -m {model} -f {input} -l {language} -ojf -of {output} -np",
+	{name: "whisper.cpp", direction: "listen", level: levelLocal, program: "whisper-cli", needs: "model",
+		line:    "whisper-cli -m {model} -f {input} -l {language} -ojf -of {output} -np",
 		install: "Build whisper.cpp and download a ggml model; the model is the path to its .bin file.",
 		adapt:   &adapter{outputSuffix: ".json", transcript: whisperCPPTranscript}},
 }
@@ -156,7 +170,18 @@ func (c *Command) argv(values map[string]string) ([]string, map[string]bool, err
 		return nil, nil, errf("not_configured", "the %s command line is empty or has an unclosed quote", c.Label)
 	}
 	used := map[string]bool{}
-	for i, part := range parts {
+	out := parts[:0]
+	for _, part := range parts {
+		// A placeholder that stands alone and has no value is dropped,
+		// along with the option before it: "-v {voice}" with no voice.
+		if name := strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}"); len(name)+2 == len(part) {
+			if value, known := values[name]; known && value == "" && name != "text" {
+				if n := len(out); n > 1 && strings.HasPrefix(out[n-1], "-") && out[n-1] != "--" {
+					out = out[:n-1]
+				}
+				continue
+			}
+		}
 		for name, value := range values {
 			token := "{" + name + "}"
 			if strings.Contains(part, token) {
@@ -164,9 +189,9 @@ func (c *Command) argv(values map[string]string) ([]string, map[string]bool, err
 				part = strings.ReplaceAll(part, token, value)
 			}
 		}
-		parts[i] = part
+		out = append(out, part)
 	}
-	return parts, used, nil
+	return out, used, nil
 }
 
 func (c *Command) run(ctx context.Context, op string, argv []string, stdin []byte) ([]byte, error) {

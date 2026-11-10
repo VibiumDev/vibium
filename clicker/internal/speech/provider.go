@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -90,10 +91,11 @@ var EnvNames = []string{
 type Env struct {
 	Getenv   func(string) string
 	LookPath func(string) (string, error)
+	OS       string // runtime.GOOS; decides which system speech exists
 }
 
 // SystemEnv reads the process environment and PATH.
-func SystemEnv() Env { return Env{Getenv: os.Getenv, LookPath: exec.LookPath} }
+func SystemEnv() Env { return Env{Getenv: os.Getenv, LookPath: exec.LookPath, OS: runtime.GOOS} }
 
 func (e Env) get(name string) string { return strings.TrimSpace(e.Getenv(name)) }
 
@@ -124,7 +126,7 @@ var hostedProviders = []hosted{
 		sayModel: "gpt-4o-mini-tts", sayVoice: "alloy", hearModel: "gpt-transcribe"},
 }
 
-const setupHint = "Set OPENAI_API_KEY for hosted speech, or install a local engine and set %s. See `vibium %s --help`."
+const setupHint = "Install a local engine and set %s, or set OPENAI_API_KEY for hosted speech. See `vibium %s --help`."
 
 // Say resolves the text-to-speech provider. The arguments are the call's
 // options; empty ones fall back to the environment, then to defaults.
@@ -155,6 +157,22 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 	}
 	command := e.get(prefix + "COMMAND")
 
+	// With nothing chosen, defaults go from what stays on the machine and
+	// costs nothing to what does not: speech the operating system has
+	// built in, then a local engine the user installed, then a hosted API.
+	if name == "" && command != "" {
+		name = "command"
+	}
+	for _, level := range []string{levelSystem, levelLocal} {
+		for _, p := range presets {
+			if name != "" || p.level != level || p.direction != direction || (p.os != "" && p.os != e.OS) {
+				continue
+			}
+			if _, err := e.LookPath(p.program); err == nil {
+				name = p.name
+			}
+		}
+	}
 	if name == "" {
 		for _, h := range hostedProviders {
 			if h.make != nil && e.get(h.key) != "" {
@@ -162,19 +180,6 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 				break
 			}
 		}
-	}
-	if name == "" {
-		for _, p := range presets {
-			if p.direction == direction {
-				if _, err := e.LookPath(p.program); err == nil {
-					name = p.name
-					break
-				}
-			}
-		}
-	}
-	if name == "" && command != "" {
-		name = "command"
 	}
 	if name == "" {
 		return Choice{}, errf("not_configured", "no %s provider is configured. "+setupHint, direction, prefix+"PROVIDER", direction)
@@ -214,12 +219,14 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 		}
 		return Choice{Provider: &Command{Line: command, Label: "command", direction: direction}, Model: model, Voice: voice}, nil
 	}
+	known := false
 	for _, p := range presets {
 		if p.name != name {
 			continue
 		}
-		if p.direction != direction {
-			return Choice{}, errf("not_configured", "%s cannot %s", name, direction)
+		known = true
+		if p.direction != direction || (p.os != "" && p.os != e.OS) {
+			continue
 		}
 		line := command
 		if line == "" {
@@ -228,13 +235,19 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 			}
 			line = p.line
 		}
-		if direction == "say" && voice == "" {
+		if p.needs == "voice" && voice == "" {
 			return Choice{}, errf("not_configured", "%s needs a voice: set %sVOICE or pass --voice. %s", name, prefix, p.install)
 		}
-		if direction == "listen" && model == "" {
+		if p.needs == "model" && model == "" {
 			return Choice{}, errf("not_configured", "%s needs a model: set %sMODEL or pass --model. %s", name, prefix, p.install)
 		}
 		return Choice{Provider: &Command{Line: line, Label: name, adapt: p.adapt, direction: direction}, Model: model, Voice: voice}, nil
+	}
+	if name == "system" {
+		return Choice{}, errf("not_configured", "this system has no built-in way to %s", direction)
+	}
+	if known {
+		return Choice{}, errf("not_configured", "%s cannot %s", name, direction)
 	}
 	return Choice{}, errf("not_configured", "unknown %s provider %q", direction, name)
 }
