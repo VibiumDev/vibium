@@ -240,13 +240,28 @@ func (d *Daemon) handleInitialize(params json.RawMessage) (interface{}, *agent.E
 
 // handleToolsCall executes a tool and returns the result.
 func (d *Daemon) handleToolsCall(params json.RawMessage, notify func(method string)) (interface{}, *agent.Error) {
-	var p agent.ToolsCallParams
+	var p struct {
+		agent.ToolsCallParams
+		// SpeechEnv is the CLI caller's speech settings and credentials.
+		SpeechEnv map[string]string `json:"speechEnv,omitempty"`
+	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &agent.Error{
 			Code:    agent.InvalidParams,
 			Message: "Invalid params",
 			Data:    err.Error(),
 		}
+	}
+	if p.SpeechEnv != nil {
+		// Say and listen run without the launch callbacks: they never
+		// start a browser.
+		d.mu.Lock()
+		result, err := d.handlers.SpeechCLI(p.Name, p.Arguments, p.SpeechEnv)
+		d.mu.Unlock()
+		if err != nil {
+			return agent.ToolsCallResult{Content: []agent.Content{{Type: "text", Text: err.Error()}}, IsError: true}, nil
+		}
+		return result, nil
 	}
 
 	// Serialize handler access — handlers are not thread-safe. The launch

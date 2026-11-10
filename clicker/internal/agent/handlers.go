@@ -19,11 +19,14 @@ import (
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/speech"
 )
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
 	modelRunning bool // daemon mutex protects the complete verification and its child calls
+	speech       *speech.Engine
+	speechEnv    map[string]string // the CLI caller's speech settings, for one call
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -186,6 +189,12 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	}
 	if name == "vibium_check" {
 		return h.checkMCP(args)
+	}
+	if name == "vibium_say" {
+		return h.sayMCP(args)
+	}
+	if name == "vibium_listen" {
+		return h.listenMCP(args)
 	}
 	log.Debug("tool call", "name", name, "args", args)
 

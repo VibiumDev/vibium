@@ -333,6 +333,17 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 216 | Accomplish a goal in the active browser session | `vibium:run.run` | `vibium run <goal>` | `vibium_run` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` |
 | 217 | Accomplish a goal on a pinned page | `vibium:run.run` | — | — | `page.run(goal, opts?)` | `page.run(goal, opts?)` | `page.run(goal, opts?)` |
 
+## Say and Listen
+
+| # | Description | Wire Command | CLI | MCP | JS | Python | Java |
+|---|---|---|---|---|---|---|---|
+| 229 | Speak text into the session, this machine's speakers, or a WAV file | ⬜ | `vibium say <text>` | `vibium_say` | ⬜ | ⬜ | ⬜ |
+| 230 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | ⬜ | `vibium listen` | `vibium_listen` | ⬜ | ⬜ | ⬜ |
+
+Both work without a browser. With a session open the default target is the
+session; with none open it is this machine's speakers and microphone. See
+[the say and listen spec](../specs/say-listen-spec.md).
+
 The JS and Python module-level `browser.check` launcher requires `record` and
 uses the existing pipe runtime without launching a browser. Browser instances
 and Page instances use the current live session unless `record` is supplied.

@@ -276,6 +276,8 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newBiDiTestCmd())
 	rootCmd.AddCommand(newNavigateCmd())
 	rootCmd.AddCommand(newCheckCmd())
+	rootCmd.AddCommand(newSayCmd())
+	rootCmd.AddCommand(newListenCmd())
 	runCmd := newRunCmd()
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(newReadyCmd())

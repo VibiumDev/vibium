@@ -26,6 +26,15 @@ var allowed = map[string]bool{
 	"GOOGLE_API_KEY":             true,
 	"GEMINI_API_KEY":             true,
 	"XAI_API_KEY":                true,
+	"VIBIUM_SAY_PROVIDER":        true,
+	"VIBIUM_SAY_MODEL":           true,
+	"VIBIUM_SAY_VOICE":           true,
+	"VIBIUM_SAY_COMMAND":         true,
+	"VIBIUM_LISTEN_PROVIDER":     true,
+	"VIBIUM_LISTEN_MODEL":        true,
+	"VIBIUM_LISTEN_COMMAND":      true,
+	"DEEPGRAM_API_KEY":           true,
+	"ELEVENLABS_API_KEY":         true,
 }
 
 // LoadAIEnv applies unset AI settings from the config-dir ai.env file.
