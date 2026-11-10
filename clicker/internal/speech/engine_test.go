@@ -213,6 +213,8 @@ func TestListenStopRules(t *testing.T) {
 type liveTarget struct {
 	clock   float64 // ms; advanced by Play
 	script  []int16 // what the device plays, from clock 0
+	again   []int16 // what a capture after the first hears
+	opened  int
 	played  []Audio
 	never   bool // capture delivers nothing
 	guard   time.Duration
@@ -236,6 +238,9 @@ func (l *liveTarget) Capture(context.Context) (Capture, error) {
 	}
 	if l.never {
 		return &blockedCapture{done: make(chan struct{})}, nil
+	}
+	if l.opened++; l.opened > 1 && l.again != nil {
+		return &sliceCapture{samples: l.again}, nil
 	}
 	return &sliceCapture{samples: l.script}, nil
 }
@@ -277,6 +282,81 @@ func TestListenAfterSayMeasuresLatencyOnTheTargetClock(t *testing.T) {
 		t.Fatalf("latency %v, want 640 ms from the end of the say to the first sound of the answer", res.LatencyMs)
 	}
 	if *res.OnsetMs != *res.LatencyMs || res.Text != "It's sunny." || res.StoppedBy != "silence" {
+		t.Fatalf("%+v", res)
+	}
+}
+
+// sayThenWait says a 1.1 s clip into a device that plays the script, and
+// puts the end of the say d in the past: the caller did other things.
+func sayThenWait(t *testing.T, script []int16, d time.Duration) (*Engine, *liveTarget) {
+	t.Helper()
+	p := &fakeProvider{speech: Audio{SampleRate: Rate, Channels: 1, Samples: tone(Rate, 300, -20, time.Second)}, reply: Transcript{Text: "Come here, Watson."}}
+	e := fakeEngine(t, p)
+	dev := &liveTarget{script: join(quiet(Rate, 1100*time.Millisecond), script)}
+	if _, err := e.Say(context.Background(), dev, SayOptions{Text: "Come here, Watson.", CacheDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	e.mu.Lock()
+	e.windows[dev.Key()].at = time.Now().Add(-d)
+	e.mu.Unlock()
+	return e, dev
+}
+
+func TestListenWaitsFromTheCallNotFromTheSay(t *testing.T) {
+	// Twelve seconds of taps pass between the say and the listen. The
+	// device speaks a second after the listen is called.
+	e, dev := sayThenWait(t, join(quiet(Rate, 13*time.Second), tone(Rate, 400, -18, 1500*time.Millisecond), quiet(Rate, 3*time.Second)), 12*time.Second)
+	res, err := e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second, Duration: 10 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "Come here, Watson." || res.StoppedBy != "silence" || *res.LatencyMs < 12980 || *res.LatencyMs > 13020 {
+		t.Fatalf("latency %.0f ms, stopped by %s", *res.LatencyMs, res.StoppedBy)
+	}
+}
+
+func TestListenHearsAReplyFromBeforeTheCall(t *testing.T) {
+	// The device spoke eight seconds after the say, four before the call.
+	e, dev := sayThenWait(t, join(quiet(Rate, 8*time.Second), tone(Rate, 400, -18, 1500*time.Millisecond), quiet(Rate, 20*time.Second)), 12*time.Second)
+	res, err := e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second, Duration: 4 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StoppedBy != "silence" || *res.LatencyMs < 7980 || *res.LatencyMs > 8020 || *res.SpeechEndMs < 9450 || *res.SpeechEndMs > 9550 {
+		t.Fatalf("latency %.0f ms, speech to %.0f ms, stopped by %s", *res.LatencyMs, *res.SpeechEndMs, res.StoppedBy)
+	}
+
+	// A reply longer than the duration is cut that long after it began.
+	e, dev = sayThenWait(t, join(quiet(Rate, 8*time.Second), tone(Rate, 400, -18, 15*time.Second)), 12*time.Second)
+	res, err = e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second, Duration: 6 * time.Second})
+	if err != nil || res.StoppedBy != "duration" || res.DurationMs < 13900 || res.DurationMs > 14100 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+func TestListenGivesUpItsTimeoutAfterTheCall(t *testing.T) {
+	e, dev := sayThenWait(t, quiet(Rate, 40*time.Second), 12*time.Second)
+	res, err := e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second, AllowSilence: true})
+	if err != nil || res.Speech || res.StoppedBy != "timeout" || res.DurationMs < 16900 || res.DurationMs > 17200 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	e, dev = sayThenWait(t, quiet(Rate, 40*time.Second), 12*time.Second)
+	_, err = e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second})
+	if Code(err) != "no_speech" || !strings.Contains(err.Error(), "from the end of the last say") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestListenAfterTheWindowClosedListensAfresh(t *testing.T) {
+	// The capture behind the say ran out in silence. What plays now is
+	// still heard, with no latency to report.
+	e, dev := sayThenWait(t, quiet(Rate, 5*time.Second), 40*time.Second)
+	dev.again = join(quiet(Rate, time.Second), tone(Rate, 400, -18, 1500*time.Millisecond), quiet(Rate, 3*time.Second))
+	res, err := e.Listen(context.Background(), dev, ListenOptions{Silence: -1, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.LatencyMs != nil || *res.OnsetMs < 980 || *res.OnsetMs > 1020 || res.StoppedBy != "silence" {
 		t.Fatalf("%+v", res)
 	}
 }

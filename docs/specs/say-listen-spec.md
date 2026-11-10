@@ -102,8 +102,13 @@ capture does not wait for the call.
 - When `say` plays into a target that can be heard, the engine captures
   from that target during playback. It keeps the audio from the moment
   playback ends, up to 30 seconds. That is the capture window.
-- The next `listen` on that target starts at the end of that `say`, not
-  at the time of the call.
+- The next `listen` on that target hears from the end of that `say`,
+  not from the time of the call.
+- Silence before the call is not waiting. `timeout` and `duration`
+  count from the call. A reply that began before the call has its
+  `duration` from where it began.
+- A window that closed with no speech in it is dropped. The `listen`
+  then captures from the call.
 - A new `say`, or the end of the session, discards the window.
 - While a recording with audio is running, the continuous capture track
   serves as the window.
@@ -178,8 +183,8 @@ vibium listen [flags]
 | `--model` | provider default | Provider's model id |
 | `--language` | `en` | BCP 47 tag |
 | `--silence` | `1000` | Milliseconds of trailing silence that end the reply. `0` turns endpointing off |
-| `--timeout` | `10000` | Milliseconds to wait for speech to start |
-| `--duration` | `30000` | Maximum milliseconds of capture. With `--silence 0` the capture runs exactly this long |
+| `--timeout` | `10000` | Milliseconds to wait for speech to start, from the call |
+| `--duration` | `30000` | Maximum milliseconds of capture, from the call. With `--silence 0` the capture runs exactly this long |
 | `--allow-silence` | off | Return an empty transcript instead of failing when nothing is heard |
 | `-o, --output` | none | Also save the captured audio as a WAV file |
 | `--no-transcribe` | off | Capture without asking a provider for the words |
@@ -265,9 +270,9 @@ interface SayResult {
 interface ListenOptions extends SpeechOptions {
   /** Trailing silence that ends the reply, in ms. 0 turns endpointing off. Default 1000. */
   silence?: number;
-  /** How long to wait for speech to start, in ms. Default 10000. */
+  /** How long to wait for speech to start, from the call, in ms. Default 10000. */
   timeout?: number;
-  /** Maximum capture length in ms. Default 30000. */
+  /** Maximum capture length from the call, in ms. Default 30000. */
   duration?: number;
   /** Return an empty transcript instead of throwing when nothing is heard. */
   allowSilence?: boolean;
@@ -388,7 +393,7 @@ every page tool takes. It matters in a browser with several pages.
 ```json
 {
   "name": "vibium_listen",
-  "description": "Listen to the target and return what was said. The default is the current session: what the phone or the page plays. With no session open it is this machine's microphone. Starts at the end of the last vibium_say. Stops after trailing silence.",
+  "description": "Listen to the target and return what was said. The default is the current session: what the phone or the page plays. With no session open it is this machine's microphone. Hears from the end of the last vibium_say, so a reply that began before this call is not missed. Stops after trailing silence.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -397,8 +402,8 @@ every page tool takes. It matters in a browser with several pages.
       "model": {"type": "string"},
       "language": {"type": "string"},
       "silence": {"type": "number", "description": "Trailing silence that ends the reply, in ms (default 1000)"},
-      "timeout": {"type": "number", "description": "How long to wait for speech to start, in ms (default 10000)"},
-      "duration": {"type": "number", "description": "Maximum capture length in ms (default 30000)"},
+      "timeout": {"type": "number", "description": "How long to wait for speech to start, from this call, in ms (default 10000)"},
+      "duration": {"type": "number", "description": "Maximum capture length from this call, in ms (default 30000)"},
       "allowSilence": {"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"},
       "transcribe": {"type": "boolean", "description": "false captures without a transcript; onset and latency are still measured"}
     },
@@ -461,12 +466,19 @@ Stop rules:
 | Rule | Condition | `stoppedBy` |
 |------|-----------|-------------|
 | Silence | Speech started, then `silence` ms passed without speech | `silence` |
-| Duration | `duration` ms of audio captured | `duration` |
+| Duration | `duration` ms of audio captured since the call | `duration` |
 | End of file | A WAV target ran out | `eof` |
-| Timeout | No speech started within `timeout` ms | error `no_speech`, or `timeout` with `allowSilence` |
+| Timeout | No speech started within `timeout` ms of the call | error `no_speech`, or `timeout` with `allowSilence` |
 
 All rules apply in audio time. `timeout` and `duration` count from the
-start of the capture window, not from the call.
+call, not from the start of the capture window. Audio in the window
+from before the call is still heard and is part of the capture, so
+`durationMs` MAY exceed `duration`. A reply that began before the call
+has its `duration` from its onset.
+
+An earlier version counted both from the start of the window. A
+`listen` called more than `timeout` after its `say` then failed at
+once, having heard only the silence already in the window.
 
 A WAV target is read as fast as possible. A file gives the same result
 on every machine.

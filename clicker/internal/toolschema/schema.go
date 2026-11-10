@@ -145,7 +145,7 @@ func GetToolSchemas() []Tool {
 		},
 		{
 			Name:        "vibium_listen",
-			Description: "Listen to the target and return what was said. The default is the current session: what the phone or the page plays. With no session open it is this machine's microphone. Starts at the end of the last vibium_say. Stops after trailing silence.",
+			Description: "Listen to the target and return what was said. The default is the current session: what the phone or the page plays. With no session open it is this machine's microphone. Hears from the end of the last vibium_say, so a reply that began before this call is not missed. Stops after trailing silence.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -154,8 +154,8 @@ func GetToolSchemas() []Tool {
 					"model":        map[string]interface{}{"type": "string"},
 					"language":     map[string]interface{}{"type": "string"},
 					"silence":      map[string]interface{}{"type": "number", "description": "Trailing silence that ends the reply, in ms (default 1000). 0 turns endpointing off"},
-					"timeout":      map[string]interface{}{"type": "number", "description": "How long to wait for speech to start, in ms (default 10000)"},
-					"duration":     map[string]interface{}{"type": "number", "description": "Maximum capture length in ms (default 30000)"},
+					"timeout":      map[string]interface{}{"type": "number", "description": "How long to wait for speech to start, from this call, in ms (default 10000)"},
+					"duration":     map[string]interface{}{"type": "number", "description": "Maximum capture length from this call, in ms (default 30000)"},
 					"allowSilence": map[string]interface{}{"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"},
 					"path":         map[string]interface{}{"type": "string", "description": "Also save the captured audio as a WAV file"},
 					"transcribe":   map[string]interface{}{"type": "boolean", "description": "false captures without a transcript; speech onset and reply latency are still measured"},

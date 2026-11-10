@@ -124,7 +124,8 @@ var noAudioAfter = 3 * time.Second
 // window is audio captured since a say ended, kept for the next listen.
 type window struct {
 	pump  *pump
-	start float64 // target-clock ms: the end of the say
+	start float64   // target-clock ms: the end of the say
+	at    time.Time // the same moment on this machine's clock
 }
 
 // Engine runs say and listen. It keeps one capture window per target, so
@@ -261,7 +262,7 @@ func (e *Engine) play(ctx context.Context, t Target, audio Audio, res *SayResult
 	if p != nil {
 		p.Limit(end + float64(windowLength/time.Millisecond))
 		e.mu.Lock()
-		e.windows[t.Key()] = &window{pump: p, start: end}
+		e.windows[t.Key()] = &window{pump: p, start: end, at: time.Now()}
 		e.mu.Unlock()
 	}
 	if f, ok := t.(FileTarget); ok {
@@ -336,8 +337,13 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 
 	var src *pump
 	start, fromSay := math.NaN(), false
+	// early is the audio between the say and this call. It is heard, so a
+	// reply that came before the call is caught, but it is not waiting:
+	// the timeout and the duration count from the call.
+	var early time.Duration
 	if w := e.takeWindow(t.Key()); w != nil {
 		src, start, fromSay = w.pump, w.start, true
+		early = time.Since(w.at)
 		src.Unlimit()
 	} else {
 		c, err := t.Capture(ctx)
@@ -346,7 +352,7 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 		}
 		src = startPump(c)
 	}
-	defer src.Close()
+	defer func() { src.Close() }()
 
 	det := NewDetector(o.Silence)
 	if fromSay {
@@ -366,6 +372,17 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 		switch {
 		case err == io.EOF:
 			det.Flush()
+			if _, started := det.Onset(); fromSay && !started {
+				// The window closed with no reply in it: listen from now.
+				c, err := t.Capture(ctx)
+				if err != nil {
+					return nil, err
+				}
+				src.Close()
+				src, start, fromSay, early = startPump(c), math.NaN(), false, 0
+				det, heard, lost = NewDetector(o.Silence), nil, 0
+				continue
+			}
 			stoppedBy = "eof"
 			continue
 		case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
@@ -383,8 +400,15 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 			}
 			samples = samples[before:]
 		}
-		if room := int(o.Duration.Seconds()*Rate) - len(heard); len(samples) > room {
-			samples = samples[:room]
+		// A reply that began before the call has its full length from
+		// where it began.
+		from := early
+		if onset, started := det.Onset(); started && onset < from {
+			from = onset
+		}
+		limit := samplesAt(from + o.Duration)
+		if room := limit - len(heard); len(samples) > room {
+			samples = samples[:max(room, 0)]
 		}
 		heard = append(heard, samples...)
 		if chunk.Lost {
@@ -394,9 +418,9 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 		_, started := det.Onset()
 		if _, ended := det.End(); ended {
 			stoppedBy = "silence"
-		} else if len(heard) >= int(o.Duration.Seconds()*Rate) {
+		} else if len(heard) >= limit {
 			stoppedBy = "duration"
-		} else if !started && det.Elapsed() >= o.Timeout {
+		} else if !started && det.Elapsed() >= early+o.Timeout {
 			stoppedBy = "timeout"
 		}
 	}
@@ -419,8 +443,12 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	onset, started := det.Onset()
 	if !started {
 		if !o.AllowSilence {
-			return nil, errf("no_speech", "listened to %s for %.1f s and heard no speech (peak level %.0f dBFS)",
-				t.Name(), captured.Duration().Seconds(), captured.PeakDB())
+			since := ""
+			if fromSay {
+				since = ", from the end of the last say,"
+			}
+			return nil, errf("no_speech", "listened to %s for %.1f s%s and heard no speech (peak level %.0f dBFS)",
+				t.Name(), captured.Duration().Seconds(), since, captured.PeakDB())
 		}
 		return res, nil
 	}

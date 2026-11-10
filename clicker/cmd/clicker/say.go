@@ -178,7 +178,8 @@ func newListenCmd() *cobra.Command {
 		Short: "Hear the session, this machine's microphone, or a WAV file, and print what was said",
 		Long: "Capture audio from a target and return a transcript.\n" +
 			"With a session open the target is the session. With none open it is this machine's microphone.\n" +
-			"After a say, listening starts where the say ended, and the result carries the reply latency.",
+			"After a say, listening hears from where the say ended, and the result carries the reply latency.\n" +
+			"The timeout and the duration count from the call.",
 		Example: `  vibium listen
   # Come here, Watson.
 
@@ -272,8 +273,8 @@ func newListenCmd() *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "Provider's model id")
 	cmd.Flags().StringVar(&language, "language", "", "BCP 47 tag (default en)")
 	cmd.Flags().IntVar(&silence, "silence", 1000, "Milliseconds of trailing silence that end the reply; 0 turns endpointing off")
-	cmd.Flags().IntVar(&timeout, "timeout", 10000, "Milliseconds to wait for speech to start")
-	cmd.Flags().IntVar(&duration, "duration", 30000, "Maximum milliseconds of capture")
+	cmd.Flags().IntVar(&timeout, "timeout", 10000, "Milliseconds to wait for speech to start, from the call")
+	cmd.Flags().IntVar(&duration, "duration", 30000, "Maximum milliseconds of capture, from the call")
 	cmd.Flags().BoolVar(&allowSilence, "allow-silence", false, "Return an empty transcript instead of failing when nothing is heard")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Also save the captured audio as a WAV file")
 	cmd.Flags().BoolVar(&noTranscribe, "no-transcribe", false, "Capture without a transcript; speech onset and reply latency are still reported")
