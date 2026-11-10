@@ -34,6 +34,7 @@ type RefEntry struct {
 	State    *PageState             `json:"-"` // page state when a visual region was found
 	Image    []byte                 `json:"-"` // reference image, kept for re-detection
 	Strategy Strategy               `json:"-"`
+	Checked  bool                   `json:"-"` // its element is stored, so a stale ref can be told
 }
 
 // Visual reports whether interaction has to go through coordinates.

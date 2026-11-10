@@ -445,7 +445,7 @@ All wait commands accept `--timeout <ms>` (default varies by command).
 
 ## Ref Lifecycle
 
-Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
+Refs (`@e1`, `@e2`) from `map` or `find` are tied to their element. If the element is gone, or the ref now reaches another element, the ref fails with `@eN is stale: … run find again`. If the element is gone and nothing took its place, `is visible`, `count` and `wait --state hidden` answer as for any missing element. The check is best effort. An element reused with new content keeps its ref, and a check that takes over 2s is skipped. Always re-map after:
 - Clicking links or buttons that navigate
 - Form submissions
 - Dynamic content loading (dropdowns, modals)
