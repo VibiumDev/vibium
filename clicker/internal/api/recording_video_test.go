@@ -242,7 +242,7 @@ func TestRemoteKeepRecordsAndReportsRemotePath(t *testing.T) {
 	rec.Start(opts, nil)
 
 	sess := &fakeVideoSession{}
-	if err := StartRecordingVideo(sess, rec, opts, true, nil); err != nil {
+	if err := StartRecordingVideo(sess, rec, opts, true, nil, nil); err != nil {
 		t.Fatalf("remote keep should start the screencast, got: %v", err)
 	}
 	if !sess.started {
@@ -281,7 +281,7 @@ func TestRemoteWithoutKeepStillRefuses(t *testing.T) {
 	rec.Start(opts, nil)
 
 	sess := &fakeVideoSession{}
-	err := StartRecordingVideo(sess, rec, opts, true, nil)
+	err := StartRecordingVideo(sess, rec, opts, true, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "remote browser connections") {
 		t.Fatalf("required video on remote must refuse, got: %v", err)
 	}

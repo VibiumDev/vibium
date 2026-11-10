@@ -44,7 +44,38 @@ To record against the Firefox beta instead, select the channel with `--channel b
 
 Chrome has not implemented the BiDi screencast command yet. The same code will work on Chrome when it does; today `video: true` fails there with an error saying so, and an omitted `video` records the trace without a video track.
 
-No video is recorded on remote browser connections (`--connect`). The
+## Record a device on a station or a Roadie
+
+A session on a Vibium Station or a Roadie records video with no extra
+option. The video is the device's own screen stream.
+
+```bash
+export VIBIUM_CONNECT_API_KEY=...            # the station's API key
+vibium start wss://station.example/session
+vibium record start -o phone.zip
+# Recording "record" started (video: on, screenshots: true, snapshots: false), saving to phone.zip
+vibium tap 222 600
+vibium record stop -o phone.zip
+# Saved phone.zip (3 steps, 12s video)
+```
+
+- The zip holds `video/screen.mp4`: H.264, at the stream's size and frame rate.
+- `record start` waits for the first picture. That takes under a second on
+  a local network and 2 to 3 seconds through a relay.
+- `--video-size` and `--video-fps` do not apply. The stream is stored as it is.
+- With `video` omitted, a stream that cannot be joined leaves the recording
+  without video, and the stop result says why. `--video` makes that an error
+  at start.
+- `--video=false` records no video.
+- Expect about 3 MB a minute for a still screen and 8 MB a minute for one
+  that moves.
+
+Sound is separate. `vibium say` and `vibium listen` put their audio under
+`audio/` in the same zip.
+
+## Remote browsers
+
+No video is recorded on other remote browser connections (`--connect`). The
 engine would write the file on the remote host's disk, where Vibium cannot
 reach it — the WebDriver BiDi protocol has no way to retrieve files — so
 the screencast is never started at all: with `video` omitted the recording

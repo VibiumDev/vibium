@@ -151,6 +151,10 @@ type VideoTrack struct {
 	Width  int
 	Height int
 	Error  string // engine failure; the zip still delivers, video absent or partial
+	// MimeType is "video/mp4" for a video taken from a device's stream;
+	// empty means the engine's WebM.
+	MimeType string
+	Gaps     int // times a stream video lost packets and froze until the next key frame
 }
 
 // VideoSummary is one entry of the videos array in the recording.stop result.
@@ -253,7 +257,8 @@ type Recorder struct {
 
 	// Video track (engine screencast folded into the recording)
 	video            *VideoTrack
-	videoUnavailable string // engine reason video could not start (auto mode)
+	videoUnavailable string       // engine reason video could not start (auto mode)
+	stream           *StreamVideo // the video's source while it is a device's stream
 
 	// Screenshot goroutine control
 	screenshotStop chan struct{}
@@ -305,6 +310,7 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.groupStack = nil
 	t.audio = nil
 	t.video = nil
+	t.stream = nil
 	t.videoUnavailable = ""
 	t.chunkIndex = 0
 	t.startTime = time.Now().UnixMilli()
@@ -371,6 +377,7 @@ func (t *Recorder) Stop() ([]byte, error) {
 	}
 
 	t.recording = false
+	t.finishStreamLocked()
 	data, err := t.buildZipLocked(true)
 	if err == nil && t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
@@ -459,6 +466,8 @@ func (t *Recorder) FinishVideo(enginePath, errMsg string) {
 func (t *Recorder) RemoveEngineFile() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stream.Abort()
+	t.stream = nil
 	if t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
 			log.Debug("failed to delete engine video temp", "path", t.video.EnginePath, "error", rmErr)
@@ -1436,10 +1445,15 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// writeVideoEntriesLocked writes video/<context>.webm and video/index.json.
+// writeVideoEntriesLocked writes video/<context>.webm, or .mp4 for a video
+// taken from a device's stream, and video/index.json.
 // Must be called with t.mu held and t.video non-nil.
 func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includeVideo bool) error {
 	context := strings.ToLower(t.video.Context)
+	mime, ext := "video/webm", ".webm"
+	if t.video.MimeType == "video/mp4" {
+		mime, ext = t.video.MimeType, ".mp4"
+	}
 
 	entry := map[string]interface{}{"context": context}
 	if includeVideo {
@@ -1451,15 +1465,23 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// start-time value is the viewport, which the screencast surface
 			// need not match (#358). Read before reporting so the manifest
 			// and the stop summary both describe the actual video.
-			if w, h, ok := webmDimensions(data); ok {
-				t.video.Width, t.video.Height = w, h
+			if ext == ".webm" {
+				if w, h, ok := webmDimensions(data); ok {
+					t.video.Width, t.video.Height = w, h
+				}
 			}
 		}
 		entry["startedAt"] = t.video.StartedAt
 		entry["offsetMs"] = t.video.OffsetMs
 		entry["width"] = t.video.Width
 		entry["height"] = t.video.Height
-		entry["mimeType"] = "video/webm"
+		entry["mimeType"] = mime
+		if ext == ".mp4" {
+			entry["durationMs"] = t.video.DurationMs
+			if t.video.Gaps > 0 {
+				entry["gaps"] = t.video.Gaps
+			}
+		}
 		if t.video.Error != "" {
 			entry["error"] = t.video.Error
 		}
@@ -1468,10 +1490,10 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// where, and leave retrieval to the caller.
 			entry["remotePath"] = t.video.EnginePath
 		} else if t.video.EnginePath != "" {
-			// WebM is already compressed; store it instead of deflating. An
-			// empty engine file (the browser died before its first flush)
+			// The video is already compressed; store it instead of deflating.
+			// An empty engine file (the browser died before its first flush)
 			// is no video at all — record why instead of embedding junk.
-			name := "video/" + context + ".webm"
+			name := "video/" + context + ext
 			if readErr == nil && len(data) > 0 {
 				vw, werr := zw.CreateHeader(&zip.FileHeader{
 					Name:     name,

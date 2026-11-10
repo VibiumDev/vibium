@@ -4254,12 +4254,14 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		opts.Path = abs
 	}
 
-	// Required video on a remote connection can never deliver into the
-	// zip; fail before touching the browser — unless the caller opted
-	// into leaving the file on the remote host.
+	// A station or a Roadie streams the device's screen, and that stream
+	// is the video. Required video on any other remote connection can
+	// never deliver into the zip; fail before touching the browser —
+	// unless the caller opted into leaving the file on the remote host.
 	remote := h.connectURL != ""
-	if remote && opts.Video.Mode == api.VideoRequired && !opts.Video.RemoteKeep {
-		return nil, errors.New(api.RemoteVideoMessage)
+	stream, err := api.OpenStreamVideo(opts, h.connectURL, h.connectHeaders)
+	if err != nil {
+		return nil, err
 	}
 
 	recorder := api.NewRecorder()
@@ -4267,7 +4269,8 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	recorder.Start(opts, viewport)
 	api.CaptureRecordingSecrets(h.newSession(), recorder, nil)
 
-	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport, stream); err != nil {
+		stream.Abort()
 		return nil, err
 	}
 	h.recorder = recorder

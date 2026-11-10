@@ -1073,6 +1073,19 @@ and their audio goes into record.zip.
 Everything is on the recording timeline: relative milliseconds since the
 recording started, as in `trace.trace`.
 
+### Video
+
+A recording on a station or a Roadie session also holds the device's
+screen as `video/<context>.mp4`. Vibium takes it from the same stream a
+viewer watches. The file has no audio track. The audio above and the video
+share the recording timeline, so a player can run them together.
+[Recording format](../reference/recording-format.md#video-of-a-device)
+describes the entry.
+
+Measured on the phone, with `say` at 27.9 s and the page's playback heard
+at 38.2 s: the frames at those times show the page's level meter moving
+and its "Playing back" line.
+
 ### The `audio` option
 
 `recording.start` gains `audio`, shaped like `video`.
@@ -1100,7 +1113,9 @@ record.zip
 ├── resources/…
 ├── audio/index.json        # manifest
 ├── audio/in-session.wav    # everything heard from the session
-└── audio/out-0001.wav      # one file per distinct clip sent
+├── audio/out-0001.wav      # one file per distinct clip sent
+├── video/index.json        # video manifest, on a station or a Roadie session
+└── video/screen.mp4        # the device's screen
 ```
 
 - Audio is WAV: PCM, 16-bit, mono, 16 kHz.

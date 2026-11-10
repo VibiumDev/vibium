@@ -1641,7 +1641,7 @@ func GetToolSchemas() []Tool {
 					},
 					"video": map[string]interface{}{
 						"type":        "boolean",
-						"description": "Omit to record video when the engine supports it (Firefox 154+). Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
+						"description": "Omit to record video when it can be had: the engine's screencast (Firefox 154+), or the device's screen stream on a station or Roadie session. Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
 					},
 					"video_width": map[string]interface{}{
 						"type":        "number",
