@@ -308,7 +308,7 @@ vibium find css "button.primary"       # exact CSS, never a model
 vibium find image thumbnail.png --all --json   # every copy, with bounding boxes
 vibium tap @e2                         # tap a ref on a touchscreen
 ```
-A bare string is a description, not a selector: `vibium find h1` looks for something named "h1". Use `find css h1`.
+A bare string is a description, not a selector: `vibium find h1` is refused because it reads like CSS. Use `find css h1`.
 
 ### Semantic find (no CSS selectors needed)
 ```sh
