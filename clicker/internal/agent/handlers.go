@@ -27,6 +27,8 @@ type Handlers struct {
 	modelRunning bool // daemon mutex protects the complete verification and its child calls
 	speech       *speech.Engine
 	speechEnv    map[string]string // the CLI caller's speech settings, for one call
+	audioMu      sync.Mutex
+	audioSink    *roadieCapture // where roadie:audio.chunk events go
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -1085,6 +1087,9 @@ func (h *Handlers) startPromptTracking() {
 
 // handleBidiEvent is the single BiDi event handler for the agent session.
 func (h *Handlers) handleBidiEvent(msg string) {
+	if h.audioEvent(msg) {
+		return
+	}
 	h.sessionMu.Lock()
 	tracker := h.prompts
 	navs := h.navigations

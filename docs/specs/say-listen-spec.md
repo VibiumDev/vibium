@@ -876,10 +876,10 @@ recorded as a step, with its error.
 
 Roadie stays a raw audio pipe. It gains no speech code.
 
-Today Roadie carries audio over two WebSockets: `/audio` for the
-device's sound and `/api/mic` for voice into the device. It has no audio
-commands on its BiDi socket. This spec proposes them. The contract is to
-be settled with Roadie, as `roadie:tree.get` was.
+Roadie also carries audio over two WebSockets: `/audio` for the device's
+sound and `/api/mic` for voice into the device. The commands below add
+the same pipe to its BiDi socket. They are implemented on Roadie's
+`feat/audio-bidi` branch and documented in its `API.md`.
 
 Vibium uses the BiDi extension because it rides the session socket.
 It needs no second connection and no second address, and a station
@@ -929,9 +929,10 @@ Roadie then emits one event per chunk:
   "capture": "c1", "sample": 1600, "time": 81236980.0, "data": "<base64 PCM>"}}
 ```
 
-- `sample` is the index of the chunk's first sample since `capture.start`.
-- `time` is when that sample was captured, on Roadie's monotonic clock.
-- A jump in `sample` means Roadie dropped audio. Vibium fills the gap with silence.
+- `sample` counts the samples sent before this chunk.
+- `time` is when the chunk's first sample was captured, on Roadie's monotonic clock.
+- When Roadie drops audio, `time` jumps and `sample` does not. Vibium
+  places chunks by `time` and fills the gap with silence.
 
 **`roadie:audio.capture.stop`** takes `{"capture": "c1"}` and ends the events.
 

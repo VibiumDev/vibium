@@ -49,8 +49,9 @@ func (h *Handlers) SpeechCLI(tool string, args map[string]interface{}, env map[s
 // falls back from one to the other.
 func (h *Handlers) speechTarget(name string) (speech.Target, error) {
 	h.sessionMu.Lock()
-	open := h.client != nil
+	client := h.client
 	h.sessionMu.Unlock()
+	open := client != nil
 	if name == "" {
 		name = "local"
 		if open {
@@ -63,6 +64,9 @@ func (h *Handlers) speechTarget(name string) (speech.Target, error) {
 	case name == "session":
 		if !open {
 			return nil, &speech.Error{Code: "invalid_target", Message: "no session is open; use target local or a .wav path, or start a session first"}
+		}
+		if target, ok := h.roadieAudioFor(client); ok {
+			return target, nil
 		}
 		return nil, &speech.Error{Code: "no_audio", Message: "this session cannot carry audio; use --target local for this machine's speakers and microphone"}
 	case speech.IsWAVPath(name):
