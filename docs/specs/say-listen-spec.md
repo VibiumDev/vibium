@@ -150,13 +150,13 @@ vibium say -            # read the text from stdin
 
 ```bash
 vibium say "Set a timer for ten minutes"
-# Said "Set a timer for ten minutes" (1.9 s, openai gpt-realtime-2.1-mini alloy, cached)
+# Said "Set a timer for ten minutes" (1.9 s, openai gpt-4o-mini-tts alloy, cached)
 
 vibium say "Hello there" --target hello.wav
-# Wrote hello.wav (0.9 s, openai gpt-realtime-2.1-mini alloy)
+# Wrote hello.wav (0.9 s, openai gpt-4o-mini-tts alloy)
 
 echo "What time is it?" | vibium say - --target local --provider openai
-# Said "What time is it?" (1.2 s, openai gpt-realtime-2.1-mini alloy)
+# Said "What time is it?" (1.2 s, openai gpt-4o-mini-tts alloy)
 ```
 
 ### `vibium listen`
@@ -403,7 +403,7 @@ transcription time. Clients use `timeout + duration + 60000` ms.
 
 1. Resolve the provider, model and voice from options, environment and defaults.
 2. Compute the cache key. On a hit, load the cached audio.
-3. On a miss, call the provider. Store the result in the cache.
+3. On a miss, call the provider, check the audio, and store it in the cache.
 4. Convert to the target's format. Roadie takes 16 kHz mono 16-bit PCM.
 5. Open a capture on the target, if it can be heard and none is open.
 6. Play into the target and wait for playback to end.
@@ -587,27 +587,49 @@ library only.
 
 | Provider | TTS | STT | Key |
 |----------|-----|-----|-----|
-| `openai` | The Realtime API over a WebSocket, model `gpt-realtime-2.1-mini`, voice `alloy`, 24 kHz PCM. | `POST /v1/audio/transcriptions`, model `gpt-transcribe`. No word timings. | `OPENAI_API_KEY` |
+| `openai` | `POST /v1/audio/speech`, model `gpt-4o-mini-tts`, voice `alloy`, 24 kHz WAV. A model named `gpt-realtime…` speaks through the Realtime API instead. | `POST /v1/audio/transcriptions`, model `gpt-transcribe`. No word timings. | `OPENAI_API_KEY` |
 | `deepgram` | `POST /v1/speak`, linear16 WAV at 16 kHz. Default voice `aura-2-thalia-en`. | `POST /v1/listen`, model `nova-3`. Word timings. | `DEEPGRAM_API_KEY` |
 | `elevenlabs` | `POST /v1/text-to-speech/{voice}`, model `eleven_flash_v2_5`, `wav_16000` output. | `POST /v1/speech-to-text`, model `scribe_v2`, `timestamps_granularity=word`. Word timings. | `ELEVENLABS_API_KEY` |
 
 `--model` and `--voice` override the defaults.
 
-OpenAI's `say` uses the Realtime API, because OpenAI retires its speech
-endpoint on 2027-01-06. A realtime model is a conversational model, not
-a speech engine. So the adapter guards the result:
+OpenAI retires `/v1/audio/speech` and its three models on 2027-01-06.
+Its replacement is a realtime model on the Realtime API. Vibium speaks
+through both. The speech endpoint is the default while it exists,
+because it fails far less often. See
+[Hosted providers compared](#hosted-providers-compared).
 
-- It instructs the model to read the text aloud exactly as written.
-- It compares the transcript the model returns with the text, word by
-  word, ignoring case and punctuation.
-- A reading may differ in a few words: a model spells out "dot" in an
-  address. More than half the words differing means the model answered
-  the text instead of reading it.
-- On a mismatch it renders once more. A second mismatch fails with
-  `provider_error`. Nothing is cached.
+### Checking the audio
 
-See [Hosted providers compared](#hosted-providers-compared) for the
-measurements behind this.
+A speech model's output is not trusted. Models sometimes render silence
+in place of words, most often the last ones. A realtime model does this
+while its own transcript claims it said them.
+
+So `say` checks every render before caching it, when the provider can
+also transcribe:
+
+1. Render the text.
+2. Transcribe the audio with the same provider.
+3. Compare the transcript with the text.
+4. On a mismatch, render again. After three renders that fail, `say`
+   fails with `provider_error` and quotes what the audio said.
+
+A clip that fails its check is never cached and never played.
+
+The comparison ignores formatting. A recognizer writes numbers, money
+and abbreviations its own way: "three thirty" comes back as "3:30".
+
+- The first and last words of the text must be heard at the start and
+  end of the audio. A number may be heard as any number.
+- Most of the text's letters must be in the transcript, and the
+  transcript must not be much longer than the text.
+
+The check costs one transcription per new phrase, about a second. A
+cached phrase is not checked again. A local engine with no recognizer
+configured for the same provider is not checked.
+
+A word dropped from the middle of a long text can pass. The check is
+built for the failure that was measured.
 
 ### The `command` provider
 
@@ -1035,7 +1057,7 @@ the shared `call@N` counter. No new event type is added to
 `trace.trace`.
 
 ```json
-{"type":"before","callId":"call@7","startTime":3010,"class":"Speech","method":"vibium:speech.say","title":"Speech.say","params":{"text":"What's the weather like in Chicago tomorrow?","target":"session","provider":"openai","model":"gpt-realtime-2.1-mini","voice":"alloy"}}
+{"type":"before","callId":"call@7","startTime":3010,"class":"Speech","method":"vibium:speech.say","title":"Speech.say","params":{"text":"What's the weather like in Chicago tomorrow?","target":"session","provider":"openai","model":"gpt-4o-mini-tts","voice":"alloy"}}
 {"type":"after","callId":"call@7","endTime":5335,"result":{"clip":"out-0001","durationMs":2310,"cached":true,"playStartMs":3012.5,"playEndMs":5322.5}}
 {"type":"before","callId":"call@8","startTime":5340,"class":"Speech","method":"vibium:speech.listen","title":"Speech.listen","params":{"target":"session","provider":"openai","model":"gpt-transcribe","silence":1000,"timeout":10000,"duration":30000}}
 {"type":"after","callId":"call@8","endTime":9480,"result":{"text":"It's currently 72 degrees and sunny in Chicago.","speech":true,"onsetMs":6014,"speechEndMs":8105,"latencyMs":691.5,"latencyFrom":"call@7","stoppedBy":"silence","track":"in-session","audioStartMs":5322.5,"audioEndMs":9105}}
@@ -1079,7 +1101,7 @@ the shared `call@N` counter. No new event type is added to
     "sampleRate": 16000, "channels": 1, "encoding": "pcm_s16le",
     "durationMs": 2310,
     "text": "What's the weather like in Chicago tomorrow?",
-    "provider": "openai", "model": "gpt-realtime-2.1-mini", "voice": "alloy",
+    "provider": "openai", "model": "gpt-4o-mini-tts", "voice": "alloy",
     "plays": [{"callId": "call@7", "startMs": 3012.5, "endMs": 5322.5}]
   }],
   "transcripts": [{
@@ -1226,11 +1248,16 @@ What this shows:
   timing, the intonation and the padding do not. Without the cache, each
   test run would play the device slightly different audio. With it,
   every run plays the first render.
-- **The Realtime API reads text faithfully.** Six phrases were rendered
-  twice each. All twelve came back word for word, by the model's own
-  transcript and by `gpt-transcribe` on the audio. That includes a
-  question, a wake phrase, and a line telling the model to ignore its
-  instructions. It read them. It did not answer them.
+- **No hosted model can be trusted to say the text.** Four short
+  phrases were rendered 22 times with each OpenAI model, and every clip
+  was transcribed. `gpt-4o-mini-tts` returned one empty clip. The
+  realtime model dropped words in six: "Come here, Watson" came back as
+  "Come here" four times out of eight. Its own transcript claimed the
+  full text every time. So `say` checks the audio.
+- **The check works.** With it, 10 of 10 fresh renders through the
+  speech endpoint and 8 of 8 through the realtime model said the text.
+- **A final period helps a realtime model.** Text without one lost its
+  last word in 4 of 8 renders. With one, in none of 6. The adapter adds it.
 - **Providers pad the audio.** The same phrase came back with 0.1 to
   2.9 seconds of trailing silence. The speech itself kept its length.
   So Vibium trims.
@@ -1279,7 +1306,7 @@ VAD on the same 21 clips, for onset and end error.
 
 | | Default | Why |
 |---|---------|-----|
-| Hosted `say` | OpenAI `gpt-realtime-2.1-mini`, voice `alloy` | Measured. First audio in about half a second. Word for word in every test. Not being retired. Uses the key most users already have. |
+| Hosted `say` | OpenAI `gpt-4o-mini-tts`, voice `alloy` | Measured. One bad clip in 22, against six for the realtime model. First byte in half a second. Uses the key most users already have. Retired on 2027-01-06. |
 | Hosted `listen` | OpenAI `gpt-transcribe` | Measured. No word errors on replies. Under a second per reply. |
 | Local `say` | Piper, a medium voice | Fastest local engine measured. The default voice is `en_US-ljspeech-medium`, for its public-domain dataset. That voice is still to be measured. |
 | Local `listen` | whisper.cpp, `tiny.en` q5_1 | Fastest local model measured, with 5 errors in 219 words. |
@@ -1346,10 +1373,10 @@ read the same day.
 
 | | OpenAI | Deepgram | ElevenLabs |
 |---|--------|----------|------------|
-| TTS model | `gpt-realtime-2.1-mini`, Realtime API | `aura-2` voices | `eleven_flash_v2_5` |
-| TTS output | PCM, 24 or 16 kHz | WAV, 8 to 48 kHz | WAV or raw PCM, 16 kHz and up |
-| TTS price | by token; $0.002 to $0.007 per phrase measured | $0.030 per 1,000 characters | about $0.05 per 1,000 characters |
-| TTS status | current | current | current |
+| TTS model | `gpt-4o-mini-tts`; `gpt-realtime-2.1-mini` after it | `aura-2` voices | `eleven_flash_v2_5` |
+| TTS output | WAV or PCM, 24 kHz | WAV, 8 to 48 kHz | WAV or raw PCM, 16 kHz and up |
+| TTS price | by token; under a cent per phrase | $0.030 per 1,000 characters | about $0.05 per 1,000 characters |
+| TTS status | default retires 2027-01-06; the realtime model is current | current | current |
 | STT model | `gpt-transcribe` | `nova-3` | `scribe_v2` |
 | STT price | $0.0045 per minute | $0.0043 per minute | $0.22 per hour ($0.0037 per minute) |
 | Word timings | no | yes | yes |
@@ -1360,8 +1387,10 @@ Notes:
 
 - **OpenAI's speech endpoint is being retired.** `tts-1`, `tts-1-hd`
   and `gpt-4o-mini-tts` on `/v1/audio/speech` shut down on 2027-01-06.
-  OpenAI's replacement is a realtime model on its Realtime API. Vibium
-  uses that from the start and skips the retiring endpoint.
+  OpenAI's replacement is a realtime model on its Realtime API. That
+  model is a conversational model, not a speech engine, and it dropped
+  words in 27% of test renders. Vibium uses the speech endpoint while it
+  exists and has the Realtime path ready behind the same audio check.
 - `gpt-transcribe` is OpenAI's current transcription model. The older
   `whisper-1` and `gpt-4o-transcribe` models shut down on 2027-02-26.
 - At these prices a 5-second reply costs about $0.0004 to transcribe. A
@@ -1456,7 +1485,7 @@ assert "ten" in heard.text.lower() or "10" in heard.text
 
 ```bash
 vibium say "Set a timer for ten minutes" --target timer.wav --cache-dir tests/speech-cache
-# Wrote timer.wav (2.1 s, openai gpt-realtime-2.1-mini alloy, cached)
+# Wrote timer.wav (2.1 s, openai gpt-4o-mini-tts alloy, cached)
 
 vibium listen --target timer.wav --silence 0
 # Set a timer for ten minutes.
@@ -1527,10 +1556,10 @@ Each has a proposed answer. The spec is written as if that answer holds.
 7. **Local audio through system programs.** `aplay`, `arecord`,
    `afplay` and `sox` keep Vibium free of cgo. macOS capture then needs
    `sox`, and Windows has no capture. Is that enough for a first version?
-8. **A conversational model as a speech engine.** OpenAI `say` asks a
-   realtime model to read text aloud and checks its transcript. Twelve
-   of twelve test renders were exact. Is that guard enough, or should
-   `say` also transcribe its own audio before caching?
+8. **OpenAI `say` after 2027-01-06.** The default model is retired
+   then. The realtime model works behind the audio check, at about one
+   retry in four renders. The other choice is Deepgram or ElevenLabs as
+   the hosted default for `say`. Which one, and by when?
 9. **Measuring Deepgram and ElevenLabs.** Both are specified from
    documentation alone. Should they be measured with keys of yours
    before their adapters are written?

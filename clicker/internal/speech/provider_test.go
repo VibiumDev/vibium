@@ -19,11 +19,11 @@ func envOf(vars map[string]string, onPath ...string) Env {
 func TestOneOpenAIKeyConfiguresBothDirections(t *testing.T) {
 	e := envOf(map[string]string{"OPENAI_API_KEY": "sk-test"})
 	say, err := e.Say("", "", "")
-	if err != nil || say.Provider.Name() != "openai" || say.Model != "gpt-realtime-2.1-mini" || say.Voice != "alloy" {
+	if err != nil || say.Provider.Name() != "openai" || say.Model != "gpt-4o-mini-tts" || say.Voice != "alloy" || say.HearModel != "gpt-transcribe" {
 		t.Fatalf("say %+v %v", say, err)
 	}
 	hear, err := e.Listen("", "")
-	if err != nil || hear.Provider.Name() != "openai" || hear.Model != "gpt-transcribe" {
+	if err != nil || hear.Provider.Name() != "openai" || hear.Model != "gpt-transcribe" || hear.HearModel != "" {
 		t.Fatalf("listen %+v %v", hear, err)
 	}
 }
@@ -46,7 +46,7 @@ func TestResolutionOrder(t *testing.T) {
 	}
 	local := envOf(map[string]string{"VIBIUM_SAY_VOICE": "/voices/a.onnx"}, "piper")
 	c, err = local.Say("", "", "")
-	if err != nil || c.Provider.Name() != "piper" || c.Voice != "/voices/a.onnx" {
+	if err != nil || c.Provider.Name() != "piper" || c.Voice != "/voices/a.onnx" || c.HearModel != "" {
 		t.Fatalf("with no key an engine on PATH should be used: %+v %v", c, err)
 	}
 }

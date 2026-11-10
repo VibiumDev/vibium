@@ -24,6 +24,9 @@ type Command struct {
 	Line  string // split once into arguments; no shell runs it
 	Label string // provider name in results
 	adapt *adapter
+	// direction is "say" or "listen" for a command resolved from
+	// configuration: its line does one of the two.
+	direction string
 }
 
 // adapter reads an engine's native output where it differs from the contract.
@@ -54,6 +57,9 @@ func (c *Command) CacheSettings(SynthesisRequest) map[string]string {
 }
 
 func (c *Command) Synthesize(ctx context.Context, req SynthesisRequest) (Audio, error) {
+	if c.direction == "listen" {
+		return Audio{}, ErrUnsupported
+	}
 	dir, err := os.MkdirTemp("", "vibium-say-")
 	if err != nil {
 		return Audio{}, err
@@ -91,6 +97,9 @@ func (c *Command) Synthesize(ctx context.Context, req SynthesisRequest) (Audio, 
 }
 
 func (c *Command) Transcribe(ctx context.Context, req TranscriptionRequest) (Transcript, error) {
+	if c.direction == "say" {
+		return Transcript{}, ErrUnsupported
+	}
 	dir, err := os.MkdirTemp("", "vibium-listen-")
 	if err != nil {
 		return Transcript{}, err

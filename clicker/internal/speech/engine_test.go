@@ -6,31 +6,48 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// fakeProvider speaks a tone and hears a fixed sentence.
+// fakeProvider speaks a tone and hears a fixed sentence. Asked to check
+// one of its own renders, it hears the text it was given, unless mishears
+// says otherwise for that render.
 type fakeProvider struct {
 	mu          sync.Mutex
 	synthesized int
 	heard       []Audio
 	reply       Transcript
 	speech      Audio
+	pending     *string  // the text of a render not yet checked
+	mishears    []string // what the check hears for the first renders
+	checks      int
 }
 
 func (f *fakeProvider) Name() string                                     { return "fake" }
 func (f *fakeProvider) CacheSettings(SynthesisRequest) map[string]string { return nil }
-func (f *fakeProvider) Synthesize(context.Context, SynthesisRequest) (Audio, error) {
+func (f *fakeProvider) Synthesize(_ context.Context, req SynthesisRequest) (Audio, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.synthesized++
+	text := req.Text
+	f.pending = &text
 	return f.speech, nil
 }
 func (f *fakeProvider) Transcribe(_ context.Context, req TranscriptionRequest) (Transcript, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.pending != nil {
+		text := *f.pending
+		f.pending = nil
+		if f.checks < len(f.mishears) {
+			text = f.mishears[f.checks]
+		}
+		f.checks++
+		return Transcript{Text: text}, nil
+	}
 	f.heard = append(f.heard, req.Audio)
 	return f.reply, nil
 }
@@ -310,6 +327,36 @@ func TestOneCallPerTargetAtATime(t *testing.T) {
 	}
 	if first := <-done; Code(first) != "no_audio" {
 		t.Fatalf("first listen: %v", first)
+	}
+}
+
+func TestSayChecksTheAudioBeforeCachingIt(t *testing.T) {
+	// The first render lost its last word and the second is silent. The
+	// third says the text.
+	p := &fakeProvider{speech: paddedSpeech(), mishears: []string{"Come here.", ""}}
+	e := fakeEngine(t, p)
+	dir := t.TempDir()
+	opts := SayOptions{Text: "Come here, Watson", CacheDir: filepath.Join(dir, "cache")}
+	res, err := e.Say(context.Background(), FileTarget{Path: filepath.Join(dir, "a.wav")}, opts)
+	if err != nil || p.synthesized != 3 || p.checks != 3 || res.Cached {
+		t.Fatalf("want a good clip on the third render: %+v %v after %d renders", res, err, p.synthesized)
+	}
+	if again, _ := e.Say(context.Background(), FileTarget{Path: filepath.Join(dir, "b.wav")}, opts); !again.Cached || p.synthesized != 3 {
+		t.Fatal("the checked clip was not cached")
+	}
+
+	bad := &fakeProvider{speech: paddedSpeech(), mishears: []string{"Come here.", "Come here.", "Come."}}
+	e = fakeEngine(t, bad)
+	cache := filepath.Join(dir, "cache2")
+	_, err = e.Say(context.Background(), FileTarget{Path: filepath.Join(dir, "c.wav")}, SayOptions{Text: "Come here, Watson", CacheDir: cache})
+	if Code(err) != "provider_error" || !strings.Contains(err.Error(), `"Come."`) || bad.synthesized != 3 {
+		t.Fatalf("three bad renders should fail and quote what was said: %v after %d renders", err, bad.synthesized)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "c.wav")); statErr == nil {
+		t.Fatal("a clip that failed its check was played")
+	}
+	if entries, _ := os.ReadDir(cache); len(entries) != 0 {
+		t.Fatal("a clip that failed its check was cached")
 	}
 }
 

@@ -178,11 +178,9 @@ func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, e
 		audio, cached = cache.Get(key)
 	}
 	if !cached {
-		rendered, err := choice.Provider.Synthesize(ctx, req)
-		if err != nil {
+		if audio, err = e.render(ctx, choice, req); err != nil {
 			return nil, err
 		}
-		audio = rendered.Mono().Trim(clipPad)
 		if err := cache.Put(key, audio); err != nil {
 			return nil, err
 		}
@@ -223,6 +221,44 @@ func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, e
 		res.Path = f.Path
 	}
 	return res, nil
+}
+
+// renderAttempts is how many times say asks a provider for a clip that
+// says the text.
+const renderAttempts = 3
+
+// render synthesizes the text and checks the audio by transcribing it,
+// when the provider can. A speech model's output is not trusted: a clip
+// that does not say the text is rendered again, and never cached.
+func (e *Engine) render(ctx context.Context, choice Choice, req SynthesisRequest) (Audio, error) {
+	language := req.Language
+	if language == "" {
+		language = "en"
+	}
+	heard := ""
+	for attempt := 1; attempt <= renderAttempts; attempt++ {
+		rendered, err := choice.Provider.Synthesize(ctx, req)
+		if err != nil {
+			return Audio{}, err
+		}
+		audio := rendered.Mono().Trim(clipPad)
+		if choice.HearModel == "" {
+			return audio, nil
+		}
+		t, err := choice.Provider.Transcribe(ctx, TranscriptionRequest{Audio: audio.Resample(Rate), Model: choice.HearModel, Language: language})
+		if errors.Is(err, ErrUnsupported) {
+			return audio, nil
+		}
+		if err != nil {
+			return Audio{}, err
+		}
+		if SaysTheText(req.Text, t.Text) {
+			return audio, nil
+		}
+		heard = t.Text
+	}
+	return Audio{}, errf("provider_error", "%s did not say the text in %d renders; the last one said %q",
+		choice.Provider.Name(), renderAttempts, heard)
 }
 
 // Listen captures from the target until the reply ends, and transcribes it.

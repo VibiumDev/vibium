@@ -102,6 +102,9 @@ type Choice struct {
 	Provider Provider
 	Model    string
 	Voice    string
+	// HearModel is set for say when the same provider can also transcribe.
+	// Say uses it to check a render before caching it.
+	HearModel string
 }
 
 type hosted struct {
@@ -118,7 +121,7 @@ var hostedProviders = []hosted{
 	{name: "deepgram", key: "DEEPGRAM_API_KEY"},
 	{name: "elevenlabs", key: "ELEVENLABS_API_KEY"},
 	{name: "openai", key: "OPENAI_API_KEY", make: func(key string) Provider { return NewOpenAI(key) },
-		sayModel: "gpt-realtime-2.1-mini", sayVoice: "alloy", hearModel: "gpt-transcribe"},
+		sayModel: "gpt-4o-mini-tts", sayVoice: "alloy", hearModel: "gpt-transcribe"},
 }
 
 const setupHint = "Set OPENAI_API_KEY for hosted speech, or install a local engine and set %s. See `vibium %s --help`."
@@ -199,6 +202,9 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 		if c.Voice == "" && direction == "say" {
 			c.Voice = h.sayVoice
 		}
+		if direction == "say" {
+			c.HearModel = h.hearModel
+		}
 		return c, nil
 	}
 
@@ -206,7 +212,7 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 		if command == "" {
 			return Choice{}, errf("not_configured", "the command provider needs %sCOMMAND", prefix)
 		}
-		return Choice{Provider: &Command{Line: command, Label: "command"}, Model: model, Voice: voice}, nil
+		return Choice{Provider: &Command{Line: command, Label: "command", direction: direction}, Model: model, Voice: voice}, nil
 	}
 	for _, p := range presets {
 		if p.name != name {
@@ -228,7 +234,7 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 		if direction == "listen" && model == "" {
 			return Choice{}, errf("not_configured", "%s needs a model: set %sMODEL or pass --model. %s", name, prefix, p.install)
 		}
-		return Choice{Provider: &Command{Line: line, Label: name, adapt: p.adapt}, Model: model, Voice: voice}, nil
+		return Choice{Provider: &Command{Line: line, Label: name, adapt: p.adapt, direction: direction}, Model: model, Voice: voice}, nil
 	}
 	return Choice{}, errf("not_configured", "unknown %s provider %q", direction, name)
 }

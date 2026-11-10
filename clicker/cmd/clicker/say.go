@@ -58,10 +58,10 @@ func newSayCmd() *cobra.Command {
 			"With a session open the target is the session. With none open it is this machine's speakers.\n" +
 			"Rendered audio is cached, so the same text plays the same audio on every run.",
 		Example: `  vibium say "Come here, Watson"
-  # Said "Come here, Watson" (1.4 s, openai gpt-realtime-2.1-mini alloy)
+  # Said "Come here, Watson" (1.4 s, openai gpt-4o-mini-tts alloy)
 
   vibium say "Come here, Watson" --target watson.wav
-  # Wrote watson.wav (1.4 s, openai gpt-realtime-2.1-mini alloy, cached)
+  # Wrote watson.wav (1.4 s, openai gpt-4o-mini-tts alloy, cached)
 
   echo "What time is it?" | vibium say - --target local
   # Reads the text from stdin.
