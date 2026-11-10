@@ -29,7 +29,7 @@ with open("screenshot.png", "wb") as f:
     f.write(png)
 
 # Find and click a link
-link = vibe.find("a")
+link = vibe.find(css="a")
 print(link.text())
 link.click()
 
@@ -47,7 +47,7 @@ async def main():
     vibe = await bro.page()
     await vibe.go("https://example.com")
 
-    link = await vibe.find("a")
+    link = await vibe.find(css="a")
     await link.click()
 
     await bro.stop()

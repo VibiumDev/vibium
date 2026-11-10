@@ -23,7 +23,7 @@ const bro = await browser.start()
 const vibe = await bro.page()
 await vibe.go('https://example.com')
 
-const link = await vibe.find('a')
+const link = await vibe.find({ css: 'a' })
 console.log(await link.text())
 await link.click()
 
@@ -43,7 +43,7 @@ const bro = browser.start()
 const vibe = bro.page()
 vibe.go('https://example.com')
 
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 console.log(link.text())
 link.click()
 
@@ -62,7 +62,7 @@ Python, bash) with no Node runtime involved.
 ```bash
 npx vibium go https://example.com   # or node_modules/.bin/vibium
 npx vibium map                      # list interactive elements as @refs
-npx vibium find "a"                 # find an element
+npx vibium find css "a"             # find an element
 npx vibium click "a"
 npx vibium screenshot -o shot.png
 npx vibium --help                   # full command list
