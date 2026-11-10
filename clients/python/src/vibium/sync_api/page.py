@@ -632,7 +632,10 @@ class Page:
         self._loop.run(_register())
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:
-        self._async.remove_all_listeners(event)
+        # On the loop thread: removal may send the collector's teardown.
+        async def _remove() -> None:
+            self._async.remove_all_listeners(event)
+        self._loop.run(_remove())
         if not event or event == "console":
             self._console_messages.clear()
         if not event or event == "error":

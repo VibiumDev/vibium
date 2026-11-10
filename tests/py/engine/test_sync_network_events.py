@@ -84,6 +84,18 @@ def test_remove_request_listeners(sync_browser, test_server):
     assert [u for u in urls if "/api/data" in u] == []
 
 
+def test_remove_request_listeners_after_collector_exists(sync_browser, test_server):
+    """Removal works once the data collector is live, not only while pending."""
+    vibe = sync_browser.new_page()
+    vibe.go(test_server + "/fetch")
+    vibe.on_request(lambda req: None)
+    # A round trip: the collector's reply is ordered before this one.
+    vibe.evaluate("1")
+    assert vibe._async._data_collector_id not in (None, "pending")
+    vibe.remove_all_listeners("request")
+    assert vibe._async._data_collector_id is None
+
+
 def test_remove_response_listeners(sync_browser, test_server):
     """remove_all_listeners('response') stops on_response callbacks."""
     vibe = sync_browser.new_page()
