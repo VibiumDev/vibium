@@ -217,6 +217,9 @@ func TestRoadieDroppedAudioKeepsItsPlaceInTime(t *testing.T) {
 	if heard.LatencyMs == nil || math.Abs(*heard.LatencyMs-640) > 20 {
 		t.Fatalf("latency %v after a dropped chunk, want 640 ms", heard.LatencyMs)
 	}
+	if heard.LostMs != 100 {
+		t.Fatalf("lostMs %v: the result should say that 100 ms of audio never arrived", heard.LostMs)
+	}
 }
 
 func TestASessionWithoutAudioSaysSo(t *testing.T) {

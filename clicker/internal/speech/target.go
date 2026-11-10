@@ -19,6 +19,9 @@ import (
 type Chunk struct {
 	Samples []int16
 	Time    float64
+	// Lost marks silence that stands in for audio the target dropped on
+	// its way here.
+	Lost bool
 }
 
 // Capture is a running capture. Next returns io.EOF when a source that

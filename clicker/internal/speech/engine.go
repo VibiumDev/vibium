@@ -101,6 +101,11 @@ type ListenResult struct {
 	Model       string          `json:"model"`
 	Path        string          `json:"path,omitempty"`
 
+	// LostMs is how much of the capture is silence standing in for audio
+	// the target dropped on its way here. A transcript may miss words
+	// when it is not zero.
+	LostMs float64 `json:"lostMs,omitempty"`
+
 	// CaptureStart is when the capture began on the target's clock, for a
 	// recording. Every time above counts from it.
 	CaptureStart float64 `json:"-"`
@@ -348,6 +353,7 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 		det.Skip(t.EchoGuard())
 	}
 	var heard []int16
+	lost := 0
 	stoppedBy := ""
 	for stoppedBy == "" {
 		wait := ctx
@@ -381,6 +387,9 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 			samples = samples[:room]
 		}
 		heard = append(heard, samples...)
+		if chunk.Lost {
+			lost += len(samples)
+		}
 		det.Write(samples)
 		_, started := det.Onset()
 		if _, ended := det.End(); ended {
@@ -393,7 +402,8 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	}
 
 	captured := Audio{SampleRate: Rate, Channels: 1, Samples: heard}
-	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(), Target: t.Name(), CaptureStart: start}
+	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(), Target: t.Name(), CaptureStart: start,
+		LostMs: float64(lost) * 1000 / Rate}
 	if !o.NoTranscribe {
 		res.Provider, res.Model = choice.Provider.Name(), choice.Model
 	}

@@ -159,7 +159,7 @@ func (c *roadieCapture) Next(ctx context.Context) (speech.Chunk, error) {
 		// it; silence keeps the audio on its clock.
 		if gap := chunk.Time - c.next; c.next > 0 && gap > roadieChunkGap {
 			c.pending = &chunk
-			silence := speech.Chunk{Samples: make([]int16, int(gap*speech.Rate/1000)), Time: c.next}
+			silence := speech.Chunk{Samples: make([]int16, int(gap*speech.Rate/1000)), Time: c.next, Lost: true}
 			c.next = chunk.Time
 			return silence, nil
 		}

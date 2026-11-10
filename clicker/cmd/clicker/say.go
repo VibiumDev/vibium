@@ -249,6 +249,9 @@ func newListenCmd() *cobra.Command {
 				printJSON(jsonEnvelope{OK: true, Result: res})
 				return
 			}
+			if res.LostMs > 0 {
+				fmt.Fprintf(os.Stderr, "listen: %.0f ms of audio was lost on its way from the device; the transcript may miss words\n", res.LostMs)
+			}
 			if !noTranscribe {
 				fmt.Println(res.Text)
 				return
