@@ -296,6 +296,10 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 197 | Run the MCP server | — | `vibium mcp` | — | — | — | — |
 | 198 | Install the agent skill | — | `vibium add-skill` | — | — | — | — |
 | 220 | Write a starter settings file | — | `vibium config init` | — | — | — | — |
+| 229 | Set up AI settings, agent skills, and the browser interactively | — | `vibium setup` | — | — | — | — |
+| 230 | Generate a script that replays a recording | — | `vibium codegen -i <zip>` | — | — | — | — |
+| 231 | Generate an Ed25519 Web Bot Auth signing key | — | `vibium webbotauth keygen` | — | — | — | — |
+| 232 | Print the Web Bot Auth JWKS directory to publish | — | `vibium webbotauth directory` | — | — | — | — |
 | 199 | Restore saved storage state | — | `vibium storage restore <path>` | — | — | — | — |
 | 200 | Print all actionability checks | — | `vibium is actionable <sel>` | — | — | — | — |
 | 201 | Find by ARIA role | — | `vibium find role <val>` | — | — | — | — |
