@@ -122,18 +122,25 @@ func speechResult(v interface{}) (*ToolsCallResult, error) {
 }
 
 func (h *Handlers) sayMCP(args map[string]interface{}) (*ToolsCallResult, error) {
-	if err := speechArgs(args, "text", "target", "provider", "model", "voice", "language", "speed", "cache", "cacheDir"); err != nil {
+	if err := speechArgs(args, "text", "file", "target", "provider", "model", "voice", "language", "speed", "cache", "cacheDir"); err != nil {
 		return nil, err
 	}
 	var o speech.SayOptions
 	var target string
-	for key, dst := range map[string]*string{"text": &o.Text, "target": &target, "provider": &o.Provider, "model": &o.Model,
+	for key, dst := range map[string]*string{"text": &o.Text, "file": &o.File, "target": &target, "provider": &o.Provider, "model": &o.Model,
 		"voice": &o.Voice, "language": &o.Language, "cacheDir": &o.CacheDir} {
 		v, err := argString(args, key)
 		if err != nil {
 			return nil, err
 		}
 		*dst = v
+	}
+	if o.File != "" {
+		abs, err := filepath.Abs(o.File)
+		if err != nil {
+			return nil, err
+		}
+		o.File = abs
 	}
 	if v, ok := args["speed"]; ok && v != nil {
 		n, isNumber := v.(float64)
@@ -161,7 +168,7 @@ func (h *Handlers) sayMCP(args map[string]interface{}) (*ToolsCallResult, error)
 }
 
 func (h *Handlers) listenMCP(args map[string]interface{}) (*ToolsCallResult, error) {
-	if err := speechArgs(args, "target", "provider", "model", "language", "silence", "timeout", "duration", "allowSilence", "path"); err != nil {
+	if err := speechArgs(args, "target", "provider", "model", "language", "silence", "timeout", "duration", "allowSilence", "path", "transcribe"); err != nil {
 		return nil, err
 	}
 	var o speech.ListenOptions
@@ -189,6 +196,13 @@ func (h *Handlers) listenMCP(args map[string]interface{}) (*ToolsCallResult, err
 			return nil, fmt.Errorf("allowSilence must be true or false")
 		}
 		o.AllowSilence = allow
+	}
+	if v, ok := args["transcribe"]; ok && v != nil {
+		transcribe, isBool := v.(bool)
+		if !isBool {
+			return nil, fmt.Errorf("transcribe must be true or false")
+		}
+		o.NoTranscribe = !transcribe
 	}
 	if o.Path != "" {
 		if !speech.IsWAVPath(o.Path) {

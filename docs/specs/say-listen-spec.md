@@ -132,6 +132,7 @@ one is running fails with `busy`.
 ```
 vibium say <text> [flags]
 vibium say -            # read the text from stdin
+vibium say --file <clip.wav> [flags]
 ```
 
 | Flag | Default | Meaning |
@@ -144,9 +145,14 @@ vibium say -            # read the text from stdin
 | `--speed` | `1.0` | Speaking rate multiplier, where the provider supports it |
 | `--no-cache` | off | Render again and replace the cached audio |
 | `--cache-dir` | see [Cache](#cache) | Where rendered audio is kept |
+| `--file` | none | A WAV file to play as it is, in place of text |
 | `--json` | off | Print the full result as JSON |
 
 `say` returns when playback has finished.
+
+With `--file` nothing is rendered. The file is played as it is: not
+trimmed, not checked, not cached. No provider or key is needed. Use it
+for a recorded voice, a tone, or noise.
 
 ```bash
 vibium say "Set a timer for ten minutes"
@@ -176,9 +182,16 @@ vibium listen [flags]
 | `--duration` | `30000` | Maximum milliseconds of capture. With `--silence 0` the capture runs exactly this long |
 | `--allow-silence` | off | Return an empty transcript instead of failing when nothing is heard |
 | `-o, --output` | none | Also save the captured audio as a WAV file |
+| `--no-transcribe` | off | Capture without asking a provider for the words |
 | `--json` | off | Print the full result as JSON |
 
 Plain output is the transcript alone, so shell scripts can capture it.
+
+With `--no-transcribe` no provider is called and none is needed. Speech
+is still detected on the machine, so the result has the onset, the end
+and the reply latency. Only `text` is missing. This is the fast path
+during a run: save the audio with `-o`, and transcribe it afterwards
+with `vibium listen --target reply.wav`.
 
 ```bash
 vibium listen
@@ -195,6 +208,11 @@ vibium listen --target reply.wav --silence 0
 
 vibium listen --silence 0 --duration 5000 -o five-seconds.wav
 # Captures exactly five seconds.
+
+vibium say --file question.wav
+# Played question.wav (2.3 s)
+vibium listen --no-transcribe -o reply.wav
+# Heard 2.1 s of speech after 640 ms (reply.wav)
 ```
 
 Both commands MUST be built so a text or path that begins with `-` is not
@@ -221,6 +239,8 @@ interface SpeechOptions {
 }
 
 interface SayOptions extends SpeechOptions {
+  /** A WAV file to play as it is. Pass an empty text with it. */
+  file?: string;
   voice?: string;
   speed?: number;
   /** false renders again and replaces the cached audio. Default true. */
@@ -253,10 +273,14 @@ interface ListenOptions extends SpeechOptions {
   allowSilence?: boolean;
   /** Also save the captured audio as a WAV file. */
   path?: string;
+  /** false captures without a transcript. Default true. */
+  transcribe?: boolean;
 }
 
 interface ListenResult {
   text: string;
+  /** False when the capture was not sent to a provider. */
+  transcribed: boolean;
   /** False when no speech was detected (only with allowSilence). */
   speech: boolean;
   /** Times are ms from the start of the capture. */
@@ -346,7 +370,8 @@ every page tool takes. It matters in a browser with several pages.
   "inputSchema": {
     "type": "object",
     "properties": {
-      "text": {"type": "string", "description": "What to say"},
+      "text": {"type": "string", "description": "What to say. Give text or file"},
+      "file": {"type": "string", "description": "A WAV file to play as it is, in place of text"},
       "target": {"type": "string", "description": "session, local, or a path ending in .wav"},
       "provider": {"type": "string"},
       "model": {"type": "string"},
@@ -355,7 +380,6 @@ every page tool takes. It matters in a browser with several pages.
       "speed": {"type": "number"},
       "cache": {"type": "boolean", "description": "false renders again instead of replaying cached audio"}
     },
-    "required": ["text"],
     "additionalProperties": false
   }
 }
@@ -375,7 +399,8 @@ every page tool takes. It matters in a browser with several pages.
       "silence": {"type": "number", "description": "Trailing silence that ends the reply, in ms (default 1000)"},
       "timeout": {"type": "number", "description": "How long to wait for speech to start, in ms (default 10000)"},
       "duration": {"type": "number", "description": "Maximum capture length in ms (default 30000)"},
-      "allowSilence": {"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"}
+      "allowSilence": {"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"},
+      "transcribe": {"type": "boolean", "description": "false captures without a transcript; onset and latency are still measured"}
     },
     "additionalProperties": false
   }

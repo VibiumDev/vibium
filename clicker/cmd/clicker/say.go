@@ -48,11 +48,11 @@ func speechTargetArg(target string) (string, error) {
 func seconds(ms float64) string { return fmt.Sprintf("%.1f s", ms/1000) }
 
 func newSayCmd() *cobra.Command {
-	var target, provider, model, voice, language, cacheDir string
+	var target, provider, model, voice, language, cacheDir, file string
 	var speed float64
 	var noCache bool
 	cmd := &cobra.Command{
-		Use:   `say "<text>"`,
+		Use:   `say "<text>" | say --file <clip.wav>`,
 		Short: "Speak text into the session, this machine's speakers, or a WAV file",
 		Long: "Turn text into speech and play it into a target.\n" +
 			"With a session open the target is the session. With none open it is this machine's speakers.\n" +
@@ -67,10 +67,22 @@ func newSayCmd() *cobra.Command {
   # Reads the text from stdin.
 
   vibium say -- "-5 degrees"
-  # Text that starts with a dash goes after --.`,
-		Args: cobra.ExactArgs(1),
+  # Text that starts with a dash goes after --.
+
+  vibium say --file question.wav
+  # Played question.wav (2.3 s)
+  # Plays a recording as it is. No speech engine or key is needed.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if (file != "") == (len(args) == 1) || len(args) > 1 {
+				return fmt.Errorf("say needs the text to speak, or --file with a WAV to play")
+			}
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {
-			text := args[0]
+			text := ""
+			if len(args) == 1 {
+				text = args[0]
+			}
 			if text == "-" {
 				raw, err := io.ReadAll(os.Stdin)
 				if err != nil {
@@ -84,7 +96,17 @@ func newSayCmd() *cobra.Command {
 				printError(err)
 				return
 			}
-			params := map[string]interface{}{"text": text}
+			params := map[string]interface{}{}
+			if file != "" {
+				abs, err := filepath.Abs(file)
+				if err != nil {
+					printError(err)
+					return
+				}
+				params["file"] = abs
+			} else {
+				params["text"] = text
+			}
 			for key, value := range map[string]string{"target": targetArg, "provider": provider, "model": model, "voice": voice, "language": language} {
 				if value != "" {
 					params[key] = value
@@ -118,15 +140,21 @@ func newSayCmd() *cobra.Command {
 				printJSON(jsonEnvelope{OK: true, Result: res})
 				return
 			}
-			detail := seconds(res.DurationMs) + ", " + strings.TrimSpace(res.Provider+" "+res.Model+" "+res.Voice)
+			detail := seconds(res.DurationMs)
+			if res.File == "" {
+				detail += ", " + strings.TrimSpace(res.Provider+" "+res.Model+" "+res.Voice)
+			}
 			if res.Cached {
 				detail += ", cached"
 			}
-			if res.Path != "" {
+			switch {
+			case res.Path != "":
 				fmt.Printf("Wrote %s (%s)\n", target, detail)
-				return
+			case res.File != "":
+				fmt.Printf("Played %s (%s)\n", file, detail)
+			default:
+				fmt.Printf("Said %q (%s)\n", res.Text, detail)
 			}
-			fmt.Printf("Said %q (%s)\n", res.Text, detail)
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "", "session, local, or a path ending in .wav (default: the session if one is open, else local)")
@@ -137,13 +165,14 @@ func newSayCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&speed, "speed", 1, "Speaking rate multiplier, where the provider supports it")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Render again and replace the cached audio")
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "Where rendered audio is kept")
+	cmd.Flags().StringVar(&file, "file", "", "A WAV file to play as it is, in place of text")
 	return cmd
 }
 
 func newListenCmd() *cobra.Command {
 	var target, provider, model, language, output string
 	var silence, timeout, duration int
-	var allowSilence bool
+	var allowSilence, noTranscribe bool
 	cmd := &cobra.Command{
 		Use:   "listen",
 		Short: "Hear the session, this machine's microphone, or a WAV file, and print what was said",
@@ -160,7 +189,12 @@ func newListenCmd() *cobra.Command {
   # Transcribes the whole file.
 
   vibium listen --silence 0 --duration 5000 -o five-seconds.wav
-  # Captures exactly five seconds and saves them.`,
+  # Captures exactly five seconds and saves them.
+
+  vibium listen --no-transcribe -o reply.wav
+  # Heard 2.1 s of speech after 640 ms (reply.wav)
+  # Saves the reply without transcribing it. Transcribe it later:
+  vibium listen --target reply.wav`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			targetArg, err := speechTargetArg(target)
@@ -190,6 +224,9 @@ func newListenCmd() *cobra.Command {
 			if allowSilence {
 				params["allowSilence"] = true
 			}
+			if noTranscribe {
+				params["transcribe"] = false
+			}
 			if output != "" {
 				abs, err := filepath.Abs(output)
 				if err != nil {
@@ -212,7 +249,19 @@ func newListenCmd() *cobra.Command {
 				printJSON(jsonEnvelope{OK: true, Result: res})
 				return
 			}
-			fmt.Println(res.Text)
+			if !noTranscribe {
+				fmt.Println(res.Text)
+				return
+			}
+			saved := ""
+			if output != "" {
+				saved = " (" + output + ")"
+			}
+			if !res.Speech {
+				fmt.Printf("Heard no speech in %s%s\n", seconds(res.DurationMs), saved)
+				return
+			}
+			fmt.Printf("Heard %s of speech after %.0f ms%s\n", seconds(*res.SpeechEndMs-*res.OnsetMs), *res.OnsetMs, saved)
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "", "session, local, or a path ending in .wav (default: the session if one is open, else local)")
@@ -224,5 +273,6 @@ func newListenCmd() *cobra.Command {
 	cmd.Flags().IntVar(&duration, "duration", 30000, "Maximum milliseconds of capture")
 	cmd.Flags().BoolVar(&allowSilence, "allow-silence", false, "Return an empty transcript instead of failing when nothing is heard")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Also save the captured audio as a WAV file")
+	cmd.Flags().BoolVar(&noTranscribe, "no-transcribe", false, "Capture without a transcript; speech onset and reply latency are still reported")
 	return cmd
 }

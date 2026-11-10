@@ -129,7 +129,8 @@ func GetToolSchemas() []Tool {
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"text":     map[string]interface{}{"type": "string", "description": "What to say"},
+					"text":     map[string]interface{}{"type": "string", "description": "What to say. Give text or file"},
+					"file":     map[string]interface{}{"type": "string", "description": "A WAV file to play as it is, in place of text"},
 					"target":   map[string]interface{}{"type": "string", "description": "session, local, or a path ending in .wav"},
 					"provider": map[string]interface{}{"type": "string", "description": "Text-to-speech provider or preset; the default comes from the server environment"},
 					"model":    map[string]interface{}{"type": "string"},
@@ -139,7 +140,6 @@ func GetToolSchemas() []Tool {
 					"cache":    map[string]interface{}{"type": "boolean", "description": "false renders again instead of replaying cached audio"},
 					"cacheDir": map[string]interface{}{"type": "string", "description": "Where rendered audio is kept"},
 				},
-				"required":             []string{"text"},
 				"additionalProperties": false,
 			},
 		},
@@ -158,6 +158,7 @@ func GetToolSchemas() []Tool {
 					"duration":     map[string]interface{}{"type": "number", "description": "Maximum capture length in ms (default 30000)"},
 					"allowSilence": map[string]interface{}{"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"},
 					"path":         map[string]interface{}{"type": "string", "description": "Also save the captured audio as a WAV file"},
+					"transcribe":   map[string]interface{}{"type": "boolean", "description": "false captures without a transcript; speech onset and reply latency are still measured"},
 				},
 				"additionalProperties": false,
 			},

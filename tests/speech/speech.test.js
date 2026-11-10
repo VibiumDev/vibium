@@ -160,6 +160,32 @@ describe('say and listen', () => {
     assert.strictEqual(fs.readFileSync(path.join(dir, 'said.txt'), 'utf-8'), '-5 degrees');
   });
 
+  test('a WAV goes out as it is, and a capture can skip the transcript', { skip }, () => {
+    // Neither needs a speech engine: this call's environment has none.
+    const none = { VIBIUM_SAY_PROVIDER: '', VIBIUM_SAY_COMMAND: '', VIBIUM_LISTEN_PROVIDER: '', VIBIUM_LISTEN_COMMAND: '' };
+    const say = cli(['say', '--file', 'voice.wav', '--target', 'copy.wav'], none);
+    assert.strictEqual(say.status, 0, say.stderr);
+    assert.strictEqual(say.stdout, 'Wrote copy.wav (3.9 s)\n');
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'copy.wav')), fs.readFileSync(path.join(dir, 'voice.wav')),
+      'the file keeps its padding: nothing is trimmed, rendered or cached');
+
+    const heard = JSON.parse(cli(['listen', '--target', 'copy.wav', '--no-transcribe', '-o', 'kept.wav', '--json'], none).stdout);
+    assert.strictEqual(heard.ok, true, JSON.stringify(heard));
+    assert.strictEqual(heard.result.transcribed, false);
+    assert.strictEqual(heard.result.text, '');
+    assert.strictEqual(heard.result.speech, true);
+    assert.ok(Math.abs(heard.result.onsetMs - 400) <= 20, `onset ${heard.result.onsetMs}`);
+
+    const plain = cli(['listen', '--target', 'copy.wav', '--no-transcribe', '-o', 'kept.wav'], none);
+    assert.match(plain.stdout, /^Heard 1\.0 s of speech after (39|40|41)0 ms \(kept\.wav\)\n$/);
+
+    // The saved capture is transcribed later, with a provider.
+    assert.strictEqual(cli(['listen', '--target', 'kept.wav']).stdout, 'Come here, Watson.\n');
+
+    assert.notStrictEqual(cli(['say', 'text', '--file', 'voice.wav']).status, 0, 'text and a file together');
+    assert.match(cli(['say', '--file', 'missing.wav'], none).stderr, /no_audio: cannot read/);
+  });
+
   test('failures carry a code', { skip }, () => {
     fs.writeFileSync(path.join(dir, 'silent.wav'), toneWAV(3000, 0, 0));
     const silent = cli(['listen', '--target', 'silent.wav', '--json']);

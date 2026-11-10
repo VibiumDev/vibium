@@ -360,6 +360,73 @@ func TestSayChecksTheAudioBeforeCachingIt(t *testing.T) {
 	}
 }
 
+func TestSayPlaysAFileAsItIs(t *testing.T) {
+	// No provider is configured at all: a file needs none.
+	e := NewEngine(Env{Getenv: func(string) string { return "" }, LookPath: func(string) (string, error) { return "", errors.New("none") }})
+	dir := t.TempDir()
+	clip := filepath.Join(dir, "question.wav")
+	recorded := Audio{SampleRate: 44100, Channels: 2, Samples: make([]int16, 2*44100)}
+	for i := 8820; i < 70000; i++ {
+		recorded.Samples[i] = int16(i % 2000)
+	}
+	os.WriteFile(clip, recorded.WAV(), 0o600)
+
+	dev := &liveTarget{script: quiet(Rate, 3*time.Second)}
+	res, err := e.Say(context.Background(), dev, SayOptions{File: clip})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.File != clip || res.Provider != "file" || res.Text != "" || res.Cached || res.DurationMs != 1000 {
+		t.Fatalf("%+v", res)
+	}
+	if len(dev.played) != 1 || dev.played[0].SHA256() != recorded.SHA256() {
+		t.Fatal("the file was changed on its way to the target: its leading silence and its channels are the user's")
+	}
+	if _, err := e.Say(context.Background(), dev, SayOptions{File: clip, Text: "and text"}); err == nil {
+		t.Fatal("text and a file together were accepted")
+	}
+	if _, err := e.Say(context.Background(), dev, SayOptions{File: filepath.Join(dir, "missing.wav")}); Code(err) != "no_audio" {
+		t.Fatalf("a missing file: %v", err)
+	}
+	os.WriteFile(filepath.Join(dir, "notes.wav"), []byte("not audio"), 0o600)
+	if _, err := e.Say(context.Background(), dev, SayOptions{File: filepath.Join(dir, "notes.wav")}); Code(err) != "no_audio" {
+		t.Fatalf("a file that is not a WAV: %v", err)
+	}
+}
+
+func TestListenWithoutTranscribing(t *testing.T) {
+	// Again no provider: capture and detection are local.
+	e := NewEngine(Env{Getenv: func(string) string { return "" }, LookPath: func(string) (string, error) { return "", errors.New("none") }})
+	dir := t.TempDir()
+	clip := filepath.Join(dir, "q.wav")
+	os.WriteFile(clip, Audio{SampleRate: Rate, Channels: 1, Samples: tone(Rate, 300, -20, time.Second)}.WAV(), 0o600)
+	// The device answers 640 ms after the one-second question ends.
+	dev := &liveTarget{script: join(quiet(Rate, 1640*time.Millisecond), tone(Rate, 400, -18, 1500*time.Millisecond), quiet(Rate, 3*time.Second))}
+	if _, err := e.Say(context.Background(), dev, SayOptions{File: clip}); err != nil {
+		t.Fatal(err)
+	}
+	saved := filepath.Join(dir, "reply.wav")
+	res, err := e.Listen(context.Background(), dev, ListenOptions{Silence: -1, NoTranscribe: true, Path: saved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Transcribed || res.Text != "" || !res.Speech || res.Provider != "" || len(res.Segments) != 0 {
+		t.Fatalf("%+v", res)
+	}
+	if res.LatencyMs == nil || *res.LatencyMs < 620 || *res.LatencyMs > 660 || res.StoppedBy != "silence" {
+		t.Fatalf("latency %v: detection should still work without a transcript", res.LatencyMs)
+	}
+	// What was saved can be transcribed later.
+	p := &fakeProvider{reply: Transcript{Text: "It's sunny."}}
+	later, err := fakeEngine(t, p).Listen(context.Background(), FileTarget{Path: saved}, ListenOptions{Silence: -1})
+	if err != nil || later.Text != "It's sunny." || !later.Transcribed {
+		t.Fatalf("%+v %v", later, err)
+	}
+	if *later.OnsetMs < 620 || *later.OnsetMs > 660 {
+		t.Fatalf("the saved file starts where the capture did, so its onset should be the same 640 ms, got %v", *later.OnsetMs)
+	}
+}
+
 func TestSayNeedsTextAndAProvider(t *testing.T) {
 	e := fakeEngine(t, &fakeProvider{})
 	if _, err := e.Say(context.Background(), FileTarget{Path: filepath.Join(t.TempDir(), "x.wav")}, SayOptions{Text: "  "}); err == nil {

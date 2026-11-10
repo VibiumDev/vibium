@@ -14,7 +14,10 @@ import (
 
 // SayOptions are one say call's options. Empty values take the defaults.
 type SayOptions struct {
-	Text     string
+	Text string
+	// File is a WAV to play as it is, in place of text. Nothing is
+	// rendered, checked, trimmed or cached.
+	File     string
 	Provider string
 	Model    string
 	Voice    string
@@ -35,6 +38,7 @@ type SayResult struct {
 	Cached     bool    `json:"cached"`
 	SHA256     string  `json:"sha256"`
 	Path       string  `json:"path,omitempty"`
+	File       string  `json:"file,omitempty"`
 }
 
 // ListenOptions are one listen call's options. Negative durations take
@@ -48,6 +52,9 @@ type ListenOptions struct {
 	Duration     time.Duration
 	AllowSilence bool
 	Path         string
+	// NoTranscribe captures and detects speech without asking a provider
+	// for the words. Onset and latency are still measured.
+	NoTranscribe bool
 }
 
 // Listen defaults.
@@ -72,8 +79,10 @@ type WordResult struct {
 // ListenResult is what listen returns. Times count from the start of the
 // capture, which is the end of the preceding say when there was one.
 type ListenResult struct {
-	Text        string          `json:"text"`
-	Speech      bool            `json:"speech"`
+	Text   string `json:"text"`
+	Speech bool   `json:"speech"`
+	// Transcribed is false when the capture was not sent to a provider.
+	Transcribed bool            `json:"transcribed"`
 	Segments    []SegmentResult `json:"segments"`
 	Words       []WordResult    `json:"words,omitempty"`
 	OnsetMs     *float64        `json:"onsetMs,omitempty"`
@@ -154,8 +163,23 @@ func (e *Engine) takeWindow(key string) *window {
 // Say renders the text, or loads it from the cache, and plays it into the
 // target. It returns when playback has ended.
 func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, error) {
+	if o.File != "" {
+		if strings.TrimSpace(o.Text) != "" {
+			return nil, errors.New("say takes text or a file, not both")
+		}
+		raw, err := os.ReadFile(o.File)
+		if err != nil {
+			return nil, errf("no_audio", "cannot read %s: %v", o.File, err)
+		}
+		audio, err := ParseWAV(raw)
+		if err != nil || len(audio.Samples) == 0 {
+			return nil, errf("no_audio", "%s is not a PCM WAV file", o.File)
+		}
+		res := &SayResult{Target: t.Name(), Provider: "file", File: o.File, DurationMs: audio.DurationMs(), SHA256: audio.SHA256()}
+		return res, e.play(ctx, t, audio, res)
+	}
 	if strings.TrimSpace(o.Text) == "" {
-		return nil, errors.New("say needs text")
+		return nil, errors.New("say needs text or a file")
 	}
 	choice, err := e.Env.Say(o.Provider, o.Model, o.Voice)
 	if err != nil {
@@ -186,8 +210,18 @@ func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, e
 		}
 	}
 
-	if err := e.acquire(t); err != nil {
+	res := &SayResult{Text: o.Text, Target: t.Name(), Provider: choice.Provider.Name(), Model: choice.Model, Voice: choice.Voice,
+		DurationMs: audio.DurationMs(), Cached: cached, SHA256: audio.SHA256()}
+	if err := e.play(ctx, t, audio, res); err != nil {
 		return nil, err
+	}
+	return res, nil
+}
+
+// play sends a clip into the target and opens the capture window behind it.
+func (e *Engine) play(ctx context.Context, t Target, audio Audio, res *SayResult) error {
+	if err := e.acquire(t); err != nil {
+		return err
 	}
 	defer e.release(t)
 	if old := e.takeWindow(t.Key()); old != nil {
@@ -206,7 +240,7 @@ func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, e
 		if p != nil {
 			p.Close()
 		}
-		return nil, err
+		return err
 	}
 	if p != nil {
 		p.Limit(end + float64(windowLength/time.Millisecond))
@@ -214,13 +248,10 @@ func (e *Engine) Say(ctx context.Context, t Target, o SayOptions) (*SayResult, e
 		e.windows[t.Key()] = &window{pump: p, start: end}
 		e.mu.Unlock()
 	}
-
-	res := &SayResult{Text: o.Text, Target: t.Name(), Provider: choice.Provider.Name(), Model: choice.Model, Voice: choice.Voice,
-		DurationMs: audio.DurationMs(), Cached: cached, SHA256: audio.SHA256()}
 	if f, ok := t.(FileTarget); ok {
 		res.Path = f.Path
 	}
-	return res, nil
+	return nil
 }
 
 // renderAttempts is how many times say asks a provider for a clip that
@@ -275,9 +306,12 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	if o.Language == "" {
 		o.Language = "en"
 	}
-	choice, err := e.Env.Listen(o.Provider, o.Model)
-	if err != nil {
-		return nil, err
+	var choice Choice
+	if !o.NoTranscribe {
+		var err error
+		if choice, err = e.Env.Listen(o.Provider, o.Model); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.acquire(t); err != nil {
 		return nil, err
@@ -348,8 +382,10 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	}
 
 	captured := Audio{SampleRate: Rate, Channels: 1, Samples: heard}
-	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(),
-		Target: t.Name(), Provider: choice.Provider.Name(), Model: choice.Model}
+	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(), Target: t.Name()}
+	if !o.NoTranscribe {
+		res.Provider, res.Model = choice.Provider.Name(), choice.Model
+	}
 	if o.Path != "" {
 		if err := os.MkdirAll(filepath.Dir(o.Path), 0o755); err != nil {
 			return nil, err
@@ -372,6 +408,17 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 		end = captured.Duration()
 	}
 
+	onsetMs, endMs := ms(onset), ms(end)
+	res.Speech = true
+	res.OnsetMs, res.SpeechEndMs = &onsetMs, &endMs
+	if fromSay {
+		latency := onsetMs
+		res.LatencyMs = &latency
+	}
+	if o.NoTranscribe {
+		return res, nil
+	}
+
 	from := max(onset-transcribePad, 0)
 	to := min(end+transcribePad, captured.Duration())
 	clip := Audio{SampleRate: Rate, Channels: 1, Samples: heard[samplesAt(from):min(samplesAt(to), len(heard))]}
@@ -379,14 +426,7 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	if err != nil {
 		return nil, err
 	}
-
-	onsetMs, endMs := ms(onset), ms(end)
-	res.Text, res.Speech = transcript.Text, true
-	res.OnsetMs, res.SpeechEndMs = &onsetMs, &endMs
-	if fromSay {
-		latency := onsetMs
-		res.LatencyMs = &latency
-	}
+	res.Text, res.Transcribed = transcript.Text, true
 	for _, s := range transcript.Segments {
 		res.Segments = append(res.Segments, SegmentResult{StartMs: ms(from + s.Start), EndMs: ms(from + s.End), Text: s.Text})
 	}
