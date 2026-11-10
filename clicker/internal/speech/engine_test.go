@@ -223,6 +223,7 @@ func (l *liveTarget) Name() string             { return "session" }
 func (l *liveTarget) Key() string              { return "session:test" }
 func (l *liveTarget) Live() bool               { return true }
 func (l *liveTarget) EchoGuard() time.Duration { return l.guard }
+func (l *liveTarget) Now() float64             { return l.clock }
 func (l *liveTarget) Play(_ context.Context, a Audio) (float64, float64, error) {
 	l.played = append(l.played, a)
 	start := l.clock

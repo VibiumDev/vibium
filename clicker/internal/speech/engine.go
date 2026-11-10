@@ -39,6 +39,12 @@ type SayResult struct {
 	SHA256     string  `json:"sha256"`
 	Path       string  `json:"path,omitempty"`
 	File       string  `json:"file,omitempty"`
+
+	// For a recording: the clip as played, and when its first and last
+	// sample played on the target's clock.
+	Clip      Audio   `json:"-"`
+	PlayStart float64 `json:"-"`
+	PlayEnd   float64 `json:"-"`
 }
 
 // ListenOptions are one listen call's options. Negative durations take
@@ -94,6 +100,10 @@ type ListenResult struct {
 	Provider    string          `json:"provider"`
 	Model       string          `json:"model"`
 	Path        string          `json:"path,omitempty"`
+
+	// CaptureStart is when the capture began on the target's clock, for a
+	// recording. Every time above counts from it.
+	CaptureStart float64 `json:"-"`
 }
 
 const (
@@ -235,13 +245,14 @@ func (e *Engine) play(ctx context.Context, t Target, audio Audio, res *SayResult
 			p = startPump(c)
 		}
 	}
-	_, end, err := t.Play(ctx, audio)
+	begin, end, err := t.Play(ctx, audio)
 	if err != nil {
 		if p != nil {
 			p.Close()
 		}
 		return err
 	}
+	res.Clip, res.PlayStart, res.PlayEnd = audio, begin, end
 	if p != nil {
 		p.Limit(end + float64(windowLength/time.Millisecond))
 		e.mu.Lock()
@@ -382,7 +393,7 @@ func (e *Engine) Listen(ctx context.Context, t Target, o ListenOptions) (*Listen
 	}
 
 	captured := Audio{SampleRate: Rate, Channels: 1, Samples: heard}
-	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(), Target: t.Name()}
+	res := &ListenResult{Segments: []SegmentResult{}, StoppedBy: stoppedBy, DurationMs: captured.DurationMs(), Target: t.Name(), CaptureStart: start}
 	if !o.NoTranscribe {
 		res.Provider, res.Model = choice.Provider.Name(), choice.Model
 	}

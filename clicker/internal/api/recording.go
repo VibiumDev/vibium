@@ -170,6 +170,7 @@ type RecordingSummary struct {
 	DurationMs       int64
 	Videos           []VideoSummary
 	VideoUnavailable string
+	Audio            *AudioSummary
 }
 
 // ResultFields renders the summary as wire result fields: steps, durationMs,
@@ -178,6 +179,9 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 	fields := map[string]interface{}{
 		"steps":      s.Steps,
 		"durationMs": s.DurationMs,
+	}
+	if s.Audio != nil {
+		fields["audio"] = s.Audio
 	}
 	if s.VideoUnavailable != "" {
 		fields["videoUnavailable"] = s.VideoUnavailable
@@ -244,6 +248,9 @@ type Recorder struct {
 	contextId       string // unique context ID for this recording session
 	actionCounter   int    // monotonic counter for action/bidi callIds
 
+	// What say sent and listen heard; nil until speech is used.
+	audio *recordAudio
+
 	// Video track (engine screencast folded into the recording)
 	video            *VideoTrack
 	videoUnavailable string // engine reason video could not start (auto mode)
@@ -282,7 +289,7 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.recording = true
 	t.secrets = map[string]bool{}
 	t.omitVisuals = false
-	for _, key := range []string{"OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
+	for _, key := range []string{"DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
 		if value := os.Getenv(key); value != "" {
 			t.secrets[value] = true
 		}
@@ -296,6 +303,7 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.resources = make(map[string][]byte)
 	t.pendingRequests = make(map[string]*pendingRequest)
 	t.groupStack = nil
+	t.audio = nil
 	t.video = nil
 	t.videoUnavailable = ""
 	t.chunkIndex = 0
@@ -468,6 +476,7 @@ func (t *Recorder) Summary() RecordingSummary {
 	s := RecordingSummary{
 		DurationMs:       time.Now().UnixMilli() - t.startTime,
 		VideoUnavailable: t.videoUnavailable,
+		Audio:            t.audioSummaryLocked(),
 	}
 	for _, ev := range t.events {
 		if ev["type"] == "before" && ev["class"] != "Tracing" {
@@ -646,6 +655,10 @@ func apiNameFromMethod(method string) (string, string) {
 	// Context commands: context.*
 	case len(name) > 8 && name[:8] == "context.":
 		return "BrowserContext", "BrowserContext." + name[8:]
+
+	// Say and listen: speech.*
+	case len(name) > 7 && name[:7] == "speech.":
+		return "Speech", "Speech." + name[7:]
 
 	// Keyboard: keyboard.*
 	case len(name) > 9 && name[:9] == "keyboard.":
@@ -1396,6 +1409,14 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 			continue
 		}
 		rw.Write(data)
+	}
+
+	// Audio entries are additive too. Chunk zips carry none: the audio goes
+	// into the recording's final zip.
+	if includeVideo && !t.omitVisuals {
+		if err := t.writeAudioEntriesLocked(zw, now); err != nil {
+			return nil, err
+		}
 	}
 
 	// Video entries are additive to the trace format; existing trace tooling

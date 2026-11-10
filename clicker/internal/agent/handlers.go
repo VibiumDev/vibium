@@ -29,6 +29,11 @@ type Handlers struct {
 	speechEnv    map[string]string // the CLI caller's speech settings, for one call
 	audioMu      sync.Mutex
 	audioSink    *roadieCapture // where roadie:audio.chunk events go
+	sessionAudio *roadieAudio   // the session's audio, once found
+	audioRec     *audioRecording
+	speechCallID string                 // the recorded step a say or listen belongs to
+	speechResult map[string]interface{} // what that step's after event carries
+	lastSayCall  string
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -192,12 +197,6 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	if name == "vibium_check" {
 		return h.checkMCP(args)
 	}
-	if name == "vibium_say" {
-		return h.sayMCP(args)
-	}
-	if name == "vibium_listen" {
-		return h.listenMCP(args)
-	}
 	log.Debug("tool call", "name", name, "args", args)
 
 	// A page argument pins this call to one browsing context. Validate it
@@ -237,6 +236,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		h.lastElementBox = nil
 	}
 
+	h.speechCallID, h.speechResult = callId, nil
 	result, err := h.dispatch(name, args)
 
 	endTime := time.Now()
@@ -255,6 +255,12 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
 		if h.modelRunning {
 			h.recorder.RecordCallOutcome(callId, recordedToolResult(result), err)
+		} else if name == "vibium_say" || name == "vibium_listen" {
+			var outcome interface{}
+			if h.speechResult != nil {
+				outcome = h.speechResult
+			}
+			h.recorder.RecordCallOutcome(callId, outcome, err)
 		}
 	}
 
@@ -264,6 +270,10 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 // dispatch routes a tool call to the appropriate handler method.
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
+	case "vibium_say":
+		return h.sayMCP(args)
+	case "vibium_listen":
+		return h.listenMCP(args)
 	case "browser_console":
 		return h.browserObservations("console")
 	case "browser_network":
@@ -781,6 +791,11 @@ func mcpToolToMethod(name string) string {
 		return "vibium:clock.setSystemTime"
 	case "page_clock_set_timezone":
 		return "vibium:clock.setTimezone"
+
+	case "vibium_say":
+		return "vibium:speech.say"
+	case "vibium_listen":
+		return "vibium:speech.listen"
 
 	default:
 		return name
@@ -4304,6 +4319,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
+	h.stopAudioRecording()
 
 	// Finalize the video first so Stop() can move the engine's file into
 	// the zip. A dead screencast is recorded in the manifest, not an error.

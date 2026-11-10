@@ -44,6 +44,9 @@ type Target interface {
 	// EchoGuard is how long after playback the target still hears the
 	// clip itself, as a room does.
 	EchoGuard() time.Duration
+	// Now is the present on the target's clock, in milliseconds: the clock
+	// Play's result and every captured chunk are stamped with.
+	Now() float64
 }
 
 // chunkSamples is 100 ms of audio.
@@ -59,6 +62,7 @@ func (f FileTarget) Name() string             { return f.Path }
 func (f FileTarget) Key() string              { return "file:" + f.Path }
 func (f FileTarget) Live() bool               { return false }
 func (f FileTarget) EchoGuard() time.Duration { return 0 }
+func (f FileTarget) Now() float64             { return 0 }
 
 func (f FileTarget) Play(_ context.Context, a Audio) (float64, float64, error) {
 	if err := os.MkdirAll(filepath.Dir(f.Path), 0o755); err != nil {
@@ -130,6 +134,7 @@ func (l *LocalTarget) Name() string             { return "local" }
 func (l *LocalTarget) Key() string              { return "local" }
 func (l *LocalTarget) Live() bool               { return true }
 func (l *LocalTarget) EchoGuard() time.Duration { return 200 * time.Millisecond }
+func (l *LocalTarget) Now() float64             { return localClock() }
 
 var clockStart = time.Now()
 

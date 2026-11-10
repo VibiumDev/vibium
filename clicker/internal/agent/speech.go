@@ -65,7 +65,11 @@ func (h *Handlers) speechTarget(name string) (speech.Target, error) {
 		if !open {
 			return nil, &speech.Error{Code: "invalid_target", Message: "no session is open; use target local or a .wav path, or start a session first"}
 		}
+		if h.sessionAudio != nil && h.sessionAudio.client == client {
+			return h.sessionAudio, nil
+		}
 		if target, ok := h.roadieAudioFor(client); ok {
+			h.sessionAudio = target
 			return target, nil
 		}
 		return nil, &speech.Error{Code: "no_audio", Message: "this session cannot carry audio; use --target local for this machine's speakers and microphone"}
@@ -164,10 +168,12 @@ func (h *Handlers) sayMCP(args map[string]interface{}) (*ToolsCallResult, error)
 	if err != nil {
 		return nil, err
 	}
+	rec := h.beginAudioRecording(t)
 	res, err := h.speechEngine().Say(context.Background(), t, o)
 	if err != nil {
 		return nil, err
 	}
+	rec.said(res)
 	return speechResult(res)
 }
 
@@ -220,9 +226,11 @@ func (h *Handlers) listenMCP(args map[string]interface{}) (*ToolsCallResult, err
 	if err != nil {
 		return nil, err
 	}
+	rec := h.beginAudioRecording(t)
 	res, err := h.speechEngine().Listen(context.Background(), t, o)
 	if err != nil {
 		return nil, err
 	}
+	rec.heard(res)
 	return speechResult(res)
 }

@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +19,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/vibium/clicker/internal/api"
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/speech"
 )
@@ -242,5 +246,131 @@ func TestRoadieCaptureFillsGapsWithSilence(t *testing.T) {
 	second, _ := c.Next(ctx)
 	if first.Time != 1000 || gap.Time != 1100 || len(gap.Samples) != 3200 || second.Time != 1300 {
 		t.Fatalf("times %.0f %.0f %.0f, gap of %d samples", first.Time, gap.Time, second.Time, len(gap.Samples))
+	}
+}
+
+func TestSayAndListenAreRecordedWithTheirAudio(t *testing.T) {
+	f := &fakeRoadie{audio: true, thinkMs: 640}
+	h := roadieHandlers(t, f)
+	h.recorder = api.NewRecorder()
+	h.recorder.Start(api.RecordingStartOptions{}, nil)
+	dir := t.TempDir()
+	clip := filepath.Join(dir, "q.wav")
+	os.WriteFile(clip, speech.Audio{SampleRate: 16000, Channels: 1, Samples: toneSamples(300, 500*time.Millisecond)}.WAV(), 0o600)
+
+	if _, err := h.Call("vibium_say", map[string]interface{}{"file": clip}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Call("vibium_listen", map[string]interface{}{"transcribe": false}); err != nil {
+		t.Fatal(err)
+	}
+	// The same clip again is stored once and played twice.
+	if _, err := h.Call("vibium_say", map[string]interface{}{"file": clip}); err != nil {
+		t.Fatal(err)
+	}
+	h.stopAudioRecording()
+	raw, err := h.recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, zf := range zr.File {
+		rc, _ := zf.Open()
+		files[zf.Name], _ = io.ReadAll(rc)
+		rc.Close()
+	}
+	for _, name := range []string{"trace.trace", "audio/index.json", "audio/in-session.wav", "audio/out-0001.wav"} {
+		if len(files[name]) == 0 {
+			t.Fatalf("the zip has no %s; it has %d entries", name, len(files))
+		}
+	}
+	if _, twice := files["audio/out-0002.wav"]; twice {
+		t.Fatal("the same clip was stored twice")
+	}
+
+	// The steps are ordinary before/after pairs, and the after carries the result.
+	var sayCall, listenCall string
+	results := map[string]map[string]interface{}{}
+	for _, line := range strings.Split(strings.TrimSpace(string(files["trace.trace"])), "\n") {
+		var ev map[string]interface{}
+		json.Unmarshal([]byte(line), &ev)
+		id, _ := ev["callId"].(string)
+		switch {
+		case ev["type"] == "before" && ev["method"] == "vibium:speech.say" && sayCall == "":
+			sayCall = id
+			if ev["title"] != "Speech.say" || ev["class"] != "Speech" {
+				t.Errorf("the say step is titled %v in class %v", ev["title"], ev["class"])
+			}
+		case ev["type"] == "before" && ev["method"] == "vibium:speech.listen":
+			listenCall = id
+		case ev["type"] == "after":
+			if r, ok := ev["result"].(map[string]interface{}); ok {
+				results[id] = r
+			}
+		}
+	}
+	if sayCall == "" || listenCall == "" {
+		t.Fatalf("say and listen are not steps in the trace:\n%s", files["trace.trace"])
+	}
+	if results[sayCall]["clip"] != "out-0001" || results[listenCall]["track"] != "in-session" || results[listenCall]["latencyFrom"] != sayCall {
+		t.Fatalf("step results: say %v, listen %v", results[sayCall], results[listenCall])
+	}
+
+	var manifest struct {
+		Version int
+		Tracks  []struct {
+			ID, File            string
+			StartMs, DurationMs float64
+			Speech              []struct{ StartMs, EndMs float64 }
+			Clock               struct {
+				Source string
+				Sync   []map[string]float64
+			}
+		}
+		Clips []struct {
+			ID, File, Source string
+			DurationMs       float64
+			Plays            []struct {
+				CallID         string
+				StartMs, EndMs float64
+			}
+		}
+		Transcripts []struct {
+			CallID, Track, LatencyFrom string
+			OnsetMs, LatencyMs         float64
+		}
+	}
+	if err := json.Unmarshal(files["audio/index.json"], &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != 1 || len(manifest.Tracks) != 1 || len(manifest.Clips) != 1 || len(manifest.Transcripts) != 1 {
+		t.Fatalf("manifest: %s", files["audio/index.json"])
+	}
+	track, sent, said := manifest.Tracks[0], manifest.Clips[0], manifest.Transcripts[0]
+	if track.ID != "in-session" || track.Clock.Source != "roadie" || len(track.Clock.Sync) != 1 || track.DurationMs < 4000 {
+		t.Fatalf("track %+v", track)
+	}
+	if sent.Source != "file" || sent.DurationMs != 500 || len(sent.Plays) != 2 || sent.Plays[0].CallID != sayCall {
+		t.Fatalf("clip %+v", sent)
+	}
+	if said.CallID != listenCall || said.LatencyFrom != sayCall || math.Abs(said.LatencyMs-640) > 20 {
+		t.Fatalf("transcript %+v", said)
+	}
+	// Everything is on one timeline: the reply's onset is the end of the
+	// clip's playing plus the latency, and the track marks speech there.
+	play := sent.Plays[0]
+	if math.Abs(said.OnsetMs-(play.EndMs+said.LatencyMs)) > 1 {
+		t.Fatalf("onset %.1f is not the play's end %.1f plus the latency %.1f", said.OnsetMs, play.EndMs, said.LatencyMs)
+	}
+	if len(track.Speech) == 0 || math.Abs(track.Speech[0].StartMs-said.OnsetMs) > 30 {
+		t.Fatalf("the track's speech markers %v do not show the reply at %.1f", track.Speech, said.OnsetMs)
+	}
+	heard, err := speech.ParseWAV(files["audio/in-session.wav"])
+	if err != nil || heard.SampleRate != 16000 || heard.Channels != 1 {
+		t.Fatalf("track audio: %v %+v", err, heard.SampleRate)
 	}
 }

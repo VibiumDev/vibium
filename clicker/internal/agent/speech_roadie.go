@@ -20,6 +20,9 @@ import (
 type roadieAudio struct {
 	h      *Handlers
 	client *bidi.Client
+	// One capture runs on the device however many readers there are: a
+	// recording's track and a listen read the same stream.
+	tap *speech.Tap
 }
 
 // roadieChunkGap is how far a chunk may start after the one before it
@@ -35,7 +38,41 @@ func (h *Handlers) roadieAudioFor(client *bidi.Client) (*roadieAudio, bool) {
 	if _, err := client.SendCommandWithTimeout("roadie:audio.clock", map[string]interface{}{}, 10*time.Second); err != nil {
 		return nil, false
 	}
-	return &roadieAudio{h: h, client: client}, true
+	r := &roadieAudio{h: h, client: client}
+	r.tap = speech.NewTap(r.open)
+	return r, true
+}
+
+// Now is the present on Roadie's clock.
+func (r *roadieAudio) Now() float64 {
+	now, _ := r.Sync()
+	return now
+}
+
+// Sync reads Roadie's clock a few times and keeps the reading with the
+// shortest round trip, whose error is at most half that trip. It returns
+// Roadie's time now and that round trip in milliseconds.
+func (r *roadieAudio) Sync() (float64, float64) {
+	best, bestRTT := 0.0, -1.0
+	var bestAt time.Time
+	for i := 0; i < 5; i++ {
+		sent := time.Now()
+		resp, err := r.client.SendCommandWithTimeout("roadie:audio.clock", map[string]interface{}{}, 5*time.Second)
+		got := time.Now()
+		var res struct {
+			Now float64 `json:"now"`
+		}
+		if err != nil || json.Unmarshal(resp.Result, &res) != nil {
+			continue
+		}
+		if rtt := float64(got.Sub(sent)) / float64(time.Millisecond); bestRTT < 0 || rtt < bestRTT {
+			best, bestRTT, bestAt = res.Now, rtt, sent.Add(got.Sub(sent)/2)
+		}
+	}
+	if bestRTT < 0 {
+		return 0, 0
+	}
+	return best + float64(time.Since(bestAt))/float64(time.Millisecond), bestRTT
 }
 
 func (r *roadieAudio) Name() string             { return "session" }
@@ -65,7 +102,9 @@ func (r *roadieAudio) Play(_ context.Context, a speech.Audio) (float64, float64,
 	return res.StartTime, res.EndTime, nil
 }
 
-func (r *roadieAudio) Capture(context.Context) (speech.Capture, error) {
+func (r *roadieAudio) Capture(ctx context.Context) (speech.Capture, error) { return r.tap.Capture(ctx) }
+
+func (r *roadieAudio) open(context.Context) (speech.Capture, error) {
 	c := &roadieCapture{h: r.h, client: r.client, chunks: make(chan speech.Chunk, 256), done: make(chan struct{})}
 	// The sink is in place before the capture starts, so no chunk is lost.
 	r.h.setAudioSink(c)
