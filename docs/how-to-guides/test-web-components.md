@@ -9,7 +9,7 @@ Web components hide their internals in a shadow root. `document.querySelector` s
 
 ```bash
 vibium find css "my-card p"
-# Error: element not found: my-card p
+# Error: timeout after 30s waiting for 'css=my-card p': element not found
 ```
 
 Use a pierce combinator instead. Full syntax in the [selector reference](../reference/selectors.md).
