@@ -73,6 +73,9 @@ vibium record stop -o phone.zip
 Sound is separate. `vibium say` and `vibium listen` put their audio under
 `audio/` in the same zip.
 
+The Record Player shows the video in place of the screenshots. It keeps
+the video in step with the timeline and plays the sound with it.
+
 ## Remote browsers
 
 No video is recorded on other remote browser connections (`--connect`). The

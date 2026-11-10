@@ -1233,46 +1233,45 @@ Speech markers cover the whole track. Transcripts exist only where a
   WAV. `audio: false` keeps audio out of the zip.
 - **Upload.** `recording.stop({ upload })` sends the zip as it is, audio included.
 
-## What the Record Player needs
+## The Record Player
 
-The player changes are a separate task. This section says what they are
-and why the current player keeps working without them.
+The player at `VibiumDev/record-player` plays these recordings.
 
-### Today's player with the new zips
+A player that does not know `audio/` or `video/` still opens them. It
+reads the trace files and `resources/`, and shows `say` and `listen` as
+steps.
 
-The player at `VibiumDev/record-player` was read at commit `2397821`.
+### Audio
 
-- It reads files ending in `.trace` and `.network`, and files under
-  `resources/`. It never opens `audio/`.
-- `say` and `listen` already show in the action list. They are
-  `before`/`after` pairs, and the player folds any such pair into one
-  action with its title, params and duration.
-- It keeps the `after` event's fields on the action, so `result` is
-  already there for a later version to read.
-- It does not read `video/` either. The same tolerance covers `audio/`.
+- The player reads `audio/index.json`. It ignores audio when the file is
+  absent or its `version` is not `1`.
+- While the recording plays, each clip sounds at the time it was played.
+  The track sounds at the time it was heard.
+- The caption under the picture shows the words:
+  - `Say “…”` for a `say` step;
+  - `Listening…` and then `Heard “…”` for a `listen` step.
+- A Sound button turns the audio off.
 
-So a zip with audio opens in today's player. The steps appear as
-`Speech.say` and `Speech.listen` with their params. Nothing plays.
+### Video
 
-### What to add
+- The player reads `video/index.json`. It ignores video when the file is
+  absent or its `version` is not `1`.
+- When a recording has a video, the player shows it in place of the
+  screenshots.
+- The video follows the playhead. It plays, pauses, seeks and changes
+  speed with it.
+- `offsetMs` places the video. The player's timeline starts at the first
+  event. The video's first frame is at `offsetMs` minus that event's time.
+- The player shows the screenshots in three cases:
+  - the recording has no video;
+  - the browser cannot play the video;
+  - the playhead is more than a second outside the video.
+- The video has no sound. Sound comes from `audio/`.
 
-1. **Read the manifest.** Load `audio/index.json` when present. Ignore
-   audio when it is absent or its `version` is not `1`.
-2. **Say steps.** Show the text, the voice, and the clip's length.
-3. **Listen steps.** Show the transcript, the reply latency, and why
-   the capture stopped. Show the error for a failed step.
-4. **Per-clip playback.** A play button on each step:
-   - a `say` step plays its clip file;
-   - a `listen` step plays its slice of the track, from `audioStartMs` to `audioEndMs`.
-5. **Timeline markers.** Optional: mark each play and each speech
-   stretch on the timeline, so a gap between question and answer is visible.
+### Not built
 
-Notes for the implementer:
-
-- Fetch WAV files lazily, on first play. Do not turn them into data URLs at load.
-- A slice of PCM WAV is a byte range: 32 bytes per millisecond after the 44-byte header.
-- Latency is `result.latencyMs`. Do not recompute it from step times.
-- Continuous playback in step with the screenshots is out of scope.
+- A play button on each `say` and `listen` step.
+- Marks on the timeline for each play and each stretch of speech.
 
 ## Measurements on a Raspberry Pi 4
 
