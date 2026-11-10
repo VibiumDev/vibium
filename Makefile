@@ -397,7 +397,7 @@ test-cli: build-go
 	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/help-flags.test.js tests/cli/ready.test.js tests/cli/is-installed.test.js tests/cli/json-output.test.js tests/cli/json-contract.test.js tests/cli/packaging.test.js tests/cli/release-versioning.test.js tests/cli/wrapper.test.js tests/speech/speech.test.js
 	@"$(MAKE)" test-cli-shared ENGINE=$(ENGINE)
 	@echo "--- CLI Process Tests (sequential) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js tests/cli/start-json.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js tests/cli/start-json.test.js tests/speech/browser.test.js
 
 test-cli-shared: build-go
 	@echo "--- CLI Shared Tests ($(ENGINE)) ---"

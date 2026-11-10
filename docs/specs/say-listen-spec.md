@@ -939,7 +939,9 @@ Roadie then emits one event per chunk:
 **`roadie:audio.clock`** takes no params and answers
 `{"now": 81236990.5}` on the same clock.
 
-Through a station, `play` needs the `input` scope and capture needs `view`.
+Through a station the whole BiDi socket needs the `bidi` scope, which a
+watch-level token does not have. The station relays the socket byte for
+byte, so these commands need nothing more from it.
 
 Roadie's existing `/audio` and `/api/mic` endpoints are unchanged. They
 remain the raw pipe for viewers and other tools.
@@ -952,8 +954,10 @@ clock and for WebSocket monitoring. No browser flag, extension or audio
 device is involved. So it works the same in a visible browser, a
 headless one and a remote one.
 
-This path is designed from the browsers' documented APIs. It was not
-prototyped for this spec.
+This path is built and tested in Chrome and Firefox against a page that
+records its microphone and plays the recording back, and against
+soundcheck.vibium.dev by hand. Media elements and frames are written and
+not yet exercised.
 
 ### Into the page
 
@@ -973,9 +977,8 @@ none has, `say` fails with `no_audio`. The message says no page is
 listening.
 
 The virtual microphone is on by default, so a first `say` works without
-setup. `vibium start --audio=false`, or `audio: false` in a client,
-leaves the page's audio alone. Then `session` is not available in that
-browser.
+setup. An opt-out, `vibium start --audio=false` or `audio: false` in a
+client, is specified and not built yet.
 
 ### Out of the page
 
@@ -1124,8 +1127,11 @@ the shared `call@N` counter. No new event type is added to
 - `result` and `error` on `after` follow
   [recording-error-result-spec.md](recording-error-result-spec.md). This
   spec needs them for these two methods at least.
+- `params` are what the caller passed. The `result` names the provider,
+  model and voice that were used.
 - Times inside `result` are on the recording timeline, not relative to the capture.
-- A failed step has `error: {"message": …, "code": …}` and no `result`.
+- A failed step has `error: {"message": …}` and no `result`. The message
+  starts with the error's code.
 - `params` never holds a key, a base URL or a command line.
 
 ### The manifest
@@ -1188,6 +1194,17 @@ the shared `call@N` counter. No new event type is added to
 
 Speech markers cover the whole track. Transcripts exist only where a
 `listen` ran. Vibium does not transcribe audio nobody asked about.
+
+### Not built yet
+
+- Audio in chunk zips, and in the spool directory. Audio goes into the
+  recording's final zip only.
+- The `audio` option on `recording.start`. Audio is recorded from the
+  first `say` or `listen`, as if the option were omitted.
+- The local microphone's audio in a track. A `listen` on `local` records
+  its transcript and no audio.
+- A new clock reading every 10 seconds. One reading is taken when the
+  track starts.
 
 ### Chunks, spooling, redaction
 
