@@ -154,7 +154,7 @@ page = await bro.page()
 
 await page.go("https://example.com")
 print(await page.title())          # "Example Domain"
-print(await page.find(css="h1").text())    # "Example Domain"
+print(await (await page.find(css="h1")).text())    # "Example Domain"
 
 await bro.stop()
 ```

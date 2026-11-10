@@ -67,7 +67,7 @@ async def main():
     await vibe.context.recording.start()
 
     await vibe.go('https://var.parts')
-    await vibe.find(text='Vibium Battery Pack').click()
+    await (await vibe.find(text='Vibium Battery Pack')).click()
 
     await vibe.context.recording.stop()
     await bro.stop()
@@ -236,7 +236,7 @@ async def main():
     await ctx.recording.start(name='my-session')
 
     await vibe.go('https://var.parts')
-    await vibe.find(text='Vibium Battery Pack').click()
+    await (await vibe.find(text='Vibium Battery Pack')).click()
 
     await ctx.recording.stop()   # saved to my-session-<timestamp>.zip (the name seeds the stem)
 
@@ -355,8 +355,8 @@ ctx.recording.stop()
 await ctx.recording.start()
 
 await vibe.go('https://var.parts')   # recorded as Page.navigate
-await vibe.find(text='Vibium Battery Pack').click()   # recorded as Element.click
-await vibe.find(role='button', text='Add to Cart').click()   # recorded as Element.click
+await (await vibe.find(text='Vibium Battery Pack')).click()   # recorded as Element.click
+await (await vibe.find(role='button', text='Add to Cart')).click()   # recorded as Element.click
 
 await ctx.recording.stop()
 ```
@@ -466,17 +466,17 @@ await ctx.recording.start(name='checkout')
 await vibe.go('https://var.parts')
 
 await ctx.recording.start_group('pick a part')
-await vibe.find(text='Vibium Battery Pack').click()
-await vibe.find(role='button', text='Add to Cart').click()
+await (await vibe.find(text='Vibium Battery Pack')).click()
+await (await vibe.find(role='button', text='Add to Cart')).click()
 await ctx.recording.stop_group()
 
 await ctx.recording.start_group('check out')
-await vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
-await vibe.find(role='button', text='Proceed to Checkout').click()
-await vibe.find(label='Unit Designation').fill('VAR-347')
-await vibe.find(label='Service Bay').fill('Bay 14-C')
-await vibe.find(text='Lunar VAR Facility').click()
-await vibe.find(role='button', text='Proceed to Payment').click()
+await (await vibe.find(css='a[href="/cart"]')).click()  # the cart icon has no accessible name — CSS fallback
+await (await vibe.find(role='button', text='Proceed to Checkout')).click()
+await (await vibe.find(label='Unit Designation')).fill('VAR-347')
+await (await vibe.find(label='Service Bay')).fill('Bay 14-C')
+await (await vibe.find(text='Lunar VAR Facility')).click()
+await (await vibe.find(role='button', text='Proceed to Payment')).click()
 await ctx.recording.stop_group()
 
 await ctx.recording.stop()  # checkout-<timestamp>.zip
@@ -613,7 +613,7 @@ await ctx.recording.start()
 
 # First chunk: catalog
 await vibe.go('https://var.parts')
-await vibe.find(text='Vibium Battery Pack').click()
+await (await vibe.find(text='Vibium Battery Pack')).click()
 await ctx.recording.stop_chunk(path='catalog.zip')
 
 # Second chunk: about
