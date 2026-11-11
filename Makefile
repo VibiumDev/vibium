@@ -506,7 +506,8 @@ python-venv:
 		if [ -d .venv ] && ! ( . $(VENV_ACTIVATE) && python -c "$(PY_FLOOR_CHECK)" ) 2>/dev/null; then \
 			echo "ERROR: clients/python/.venv uses $$( . $(VENV_ACTIVATE) && python --version 2>&1); the Python client needs 3.11+." >&2; \
 			echo "  Rebuild it (removes packages you added by hand):" >&2; \
-			echo "    $${py:-python3.11} -m venv --clear clients/python/.venv" >&2; \
+			echo "    macOS/Linux:  $${py:-python3.14} -m venv --clear clients/python/.venv" >&2; \
+			echo "    Windows:      py -3.14 -m venv --clear clients\\python\\.venv" >&2; \
 			exit 1; \
 		fi; \
 		if [ ! -d .venv ]; then \
