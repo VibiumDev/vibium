@@ -496,26 +496,27 @@ test-daemon: build-go
 PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 # Ensure the Python client venv exists with the client + test deps installed.
-PY_FLOOR_CHECK := import sys; sys.exit(sys.version_info < (3, 11))
+PY_FLOOR := $(shell sed -n 's/^requires-python *= *">=\([0-9.]*\)".*/\1/p' clients/python/pyproject.toml)
+PY_FLOOR_CHECK := import sys; sys.exit(sys.version_info < tuple(int(n) for n in '$(PY_FLOOR)'.split('.')))
 
 python-venv:
 	@cd clients/python && \
-		py=; for p in $(PYTHON) python3.14 python3.13 python3.12 python3.11; do \
+		py=; for p in $(PYTHON) $$(IFS=:; for d in $$PATH; do ls "$$d" 2>/dev/null; done | grep -E '^python3\.[0-9]+$$' | sort -u -t. -k2,2nr); do \
 			if "$$p" -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then py=$$p; break; fi; \
 		done; \
 		if [ -d .venv ] && ! ( . $(VENV_ACTIVATE) && python -c "$(PY_FLOOR_CHECK)" ) 2>/dev/null; then \
-			echo "ERROR: clients/python/.venv uses $$( . $(VENV_ACTIVATE) && python --version 2>&1); the Python client needs 3.11+." >&2; \
+			echo "ERROR: clients/python/.venv uses $$( . $(VENV_ACTIVATE) && python --version 2>&1); the Python client needs $(PY_FLOOR)+." >&2; \
 			echo "  Rebuild it (removes packages you added by hand):" >&2; \
-			echo "    macOS/Linux:  $${py:-python3.14} -m venv --clear clients/python/.venv" >&2; \
-			echo "    Windows:      py -3.14 -m venv --clear clients\\python\\.venv" >&2; \
+			echo "    macOS/Linux:  $${py:-python3} -m venv --clear clients/python/.venv" >&2; \
+			echo "    Windows:      py -3 -m venv --clear clients\\python\\.venv" >&2; \
 			exit 1; \
 		fi; \
 		if [ ! -d .venv ]; then \
 			if [ -z "$$py" ]; then \
-				echo "ERROR: the Python client needs Python 3.11+, but $(PYTHON) is $$($(PYTHON) --version 2>&1)." >&2; \
-				echo "  macOS: brew install python@3.13" >&2; \
-				echo "  Linux: install python3.11 or newer from your package manager" >&2; \
-				echo "  Or name one: make test PYTHON=/path/to/python3.11" >&2; \
+				echo "ERROR: the Python client needs Python $(PY_FLOOR)+, but $(PYTHON) is $$($(PYTHON) --version 2>&1)." >&2; \
+				echo "  macOS: brew install python" >&2; \
+				echo "  Linux: install a newer python3 from your package manager" >&2; \
+				echo "  Or name one: make test PYTHON=/path/to/python3" >&2; \
 				exit 1; \
 			fi; \
 			"$$py" -m venv .venv; \
