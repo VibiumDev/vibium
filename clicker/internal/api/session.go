@@ -93,11 +93,40 @@ func NewAgentSession(client *bidi.Client) *AgentSession {
 	return &AgentSession{Client: client}
 }
 
-func (m *AgentSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+func (m *AgentSession) send(method string, params map[string]interface{}, timeout time.Duration) (*bidi.Message, error) {
 	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
 		return nil, err
 	}
-	msg, err := m.Client.SendCommand(method, params)
+	call := func() (*bidi.Message, error) {
+		if timeout == 0 {
+			return m.Client.SendCommand(method, params)
+		}
+		return m.Client.SendCommandWithTimeout(method, params, timeout)
+	}
+	opened, stop := m.Prompts.watch(method, params)
+	defer stop()
+	if opened == nil {
+		return call()
+	}
+	type reply struct {
+		msg *bidi.Message
+		err error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		msg, err := call()
+		done <- reply{msg, err}
+	}()
+	select {
+	case r := <-done:
+		return r.msg, r.err
+	case <-opened:
+		return nil, m.Prompts.blockedError(params)
+	}
+}
+
+func (m *AgentSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+	msg, err := m.send(method, params, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -111,10 +140,7 @@ func (m *AgentSession) SendBidiCommand(method string, params map[string]interfac
 }
 
 func (m *AgentSession) SendBidiCommandWithTimeout(method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
-	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
-		return nil, err
-	}
-	msg, err := m.Client.SendCommandWithTimeout(method, params, timeout)
+	msg, err := m.send(method, params, timeout)
 	if err != nil {
 		return nil, err
 	}
