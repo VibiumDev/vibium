@@ -496,9 +496,24 @@ test-daemon: build-go
 PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 # Ensure the Python client venv exists with the client + test deps installed.
+PY_FLOOR_CHECK := import sys; sys.exit(sys.version_info < (3, 11))
+
 python-venv:
 	@cd clients/python && \
-		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
+		if [ -d .venv ] && ( . $(VENV_ACTIVATE) && python -c "$(PY_FLOOR_CHECK)" ) 2>/dev/null; then :; else \
+			py=; for p in $(PYTHON) python3.14 python3.13 python3.12 python3.11; do \
+				if "$$p" -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then py=$$p; break; fi; \
+			done; \
+			if [ -z "$$py" ]; then \
+				echo "ERROR: the Python client needs Python 3.11+, but $(PYTHON) is $$($(PYTHON) --version 2>&1)." >&2; \
+				echo "  macOS: brew install python@3.13" >&2; \
+				echo "  Linux: install python3.11 or newer from your package manager" >&2; \
+				echo "  Or name one: make test PYTHON=/path/to/python3.11" >&2; \
+				exit 1; \
+			fi; \
+			echo "Creating clients/python/.venv with $$py ($$("$$py" --version 2>&1))"; \
+			"$$py" -m venv --clear .venv; \
+		fi && \
 		. $(VENV_ACTIVATE) && \
 		if ! python -c "import vibium, xdist" 2>/dev/null; then \
 			python -m pip install --quiet --upgrade pip && \
