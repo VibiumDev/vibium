@@ -124,12 +124,12 @@ $ vibium find css h1
 @e2 [h1] "VAR Parts & Upgrades"
 
 $ vibium find "h1"
-Error: timeout after 1s waiting for '"h1"': element not found; find takes a description; for the CSS selector use `vibium find css "h1"`, `find({css: "h1"})` in JavaScript, `find(css="h1")` in Python, or `new SelectorOptions().css("h1")` in Java; no element is named that; a vision model would be consulted next, but none is configured (set VIBIUM_AI_PROVIDER to openai, xai, anthropic, google, openai-compatible, or local)
+Error: "h1" reads like a CSS selector, and find takes a description; for the selector use `vibium find css "h1"`, `find({css: "h1"})` in JavaScript, `find(css="h1")` in Python, or `new SelectorOptions().css("h1")` in Java; for an element actually named "h1" use `vibium find description "h1"` or the description option
 ```
 
-`find "h1"` looks for something named "h1". `find css h1` is the selector.
-With a provider configured, the first command would have sent the
-screenshot to a vision model before giving up.
+A bare string is a description. One that reads like a selector is refused
+at once, before any wait and before any model call. `find css h1` is the
+selector.
 
 ## 8. The same in a script
 

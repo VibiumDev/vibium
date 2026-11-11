@@ -172,7 +172,7 @@ const bro = browser.start()
 const vibe = bro.page()
 vibe.go('https://example.com')
 
-const el = vibe.find('h1')
+const el = vibe.find({ css: 'h1' })
 console.log(el.text())
 
 // Execute JavaScript
@@ -192,7 +192,7 @@ const bro = await browser.start()
 const vibe = await bro.page()
 await vibe.go('https://example.com')
 
-const el = await vibe.find('h1')
+const el = await vibe.find({ css: 'h1' })
 console.log(await el.text())
 
 // Execute JavaScript
@@ -243,7 +243,7 @@ bro = browser.start()
 vibe = bro.page()
 vibe.go("https://example.com")
 
-el = vibe.find("h1")
+el = vibe.find(css="h1")
 print(el.text())
 
 # Execute JavaScript
@@ -267,7 +267,7 @@ async def main():
     vibe = await bro.page()
     await vibe.go("https://example.com")
 
-    el = await vibe.find("h1")
+    el = await vibe.find(css="h1")
     print(await el.text())
 
     # Execute JavaScript
@@ -324,7 +324,7 @@ var bro = Vibium.start();
 var vibe = bro.page();
 vibe.go("https://example.com")
 
-var el = vibe.find("h1")
+var el = vibe.find(new SelectorOptions().css("h1"))
 el.text()
 
 // Execute JavaScript
@@ -346,6 +346,7 @@ import com.vibium.Vibium;
 import com.vibium.Browser;
 import com.vibium.Page;
 import com.vibium.Element;
+import com.vibium.types.SelectorOptions;
 
 public class Example {
     public static void main(String[] args) throws Exception {
@@ -353,7 +354,7 @@ public class Example {
         Page vibe = bro.page();
         vibe.go("https://example.com");
 
-        Element el = vibe.find("h1");
+        Element el = vibe.find(new SelectorOptions().css("h1"));
         System.out.println(el.text());
 
         byte[] shot = vibe.screenshot();
@@ -403,14 +404,14 @@ cd clicker/bin
 ./vibium go https://example.com
 
 # Interact with the current page (no URL needed)
-./vibium find "h1"
+./vibium find css "h1"
 ./vibium click "a"
 ./vibium type "input" "hello"
 ./vibium eval "document.title"
 ./vibium screenshot -o shot.png
 
 # You can also provide a URL to navigate first
-./vibium find https://example.com "a"
+./vibium find https://example.com "the More information link"
 ./vibium screenshot https://example.com -o shot.png
 ```
 

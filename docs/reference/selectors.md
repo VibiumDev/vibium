@@ -115,11 +115,11 @@ Locators combine — `{ role: 'button', text: 'Save' }` requires both. When seve
 
 ## Scope
 
-`--scope` (CLI) and `scope` (clients) restrict a search to a subtree. It accepts pierce combinators too.
+`scope` (clients) restricts a search to a subtree. It accepts pierce combinators too. On the CLI, `map --selector` scopes the map. CLI `find` has no scope option.
 
 ```bash
-vibium find css "a" --scope "#sidebar"
-vibium map --scope "my-card >> .content"
+vibium map --selector "#sidebar"
+vibium map --selector "my-card >> .content"
 ```
 
 Element objects scope automatically — `element.find(...)` searches within that element.

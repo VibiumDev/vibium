@@ -67,7 +67,7 @@ async def main():
     await vibe.context.recording.start()
 
     await vibe.go('https://var.parts')
-    await vibe.find(text='Vibium Battery Pack').click()
+    await (await vibe.find(text='Vibium Battery Pack')).click()
 
     await vibe.context.recording.stop()
     await bro.stop()
@@ -236,7 +236,7 @@ async def main():
     await ctx.recording.start(name='my-session')
 
     await vibe.go('https://var.parts')
-    await vibe.find(text='Vibium Battery Pack').click()
+    await (await vibe.find(text='Vibium Battery Pack')).click()
 
     await ctx.recording.stop()   # saved to my-session-<timestamp>.zip (the name seeds the stem)
 
@@ -355,8 +355,8 @@ ctx.recording.stop()
 await ctx.recording.start()
 
 await vibe.go('https://var.parts')   # recorded as Page.navigate
-await vibe.find(text='Vibium Battery Pack').click()   # recorded as Element.click
-await vibe.find(role='button', text='Add to Cart').click()   # recorded as Element.click
+await (await vibe.find(text='Vibium Battery Pack')).click()   # recorded as Element.click
+await (await vibe.find(role='button', text='Add to Cart')).click()   # recorded as Element.click
 
 await ctx.recording.stop()
 ```
@@ -388,10 +388,12 @@ vibium go https://var.parts
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 
 vibium record stop
 ```
+
+Each `find` prints the ref to use next. Refs count up across finds on a page, so the second `find` here prints `@e2`.
 
 </details>
 
@@ -464,17 +466,17 @@ await ctx.recording.start(name='checkout')
 await vibe.go('https://var.parts')
 
 await ctx.recording.start_group('pick a part')
-await vibe.find(text='Vibium Battery Pack').click()
-await vibe.find(role='button', text='Add to Cart').click()
+await (await vibe.find(text='Vibium Battery Pack')).click()
+await (await vibe.find(role='button', text='Add to Cart')).click()
 await ctx.recording.stop_group()
 
 await ctx.recording.start_group('check out')
-await vibe.find(css='a[href="/cart"]').click()  # the cart icon has no accessible name — CSS fallback
-await vibe.find(role='button', text='Proceed to Checkout').click()
-await vibe.find(label='Unit Designation').fill('VAR-347')
-await vibe.find(label='Service Bay').fill('Bay 14-C')
-await vibe.find(text='Lunar VAR Facility').click()
-await vibe.find(role='button', text='Proceed to Payment').click()
+await (await vibe.find(css='a[href="/cart"]')).click()  # the cart icon has no accessible name — CSS fallback
+await (await vibe.find(role='button', text='Proceed to Checkout')).click()
+await (await vibe.find(label='Unit Designation')).fill('VAR-347')
+await (await vibe.find(label='Service Bay')).fill('Bay 14-C')
+await (await vibe.find(text='Lunar VAR Facility')).click()
+await (await vibe.find(role='button', text='Proceed to Payment')).click()
 await ctx.recording.stop_group()
 
 await ctx.recording.stop()  # checkout-<timestamp>.zip
@@ -519,21 +521,21 @@ vibium record group start 'pick a part'
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 vibium record group stop
 
 vibium record group start 'check out'
 vibium click 'a[href="/cart"]'   # the cart icon has no accessible name — CSS fallback
 vibium find role button --name "Proceed to Checkout"
-vibium click @e1
+vibium click @e3
 vibium find label "Unit Designation"
-vibium fill @e1 "VAR-347"
+vibium fill @e4 "VAR-347"
 vibium find label "Service Bay"
-vibium fill @e1 "Bay 14-C"
+vibium fill @e5 "Bay 14-C"
 vibium find text "Lunar VAR Facility"
-vibium click @e1
+vibium click @e6
 vibium find role button --name "Proceed to Payment"
-vibium click @e1
+vibium click @e7
 vibium record group stop
 
 vibium record stop
@@ -611,7 +613,7 @@ await ctx.recording.start()
 
 # First chunk: catalog
 await vibe.go('https://var.parts')
-await vibe.find(text='Vibium Battery Pack').click()
+await (await vibe.find(text='Vibium Battery Pack')).click()
 await ctx.recording.stop_chunk(path='catalog.zip')
 
 # Second chunk: about
@@ -761,12 +763,12 @@ vibium go https://var.parts
 vibium find text "Vibium Battery Pack"
 vibium click @e1
 vibium find role button --name "Add to Cart"
-vibium click @e1
+vibium click @e2
 
 # Action groups
 vibium record group start 'pick a part'
 vibium find text "Vibium Battery Pack"
-vibium click @e1
+vibium click @e3
 vibium record group stop
 
 # Chunks
@@ -801,6 +803,7 @@ vibium record stop
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `path` | string | start's `path` | Overrides the path declared at start |
+| `upload` | boolean \| string | — | `true` also uploads the zip to the Record Store of the connected station; a URL names another station |
 
 `stop()` returns a result object: `path`, `steps`, `durationMs`, `videos` (or `videoUnavailable`), and — for bytes-only recordings — the zip itself (`bytes` in JS, `data` in Python). `stopChunk()` returns the same shape; without a `path` the chunk comes back inline.
 
@@ -817,6 +820,8 @@ vibium record stop
 | `record start` | `--video-fps N` | Video frame rate |
 | `record start` | `-o, --output PATH` | Where the zip lands at stop (default: `record-<timestamp>.zip`) |
 | `record stop` | `-o, --output PATH` | Overrides the path declared at start |
+| `record stop` | `--upload` | Also upload the zip to the Record Store of the station the session is connected through |
+| `record stop` | `--upload-to URL` | Upload to this station instead, with the API key from `VIBIUM_CONNECT_API_KEY` |
 
 ### Java
 

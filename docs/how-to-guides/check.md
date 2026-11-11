@@ -20,8 +20,8 @@ It lists missing settings and fixes, then tests the configured provider's
 model and tool support. READY means those checks passed. It makes up to two
 small model requests (API charges may apply) and leaves the browser alone.
 Use `--json` for structured checks; exit 0 means ready and exit 1 means a setup
-problem. If your settings are in an environment file, load it first—Vibium does
-not load files automatically.
+problem. Vibium loads empty AI variables from `~/.config/vibium/ai.env` on each
+command. Settings kept in any other file MUST be loaded into the shell first.
 
 ## Check the current browser
 

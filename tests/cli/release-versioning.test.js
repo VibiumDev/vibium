@@ -102,7 +102,7 @@ describe('cross-ecosystem version writer', () => {
   test('repins Java coordinates in the docs on a stable release only', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-docs-'));
     // Only the docs matter here; the writer skips a file it is not given.
-    const docs = ['README.md', 'docs/tutorials/getting-started-java.md'];
+    const docs = ['README.md', 'docs/tutorials/getting-started-java.md', 'docs/tutorials/remote-browser.md'];
     const before = [
       "implementation 'com.vibium:vibium:26.3.18'",
       '<artifactId>my-first-bot</artifactId>',

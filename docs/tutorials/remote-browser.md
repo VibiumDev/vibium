@@ -154,7 +154,7 @@ page = await bro.page()
 
 await page.go("https://example.com")
 print(await page.title())          # "Example Domain"
-print(await page.find(css="h1").text())    # "Example Domain"
+print(await (await page.find(css="h1")).text())    # "Example Domain"
 
 await bro.stop()
 ```
@@ -177,7 +177,7 @@ bro.stop()
 ### Java
 
 ```groovy
-implementation 'com.vibium:vibium:26.5.31'
+implementation 'com.vibium:vibium:26.8.21'
 ```
 
 ```java
@@ -205,11 +205,11 @@ The env-var fallback makes jshell a first-class way to drive a remote
 browser interactively — no build file, no `StartOptions`:
 
 ```bash
-curl -sO https://repo1.maven.org/maven2/com/vibium/vibium/26.5.31/vibium-26.5.31.jar
+curl -sO https://repo1.maven.org/maven2/com/vibium/vibium/26.8.21/vibium-26.8.21.jar
 curl -sO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
 
 VIBIUM_CONNECT_URL=ws://your-server:9515/session \
-  jshell --class-path vibium-26.5.31.jar:gson-2.11.0.jar
+  jshell --class-path vibium-26.8.21.jar:gson-2.11.0.jar
 ```
 
 ```text
@@ -236,7 +236,8 @@ export VIBIUM_CONNECT_API_KEY=my-token
 vibium go https://example.com
 ```
 
-Or pass headers explicitly with the daemon:
+Or pass headers explicitly with the daemon. A flag value is visible to other
+users in the process list, so prefer `VIBIUM_CONNECT_HEADERS` for secrets:
 
 ```bash
 vibium daemon start --connect wss://cloud.example.com/session \
@@ -294,6 +295,8 @@ Browser bro = Vibium.start(new StartOptions()
 |----------|-------------|
 | `VIBIUM_CONNECT_URL` | Remote BiDi WebSocket endpoint (e.g. `ws://host:9515/session`) |
 | `VIBIUM_CONNECT_API_KEY` | Sent as `Authorization: Bearer <key>` |
+| `VIBIUM_CONNECT_HEADERS` | Extra connect headers, one `Key: value` per line |
+| `VIBIUM_CONNECT_CAPS` | Extra `alwaysMatch` capabilities for classic WebDriver endpoints (a JSON object) |
 
 These work everywhere — CLI commands, daemon auto-start, the MCP server,
 and the JS, Python, and Java client libraries.

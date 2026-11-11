@@ -207,6 +207,7 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 ### Recording
 - `vibium record start` — start recording (`--screenshots`, `--snapshots`, `--name`, `-o path` — defaults to a timestamped `record-<date>.zip`, so reruns never overwrite)
 - `vibium record stop` — stop recording and save ZIP (`-o path` overrides the start path; the output names the saved file). `--upload` also sends the ZIP to the Record Store of the station the session is connected through and prints its URL (`--upload-to URL` names another station); it needs the API key the connection was made with
+- `vibium codegen -i record.zip` — print a JavaScript script that replays a recording (`-l python`, `-o file`); reads the zip offline, no browser needed
 
 Recordings can include a video track of the session (Firefox 154+, local
 browsers). By default video is recorded when the engine supports it and
@@ -307,19 +308,20 @@ vibium find css "button.primary"       # exact CSS, never a model
 vibium find image thumbnail.png --all --json   # every copy, with bounding boxes
 vibium tap @e2                         # tap a ref on a touchscreen
 ```
-A bare string is a description, not a selector: `vibium find h1` looks for something named "h1". Use `find css h1`.
+A bare string is a description, not a selector: `vibium find h1` is refused because it reads like CSS. Use `find css h1`.
 
 ### Semantic find (no CSS selectors needed)
 ```sh
 vibium find text "Sign In"             # → @e1 [button] "Sign In"
-vibium find label "Email"              # → @e1 [input] placeholder="Email"
-vibium click @e1                       # Click the found element
-vibium find placeholder "Search..."    # → @e1 [input] placeholder="Search..."
-vibium find testid "submit-btn"        # → @e1 [button] "Submit"
-vibium find alt "Company logo"         # → @e1 [img] alt="Company logo"
-vibium find title "Close"              # → @e1 [button] title="Close"
-vibium find xpath "//a[@href='/about']"  # → @e1 [a] "About"
+vibium find label "Email"              # → @e2 [input] placeholder="Email"
+vibium click @e2                       # Click the found element
+vibium find placeholder "Search..."    # → @e3 [input] placeholder="Search..."
+vibium find testid "submit-btn"        # → @e4 [button] "Submit"
+vibium find alt "Company logo"         # → @e5 [img] alt="Company logo"
+vibium find title "Close"              # → @e6 [button] title="Close"
+vibium find xpath "//a[@href='/about']"  # → @e7 [a] "About"
 ```
+Refs count up across `find` and `map` calls on a page, and an element found again keeps its ref. Use the ref each `find` prints, not `@e1`. `go`, `back`, `forward` and `reload` start the numbering over.
 
 ### Authentication with state persistence
 ```sh
@@ -443,7 +445,7 @@ All wait commands accept `--timeout <ms>` (default varies by command).
 
 ## Ref Lifecycle
 
-Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
+Refs (`@e1`, `@e2`) from `map` or `find` are tied to their element. If the element is gone, or the ref now reaches another element, the ref fails with `@eN is stale: … run find again`. If the element is gone and nothing took its place, `is visible`, `count` and `wait --state hidden` answer as for any missing element. The check is best effort. An element reused with new content keeps its ref, and a check that takes over 2s is skipped. Always re-map after:
 - Clicking links or buttons that navigate
 - Form submissions
 - Dynamic content loading (dropdowns, modals)
@@ -458,6 +460,7 @@ Refs (`@e1`, `@e2`) are invalidated when the page changes. Always re-map after:
 | `--json` | Output as JSON |
 | `-v, --verbose` | Debug logging |
 | `--session <name>` | Isolated daemon + browser for concurrent use (env: `VIBIUM_SESSION`) |
+| `--user-data-dir <dir>` | Persistent browser profile, created if missing and reused across runs (default: a temp profile wiped on close) |
 
 ## Tips
 

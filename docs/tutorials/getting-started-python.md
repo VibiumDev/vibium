@@ -136,7 +136,7 @@ Check your folder - there's now a `screenshot.png` file!
 | `bro.page()` | Gets the default page (tab) |
 | `vibe.go(url)` | Navigates to a URL |
 | `vibe.screenshot()` | Captures the page as PNG bytes |
-| `vibe.find(selector)` | Finds an element by CSS selector |
+| `vibe.find(css="a")` | Finds an element by CSS selector |
 | `link.text()` | Gets the element's text content |
 | `link.click()` | Clicks the element |
 | `bro.stop()` | Closes the browser |
