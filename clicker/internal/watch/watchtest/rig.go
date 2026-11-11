@@ -56,9 +56,17 @@ type Rig struct {
 	// Refuse, when set, is the error the rig answers a hello with.
 	Refuse string
 
-	mu     sync.Mutex
-	grants []string
-	auth   []string
+	mu      sync.Mutex
+	grants  []string
+	auth    []string
+	control []string
+}
+
+// Control reports what viewers have said on the control channel.
+func (r *Rig) Control() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.control...)
 }
 
 // Viewers reports, per viewer so far, the grant in its hello and the
@@ -101,6 +109,15 @@ func (r *Rig) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if _, err := pc.AddTrack(track); err != nil {
 		return
 	}
+	control, err := pc.CreateDataChannel("control", nil)
+	if err != nil {
+		return
+	}
+	control.OnMessage(func(m webrtc.DataChannelMessage) {
+		r.mu.Lock()
+		r.control = append(r.control, string(m.Data))
+		r.mu.Unlock()
+	})
 	var wmu sync.Mutex
 	send := func(m message) {
 		wmu.Lock()

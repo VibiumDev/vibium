@@ -67,6 +67,9 @@ vibium record stop -o phone.zip
   without video, and the stop result says why. `--video` makes that an error
   at start.
 - `--video=false` records no video.
+- Vibium tells the Roadie that it is recording the stream. A Roadie that
+  records its own holds then leaves the video and the sound to Vibium's
+  recording, so one session is not filmed twice.
 - Expect about 3 MB a minute for a still screen and 8 MB a minute for one
   that moves.
 

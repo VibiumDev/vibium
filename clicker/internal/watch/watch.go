@@ -210,6 +210,13 @@ func (r *Recording) connect(way *way) error {
 			r.send(signal{Type: "candidate", Candidate: &init})
 		}
 	})
+	// A Roadie that records its holds leaves the video to a viewer that
+	// says it keeps the stream.
+	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+		if dc.Label() == "control" {
+			dc.OnOpen(func() { dc.SendText(`{"type":"recording"}`) })
+		}
+	})
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
 			r.fail("the video stream ended")

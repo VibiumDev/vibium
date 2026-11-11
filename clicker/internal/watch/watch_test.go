@@ -64,6 +64,9 @@ func TestRecordsARoadiesStream(t *testing.T) {
 	if grants, auth := rig.Viewers(); len(auth) != 1 || auth[0] != "Bearer local" || grants[0] != "" {
 		t.Errorf("hello with grant %q and %q", grants, auth)
 	}
+	if said := rig.Control(); len(said) != 1 || said[0] != `{"type":"recording"}` {
+		t.Errorf("on the control channel: %q; want one recording message", said)
+	}
 
 	// Where ffprobe is installed, a second opinion on the file.
 	t.Run("ffprobe", func(t *testing.T) {
