@@ -1328,8 +1328,424 @@ Elements without semantic roles (plain divs, spans) appear as "generic" in the t
 - Method name is `a11y_tree()` (snake_case), not `a11yTree()`
 - The tree is a Python dict, not a JavaScript object — access fields with `tree["role"]`, not `tree.role`
 
+## Java
+Learn how to inspect page structure with `a11yTree()` and use the results to find and interact with elements.
+
+---
+
+## What You'll Learn
+
+- How to get a page's accessibility tree
+- How to use tree output to build selectors for `find()`
+- Filtering with `everything` and scoping with `root`
+- When to use semantic selectors vs CSS selectors
+
+---
+
+## Getting the Tree
+
+`a11yTree()` returns the page's accessibility tree: a structured view of every element as assistive technology sees it.
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.A11yNode;
+
+public class Tree {
+    public static void main(String[] args) {
+        var bro = Vibium.start();
+        var vibe = bro.page();
+        vibe.go("https://example.com");
+
+        A11yNode tree = vibe.a11yTree();
+        System.out.println(tree.role()); // WebArea
+
+        bro.stop();
+    }
+}
+```
+
+The tree is an `A11yNode`. Read it with accessor methods such as `role()`, `name()`, and `children()`. This helper prints one line per node:
+
+```java
+static void printTree(A11yNode node, String indent) {
+    StringBuilder line = new StringBuilder(indent + node.role());
+    if (node.name() != null && !node.name().isEmpty()) line.append(" name=\"").append(node.name()).append('"');
+    if (node.level() != null) line.append(" level=").append(node.level());
+    if (node.checked() != null) line.append(" checked=").append(node.checked());
+    System.out.println(line);
+    if (node.children() != null) {
+        for (A11yNode child : node.children()) {
+            printTree(child, indent + "  ");
+        }
+    }
+}
+```
+
+For a login form it prints:
+
+```
+WebArea name="Login"
+  heading name="Login" level=1
+  textbox name="Username"
+  textbox name="Password"
+  checkbox name="Remember me" checked=false
+  button name="Sign in"
+```
+
+Each node has a `role()` (what the element is). Nodes with explicit labels (`aria-label`, `<label for>`, etc.) also have a `name()`. Some nodes have state such as `checked()`, `disabled()`, or `expanded()`. An accessor returns `null` when the node does not have that property, and `children()` is `null` for a node with no children.
+
+Two helper methods used throughout this tutorial:
+
+```java
+static A11yNode findByRole(A11yNode node, String role) {
+    if (role.equals(node.role())) {
+        return node;
+    }
+    if (node.children() != null) {
+        for (A11yNode child : node.children()) {
+            A11yNode found = findByRole(child, role);
+            if (found != null) {
+                return found;
+            }
+        }
+    }
+    return null;
+}
+
+static List<String> collectRoles(A11yNode node) {
+    List<String> roles = new ArrayList<>();
+    roles.add(node.role());
+    if (node.children() != null) {
+        for (A11yNode child : node.children()) {
+            roles.addAll(collectRoles(child));
+        }
+    }
+    return roles;
+}
+```
+
+The examples below assume these imports:
+
+```java
+import com.vibium.types.A11yNode;
+import com.vibium.types.A11yOptions;
+import com.vibium.types.SelectorOptions;
+import java.util.ArrayList;
+import java.util.List;
+```
+
+```java
+vibe.setContent("""
+    <h1>Welcome</h1>
+    <label for="user">Username</label>
+    <input id="user" type="text" />
+    <button aria-label="Sign in">Log In</button>
+    """);
+
+A11yNode tree = vibe.a11yTree();
+
+tree.role();          // "WebArea"
+collectRoles(tree);   // [WebArea, heading, textbox, button]
+
+findByRole(tree, "textbox").name();  // "Username"
+findByRole(tree, "button").name();   // "Sign in"
+```
+
+---
+
+## From Tree to Action
+
+The accessibility tree tells you what's on the page. You can then use `find()` to locate and interact with those elements.
+
+### Semantic selectors
+
+`find()` takes a `SelectorOptions` whose builder methods correspond to what you see in the tree:
+
+```java
+// Tree shows: button name="Sign in"
+// The name comes from aria-label, so use label:
+vibe.find(new SelectorOptions().role("button").label("Sign in")).click();
+
+// For buttons/links where the name comes from text content, use text:
+vibe.find(new SelectorOptions().role("button").text("Submit")).click();
+```
+
+**Which method maps to the tree's `name()`?** It depends on the source:
+
+| Source of the name | SelectorOptions method |
+|---|---|
+| `aria-label` attribute | `label` |
+| `aria-labelledby` reference | `label` |
+| `<label for="id">` element | `label` |
+| Visible text content | `text` |
+| `alt` attribute (images) | `alt` |
+| `placeholder` attribute | `placeholder` |
+| `title` attribute | `title` |
+
+```java
+vibe.setContent("""
+    <div id="result">not clicked</div>
+    <button aria-label="Sign in" onclick="document.getElementById('result').textContent='signed in'">Log In</button>
+    """);
+
+vibe.find(new SelectorOptions().role("button").label("Sign in")).click();
+
+vibe.find(new SelectorOptions().css("#result")).text();  // "signed in"
+```
+
+```java
+vibe.setContent("""
+    <div id="result">waiting</div>
+    <button onclick="document.getElementById('result').textContent='done'">Submit</button>
+    """);
+
+vibe.find(new SelectorOptions().role("button").text("Submit")).click();
+
+vibe.find(new SelectorOptions().css("#result")).text();  // "done"
+```
+
+### CSS selectors
+
+CSS selectors always work for both finding and reading element state:
+
+```java
+vibe.setContent("""
+    <label for="user">Username</label>
+    <input id="user" type="text" />
+    """);
+
+vibe.find(new SelectorOptions().css("#user")).fill("alice");
+
+vibe.find(new SelectorOptions().css("#user")).value();  // "alice"
+```
+
+```java
+vibe.setContent("<h1>Welcome</h1>");
+
+vibe.find(new SelectorOptions().css("h1")).text();  // "Welcome"
+```
+
+### Using tree data in code
+
+You can read the tree programmatically and use its data to drive actions. This is useful for scripts and AI agents that discover page structure at runtime.
+
+```java
+vibe.setContent("""
+    <div id="result">not clicked</div>
+    <button aria-label="Sign in" onclick="document.getElementById('result').textContent='signed in'">Log In</button>
+    """);
+
+A11yNode btn = findByRole(vibe.a11yTree(), "button");
+btn.name();  // "Sign in"
+
+vibe.find(new SelectorOptions().role("button").label(btn.name())).click();
+vibe.find(new SelectorOptions().css("#result")).text();  // "signed in"
+```
+
+The tree also exposes element state. `checked()` returns a string: `"true"`, `"false"`, or `"mixed"`. You can use it to decide whether to click:
+
+```java
+vibe.setContent("<input type=\"checkbox\" aria-label=\"Remember me\" />");
+
+A11yNode checkbox = findByRole(vibe.a11yTree(), "checkbox");
+checkbox.checked();  // "false"
+
+if (!"true".equals(checkbox.checked())) {
+    vibe.find(new SelectorOptions().role("checkbox").label(checkbox.name())).click();
+}
+
+findByRole(vibe.a11yTree(), "checkbox").checked();  // "true"
+```
+
+---
+
+## Scoping with `root`
+
+On complex pages, the full tree can be large. Use `root` to inspect just one section:
+
+```java
+vibe.setContent("""
+    <h1>Title</h1>
+    <nav><a href="/a">Link A</a></nav>
+    """);
+
+A11yNode navTree = vibe.a11yTree(new A11yOptions().root("nav"));
+
+collectRoles(navTree);  // [WebArea, link], no heading
+```
+
+`root` accepts a CSS selector. The tree will only include that element and its descendants.
+
+---
+
+## Filtering with `everything`
+
+By default, `a11yTree()` hides generic container nodes (divs, spans with no semantic role). This keeps the output focused on meaningful elements.
+
+Set `everything(true)` to see all nodes:
+
+```java
+vibe.setContent("<div><span>hello</span></div>");
+
+A11yNode fullTree = vibe.a11yTree(new A11yOptions().everything(true));
+collectRoles(fullTree).contains("generic");          // true
+collectRoles(vibe.a11yTree()).contains("generic");   // false
+```
+
+**When to use `everything(true)`:**
+- Debugging layout issues where you need to see the full DOM structure
+- When elements you expect aren't appearing in the default tree
+
+**When to keep the default:**
+- Most of the time. The filtered tree is much easier to read
+- When looking for interactive elements (buttons, links, inputs)
+
+---
+
+## Practical Workflow
+
+Here's the full pattern: inspect the tree, then use what you learn to find and interact with elements.
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.A11yNode;
+import com.vibium.types.SelectorOptions;
+
+public class Workflow {
+    static A11yNode findByRole(A11yNode node, String role) {
+        if (role.equals(node.role())) {
+            return node;
+        }
+        if (node.children() != null) {
+            for (A11yNode child : node.children()) {
+                A11yNode found = findByRole(child, role);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static void main(String[] args) {
+        var bro = Vibium.start();
+        var vibe = bro.page();
+
+        vibe.setContent("""
+            <h1>Welcome</h1>
+            <label for="user">Username</label>
+            <input id="user" type="text" />
+            <button aria-label="Sign in">Log In</button>
+            """);
+
+        // 1. Inspect the tree to understand the page
+        A11yNode tree = vibe.a11yTree();
+
+        // 2. Find the button in the tree and read its name
+        A11yNode btn = findByRole(tree, "button");
+        System.out.println("Found: " + btn.role() + " \"" + btn.name() + "\"");  // Found: button "Sign in"
+
+        // 3. Fill inputs using CSS selectors
+        vibe.find(new SelectorOptions().css("#user")).fill("alice");
+
+        // 4. Click using the name discovered from the tree
+        vibe.find(new SelectorOptions().role("button").label(btn.name())).click();
+
+        // 5. Read state using CSS selectors
+        System.out.println("Heading: " + vibe.find(new SelectorOptions().css("h1")).text());  // Heading: Welcome
+
+        bro.stop();
+    }
+}
+```
+
+---
+
+## Reference
+
+### A11yNode Accessors
+
+`a11yTree()` returns an `A11yNode`. Each accessor returns `null` when the node does not have that property.
+
+| Accessor | Type | Description |
+|---|---|---|
+| `role()` | String | ARIA role (e.g. "button", "link", "heading") |
+| `name()` | String | Accessible name (from aria-label, `<label>`, etc.) |
+| `value()` | String | Current value (inputs, sliders) |
+| `description()` | String | Accessible description |
+| `children()` | List\<A11yNode\> | Child nodes, or `null` when there are none |
+| `disabled()` | Boolean | Whether the element is disabled |
+| `checked()` | String | Checkbox/radio state: "true", "false", or "mixed" |
+| `pressed()` | Boolean | Toggle button state |
+| `selected()` | Boolean | Whether the element is selected |
+| `expanded()` | Boolean | Whether a collapsible is open |
+| `focused()` | Boolean | Whether the element has focus |
+| `multiselectable()` | Boolean | Whether more than one item can be selected |
+| `level()` | Integer | Heading level (1-6) |
+
+### SelectorOptions Methods
+
+| Method | What it matches |
+|---|---|
+| `role` | ARIA role |
+| `text` | Visible text content (innerText) |
+| `label` | Explicit label: `aria-label`, `aria-labelledby`, `<label for>` |
+| `placeholder` | Placeholder attribute |
+| `alt` | Alt attribute (images) |
+| `title` | Title attribute |
+| `testid` | `data-testid` attribute |
+| `xpath` | XPath expression |
+| `near` | CSS selector of a nearby element |
+| `css` | CSS selector |
+| `timeout` | Max wait time in ms |
+
+### CSS vs Semantic Selectors
+
+| Use CSS selectors when... | Use semantic selectors when... |
+|---|---|
+| Reading element state (text, value, etc.) | Interacting (click, fill, check) |
+| You know the exact HTML structure | Finding by role and label (like a user would) |
+| Targeting by class name or ID | The HTML structure might change |
+
+---
+
+## Troubleshooting
+
+### "Element not found" with label
+
+`label` only matches explicit labelling mechanisms (`aria-label`, `aria-labelledby`, `<label for>`). It does **not** match text content. If the element's name comes from its visible text (buttons, links, headings), use `text` instead:
+
+```java
+// WRONG: "Submit" comes from text content, not aria-label.
+// Throws ElementNotFoundException.
+vibe.find(new SelectorOptions().role("button").label("Submit"));
+
+// RIGHT: use text for text-content-derived names
+vibe.find(new SelectorOptions().role("button").text("Submit"));
+```
+
+### Tree is too large
+
+Use `root` to scope to a section:
+
+```java
+A11yNode navTree = vibe.a11yTree(new A11yOptions().root("nav"));
+```
+
+### Everything shows as "generic"
+
+Elements without semantic roles (plain divs, spans) appear as "generic" in the tree. This usually means the page lacks proper semantic HTML or ARIA attributes.
+
+### Java-specific notes
+
+- Options are builder objects: `new A11yOptions().root("nav")`, `new SelectorOptions().role("button")`
+- The tree is an `A11yNode`. Read fields with accessor methods (`tree.role()`), not field access
+- `checked()` is a String, so compare with `"true".equals(node.checked())`
+- `children()` is `null` for a leaf node, so check before iterating
+
 ## Next Steps
 
 - [Getting Started with JavaScript](../tutorials/getting-started-js.md)
 - [Getting Started with Python](../tutorials/getting-started-python.md)
+- [Getting Started with Java](../tutorials/getting-started-java.md)
 - [Downloads](downloads.md)
