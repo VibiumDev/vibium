@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/jpeg"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/vibium/clicker/internal/ai"
@@ -34,8 +35,24 @@ type screenCapture struct {
 	state          *PageState
 }
 
-func captureScreen(s Session, context string) (*screenCapture, error) {
+// captureTries is how many times a screenshot is asked for when the
+// browser has no frame to give. Chrome says so now and then under load, and
+// has a frame a moment later.
+const captureTries = 3
+
+// screenshotOfPage takes a screenshot, asking again when the browser had
+// no frame.
+func screenshotOfPage(s Session, context string) (string, error) {
 	b64, err := Screenshot(s, context, false)
+	for try := 1; err != nil && try < captureTries && strings.Contains(err.Error(), "Unable to capture screenshot"); try++ {
+		time.Sleep(150 * time.Millisecond)
+		b64, err = Screenshot(s, context, false)
+	}
+	return b64, err
+}
+
+func captureScreen(s Session, context string) (*screenCapture, error) {
+	b64, err := screenshotOfPage(s, context)
 	if err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
 	}
