@@ -66,6 +66,10 @@ func newSayCmd() *cobra.Command {
   echo "What time is it?" | vibium say - --target local
   # Reads the text from stdin.
 
+  VIBIUM_PIPER_URL=http://127.0.0.1:5000 vibium say "Come here, Watson"
+  # Said "Come here, Watson" (1.2 s, piper-server)
+  # Speaks through a Piper server you started, which keeps its voice loaded.
+
   vibium say -- "-5 degrees"
   # Text that starts with a dash goes after --.
 

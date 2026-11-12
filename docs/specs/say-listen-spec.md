@@ -759,6 +759,29 @@ Notes:
 - For `sherpa-onnx`, `{model}` is a model directory. The preset finds the
   encoder, decoder and joiner files in it.
 
+### A Piper server
+
+The `piper` preset starts Piper for every phrase, and loading the voice
+is most of that time. Piper also ships an HTTP server that keeps a voice
+loaded: `python3 -m piper.http_server -m <voice.onnx>`. The
+`piper-server` provider speaks through one.
+
+- The user starts the server. Vibium MUST NOT start, install or bundle
+  it: Piper is a program of the user's own, under its own license.
+- `VIBIUM_PIPER_URL` names the server. Without it the address is Piper's
+  default, `http://127.0.0.1:5000`.
+- A phrase is one `POST <url>/synthesize` with `{"text": …}`. The answer
+  is a WAV.
+- A `voice` is sent as the server's `voice`, which is a voice's name in
+  the server's data directory. With none the server's loaded voice speaks.
+- A `speed` is sent as Piper's `length_scale`, which is its inverse.
+- The cache key holds the server's address and, when the call names no
+  voice, the loaded voice's name from `GET <url>/info`. A server started
+  again with another voice MUST NOT replay the old one's audio.
+- A server that does not answer, answers an error, or sends no WAV fails
+  the call with `engine_failed`.
+- It speaks only. `listen` MUST NOT resolve to it.
+
 Defaults for each preset come from [Measurements](#measurements-on-a-raspberry-pi-4).
 
 ### Choosing a provider
@@ -768,7 +791,8 @@ Each direction resolves on its own.
 An explicit choice always wins: the call's `provider` option or
 `--provider` flag, then `VIBIUM_SAY_PROVIDER` or
 `VIBIUM_LISTEN_PROVIDER`, then a `VIBIUM_SAY_COMMAND` or
-`VIBIUM_LISTEN_COMMAND` on its own.
+`VIBIUM_LISTEN_COMMAND` on its own, then for `say` a `VIBIUM_PIPER_URL`
+on its own.
 
 With nothing chosen, the default goes through three levels. It takes the
 first one that exists on the machine.
@@ -823,6 +847,7 @@ gains the variables below.
 | `VIBIUM_SAY_MODEL` | TTS model |
 | `VIBIUM_SAY_VOICE` | Voice |
 | `VIBIUM_SAY_COMMAND` | Command line for the `command` provider or a preset |
+| `VIBIUM_PIPER_URL` | Address of a running Piper server, for the `piper-server` provider |
 | `VIBIUM_LISTEN_PROVIDER` | STT provider or preset |
 | `VIBIUM_LISTEN_MODEL` | STT model |
 | `VIBIUM_LISTEN_COMMAND` | Command line for the `command` provider or a preset |
@@ -868,7 +893,7 @@ with `--json` the envelope's `error` starts with the code. SDKs raise
 |------|------|------------------|
 | `not_configured` | No provider resolves for this direction | How to set a hosted key, and which engine to install |
 | `engine_not_installed` | A preset's or command's program is not on `PATH` | The program's name and the install hint |
-| `engine_failed` | The command exited non-zero, timed out, or wrote no usable output | The exit status and the end of stderr |
+| `engine_failed` | The command exited non-zero, timed out, or wrote no usable output, or a Piper server did not answer with a WAV | The exit status and the end of stderr, or the server's address and how to start one |
 | `no_api_key` | A hosted provider's key variable is empty | The variable's name |
 | `provider_error` | The hosted API answered with an error | The HTTP status and the provider's message |
 | `no_audio` | The target cannot play or capture: the session has no audio, no page has the microphone open, no local program, an unreadable file, or no samples arrived within 3 seconds | Which of these it was, and `--target local` when a session was the default |
@@ -1339,8 +1364,13 @@ faster. That was not measured. The ranking between engines holds either way.
 
 What this shows:
 
-- **No local engine is real time here.** Piper needs 12 to 15 seconds
-  for a short phrase. More than half of that is loading the model.
+- **No local engine is real time here from a cold start.** Piper needs
+  12 to 15 seconds for a short phrase. More than half of that is loading
+  the model.
+- **A loaded voice is faster than real time.** Through Piper's own
+  server, with `danny-low` loaded, `say` took 0.5 to 1.0 s for phrases of
+  1.2 to 1.9 s. Loading took 8 s, once. Medium voices took about a third
+  longer than low ones.
 - **Piper is faster than Kitten TTS at every size.** Kitten's smallest
   model synthesizes at half Piper's speed. Its largest is four times slower.
 - **Low and medium Piper voices cost the same from a cold start.** Low
