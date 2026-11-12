@@ -109,7 +109,12 @@ const browserAudioScript = `(channel) => {
     connect.call(src, micOut);
     const at = micCtx.currentTime + 0.05;
     const start = clockAt(micCtx, at);
-    await new Promise((resolve) => { src.onended = resolve; src.start(at); });
+    const ended = new Promise((resolve) => { src.onended = () => resolve(true); src.start(at); });
+    // A context whose clock stands still never ends the clip.
+    const late = new Promise((resolve) => setTimeout(() => resolve(false), buf.duration * 1000 + 2000));
+    if (!(await Promise.race([ended, late])) && micCtx.currentTime <= at) {
+      throw new Error("the browser's audio clock is not running");
+    }
     return JSON.stringify({ start, end: start + buf.duration * 1000 });
   };
 
