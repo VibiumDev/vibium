@@ -9,6 +9,8 @@ Learn the difference between the browser window and the viewport, and how to con
 - **Window** = the actual OS browser window (title bar, toolbar, and all). Controlled by `page.setWindow()`.
 - **Viewport** = the CSS content area inside the window where web pages render. Controlled by `page.setViewport()`.
 
+Python uses snake_case for the same calls: `set_window()` and `set_viewport()`.
+
 When you resize the window, the viewport changes too. But `setViewport()` only changes the content area — the window stays the same size and scrollbars may appear.
 
 ---
@@ -33,6 +35,37 @@ async function main() {
 }
 
 main();
+```
+
+```python
+from vibium import browser
+
+b = browser.start()
+page = b.page()
+
+# Simulate a mobile screen
+page.set_viewport({"width": 375, "height": 812})
+print(page.viewport())  # {'height': 812, 'width': 375}
+
+b.stop()
+```
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.ViewportSize;
+
+public class Viewport {
+    public static void main(String[] args) {
+        var b = Vibium.start();
+        var page = b.page();
+
+        // Simulate a mobile screen
+        page.setViewport(new ViewportSize(375, 812));
+        System.out.println(page.viewport()); // ViewportSize{width=375, height=812}
+
+        b.stop();
+    }
+}
 ```
 
 ---
@@ -68,6 +101,56 @@ async function main() {
 main();
 ```
 
+```python
+from vibium import browser
+
+b = browser.start()
+page = b.page()
+
+# Resize the window
+page.set_window(width=1280, height=720)
+
+# Move the window to the top-left corner
+page.set_window(x=0, y=0)
+
+# Resize and move at the same time
+page.set_window(width=800, height=600, x=100, y=100)
+
+# Read the current window state
+print(page.window())
+# {'height': 600, 'state': 'normal', 'width': 800, 'x': 100, 'y': 100}
+
+b.stop()
+```
+
+```java
+import com.vibium.Vibium;
+import com.vibium.types.WindowOptions;
+
+public class Window {
+    public static void main(String[] args) {
+        var b = Vibium.start();
+        var page = b.page();
+
+        // Resize the window
+        page.setWindow(new WindowOptions().width(1280).height(720));
+
+        // Move the window to the top-left corner
+        page.setWindow(new WindowOptions().x(0).y(0));
+
+        // Resize and move at the same time
+        page.setWindow(new WindowOptions().width(800).height(600).x(100).y(100));
+
+        // Read the current window state
+        var win = page.window();
+        System.out.println(win.state() + " " + win.width() + "x" + win.height());
+        // normal 800x600
+
+        b.stop();
+    }
+}
+```
+
 ---
 
 ## Window States
@@ -95,6 +178,36 @@ await page.setWindow({ state: 'fullscreen' });
 await page.setWindow({ state: 'normal', width: 1024, height: 768 });
 ```
 
+```python
+# Maximize the window
+page.set_window(state="maximized")
+
+# Minimize it
+page.set_window(state="minimized")
+
+# Go fullscreen
+page.set_window(state="fullscreen")
+
+# Restore to a specific size
+page.set_window(state="normal", width=1024, height=768)
+```
+
+```java
+// Maximize the window
+page.setWindow(new WindowOptions().state("maximized"));
+
+// Minimize it
+page.setWindow(new WindowOptions().state("minimized"));
+
+// Go fullscreen
+page.setWindow(new WindowOptions().state("fullscreen"));
+
+// Restore to a specific size
+page.setWindow(new WindowOptions().state("normal").width(1024).height(768));
+```
+
+A minimized window MUST be restored to `normal` before it can go fullscreen. The browser rejects the direct change.
+
 ---
 
 ## When to Use Which
@@ -121,4 +234,26 @@ const vp = await page.viewport();  // { width, height }
 await page.setWindow({ width: 1280, height: 720, x: 0, y: 0 });
 await page.setWindow({ state: 'maximized' });
 const win = await page.window();   // { state, width, height, x, y }
+```
+
+```python
+# Viewport (CSS content area)
+page.set_viewport({"width": 1280, "height": 720})
+vp = page.viewport()  # {"width", "height"}
+
+# Window (OS browser window)
+page.set_window(width=1280, height=720, x=0, y=0)
+page.set_window(state="maximized")
+win = page.window()   # {"state", "width", "height", "x", "y"}
+```
+
+```java
+// Viewport (CSS content area)
+page.setViewport(new ViewportSize(1280, 720));
+ViewportSize vp = page.viewport();  // width(), height()
+
+// Window (OS browser window)
+page.setWindow(new WindowOptions().width(1280).height(720).x(0).y(0));
+page.setWindow(new WindowOptions().state("maximized"));
+WindowInfo win = page.window();     // state(), width(), height(), x(), y()
 ```

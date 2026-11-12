@@ -22,6 +22,14 @@ vibium click "nav a:nth-child(2)"
 await vibe.find({ css: 'button.primary' });
 ```
 
+```python
+vibe.find(css="button.primary")
+```
+
+```java
+vibe.find(new SelectorOptions().css("button.primary"));
+```
+
 CSS selectors do not cross shadow boundaries. Use a pierce combinator for that.
 
 ---
@@ -47,6 +55,18 @@ vibium find css "my-card >>> #deep"
 const p   = await vibe.find({ css: 'my-card >> p' });
 const btn = await vibe.find({ css: 'outer-host >>> button' });
 const all = await vibe.findAll({ css: 'my-card >> li' });
+```
+
+```python
+p = vibe.find(css="my-card >> p")
+btn = vibe.find(css="outer-host >>> button")
+items = vibe.find_all(css="my-card >> li")
+```
+
+```java
+Element p = vibe.find(new SelectorOptions().css("my-card >> p"));
+Element btn = vibe.find(new SelectorOptions().css("outer-host >>> button"));
+List<Element> all = vibe.findAll(new SelectorOptions().css("my-card >> li"));
 ```
 
 The syntax matches Playwright (`>>`) and Selenium 4 (`>>>`).
@@ -107,6 +127,16 @@ vibium find testid "submit-btn"
 ```js
 await vibe.find({ role: 'button', label: 'Log in' });
 await vibe.find({ testid: 'submit-btn' });
+```
+
+```python
+vibe.find(role="button", label="Log in")
+vibe.find(testid="submit-btn")
+```
+
+```java
+vibe.find(new SelectorOptions().role("button").label("Log in"));
+vibe.find(new SelectorOptions().testid("submit-btn"));
 ```
 
 Locators combine — `{ role: 'button', text: 'Save' }` requires both. When several elements match, the one with the shortest text wins, so an exact match beats a container that happens to include it.
