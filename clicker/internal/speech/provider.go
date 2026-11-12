@@ -123,7 +123,7 @@ var hostedProviders = []hosted{
 	{name: "deepgram", key: "DEEPGRAM_API_KEY"},
 	{name: "elevenlabs", key: "ELEVENLABS_API_KEY"},
 	{name: "openai", key: "OPENAI_API_KEY", make: func(key string) Provider { return NewOpenAI(key) },
-		sayModel: "gpt-4o-mini-tts", sayVoice: "alloy", hearModel: "gpt-transcribe"},
+		sayModel: "gpt-4o-mini-tts", sayVoice: "cedar", hearModel: "gpt-transcribe"},
 }
 
 const setupHint = "Install a local engine and set %s, or set OPENAI_API_KEY for hosted speech. See `vibium %s --help`."

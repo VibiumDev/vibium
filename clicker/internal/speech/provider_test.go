@@ -19,7 +19,7 @@ func envOf(vars map[string]string, onPath ...string) Env {
 func TestOneOpenAIKeyConfiguresBothDirections(t *testing.T) {
 	e := envOf(map[string]string{"OPENAI_API_KEY": "sk-test"})
 	say, err := e.Say("", "", "")
-	if err != nil || say.Provider.Name() != "openai" || say.Model != "gpt-4o-mini-tts" || say.Voice != "alloy" || say.HearModel != "gpt-transcribe" {
+	if err != nil || say.Provider.Name() != "openai" || say.Model != "gpt-4o-mini-tts" || say.Voice != "cedar" || say.HearModel != "gpt-transcribe" {
 		t.Fatalf("say %+v %v", say, err)
 	}
 	hear, err := e.Listen("", "")

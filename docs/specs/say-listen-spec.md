@@ -161,13 +161,13 @@ for a recorded voice, a tone, or noise.
 
 ```bash
 vibium say "Set a timer for ten minutes"
-# Said "Set a timer for ten minutes" (1.9 s, openai gpt-4o-mini-tts alloy, cached)
+# Said "Set a timer for ten minutes" (1.9 s, openai gpt-4o-mini-tts cedar, cached)
 
 vibium say "Hello there" --target hello.wav
-# Wrote hello.wav (0.9 s, openai gpt-4o-mini-tts alloy)
+# Wrote hello.wav (0.9 s, openai gpt-4o-mini-tts cedar)
 
 echo "What time is it?" | vibium say - --target local --provider openai
-# Said "What time is it?" (1.2 s, openai gpt-4o-mini-tts alloy)
+# Said "What time is it?" (1.2 s, openai gpt-4o-mini-tts cedar)
 ```
 
 ### `vibium listen`
@@ -624,7 +624,7 @@ library only.
 
 | Provider | TTS | STT | Key |
 |----------|-----|-----|-----|
-| `openai` | `POST /v1/audio/speech`, model `gpt-4o-mini-tts`, voice `alloy`, 24 kHz WAV. A model named `gpt-realtime…` speaks through the Realtime API instead. | `POST /v1/audio/transcriptions`, model `gpt-transcribe`. No word timings. | `OPENAI_API_KEY` |
+| `openai` | `POST /v1/audio/speech`, model `gpt-4o-mini-tts`, voice `cedar`, 24 kHz WAV. A model named `gpt-realtime…` speaks through the Realtime API instead. | `POST /v1/audio/transcriptions`, model `gpt-transcribe`. No word timings. | `OPENAI_API_KEY` |
 | `deepgram` | `POST /v1/speak`, linear16 WAV at 16 kHz. Default voice `aura-2-thalia-en`. | `POST /v1/listen`, model `nova-3`. Word timings. | `DEEPGRAM_API_KEY` |
 | `elevenlabs` | `POST /v1/text-to-speech/{voice}`, model `eleven_flash_v2_5`, `wav_16000` output. | `POST /v1/speech-to-text`, model `scribe_v2`, `timestamps_granularity=word`. Word timings. | `ELEVENLABS_API_KEY` |
 
@@ -1150,7 +1150,7 @@ the shared `call@N` counter. No new event type is added to
 `trace.trace`.
 
 ```json
-{"type":"before","callId":"call@7","startTime":3010,"class":"Speech","method":"vibium:speech.say","title":"Speech.say","params":{"text":"What's the weather like in Chicago tomorrow?","target":"session","provider":"openai","model":"gpt-4o-mini-tts","voice":"alloy"}}
+{"type":"before","callId":"call@7","startTime":3010,"class":"Speech","method":"vibium:speech.say","title":"Speech.say","params":{"text":"What's the weather like in Chicago tomorrow?","target":"session","provider":"openai","model":"gpt-4o-mini-tts","voice":"cedar"}}
 {"type":"after","callId":"call@7","endTime":5335,"result":{"clip":"out-0001","durationMs":2310,"cached":true,"playStartMs":3012.5,"playEndMs":5322.5}}
 {"type":"before","callId":"call@8","startTime":5340,"class":"Speech","method":"vibium:speech.listen","title":"Speech.listen","params":{"target":"session","provider":"openai","model":"gpt-transcribe","silence":1000,"timeout":10000,"duration":30000}}
 {"type":"after","callId":"call@8","endTime":9480,"result":{"text":"It's currently 72 degrees and sunny in Chicago.","speech":true,"onsetMs":6014,"speechEndMs":8105,"latencyMs":691.5,"latencyFrom":"call@7","stoppedBy":"silence","track":"in-session","audioStartMs":5322.5,"audioEndMs":9105}}
@@ -1197,7 +1197,7 @@ the shared `call@N` counter. No new event type is added to
     "sampleRate": 16000, "channels": 1, "encoding": "pcm_s16le",
     "durationMs": 2310,
     "text": "What's the weather like in Chicago tomorrow?",
-    "provider": "openai", "model": "gpt-4o-mini-tts", "voice": "alloy",
+    "provider": "openai", "model": "gpt-4o-mini-tts", "voice": "cedar",
     "plays": [{"callId": "call@7", "startMs": 3012.5, "endMs": 5322.5}]
   }],
   "transcripts": [{
@@ -1414,7 +1414,7 @@ VAD on the same 21 clips, for onset and end error.
 | | Default | Why |
 |---|---------|-----|
 | System `say`, macOS | `say`, the system voice | Built in. Not measured: no Mac was at hand. |
-| Hosted `say` | OpenAI `gpt-4o-mini-tts`, voice `alloy` | Measured. One bad clip in 22, against six for the realtime model. First byte in half a second. Uses the key most users already have. Retired on 2027-01-06. |
+| Hosted `say` | OpenAI `gpt-4o-mini-tts`, voice `cedar` | The model is measured, with the voice `alloy`: one bad clip in 22, against six for the realtime model. First byte in half a second. Uses the key most users already have. Retired on 2027-01-06. The voice was chosen by ear, for a livelier delivery than `alloy`. With it, 22 of 22 fresh renders said the text. |
 | Hosted `listen` | OpenAI `gpt-transcribe` | Measured. No word errors on replies. Under a second per reply. |
 | Local `say` | Piper, a medium voice | Fastest local engine measured. The default voice is `en_US-ljspeech-medium`, for its public-domain dataset. That voice is still to be measured. |
 | Local `listen` | whisper.cpp, `tiny.en` q5_1 | Fastest local model measured, with 5 errors in 219 words. |
@@ -1593,7 +1593,7 @@ assert "ten" in heard.text.lower() or "10" in heard.text
 
 ```bash
 vibium say "Set a timer for ten minutes" --target timer.wav --cache-dir tests/speech-cache
-# Wrote timer.wav (2.1 s, openai gpt-4o-mini-tts alloy, cached)
+# Wrote timer.wav (2.1 s, openai gpt-4o-mini-tts cedar, cached)
 
 vibium listen --target timer.wav --silence 0
 # Set a timer for ten minutes.
