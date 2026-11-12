@@ -24,13 +24,13 @@ const THINK_MS = 500;
 const TONE_MS = 1000;
 
 const PAGE = `<!doctype html><title>echo</title>
-<button id="talk">Talk</button><p id="status">idle</p>
+<button id="probe">Probe</button><button id="talk">Talk</button><p id="status">idle</p>
 <script>
+// A context nothing is connected to. Its clock says whether this browser
+// runs audio at all on this machine.
+document.getElementById('probe').onclick = () => { window.probe = new AudioContext(); };
 document.getElementById('talk').onclick = async () => {
   const status = document.getElementById('status');
-  // A context nothing is connected to: its clock says whether this
-  // browser runs audio at all on this machine.
-  window.probe = new AudioContext();
   const ctx = new AudioContext();
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const source = ctx.createMediaStreamSource(stream);
@@ -99,9 +99,24 @@ describe('say and listen through a page', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test('a clip spoken into the page comes back out of it', async (t) => {
+  // Ten seconds of this test are sound in real time, and each of its
+  // commands starts a process. A slow machine needs more than the suite's
+  // 30 seconds for that.
+  test('a clip spoken into the page comes back out of it', { timeout: 120000 }, async (t) => {
     const go = await cli('go', url, '--headless');
     assert.strictEqual(go.status, 0, go.stderr);
+
+    // A browser with no audio device to play to may not run its audio
+    // clock. Pages have no sound there, with or without Vibium. The clock
+    // must run at half of real time or better.
+    assert.strictEqual((await cli('click', '#probe')).status, 0);
+    const clock = await cli('eval', `new Promise((r) => { const p = window.probe, t0 = p.currentTime; setTimeout(() => r(JSON.stringify({ state: p.state, advanced: Math.round((p.currentTime - t0) * 1000), inMs: 600, rate: p.sampleRate })), 600); })`);
+    const audio = (clock.stdout.match(/\{.*\}/) || [clock.stdout + clock.stderr])[0].replace(/\\"/g, '"');
+    const advanced = Number((audio.match(/"advanced":\s*(-?\d+)/) || [])[1]);
+    if (!(advanced >= 300)) {
+      t.skip(`this browser's audio clock does not keep time here: ${audio}`);
+      return;
+    }
 
     // With a session open the default target is the page. Its microphone
     // is not open yet, and say must say so instead of using the speakers.
@@ -111,17 +126,6 @@ describe('say and listen through a page', () => {
 
     assert.strictEqual((await cli('record', 'start', '-o', 'echo.zip', '--video=false')).status, 0);
     assert.strictEqual((await cli('click', '#talk')).status, 0);
-
-    // A browser with no audio device to play to may not run its audio
-    // clock. Pages have no sound there, with or without Vibium.
-    const clock = await cli('eval', `new Promise((r) => setTimeout(() => r(JSON.stringify({ state: window.probe.state, time: window.probe.currentTime, rate: window.probe.sampleRate, status: document.getElementById('status').textContent })), 700))`);
-    const audio = (clock.stdout.match(/\{.*\}/) || [clock.stdout + clock.stderr])[0].replace(/\\"/g, '"');
-    if (!/"time":\s*0\.[0-9]*[1-9]|"time":\s*[1-9]/.test(audio)) {
-      await cli('record', 'stop');
-      t.skip(`this browser's audio clock is not running here: ${audio}`);
-      return;
-    }
-
     const say = await cli('say', '--file', 'tone.wav', '--json');
     assert.strictEqual(say.status, 0, `${say.stderr}\naudio: ${audio}`);
     const said = JSON.parse(say.stdout).result;
