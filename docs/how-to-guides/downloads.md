@@ -401,6 +401,103 @@ await bro.stop()
 
 </details>
 
+## Java
+
+## Quick Example
+
+First, save this server as `Server.java` and start it:
+
+```java
+// Server.java
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+
+public class Server {
+    public static void main(String[] args) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 3000), 0);
+        server.createContext("/", exchange -> {
+            byte[] body;
+            if (exchange.getRequestURI().getPath().equals("/file")) {
+                exchange.getResponseHeaders().add("Content-Type", "text/plain");
+                exchange.getResponseHeaders().add("Content-Disposition", "attachment; filename=\"hello.txt\"");
+                body = "hello world".getBytes(StandardCharsets.UTF_8);
+            } else {
+                exchange.getResponseHeaders().add("Content-Type", "text/html");
+                body = "<a href=\"/file\" id=\"dl-link\">Download hello.txt</a>".getBytes(StandardCharsets.UTF_8);
+            }
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        System.out.println("http://localhost:3000");
+    }
+}
+```
+
+```
+java Server.java
+```
+
+Then in another terminal, run the download program:
+
+```java
+import com.vibium.Download;
+import com.vibium.Vibium;
+import com.vibium.types.SelectorOptions;
+
+public class DownloadExample {
+    public static void main(String[] args) {
+        var bro = Vibium.start();
+        var vibe = bro.page();
+        vibe.go("http://localhost:3000");
+
+        Download download = vibe.capture().download(
+            () -> vibe.find(new SelectorOptions().css("#dl-link")).click());
+
+        System.out.println(download.suggestedFilename()); // hello.txt
+        download.saveAs("/tmp/hello.txt");
+
+        bro.stop();
+    }
+}
+```
+
+## capture().download
+
+`capture().download()` sets up a listener, runs your action, and returns the download:
+
+```java
+Download download = vibe.capture().download(
+    () -> vibe.find(new SelectorOptions().css("#dl-link")).click());
+
+download.url();                // ends with /file
+download.suggestedFilename();  // "hello.txt"
+download.saveAs("/tmp/hello.txt");
+download.path();               // the browser's temp file, once the download completes
+```
+
+## onDownload
+
+`onDownload()` registers a callback that fires for every download on the page:
+
+```java
+List<Download> downloads = new CopyOnWriteArrayList<>();
+vibe.onDownload(downloads::add);
+
+vibe.find(new SelectorOptions().css("#dl-link")).click();
+
+// The download event arrives asynchronously; poll briefly for it.
+for (int i = 0; i < 50 && downloads.isEmpty(); i++) {
+    Thread.sleep(100);
+}
+
+downloads.get(0).suggestedFilename();  // "hello.txt"
+```
+
+---
+
 ## See also
 
 - [Accessibility Tree](accessibility-tree.md)
