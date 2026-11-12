@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // PromptTracker records which browsing contexts have an open user prompt.
@@ -14,13 +15,84 @@ import (
 // browsingContext.handleUserPrompt arrives. Without this state a doomed command
 // just sits in its 60s timeout.
 type PromptTracker struct {
-	mu   sync.Mutex
-	open map[string]string // context -> prompt type ("alert", "confirm", ...)
+	mu      sync.Mutex
+	open    map[string]string // context -> prompt type ("alert", "confirm", ...)
+	waiters map[string]map[*promptWaiter]struct{}
 }
+
+type promptWaiter struct {
+	ch   chan struct{}
+	done bool
+}
+
+// promptGrace is how long a command in flight when a prompt opens may still
+// answer. Chrome answers the command that opened the prompt, not the others.
+const promptGrace = 2 * time.Second
 
 // NewPromptTracker creates an empty tracker.
 func NewPromptTracker() *PromptTracker {
-	return &PromptTracker{open: make(map[string]string)}
+	return &PromptTracker{open: make(map[string]string), waiters: make(map[string]map[*promptWaiter]struct{})}
+}
+
+// watch returns a channel closed once a prompt has stayed open promptGrace on
+// the context a prompt-sensitive command targets. The channel is nil when
+// there is nothing to watch. stop MUST be called.
+func (t *PromptTracker) watch(method string, params map[string]interface{}) (<-chan struct{}, func()) {
+	context := contextFromParams(params)
+	if t == nil || !promptSensitiveMethods[method] || context == "" {
+		return nil, func() {}
+	}
+	w := &promptWaiter{ch: make(chan struct{})}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, open := t.open[context]; open {
+		w.done = true
+		close(w.ch)
+		return w.ch, func() {}
+	}
+	t.addWaiter(context, w)
+	return w.ch, func() {
+		t.mu.Lock()
+		w.done = true
+		delete(t.waiters[context], w)
+		t.mu.Unlock()
+	}
+}
+
+func (t *PromptTracker) addWaiter(context string, w *promptWaiter) {
+	if t.waiters[context] == nil {
+		t.waiters[context] = make(map[*promptWaiter]struct{})
+	}
+	t.waiters[context][w] = struct{}{}
+}
+
+func (t *PromptTracker) promptOpened(context string) {
+	for w := range t.waiters[context] {
+		time.AfterFunc(promptGrace, func() {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			if w.done {
+				return
+			}
+			if _, open := t.open[context]; open {
+				w.done = true
+				close(w.ch)
+				return
+			}
+			t.addWaiter(context, w)
+		})
+	}
+	delete(t.waiters, context)
+}
+
+// blockedError reports the open prompt a watch channel fired for.
+func (t *PromptTracker) blockedError(params map[string]interface{}) error {
+	context := contextFromParams(params)
+	promptType, _ := t.OpenPrompt(context)
+	if promptType == "" {
+		promptType = "dialog"
+	}
+	return &BlockedByPromptError{Context: context, PromptType: promptType}
 }
 
 // Observe updates the tracker from a raw BiDi event. Anything that is not a
@@ -51,6 +123,7 @@ func (t *PromptTracker) Observe(raw []byte) {
 		}
 		t.mu.Lock()
 		t.open[evt.Params.Context] = promptType
+		t.promptOpened(evt.Params.Context)
 		t.mu.Unlock()
 	case "browsingContext.userPromptClosed":
 		t.mu.Lock()

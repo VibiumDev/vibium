@@ -2,7 +2,14 @@ package api
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/vibium/clicker/internal/bidi"
 )
 
 func TestPromptTrackerObserve(t *testing.T) {
@@ -136,5 +143,103 @@ func TestCheckPromptBlocked(t *testing.T) {
 func TestCheckPromptBlockedNilTracker(t *testing.T) {
 	if err := checkPromptBlocked(nil, "script.callFunction", map[string]interface{}{"context": "ctx-1"}); err != nil {
 		t.Errorf("a nil tracker should never block: %v", err)
+	}
+}
+
+func TestPromptOpeningFailsInFlightCommand(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+	conn, err := bidi.Connect("ws" + strings.TrimPrefix(srv.URL, "http"))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer conn.Close()
+
+	tr := NewPromptTracker()
+	s := &AgentSession{Client: bidi.NewClient(conn), Prompts: tr}
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.SendBidiCommandWithTimeout("script.callFunction",
+			map[string]interface{}{"target": map[string]interface{}{"context": "ctx-1"}}, 30*time.Second)
+		done <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	tr.Observe([]byte(`{"method":"browsingContext.userPromptOpened","params":{"context":"ctx-1","type":"alert"}}`))
+
+	select {
+	case err := <-done:
+		var blocked *BlockedByPromptError
+		if !errors.As(err, &blocked) || blocked.PromptType != "alert" {
+			t.Fatalf("err = %v, want BlockedByPromptError for an alert", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an in-flight command kept waiting after a prompt opened on its context")
+	}
+}
+
+func TestPromptWatch(t *testing.T) {
+	tr := NewPromptTracker()
+	target := map[string]interface{}{"target": map[string]interface{}{"context": "ctx-1"}}
+	fired := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		default:
+			return false
+		}
+	}
+
+	if ch, _ := tr.watch("browsingContext.getTree", map[string]interface{}{}); ch != nil {
+		t.Error("a command a prompt does not block needs no watch")
+	}
+
+	other, stopOther := tr.watch("script.callFunction", map[string]interface{}{"target": map[string]interface{}{"context": "ctx-2"}})
+	defer stopOther()
+	stopped, stop := tr.watch("script.callFunction", target)
+	stop()
+	held, stopHeld := tr.watch("script.callFunction", target)
+	defer stopHeld()
+	second, stopSecond := tr.watch("script.callFunction", target)
+	defer stopSecond()
+
+	tr.Observe([]byte(`{"method":"browsingContext.userPromptOpened","params":{"context":"ctx-1","type":"confirm"}}`))
+	if fired(held) {
+		t.Error("a command in flight when a prompt opens must get the grace period to answer")
+	}
+	time.Sleep(promptGrace + 200*time.Millisecond)
+	if !fired(held) {
+		t.Error("a prompt open past the grace period must fire its context's watch")
+	}
+	if fired(stopped) || fired(other) {
+		t.Error("a stopped watch, or one on another context, must not fire")
+	}
+	if !fired(second) {
+		t.Error("every watch on the context must fire")
+	}
+
+	if already, _ := tr.watch("script.callFunction", target); !fired(already) {
+		t.Error("a watch on an already-open prompt must fire at once")
+	}
+
+	tr.Observe([]byte(`{"method":"browsingContext.userPromptClosed","params":{"context":"ctx-1"}}`))
+	closed, stopClosed := tr.watch("script.callFunction", target)
+	defer stopClosed()
+	tr.Observe([]byte(`{"method":"browsingContext.userPromptOpened","params":{"context":"ctx-1","type":"alert"}}`))
+	tr.Observe([]byte(`{"method":"browsingContext.userPromptClosed","params":{"context":"ctx-1"}}`))
+	time.Sleep(promptGrace + 200*time.Millisecond)
+	if fired(closed) {
+		t.Error("a prompt closed within the grace period must not fire the watch")
 	}
 }

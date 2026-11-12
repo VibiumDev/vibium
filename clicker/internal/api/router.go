@@ -1376,6 +1376,8 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 	if err := checkPromptBlocked(session.prompts, method, params); err != nil {
 		return nil, err
 	}
+	promptOpened, stopWatch := session.prompts.watch(method, params)
+	defer stopWatch()
 
 	// Chrome blocks ~5s dispatching pointer input to a backgrounded tab (#248),
 	// so foreground the target first — but only on a change of context. An
@@ -1460,6 +1462,11 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 		session.abandonedInternal[id] = struct{}{}
 		session.internalCmdsMu.Unlock()
 		return nil, fmt.Errorf("timeout waiting for response to %s", method)
+	case <-promptOpened:
+		session.internalCmdsMu.Lock()
+		session.abandonedInternal[id] = struct{}{}
+		session.internalCmdsMu.Unlock()
+		return nil, session.prompts.blockedError(params)
 	case <-session.stopChan:
 		return nil, fmt.Errorf("session closed")
 	}

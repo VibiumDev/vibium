@@ -341,8 +341,8 @@ MCP/CLI-only tools with no direct client API equivalent.
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 229 | Speak text into the session, this machine's speakers, or a WAV file | ⬜ | `vibium say <text>` | `vibium_say` | ⬜ | ⬜ | ⬜ |
-| 230 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | ⬜ | `vibium listen` | `vibium_listen` | ⬜ | ⬜ | ⬜ |
+| 233 | Speak text into the session, this machine's speakers, or a WAV file | ⬜ | `vibium say <text>` | `vibium_say` | ⬜ | ⬜ | ⬜ |
+| 234 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | ⬜ | `vibium listen` | `vibium_listen` | ⬜ | ⬜ | ⬜ |
 
 Both work without a browser. With a session open the default target is the
 session; with none open it is this machine's speakers and microphone. See
