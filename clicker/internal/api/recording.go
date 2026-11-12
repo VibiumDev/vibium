@@ -151,6 +151,12 @@ type VideoTrack struct {
 	Width  int
 	Height int
 	Error  string // engine failure; the zip still delivers, video absent or partial
+	// MimeType is "video/mp4" for a video taken from a device's stream;
+	// empty means the engine's WebM.
+	MimeType string
+	Gaps     int // times a stream video lost packets and froze until the next key frame
+	// Audio: the file also holds what the recording said and heard.
+	Audio bool
 }
 
 // VideoSummary is one entry of the videos array in the recording.stop result.
@@ -162,6 +168,7 @@ type VideoSummary struct {
 	// RemotePath is where a remote-keep video lives on the remote host.
 	RemotePath string
 	Error      string
+	Audio      bool
 }
 
 // RecordingSummary is the metadata carried by the recording.stop result.
@@ -170,6 +177,7 @@ type RecordingSummary struct {
 	DurationMs       int64
 	Videos           []VideoSummary
 	VideoUnavailable string
+	Audio            *AudioSummary
 }
 
 // ResultFields renders the summary as wire result fields: steps, durationMs,
@@ -178,6 +186,9 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 	fields := map[string]interface{}{
 		"steps":      s.Steps,
 		"durationMs": s.DurationMs,
+	}
+	if s.Audio != nil {
+		fields["audio"] = s.Audio
 	}
 	if s.VideoUnavailable != "" {
 		fields["videoUnavailable"] = s.VideoUnavailable
@@ -197,6 +208,9 @@ func (s RecordingSummary) ResultFields() map[string]interface{} {
 			}
 			if v.Error != "" {
 				entry["error"] = v.Error
+			}
+			if v.Audio {
+				entry["audio"] = true
 			}
 			videos = append(videos, entry)
 		}
@@ -244,9 +258,13 @@ type Recorder struct {
 	contextId       string // unique context ID for this recording session
 	actionCounter   int    // monotonic counter for action/bidi callIds
 
+	// What say sent and listen heard; nil until speech is used.
+	audio *recordAudio
+
 	// Video track (engine screencast folded into the recording)
 	video            *VideoTrack
-	videoUnavailable string // engine reason video could not start (auto mode)
+	videoUnavailable string       // engine reason video could not start (auto mode)
+	stream           *StreamVideo // the video's source while it is a device's stream
 
 	// Screenshot goroutine control
 	screenshotStop chan struct{}
@@ -282,7 +300,7 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.recording = true
 	t.secrets = map[string]bool{}
 	t.omitVisuals = false
-	for _, key := range []string{"OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
+	for _, key := range []string{"DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "VIBIUM_API_KEY", "VIBIUM_CONNECT_API_KEY"} {
 		if value := os.Getenv(key); value != "" {
 			t.secrets[value] = true
 		}
@@ -296,7 +314,9 @@ func (t *Recorder) Start(opts RecordingStartOptions, viewport map[string]interfa
 	t.resources = make(map[string][]byte)
 	t.pendingRequests = make(map[string]*pendingRequest)
 	t.groupStack = nil
+	t.audio = nil
 	t.video = nil
+	t.stream = nil
 	t.videoUnavailable = ""
 	t.chunkIndex = 0
 	t.startTime = time.Now().UnixMilli()
@@ -363,6 +383,7 @@ func (t *Recorder) Stop() ([]byte, error) {
 	}
 
 	t.recording = false
+	t.finishStreamLocked()
 	data, err := t.buildZipLocked(true)
 	if err == nil && t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
@@ -451,6 +472,8 @@ func (t *Recorder) FinishVideo(enginePath, errMsg string) {
 func (t *Recorder) RemoveEngineFile() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stream.Abort()
+	t.stream = nil
 	if t.video != nil && t.video.EnginePath != "" && !t.video.Remote {
 		if rmErr := os.Remove(t.video.EnginePath); rmErr != nil {
 			log.Debug("failed to delete engine video temp", "path", t.video.EnginePath, "error", rmErr)
@@ -468,6 +491,7 @@ func (t *Recorder) Summary() RecordingSummary {
 	s := RecordingSummary{
 		DurationMs:       time.Now().UnixMilli() - t.startTime,
 		VideoUnavailable: t.videoUnavailable,
+		Audio:            t.audioSummaryLocked(),
 	}
 	for _, ev := range t.events {
 		if ev["type"] == "before" && ev["class"] != "Tracing" {
@@ -481,6 +505,7 @@ func (t *Recorder) Summary() RecordingSummary {
 			Width:      t.video.Width,
 			Height:     t.video.Height,
 			Error:      t.video.Error,
+			Audio:      t.video.Audio,
 		}
 		if t.video.Remote {
 			vs.RemotePath = t.video.EnginePath
@@ -646,6 +671,10 @@ func apiNameFromMethod(method string) (string, string) {
 	// Context commands: context.*
 	case len(name) > 8 && name[:8] == "context.":
 		return "BrowserContext", "BrowserContext." + name[8:]
+
+	// Say and listen: speech.*
+	case len(name) > 7 && name[:7] == "speech.":
+		return "Speech", "Speech." + name[7:]
 
 	// Keyboard: keyboard.*
 	case len(name) > 9 && name[:9] == "keyboard.":
@@ -1398,6 +1427,14 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 		rw.Write(data)
 	}
 
+	// Audio entries are additive too. Chunk zips carry none: the audio goes
+	// into the recording's final zip.
+	if includeVideo && !t.omitVisuals {
+		if err := t.writeAudioEntriesLocked(zw, now); err != nil {
+			return nil, err
+		}
+	}
+
 	// Video entries are additive to the trace format; existing trace tooling
 	// ignores them.
 	if t.video != nil {
@@ -1415,10 +1452,15 @@ func (t *Recorder) buildZipLocked(includeVideo bool) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// writeVideoEntriesLocked writes video/<context>.webm and video/index.json.
+// writeVideoEntriesLocked writes video/<context>.webm, or .mp4 for a video
+// taken from a device's stream, and video/index.json.
 // Must be called with t.mu held and t.video non-nil.
 func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includeVideo bool) error {
 	context := strings.ToLower(t.video.Context)
+	mime, ext := "video/webm", ".webm"
+	if t.video.MimeType == "video/mp4" {
+		mime, ext = t.video.MimeType, ".mp4"
+	}
 
 	entry := map[string]interface{}{"context": context}
 	if includeVideo {
@@ -1430,15 +1472,26 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// start-time value is the viewport, which the screencast surface
 			// need not match (#358). Read before reporting so the manifest
 			// and the stop summary both describe the actual video.
-			if w, h, ok := webmDimensions(data); ok {
-				t.video.Width, t.video.Height = w, h
+			if ext == ".webm" {
+				if w, h, ok := webmDimensions(data); ok {
+					t.video.Width, t.video.Height = w, h
+				}
 			}
 		}
 		entry["startedAt"] = t.video.StartedAt
 		entry["offsetMs"] = t.video.OffsetMs
 		entry["width"] = t.video.Width
 		entry["height"] = t.video.Height
-		entry["mimeType"] = "video/webm"
+		entry["mimeType"] = mime
+		if ext == ".mp4" {
+			entry["durationMs"] = t.video.DurationMs
+			if t.video.Gaps > 0 {
+				entry["gaps"] = t.video.Gaps
+			}
+			if t.video.Audio {
+				entry["audio"] = true
+			}
+		}
 		if t.video.Error != "" {
 			entry["error"] = t.video.Error
 		}
@@ -1447,10 +1500,10 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 			// where, and leave retrieval to the caller.
 			entry["remotePath"] = t.video.EnginePath
 		} else if t.video.EnginePath != "" {
-			// WebM is already compressed; store it instead of deflating. An
-			// empty engine file (the browser died before its first flush)
+			// The video is already compressed; store it instead of deflating.
+			// An empty engine file (the browser died before its first flush)
 			// is no video at all — record why instead of embedding junk.
-			name := "video/" + context + ".webm"
+			name := "video/" + context + ext
 			if readErr == nil && len(data) > 0 {
 				vw, werr := zw.CreateHeader(&zip.FileHeader{
 					Name:     name,

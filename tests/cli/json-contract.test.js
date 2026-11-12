@@ -94,6 +94,7 @@ const CLASSES = {
   'is-installed': 'envelope',
   'keys': 'usage-error',
   'launch-test': 'exempt', // runs until Ctrl+C
+  'listen': 'envelope',
   'long-press': 'usage-error',
   'map': 'envelope',
   'mcp': 'exempt', // server: banner on stderr, exits when stdin closes
@@ -121,6 +122,7 @@ const CLASSES = {
   'record stop': 'envelope',
   'reload': 'envelope',
   'run': 'usage-error',
+  'say': 'usage-error',
   'screenshot': 'envelope',
   'scroll': 'envelope',
   'scroll into-view': 'usage-error',
@@ -185,6 +187,9 @@ function run(args, extraEnv = {}) {
 const ENV_OVERRIDES = {
   'install': () => ({ VIBIUM_CACHE_DIR: fakeCache, VIBIUM_SKIP_BROWSER_DOWNLOAD: '' }),
   'setup': () => ({ VIBIUM_CACHE_DIR: fakeCache, VIBIUM_SKIP_BROWSER_DOWNLOAD: '' }),
+  // No speech provider, so listen fails at once instead of opening a microphone.
+  'listen': () => ({ OPENAI_API_KEY: '', DEEPGRAM_API_KEY: '', ELEVENLABS_API_KEY: '',
+    VIBIUM_LISTEN_PROVIDER: '', VIBIUM_LISTEN_COMMAND: '', VIBIUM_LISTEN_MODEL: '' }),
 };
 
 function seedFakeChromeCache(cacheDir) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -41,11 +40,13 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 
 	opts := ParseRecordingOptions(cmd.Params)
 
-	// Required video on a remote connection can never deliver into the zip;
-	// fail before touching the browser — unless the caller opted into
-	// leaving the file on the remote host.
-	if r.connectURL != "" && opts.Video.Mode == VideoRequired && !opts.Video.RemoteKeep {
-		r.sendError(session, cmd.ID, errors.New(RemoteVideoMessage))
+	// A station or a Roadie streams the device's screen, and that stream is
+	// the video. Required video on any other remote connection can never
+	// deliver into the zip; fail before touching the browser — unless the
+	// caller opted into leaving the file on the remote host.
+	stream, err := OpenStreamVideo(opts, r.connectURL, r.connectHeaders)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
 		return
 	}
 
@@ -61,7 +62,8 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// the recording does not start at all.
 	sess := NewAPISession(r, session, lastContext)
 	CaptureRecordingSecrets(sess, recorder, nil)
-	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport); err != nil {
+	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport, stream); err != nil {
+		stream.Abort()
 		r.sendError(session, cmd.ID, err)
 		return
 	}

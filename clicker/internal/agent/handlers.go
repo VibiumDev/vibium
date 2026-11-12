@@ -19,11 +19,23 @@ import (
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/speech"
 )
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
 	modelRunning bool // daemon mutex protects the complete verification and its child calls
+	speech       *speech.Engine
+	speechEnv    map[string]string // the CLI caller's speech settings, for one call
+	audioMu      sync.Mutex
+	audioSink    *roadieCapture // where roadie:audio.chunk events go
+	sessionAudio *roadieAudio   // the session's audio, once found
+	pageAudio    *browserAudio  // a browser session's audio, when its script is installed
+	pageSink     *browserCapture
+	audioRec     *audioRecording
+	speechCallID string                 // the recorded step a say or listen belongs to
+	speechResult map[string]interface{} // what that step's after event carries
+	lastSayCall  string
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -239,6 +251,7 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		h.lastElementBox = nil
 	}
 
+	h.speechCallID, h.speechResult = callId, nil
 	var result *ToolsCallResult
 	err := refErr
 	if err == nil {
@@ -261,6 +274,12 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
 		if h.modelRunning {
 			h.recorder.RecordCallOutcome(callId, recordedToolResult(result), err)
+		} else if name == "vibium_say" || name == "vibium_listen" {
+			var outcome interface{}
+			if h.speechResult != nil {
+				outcome = h.speechResult
+			}
+			h.recorder.RecordCallOutcome(callId, outcome, err)
 		}
 	}
 
@@ -270,6 +289,10 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 // dispatch routes a tool call to the appropriate handler method.
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
+	case "vibium_say":
+		return h.sayMCP(args)
+	case "vibium_listen":
+		return h.listenMCP(args)
 	case "browser_console":
 		return h.browserObservations("console")
 	case "browser_network":
@@ -886,6 +909,11 @@ func mcpToolToMethod(name string) string {
 	case "page_clock_set_timezone":
 		return "vibium:clock.setTimezone"
 
+	case "vibium_say":
+		return "vibium:speech.say"
+	case "vibium_listen":
+		return "vibium:speech.listen"
+
 	default:
 		return name
 	}
@@ -1187,10 +1215,22 @@ func (h *Handlers) startPromptTracking() {
 		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
+
+	// Every page of a browser session gets a virtual microphone and an
+	// audio tap, so say and listen work without setup.
+	h.pageAudio = nil
+	if h.installBrowserAudio(client) {
+		b := &browserAudio{h: h, client: client}
+		b.tap = speech.NewTap(b.open)
+		h.pageAudio = b
+	}
 }
 
 // handleBidiEvent is the single BiDi event handler for the agent session.
 func (h *Handlers) handleBidiEvent(msg string) {
+	if h.audioEvent(msg) || h.pageAudioEvent(msg) {
+		return
+	}
 	h.sessionMu.Lock()
 	tracker := h.prompts
 	navs := h.navigations
@@ -4334,12 +4374,14 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		opts.Path = abs
 	}
 
-	// Required video on a remote connection can never deliver into the
-	// zip; fail before touching the browser — unless the caller opted
-	// into leaving the file on the remote host.
+	// A station or a Roadie streams the device's screen, and that stream
+	// is the video. Required video on any other remote connection can
+	// never deliver into the zip; fail before touching the browser —
+	// unless the caller opted into leaving the file on the remote host.
 	remote := h.connectURL != ""
-	if remote && opts.Video.Mode == api.VideoRequired && !opts.Video.RemoteKeep {
-		return nil, errors.New(api.RemoteVideoMessage)
+	stream, err := api.OpenStreamVideo(opts, h.connectURL, h.connectHeaders)
+	if err != nil {
+		return nil, err
 	}
 
 	recorder := api.NewRecorder()
@@ -4347,7 +4389,8 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 	recorder.Start(opts, viewport)
 	api.CaptureRecordingSecrets(h.newSession(), recorder, nil)
 
-	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport, stream); err != nil {
+		stream.Abort()
 		return nil, err
 	}
 	h.recorder = recorder
@@ -4410,6 +4453,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
+	h.stopAudioRecording()
 
 	// Finalize the video first so Stop() can move the engine's file into
 	// the zip. A dead screencast is recorded in the manifest, not an error.

@@ -24,6 +24,7 @@ record.zip
 │   ├── page@abc123-1773879004791.jpeg  # Screenshot frames (pageId-timestamp.ext)
 │   └── page@abc123-1773879004850.jpeg  # Other resources (pageId-timestamp.ext)
 ├── video/<context>.webm    # Native video track (when recorded; see below)
+├── video/<context>.mp4     # Video of a device, from its stream (see below)
 └── video/index.json        # Video manifest
 ```
 
@@ -46,6 +47,39 @@ If the video pipeline failed, the entry carries an `error` field and the
 file may be absent or partial. Chunk artifacts carry no video file; their
 manifest instead records `videoRange: [startMs, endMs]`, the chunk's span
 within the session video.
+
+### Video of a device
+
+A session on a Vibium Station or a Roadie drives a device, not a browser
+that can write a file. Its video is the stream the station or the Roadie
+serves of the device's screen. Vibium joins that stream as a viewer and
+stores the H.264 it receives in an MP4, without re-encoding.
+
+```json
+{"version":1,"videos":[{"file":"video/screen.mp4","context":"screen","startedAt":1794285267660,"offsetMs":-120,"durationMs":43557,"width":444,"height":972,"mimeType":"video/mp4"}]}
+```
+
+- `mimeType` is `video/mp4`. The file has one H.264 video track.
+- `audio` is `true` when the file also has an audio track. The field is
+  absent when the recording said and heard nothing while the video ran.
+  - The track is everything the recording said and heard, mixed into one
+    channel. Each sound is at the time it sounded.
+  - The track is AAC-LC, mono, 16 kHz.
+  - The same audio stays under `audio/`, unmixed. A player that reads
+    `audio/` SHOULD mute the file.
+- `offsetMs` MAY be negative. The stream is joined just before the
+  recording starts, so the video covers all of it.
+- `startedAt` is when the first frame arrived at the machine running Vibium.
+  A frame is on screen a little earlier than it arrives.
+- `durationMs` is the video's length.
+- `gaps` counts the times the stream lost packets. After a loss the video
+  holds its last picture until the next key frame. The field is absent when
+  there were none.
+- `error` says why the stream ended before the recording did. The file then
+  holds the video up to that point.
+- `width` and `height` are the stream's. A viewer and a recording see the
+  same picture.
+- A key frame arrives about every 2 seconds. A player can seek to any of them.
 
 Resource files use Playwright-compatible naming: `<pageId>-<wallTimeMs>.<ext>` (e.g., `resources/page@abc123-1773879004791.jpeg`).
 

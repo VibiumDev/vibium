@@ -113,6 +113,25 @@ disabled, then an export.
   file. Retrieval and cleanup are the caller's. The engine must still
   support the screencast (remote Firefox 154+; remote Chrome fails as
   usual).
+- Station and Roadie sessions: the video is the device's screen stream.
+  Vibium joins it as a WebRTC viewer before the recording starts and
+  stores the H.264 it receives as `video/<context>.mp4`, without
+  re-encoding. The engine is not asked for a screencast.
+  - `width`, `height` and `frameRate` do not apply. The stream is stored
+    as it is.
+  - With `video` omitted, a stream that cannot be joined is reported as
+    `videoUnavailable` with the reason. With `video: true`, `start`
+    fails with that reason.
+  - `remote: 'keep'` leaves the stream alone and behaves as above.
+  - Vibium finds the stream from the address the session connected to.
+    A station is asked which device the caller holds and for a grant to
+    view it. A Roadie has one stream.
+  - The manifest entry carries `mimeType: "video/mp4"` and `durationMs`.
+    See [Recording format](../reference/recording-format.md#video-of-a-device).
+  - The file also carries the recording's audio as one AAC track: what
+    `say` sent and what was heard, mixed. Vibium encodes that track when
+    the recording stops. The manifest entry and the stop result then
+    carry `audio: true`, and the CLI says `14s video with sound`.
 
 ## Context binding
 
@@ -206,9 +225,10 @@ vibium record stop -o checkout-failure.zip
 ```
 
 **MCP** — `browser_record_start` gains flat properties:
-- `video` (boolean, optional): "Omit to record video when the engine
-  supports it (Firefox 154+). Set true to require video — fails with
-  an explanatory error on Chrome. Set false to disable."
+- `video` (boolean, optional): "Omit to record video when it can be
+  had: the engine's screencast (Firefox 154+), or the device's screen
+  stream on a station or Roadie session. Set true to require video —
+  fails with an explanatory error on Chrome. Set false to disable."
 - `video_width`, `video_height`, `video_frame_rate` (numbers,
   optional; defaults follow the viewport).
 

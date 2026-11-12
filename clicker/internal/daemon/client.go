@@ -46,17 +46,31 @@ func (e *ToolError) Error() string { return e.Msg }
 
 // Call sends a tools/call request to the daemon and returns the result.
 func Call(toolName string, args map[string]interface{}) (*agent.ToolsCallResult, error) {
-	params := agent.ToolsCallParams{
-		Name:      toolName,
-		Arguments: args,
-	}
+	return CallTimeout(toolName, args, 0)
+}
+
+// Speech calls say or listen with the caller's speech settings and
+// credentials. The timeout covers a listen that waits for a reply.
+func Speech(toolName string, args map[string]interface{}, env map[string]string, timeout time.Duration) (*agent.ToolsCallResult, error) {
+	return callTool(struct {
+		agent.ToolsCallParams
+		SpeechEnv map[string]string `json:"speechEnv"`
+	}{agent.ToolsCallParams{Name: toolName, Arguments: args}, env}, timeout)
+}
+
+// CallTimeout is Call with a longer read timeout. Zero keeps the default.
+func CallTimeout(toolName string, args map[string]interface{}, timeout time.Duration) (*agent.ToolsCallResult, error) {
+	return callTool(agent.ToolsCallParams{Name: toolName, Arguments: args}, timeout)
+}
+
+func callTool(params interface{}, timeout time.Duration) (*agent.ToolsCallResult, error) {
 
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
 
-	resp, err := sendRequest("tools/call", json.RawMessage(paramsJSON))
+	resp, err := sendRequestTimeout("tools/call", json.RawMessage(paramsJSON), timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +140,10 @@ func Shutdown() error {
 
 // sendRequest sends a JSON-RPC request to the daemon socket and returns the response.
 func sendRequest(method string, params json.RawMessage) (*agent.Response, error) {
+	return sendRequestTimeout(method, params, 0)
+}
+
+func sendRequestTimeout(method string, params json.RawMessage, timeout time.Duration) (*agent.Response, error) {
 	socketPath, err := paths.GetSocketPath()
 	if err != nil {
 		return nil, fmt.Errorf("get socket path: %w", err)
@@ -157,6 +175,9 @@ func sendRequest(method string, params json.RawMessage) (*agent.Response, error)
 	responseTimeout := readTimeout
 	if method == check.Method || method == runop.Method {
 		responseTimeout = ai.Timeout + 30*time.Second
+	}
+	if timeout > responseTimeout {
+		responseTimeout = timeout
 	}
 	conn.SetReadDeadline(time.Now().Add(responseTimeout))
 	// bufio.Reader grows as needed; bufio.Scanner failed with "token too long"

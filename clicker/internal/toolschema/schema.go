@@ -124,6 +124,46 @@ func GetToolSchemas() []Tool {
 		{Name: "vibium_run", Description: "Accomplish a goal in the current local browser session using configured AI provider and constrained browser tools. Returns completed or not_completed with evidence. Live only; uses VIBIUM_AI_* configuration.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"goal": map[string]interface{}{"type": "string"}}, "required": []string{"goal"}, "additionalProperties": false}},
 		{Name: "vibium_check", Description: "Independently verify an explicit claim against the current local Chrome/Firefox session, or a read-only recording zip. Returns passed, failed, or inconclusive with evidence. Recorded mode never launches a browser. Uses shared AI configuration from the server environment.", InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"claim": map[string]interface{}{"type": "string"}, "record": map[string]interface{}{"type": "string", "description": "Optional path to an existing version 8 Vibium record.zip or Playwright trace.zip on this host; selects archive mode instead of the live browser."}}, "required": []string{"claim"}, "additionalProperties": false}},
 		{
+			Name:        "vibium_say",
+			Description: "Speak text into the target. The default is the current session: the phone on a Roadie, or the page's microphone in a browser. With no session open it is this machine's speakers. Returns when playback ends.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"text":     map[string]interface{}{"type": "string", "description": "What to say. Give text or file"},
+					"file":     map[string]interface{}{"type": "string", "description": "A WAV file to play as it is, in place of text"},
+					"target":   map[string]interface{}{"type": "string", "description": "session, local, or a path ending in .wav"},
+					"provider": map[string]interface{}{"type": "string", "description": "Text-to-speech provider or preset; the default comes from the server environment"},
+					"model":    map[string]interface{}{"type": "string"},
+					"voice":    map[string]interface{}{"type": "string"},
+					"language": map[string]interface{}{"type": "string"},
+					"speed":    map[string]interface{}{"type": "number"},
+					"cache":    map[string]interface{}{"type": "boolean", "description": "false renders again instead of replaying cached audio"},
+					"cacheDir": map[string]interface{}{"type": "string", "description": "Where rendered audio is kept"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
+			Name:        "vibium_listen",
+			Description: "Listen to the target and return what was said. The default is the current session: what the phone or the page plays. With no session open it is this machine's microphone. Hears from the end of the last vibium_say, so a reply that began before this call is not missed. Stops after trailing silence.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"target":       map[string]interface{}{"type": "string", "description": "session, local, or a path ending in .wav"},
+					"provider":     map[string]interface{}{"type": "string", "description": "Speech-to-text provider or preset; the default comes from the server environment"},
+					"model":        map[string]interface{}{"type": "string"},
+					"language":     map[string]interface{}{"type": "string"},
+					"silence":      map[string]interface{}{"type": "number", "description": "Trailing silence that ends the reply, in ms (default 1000). 0 turns endpointing off"},
+					"timeout":      map[string]interface{}{"type": "number", "description": "How long to wait for speech to start, from this call, in ms (default 10000)"},
+					"duration":     map[string]interface{}{"type": "number", "description": "Maximum capture length from this call, in ms (default 30000)"},
+					"allowSilence": map[string]interface{}{"type": "boolean", "description": "Return an empty transcript instead of an error when nothing is heard"},
+					"path":         map[string]interface{}{"type": "string", "description": "Also save the captured audio as a WAV file"},
+					"transcribe":   map[string]interface{}{"type": "boolean", "description": "false captures without a transcript; speech onset and reply latency are still measured"},
+				},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "browser_start",
 			Description: "Start a browser session",
 			InputSchema: map[string]interface{}{
@@ -1601,7 +1641,7 @@ func GetToolSchemas() []Tool {
 					},
 					"video": map[string]interface{}{
 						"type":        "boolean",
-						"description": "Omit to record video when the engine supports it (Firefox 154+). Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
+						"description": "Omit to record video when it can be had: the engine's screencast (Firefox 154+), or the device's screen stream on a station or Roadie session. Set true to require video — fails with an explanatory error on Chrome. Set false to disable.",
 					},
 					"video_width": map[string]interface{}{
 						"type":        "number",
