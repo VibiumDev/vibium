@@ -15,6 +15,7 @@ class WebSocketInfo:
         self._close_handlers: List[Callable[[Optional[int], Optional[str]], None]] = []
 
     def url(self) -> str:
+        """Get the WebSocket URL."""
         return self._url
 
     def on_message(self, fn: Callable[[str, dict], None]) -> None:
@@ -26,6 +27,7 @@ class WebSocketInfo:
         self._close_handlers.append(fn)
 
     def is_closed(self) -> bool:
+        """Check if the WebSocket is closed."""
         return self._is_closed
 
     def _emit_message(self, data: str, direction: str) -> None:
