@@ -21,16 +21,33 @@ const TEXT = 'Come here, Watson.';
 // Reads the echo page's idle audio clock: how far it moved in 600 ms.
 const CLOCK = `new Promise((r) => { const p = window.probe, t0 = p.currentTime; setTimeout(() => r({ state: p.state, advanced: Math.round((p.currentTime - t0) * 1000), inMs: 600 }), 600); })`;
 
+const root = path.resolve(__dirname, '../..');
+const PYTHON = path.join(root, process.platform === 'win32' ? 'clients/python/.venv/Scripts/python.exe' : 'clients/python/.venv/bin/python');
+
 const CLIENTS = [
   ['JavaScript async', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '0'],
   ['JavaScript sync', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '1'],
+  ['Python async', PYTHON, [path.join(__dirname, 'sdk-python.py')], '0'],
+  ['Python sync', PYTHON, [path.join(__dirname, 'sdk-python.py')], '1'],
 ];
+
+// A client names its fields in its own language's style. The test reads
+// them all as the wire does.
+function camel(value) {
+  if (Array.isArray(value)) return value.map(camel);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k.replace(/_(\w)/g, (m, c) => c.toUpperCase()), camel(v)]));
+}
+
+// The temporary directory by its real path, which is what a process
+// started in it calls it.
+const tempDir = (prefix) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 
 function run(binary, args, options) {
   return new Promise((resolve, reject) => {
     execFile(binary, args, { encoding: 'utf-8', timeout: 150000, ...options }, (error, stdout, stderr) => {
       if (error) return reject(new Error(`${error.message}\n${stdout}${stderr}`));
-      resolve(JSON.parse(stdout.trim().split('\n').pop()));
+      resolve(camel(JSON.parse(stdout.trim().split('\n').pop())));
     });
   });
 }
@@ -38,11 +55,11 @@ function run(binary, args, options) {
 const skip = process.platform === 'win32' ? 'the fake engines are shell scripts' : false;
 
 test('the clients say and listen with no browser', { skip, timeout: 300000 }, async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-speech-sdk-'));
+  const work = tempDir('vibium-speech-sdk-');
   try {
     for (const [label, binary, args, sync] of CLIENTS) {
       await t.test(label, async () => {
-        const dir = path.join(root, label.replaceAll(' ', '-'));
+        const dir = path.join(work, label.replaceAll(' ', '-'));
         fs.mkdirSync(dir);
         const file = (name, body) => { fs.writeFileSync(path.join(dir, name), body, { mode: 0o755 }); return path.join(dir, name); };
         file('voice.wav', toneWAV(400, 1000, 2500));
@@ -103,18 +120,18 @@ test('the clients say and listen with no browser', { skip, timeout: 300000 }, as
       });
     }
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(work, { recursive: true, force: true });
   }
 });
 
 test('the clients say and listen through a page', { timeout: 600000 }, async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-speech-sdk-page-'));
+  const work = tempDir('vibium-speech-sdk-page-');
   const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(PAGE); });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     for (const [label, binary, args, sync] of CLIENTS) {
       await t.test(label, async (t) => {
-        const dir = path.join(root, label.replaceAll(' ', '-'));
+        const dir = path.join(work, label.replaceAll(' ', '-'));
         fs.mkdirSync(dir);
         fs.writeFileSync(path.join(dir, 'tone.wav'), toneWAV(0, TONE_MS, 0, 8000));
         const env = {
@@ -158,6 +175,6 @@ test('the clients say and listen through a page', { timeout: 600000 }, async (t)
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(work, { recursive: true, force: true });
   }
 });

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..check import CheckResult, send_check
+from ..speech import ListenResult, SayResult, SAY_TIMEOUT, SYNC_SLACK, listen_timeout
 from ..run import RunResult
 
 import shutil
@@ -162,6 +163,14 @@ class Page:
     def check(self, claim: str, *, record: Optional[str] = None, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
         """Independently verify live behavior, or inspect a read-only archive."""
         return self._loop.run(self._async.check(claim, record=record, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
+
+    def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak text into this page's microphone, or into the device."""
+        return self._loop.run(self._async.say(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir), timeout=SAY_TIMEOUT + SYNC_SLACK)
+
+    def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Hear what this page, or the device, plays, and return its words."""
+        return self._loop.run(self._async.listen(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe), timeout=listen_timeout(timeout, duration) + SYNC_SLACK)
 
 
     def go(self, url: str) -> None:

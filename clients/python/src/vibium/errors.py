@@ -19,6 +19,16 @@ class BiDiError(VibiumError):
         super().__init__(f"{error}: {message}")
 
 
+class SpeechError(VibiumError):
+    """Raised when say or listen fails. ``code`` names the failure, such as
+    ``no_speech`` or ``not_configured``."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"{code}: {message}")
+
+
 class VibiumNotFoundError(VibiumError):
     """Raised when the vibium binary cannot be found."""
     pass

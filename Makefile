@@ -834,6 +834,6 @@ test-run: build-go build-js build-java python-venv
 
 # Say and listen through each client library: on WAV files with no browser,
 # and through a page. No speech engine, key or sound card is needed.
-test-speech: build-go build-js
+test-speech: build-go build-js python-venv
 	@echo "--- Speech Client Tests ($(ENGINE)) ---"
 	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/speech/client-js.test.js tests/speech/surfaces.test.js

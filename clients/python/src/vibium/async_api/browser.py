@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..check import CheckResult, send_check
 from ..run import RunResult, send_run
+from ..speech import ListenResult, SayResult, listen_params, say_params, send_listen, send_say, shared_listen, shared_say
 
 import json
 import os
@@ -58,6 +59,13 @@ class Browser:
         """Independently verify live behavior, or inspect a read-only archive."""
         return await send_check(self._client, claim, record, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
 
+    async def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak text into the current page's microphone, or into the device."""
+        return await send_say(self._client, say_params(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir))
+
+    async def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Hear what the current page, or the device, plays, and return its words."""
+        return await send_listen(self._client, listen_params(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe))
 
     async def page(self) -> Page:
         """Get the default page (first browsing context)."""
@@ -126,6 +134,13 @@ class _BrowserLauncher:
             finally:
                 await process.stop()
 
+    async def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak with no browser: into this machine's speakers, or a .wav file."""
+        return await shared_say(say_params(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir))
+
+    async def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Listen with no browser: to this machine's microphone, or a .wav file."""
+        return await shared_listen(listen_params(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe))
 
     async def start(
         self,

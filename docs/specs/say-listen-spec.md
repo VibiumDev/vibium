@@ -368,7 +368,8 @@ try {
 
 ```python
 # async_api; sync_api is the same without await
-async def say(self, text: str, *, target: Optional[str] = None,
+async def say(self, text: str, *, file: Optional[str] = None,
+              target: Optional[str] = None,
               provider: Optional[str] = None, model: Optional[str] = None,
               voice: Optional[str] = None, language: Optional[str] = None,
               speed: Optional[float] = None, cache: bool = True,
@@ -378,12 +379,30 @@ async def listen(self, *, target: Optional[str] = None,
                  provider: Optional[str] = None, model: Optional[str] = None,
                  language: Optional[str] = None, silence: Optional[int] = None,
                  timeout: Optional[int] = None, duration: Optional[int] = None,
-                 allow_silence: bool = False,
-                 path: Optional[str] = None) -> ListenResult: ...
+                 allow_silence: bool = False, path: Optional[str] = None,
+                 transcribe: bool = True) -> ListenResult: ...
 ```
 
 `SayResult` and `ListenResult` are dataclasses with snake_case fields:
-`duration_ms`, `onset_ms`, `speech_end_ms`, `latency_ms`, `stopped_by`.
+`duration_ms`, `onset_ms`, `speech_end_ms`, `latency_ms`, `stopped_by`,
+`lost_ms`. A segment has `start_ms`, `end_ms` and `text`, and a word has
+`start_ms`, `end_ms` and `word`. A field the engine left out is `None`.
+
+```python
+from vibium import browser, SpeechError
+
+browser.say("Come here, Watson.", target="question.wav")
+try:
+    reply = browser.listen(target="reply.wav")
+    print(reply.text, reply.latency_ms)
+except SpeechError as err:
+    if err.code != "no_speech":
+        raise
+    print("nothing was said")
+```
+
+The forms with no browser keep their engine on a thread of their own, so
+it serves the sync API and every event loop of the async one.
 
 ### Java
 
@@ -413,6 +432,9 @@ not know, raises the client's ordinary error.
 
 In JavaScript, `vibium` and `vibium/sync` each export `SpeechError`. Import
 it from the one `browser` came from.
+
+In Python, `SpeechError` is a `VibiumError` with `code` and `message`.
+Printed, it reads `code: message`.
 
 ## MCP tools
 
