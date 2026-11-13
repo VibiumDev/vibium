@@ -37,7 +37,6 @@ These are future work. See [Future work](#future-work).
 
 - A plugin system or plugin install.
 - Streaming partial transcripts.
-- Continuous synced audio playback in the Record Player.
 - Audio compression.
 - Barge-in testing.
 
@@ -1750,8 +1749,6 @@ These are out of scope here. The design leaves room for each.
 - **Streaming partial transcripts.** `listen` returns once, at the end.
   A streaming form would emit words as they are recognized. The
   provider interface would gain a streaming method.
-- **Continuous audio playback in the Record Player.** Playing the
-  received track in step with the screenshots, with scrubbing.
 - **Audio compression.** Opus or FLAC inside record.zip. The manifest's
   `encoding` field is where a reader learns of it.
 - **Barge-in testing.** Speaking while the device is speaking, and
