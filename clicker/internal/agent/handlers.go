@@ -19,23 +19,15 @@ import (
 	"github.com/vibium/clicker/internal/browser"
 	"github.com/vibium/clicker/internal/log"
 	"github.com/vibium/clicker/internal/paths"
-	"github.com/vibium/clicker/internal/speech"
 )
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
-	modelRunning bool // daemon mutex protects the complete verification and its child calls
-	speech       *speech.Engine
-	speechEnv    map[string]string // the CLI caller's speech settings, for one call
-	audioMu      sync.Mutex
-	audioSink    *roadieCapture // where roadie:audio.chunk events go
-	sessionAudio *roadieAudio   // the session's audio, once found
-	pageAudio    *browserAudio  // a browser session's audio, when its script is installed
-	pageSink     *browserCapture
-	audioRec     *audioRecording
+	modelRunning bool                   // daemon mutex protects the complete verification and its child calls
+	speech       *api.Speech            // say and listen; see speechUnit
+	speechEnv    map[string]string      // the CLI caller's speech settings, for one call
 	speechCallID string                 // the recorded step a say or listen belongs to
 	speechResult map[string]interface{} // what that step's after event carries
-	lastSayCall  string
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -1218,17 +1210,15 @@ func (h *Handlers) startPromptTracking() {
 
 	// Every page of a browser session gets a virtual microphone and an
 	// audio tap, so say and listen work without setup.
-	h.pageAudio = nil
-	if h.installBrowserAudio(client) {
-		b := &browserAudio{h: h, client: client}
-		b.tap = speech.NewTap(b.open)
-		h.pageAudio = b
-	}
+	h.speechUnit().Install(func() error {
+		subscribeEvents(client, []string{"script.message"})
+		return nil
+	})
 }
 
 // handleBidiEvent is the single BiDi event handler for the agent session.
 func (h *Handlers) handleBidiEvent(msg string) {
-	if h.audioEvent(msg) || h.pageAudioEvent(msg) {
+	if h.speech.Event(msg) {
 		return
 	}
 	h.sessionMu.Lock()
@@ -4453,7 +4443,7 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
-	h.stopAudioRecording()
+	h.speech.StopAudioRecording()
 
 	// Finalize the video first so Stop() can move the engine's file into
 	// the zip. A dead screencast is recorded in the manifest, not an error.

@@ -28,6 +28,7 @@ from ..errors import (
     ConnectionError,
     ElementNotFoundError,
     BrowserCrashedError,
+    SpeechError,
 )
 
 __all__ = [
@@ -61,8 +62,13 @@ __all__ = [
     "ConnectionError",
     "ElementNotFoundError",
     "BrowserCrashedError",
+    "SpeechError",
+    "SayResult",
+    "ListenResult",
 ]
 
 from ..check import CheckResult, CheckEvidence
 
 from ..run import RunResult
+
+from ..speech import SayResult, ListenResult

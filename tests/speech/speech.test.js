@@ -13,26 +13,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { VIBIUM } = require('../helpers');
+const { toneWAV } = require('./echo');
 
 const SESSION = `sp${process.pid}`;
 let dir, env, renders;
-
-// A second of a 300 Hz tone at 16 kHz, with silence around it, as a WAV.
-function toneWAV(leadMs, toneMs, tailMs) {
-  const rate = 16000;
-  const n = (ms) => Math.round(rate * ms / 1000);
-  const samples = new Int16Array(n(leadMs) + n(toneMs) + n(tailMs));
-  for (let i = 0; i < n(toneMs); i++) {
-    samples[n(leadMs) + i] = Math.round(6000 * Math.sin(2 * Math.PI * 300 * i / rate));
-  }
-  const data = Buffer.from(samples.buffer);
-  const header = Buffer.alloc(44);
-  header.write('RIFF', 0); header.writeUInt32LE(36 + data.length, 4); header.write('WAVEfmt ', 8);
-  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(data.length, 40);
-  return Buffer.concat([header, data]);
-}
 
 function script(name, body) {
   const file = path.join(dir, name);

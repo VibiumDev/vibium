@@ -1,6 +1,7 @@
 import { callable } from '../callable';
 import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
 import { CheckOptions, RecordedCheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, SAY_TIMEOUT_MS, BRIDGE_SLACK_MS, listenTimeoutMs } from '../speech';
 import { SyncBridge } from './bridge';
 import { PageSync } from './page';
 import { BrowserContextSync } from './context';
@@ -32,6 +33,9 @@ export interface StartOptions {
   userDataDir?: string;
 }
 
+// The first module-level say or listen also starts the engine.
+const ENGINE_START_MS = 70_000;
+
 export interface BrowserSync { (goal: string, options?: RunOptions): RunResult; }
 
 export class BrowserSync {
@@ -56,6 +60,14 @@ export class BrowserSync {
 
   check(claim: string, options: CheckOptions = {}): CheckResult {
     return this._bridge.call('browser.check', [claim, options], CHECK_TIMEOUT_MS);
+  }
+
+  say(text: string, options: SayOptions = {}): SayResult {
+    return this._bridge.call('browser.say', [text, options], SAY_TIMEOUT_MS + BRIDGE_SLACK_MS);
+  }
+
+  listen(options: ListenOptions = {}): ListenResult {
+    return this._bridge.call('browser.listen', [options], listenTimeoutMs(options) + BRIDGE_SLACK_MS);
   }
 
   page(): PageSync {
@@ -133,7 +145,25 @@ export class BrowserSync {
   }
 }
 
+// One worker serves every module-level say and listen, and holds their
+// engine, so a say and the listen after it share a capture window.
+let speechBridge: SyncBridge | null = null;
+
+function speechCall<T>(method: string, args: unknown[], timeoutMs: number): T {
+  if (!speechBridge) {
+    speechBridge = SyncBridge.create();
+    speechBridge.unref();
+  }
+  return speechBridge.call<T>(method, args, timeoutMs + ENGINE_START_MS);
+}
+
 export const browser = {
+  say(text: string, options: SayOptions = {}): SayResult {
+    return speechCall('speech.say', [text, options], SAY_TIMEOUT_MS);
+  },
+  listen(options: ListenOptions = {}): ListenResult {
+    return speechCall('speech.listen', [options], listenTimeoutMs(options));
+  },
   check(claim: string, options: RecordedCheckOptions): CheckResult {
     if (!options?.record) throw new Error('Standalone verification requires record');
     const bridge = SyncBridge.create();

@@ -128,6 +128,9 @@ func runPipe(connectURL string, connectHeaders http.Header, noBrowser bool, conn
 	// and events subscribed — the client won't see messages until it's ready.
 	if !noBrowser {
 		router.OnClientConnect(client)
+	} else {
+		// With no session, say and listen use this machine or a WAV file.
+		router.SetSessionless(true)
 	}
 
 	// Send ready signal so the client knows it can start sending commands.

@@ -1,6 +1,7 @@
 import { callable } from '../callable';
 import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
 import { CheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, SAY_TIMEOUT_MS, BRIDGE_SLACK_MS, listenTimeoutMs } from '../speech';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { SyncBridge } from './bridge';
@@ -169,6 +170,14 @@ export class PageSync {
 
   check(claim: string, options: CheckOptions = {}): CheckResult {
     return this._bridge.call('page.check', [this._pageId, claim, options], CHECK_TIMEOUT_MS);
+  }
+
+  say(text: string, options: SayOptions = {}): SayResult {
+    return this._bridge.call('page.say', [this._pageId, text, options], SAY_TIMEOUT_MS + BRIDGE_SLACK_MS);
+  }
+
+  listen(options: ListenOptions = {}): ListenResult {
+    return this._bridge.call('page.listen', [this._pageId, options], listenTimeoutMs(options) + BRIDGE_SLACK_MS);
   }
 
   go(url: string): void {

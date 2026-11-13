@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
 import com.vibium.internal.Check;
 import com.vibium.internal.Run;
+import com.vibium.internal.Speech;
 import com.vibium.types.RunResult;
 import com.vibium.types.RunOptions;
 import com.vibium.types.CheckOptions;
@@ -36,6 +37,14 @@ public class Page {
     public CheckResult check(String claim, CheckOptions options) {
         return Check.run(client, claim, options, contextId);
     }
+
+    /** Speak text into this page's microphone, or into the device. */
+    public SayResult say(String text) { return say(text, new SayOptions()); }
+    public SayResult say(String text, SayOptions options) { return Speech.say(client, text, options, contextId); }
+
+    /** Hear what this page, or the device, plays, and return its words. */
+    public ListenResult listen() { return listen(new ListenOptions()); }
+    public ListenResult listen(ListenOptions options) { return Speech.listen(client, options, contextId); }
 
 
     private static final Gson GSON = new Gson();

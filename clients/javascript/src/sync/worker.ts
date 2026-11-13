@@ -1,5 +1,7 @@
 import { RunOptions } from '../run';
 import { CheckOptions, RecordedCheckOptions } from '../check';
+import { SayOptions, ListenOptions, stopSpeechEngine } from '../speech';
+import { SpeechError } from '../utils/errors';
 import { parentPort, workerData, MessagePort } from 'worker_threads';
 import { browser, Browser } from '../browser';
 import { Page } from '../page';
@@ -152,6 +154,32 @@ const handlers: Record<string, Handler> = {
   'page.run': async (args) => {
     const [pageId, goal, options] = args as [number, string, RunOptions];
     return getPage(pageId).run(goal, options);
+  },
+  'speech.say': async (args) => {
+    const [text, options] = args as [string, SayOptions];
+    return browser.say(text, options);
+  },
+  'speech.listen': async (args) => {
+    const [options] = args as [ListenOptions];
+    return browser.listen(options);
+  },
+  'browser.say': async (args) => {
+    const [text, options] = args as [string, SayOptions];
+    if (!browserInstance) throw new Error('Browser not launched');
+    return browserInstance.say(text, options);
+  },
+  'browser.listen': async (args) => {
+    const [options] = args as [ListenOptions];
+    if (!browserInstance) throw new Error('Browser not launched');
+    return browserInstance.listen(options);
+  },
+  'page.say': async (args) => {
+    const [pageId, text, options] = args as [number, string, SayOptions];
+    return getPage(pageId).say(text, options);
+  },
+  'page.listen': async (args) => {
+    const [pageId, options] = args as [number, ListenOptions];
+    return getPage(pageId).listen(options);
   },
   'check.record': async (args) => {
     const [claim, options] = args as [string, RecordedCheckOptions];
@@ -1438,6 +1466,7 @@ const handlers: Record<string, Handler> = {
   // ========================
 
   'quit': async () => {
+    await stopSpeechEngine();
     if (!browserInstance) throw new Error('Browser not launched');
     await browserInstance.stop();
     browserInstance = null;
@@ -1459,11 +1488,13 @@ async function handleCommand(cmd: Command): Promise<unknown> {
 parentPort!.on('message', async ({ cmd, port }: { cmd: Command; port: MessagePort }) => {
   let result: unknown;
   let error: string | null = null;
+  let speechCode: string | undefined;
 
   try {
     result = await handleCommand(cmd);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
+    if (err instanceof SpeechError) speechCode = err.code;
   }
 
   // Deliver buffered events BEFORE the result.
@@ -1492,7 +1523,7 @@ parentPort!.on('message', async ({ cmd, port }: { cmd: Command; port: MessagePor
     await invokeMainThread(event.handlerId, event.data);
   }
 
-  port.postMessage({ result, error });
+  port.postMessage({ result, error, speechCode });
 
   Atomics.store(signal, 0, 1);
   Atomics.notify(signal, 0);

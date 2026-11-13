@@ -17,59 +17,9 @@ const http = require('node:http');
 const path = require('node:path');
 const os = require('node:os');
 const { VIBIUM } = require('../helpers');
+const { RECORD_MS, THINK_MS, TONE_MS, PAGE, toneWAV } = require('./echo');
 
 const SESSION = `sb${process.pid}`;
-const RECORD_MS = 6000;
-const THINK_MS = 500;
-const TONE_MS = 1000;
-
-const PAGE = `<!doctype html><title>echo</title>
-<button id="probe">Probe</button><button id="talk">Talk</button><p id="status">idle</p>
-<script>
-// A context nothing is connected to. Its clock says whether this browser
-// runs audio at all on this machine.
-document.getElementById('probe').onclick = () => { window.probe = new AudioContext(); };
-document.getElementById('talk').onclick = async () => {
-  const status = document.getElementById('status');
-  const ctx = new AudioContext();
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const source = ctx.createMediaStreamSource(stream);
-  const tap = ctx.createScriptProcessor(2048, 1, 1);
-  const chunks = [];
-  tap.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  source.connect(tap);
-  tap.connect(ctx.destination);
-  status.textContent = 'recording';
-  await new Promise((r) => setTimeout(r, ${RECORD_MS}));
-  tap.disconnect(); source.disconnect();
-  stream.getTracks().forEach((t) => t.stop());
-  status.textContent = 'thinking';
-  await new Promise((r) => setTimeout(r, ${THINK_MS}));
-  const total = chunks.reduce((n, a) => n + a.length, 0);
-  const buf = ctx.createBuffer(1, total, ctx.sampleRate);
-  let off = 0;
-  for (const a of chunks) { buf.getChannelData(0).set(a, off); off += a.length; }
-  const play = ctx.createBufferSource();
-  play.buffer = buf;
-  play.connect(ctx.destination);
-  play.onended = () => { status.textContent = 'done'; };
-  play.start();
-  status.textContent = 'playing';
-};
-</script>`;
-
-function toneWAV(ms) {
-  const rate = 16000;
-  const samples = new Int16Array(Math.round(rate * ms / 1000));
-  for (let i = 0; i < samples.length; i++) samples[i] = Math.round(8000 * Math.sin(2 * Math.PI * 300 * i / rate));
-  const data = Buffer.from(samples.buffer);
-  const header = Buffer.alloc(44);
-  header.write('RIFF', 0); header.writeUInt32LE(36 + data.length, 4); header.write('WAVEfmt ', 8);
-  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(data.length, 40);
-  return Buffer.concat([header, data]);
-}
 
 describe('say and listen through a page', () => {
   let dir, server, url, env;
@@ -84,7 +34,7 @@ describe('say and listen through a page', () => {
 
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-speech-page-'));
-    fs.writeFileSync(path.join(dir, 'tone.wav'), toneWAV(TONE_MS));
+    fs.writeFileSync(path.join(dir, 'tone.wav'), toneWAV(0, TONE_MS, 0, 8000));
     server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(PAGE); });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     url = `http://127.0.0.1:${server.address().port}/`;

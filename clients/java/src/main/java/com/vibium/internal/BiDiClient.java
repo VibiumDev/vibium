@@ -291,6 +291,9 @@ public class BiDiClient {
             return new ElementNotFoundException(message);
         }
 
-        return new VibiumException(message);
+        if ("error".equals(error) || "unknown".equals(error)) {
+            return new VibiumException(message);
+        }
+        return new CodedException(error, message);
     }
 }

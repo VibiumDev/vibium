@@ -1,6 +1,7 @@
 import { callable } from './callable';
 import { RunOptions, RunResult, sendRun } from './run';
 import { CheckOptions, RecordedCheckOptions, CheckResult, sendCheck } from './check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, sendSay, sendListen, speechEngine } from './speech';
 import { VibiumProcess } from './clicker';
 import { BiDiClient, BiDiEvent } from './bidi';
 import { Page } from './page';
@@ -89,6 +90,16 @@ export class Browser {
     return sendCheck(this.client, claim, options);
   }
 
+  /** Speak text into the current page's microphone, or into the device. */
+  say(text: string, options: SayOptions = {}): Promise<SayResult> {
+    return sendSay(this.client, text, options);
+  }
+
+  /** Hear what the current page, or the device, plays, and return its words. */
+  listen(options: ListenOptions = {}): Promise<ListenResult> {
+    return sendListen(this.client, options);
+  }
+
   /** Get the default page (first browsing context). */
   async page(): Promise<Page> {
     const result = await this.client.send<{ context: string; userContext: string }>('vibium:browser.page', {});
@@ -167,6 +178,14 @@ export const browser = {
     } finally {
       try { await client?.close(); } finally { await proc.stop(); }
     }
+  },
+  /** Speak with no browser: into this machine's speakers, or a .wav file. */
+  async say(text: string, options: SayOptions = {}): Promise<SayResult> {
+    return sendSay(await speechEngine(), text, options);
+  },
+  /** Listen with no browser: to this machine's microphone, or a .wav file. */
+  async listen(options: ListenOptions = {}): Promise<ListenResult> {
+    return sendListen(await speechEngine(), options);
   },
   async start(urlOrOptions?: string | StartOptions, options: StartOptions = {}): Promise<Browser> {
     let url: string | undefined;

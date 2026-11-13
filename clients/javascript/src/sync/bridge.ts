@@ -1,9 +1,12 @@
 import { Worker, MessageChannel, receiveMessageOnPort, MessagePort } from 'worker_threads';
 import * as path from 'path';
+import { SpeechError } from '../utils/errors';
 
 interface CommandResult {
   result?: unknown;
   error?: string;
+  /** Set when the error is a SpeechError. */
+  speechCode?: string;
 }
 
 interface CallbackRequest {
@@ -197,7 +200,7 @@ export class SyncBridge {
 
         const response = message.message as CommandResult;
         if (response.error) {
-          throw new Error(response.error);
+          throw response.speechCode ? new SpeechError(response.speechCode, response.error) : new Error(response.error);
         }
         return response.result as T;
       }
@@ -250,6 +253,11 @@ export class SyncBridge {
       // If anything fails, force terminate
       this.terminate();
     }
+  }
+
+  /** Let Node exit while the worker is idle. The exit handler still quits it. */
+  unref(): void {
+    this.worker.unref();
   }
 
   terminate(): void {

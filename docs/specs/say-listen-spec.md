@@ -37,7 +37,6 @@ These are future work. See [Future work](#future-work).
 
 - A plugin system or plugin install.
 - Streaming partial transcripts.
-- Continuous synced audio playback in the Record Player.
 - Audio compression.
 - Barge-in testing.
 
@@ -292,6 +291,8 @@ interface SayResult {
   sha256: string;
   /** Present for file targets. */
   path?: string;
+  /** Present when a file was played in place of text. */
+  file?: string;
 }
 
 interface ListenOptions extends SpeechOptions {
@@ -327,9 +328,12 @@ interface ListenResult {
   stoppedBy: 'silence' | 'duration' | 'eof' | 'timeout';
   /** Length of the captured audio. */
   durationMs: number;
+  target: string;
   provider: string;
   model: string;
   path?: string;
+  /** Audio the target dropped on its way here, in ms. The transcript may miss words. */
+  lostMs?: number;
 }
 
 class Page {
@@ -347,11 +351,25 @@ browser.listen(options?: ListenOptions): Promise<ListenResult>;
 
 The sync API mirrors these without promises.
 
+```ts
+import { browser, SpeechError } from 'vibium';
+
+await browser.say('Come here, Watson.', { target: 'question.wav' });
+try {
+  const reply = await browser.listen({ target: 'reply.wav' });
+  console.log(reply.text, reply.latencyMs);
+} catch (err) {
+  if (err instanceof SpeechError && err.code === 'no_speech') console.log('nothing was said');
+  else throw err;
+}
+```
+
 ### Python
 
 ```python
 # async_api; sync_api is the same without await
-async def say(self, text: str, *, target: Optional[str] = None,
+async def say(self, text: str, *, file: Optional[str] = None,
+              target: Optional[str] = None,
               provider: Optional[str] = None, model: Optional[str] = None,
               voice: Optional[str] = None, language: Optional[str] = None,
               speed: Optional[float] = None, cache: bool = True,
@@ -361,12 +379,30 @@ async def listen(self, *, target: Optional[str] = None,
                  provider: Optional[str] = None, model: Optional[str] = None,
                  language: Optional[str] = None, silence: Optional[int] = None,
                  timeout: Optional[int] = None, duration: Optional[int] = None,
-                 allow_silence: bool = False,
-                 path: Optional[str] = None) -> ListenResult: ...
+                 allow_silence: bool = False, path: Optional[str] = None,
+                 transcribe: bool = True) -> ListenResult: ...
 ```
 
 `SayResult` and `ListenResult` are dataclasses with snake_case fields:
-`duration_ms`, `onset_ms`, `speech_end_ms`, `latency_ms`, `stopped_by`.
+`duration_ms`, `onset_ms`, `speech_end_ms`, `latency_ms`, `stopped_by`,
+`lost_ms`. A segment has `start_ms`, `end_ms` and `text`, and a word has
+`start_ms`, `end_ms` and `word`. A field the engine left out is `None`.
+
+```python
+from vibium import browser, SpeechError
+
+browser.say("Come here, Watson.", target="question.wav")
+try:
+    reply = browser.listen(target="reply.wav")
+    print(reply.text, reply.latency_ms)
+except SpeechError as err:
+    if err.code != "no_speech":
+        raise
+    print("nothing was said")
+```
+
+The forms with no browser keep their engine on a thread of their own, so
+it serves the sync API and every event loop of the async one.
 
 ### Java
 
@@ -378,17 +414,41 @@ public ListenResult listen(ListenOptions options);
 
 page.say("What time is it?", SayOptions.builder().voice("en_US-ljspeech-medium").build());
 ListenResult reply = page.listen(ListenOptions.builder().timeout(5000).build());
+
+try {
+    Vibium.say("Come here, Watson.", SayOptions.builder().target("question.wav").build());
+    ListenResult heard = Vibium.listen(ListenOptions.builder().target("reply.wav").build());
+    System.out.println(heard.text() + " " + heard.latencyMs());
+} catch (SpeechException e) {
+    if (!e.code().equals("no_speech")) throw e;
+}
 ```
 
 `SayOptions`, `ListenOptions`, `SayResult` and `ListenResult` live in
-`com.vibium.types`. The options follow the existing builder style.
+`com.vibium.types`. The options follow the existing builder style, and
+take the same names as the JavaScript options. A result's fields are
+read through methods of the same names, such as `durationMs()`. A time
+the engine left out, such as `latencyMs()`, is `null`.
 `Vibium.say` and `Vibium.listen` are the no-browser forms.
 
 ### Errors in the SDKs
 
 Each client raises a `SpeechError` with a `code` from
 [Errors](#errors). `listen` raises it with code `no_speech` when nothing
-is heard and `allowSilence` is off.
+is heard and `allowSilence` is off. Its message is the message alone,
+without the code.
+
+A call the engine refuses for another reason, such as an option it does
+not know, raises the client's ordinary error.
+
+In JavaScript, `vibium` and `vibium/sync` each export `SpeechError`. Import
+it from the one `browser` came from.
+
+In Python, `SpeechError` is a `VibiumError` with `code` and `message`.
+Printed, it reads `code: message`.
+
+In Java the class is `com.vibium.errors.SpeechException`, a
+`VibiumException` with `code()`. Its stack trace shows the code.
 
 ## MCP tools
 
@@ -453,6 +513,19 @@ The CLI commands call these tools through the daemon, as other commands do.
 
 The client timeout for `listen` MUST exceed `timeout + duration` plus
 transcription time. Clients use `timeout + duration + 60000` ms.
+
+- A `context` param names the page a `session` target acts on. Without
+  it the target is the current page.
+- A failure answers with its code from [Errors](#errors) in `error` and
+  the message, without the code, in `message`. A param the method does
+  not know fails with the plain `error`.
+- The audio a session sends for a capture stays in the engine. A client
+  sees no event for it.
+- `vibium pipe --no-browser` serves both methods with no session open,
+  for `local` and file targets. One engine there keeps the capture
+  window from a `say` to the next `listen`.
+- Neither method waits behind another command, also while recording. A
+  client can start a `listen` and then click what makes the page speak.
 
 ## Behavior
 
@@ -1737,8 +1810,6 @@ These are out of scope here. The design leaves room for each.
 - **Streaming partial transcripts.** `listen` returns once, at the end.
   A streaming form would emit words as they are recognized. The
   provider interface would gain a streaming method.
-- **Continuous audio playback in the Record Player.** Playing the
-  received track in step with the screenshots, with scrubbing.
 - **Audio compression.** Opus or FLAC inside record.zip. The manifest's
   `encoding` field is where a reader learns of it.
 - **Barge-in testing.** Speaking while the device is speaking, and

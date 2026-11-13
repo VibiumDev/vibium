@@ -342,11 +342,20 @@ MCP/CLI-only tools with no direct client API equivalent.
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 233 | Speak text into the session, this machine's speakers, or a WAV file | ⬜ | `vibium say <text>` | `vibium_say` | ⬜ | ⬜ | ⬜ |
-| 234 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | ⬜ | `vibium listen` | `vibium_listen` | ⬜ | ⬜ | ⬜ |
+| 233 | Speak text into the session, this machine's speakers, or a WAV file | `vibium:speech.say` | `vibium say <text>` | `vibium_say` | `browser.say(text, opts?)` | `browser.say(text, target=...)` | `browser.say(text, options?)` |
+| 235 | Speak text into a pinned page | `vibium:speech.say` | — | — | `page.say(text, opts?)` | `page.say(text, target=...)` | `page.say(text, options?)` |
+| 234 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | `vibium:speech.listen` | `vibium listen` | `vibium_listen` | `browser.listen(opts?)` | `browser.listen(target=...)` | `browser.listen(options?)` |
+| 236 | Hear a pinned page and return a transcript | `vibium:speech.listen` | — | — | `page.listen(opts?)` | `page.listen(target=...)` | `page.listen(options?)` |
+| 238 | Speak with no browser, into this machine's speakers or a WAV file | `vibium:speech.say` | — | — | — | — | `Vibium.say(text, options?)` |
+| 239 | Listen with no browser, to this machine's microphone or a WAV file | `vibium:speech.listen` | — | — | — | — | `Vibium.listen(options?)` |
 
 Both work without a browser. With a session open the default target is the
-session; with none open it is this machine's speakers and microphone. See
+session; with none open it is this machine's speakers and microphone. In
+the JavaScript and Python clients the forms with no browser are
+`browser.say` and `browser.listen` on the module's `browser`, before any
+`browser.start()`. In Java they are `Vibium.say` and `Vibium.listen`. A
+failure is a `SpeechError` with a `code`, named `SpeechException` in
+Java. See
 [the say and listen spec](../specs/say-listen-spec.md).
 
 The JS and Python module-level `browser.check` launcher requires `record` and
