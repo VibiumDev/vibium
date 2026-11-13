@@ -112,6 +112,102 @@ describe('Packaging: postinstall shim replacement (#356)', () => {
   });
 });
 
+describe('Packaging: setup links the binary when no install script ran (#678)', () => {
+  const { spawnSync } = require('node:child_process');
+  const FAKE_BINARY = '#!/bin/sh\necho "REAL_BINARY $*"\n';
+
+  // An installed copy of the bin scripts beside a stand-in platform package.
+  // packageDir is where the vibium package sits under root.
+  function makeInstall(packageDir) {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-setup-link-')));
+    const pkg = path.join(root, packageDir);
+    for (const file of ['package.json', 'bin/cli.js', 'bin/node-version-check.js', 'scripts/link-binary.js']) {
+      fs.mkdirSync(path.dirname(path.join(pkg, file)), { recursive: true });
+      fs.copyFileSync(path.join(PKG_DIR, file), path.join(pkg, file));
+    }
+    const arch = os.arch() === 'x64' ? 'x64' : 'arm64';
+    const platformPkg = path.join(root, 'node_modules', '@vibium', `${os.platform()}-${arch}`);
+    fs.mkdirSync(path.join(platformPkg, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(platformPkg, 'package.json'), '{"name":"stand-in"}');
+    fs.writeFileSync(path.join(platformPkg, 'bin', 'vibium'), FAKE_BINARY);
+    fs.chmodSync(path.join(platformPkg, 'bin', 'vibium'), 0o755);
+    return { root, shim: path.join(pkg, 'bin', 'cli.js') };
+  }
+
+  const run = (shim, ...args) => spawnSync(process.execPath, [shim, ...args], { encoding: 'utf-8' });
+
+  test('setup replaces the shim, and the bin path then runs the binary', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { root, shim } = makeInstall('node_modules/vibium');
+    try {
+      const setup = run(shim, 'setup', '--non-interactive');
+      assert.strictEqual(setup.status, 0, setup.stderr);
+      assert.match(setup.stdout, /REAL_BINARY setup --non-interactive/, 'setup itself must still run');
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), FAKE_BINARY, 'shim path must now hold the binary');
+      const direct = spawnSync(shim, ['--version'], { encoding: 'utf-8' });
+      assert.match(direct.stdout, /REAL_BINARY --version/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('other commands leave the shim alone', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { root, shim } = makeInstall('node_modules/vibium');
+    try {
+      const before = fs.readFileSync(shim, 'utf-8');
+      for (const args of [['--version'], ['go', 'setup'], ['--json', 'ready']]) {
+        const result = run(shim, ...args);
+        assert.match(result.stdout, new RegExp(`REAL_BINARY ${args.join(' ')}`));
+        assert.strictEqual(fs.readFileSync(shim, 'utf-8'), before, `vibium ${args.join(' ')} must not replace the shim`);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('setup in a source checkout keeps the tracked shim', (t) => {
+    if (process.platform === 'win32') {
+      t.skip('replacement is POSIX-only');
+      return;
+    }
+    const { root, shim } = makeInstall('packages/vibium');
+    try {
+      const before = fs.readFileSync(shim, 'utf-8');
+      assert.match(run(shim, 'setup').stdout, /REAL_BINARY setup/);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), before);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a read-only install keeps the shim and setup still runs', (t) => {
+    if (process.platform === 'win32' || process.getuid() === 0) {
+      t.skip('needs POSIX file permissions and a user they apply to');
+      return;
+    }
+    const { root, shim } = makeInstall('node_modules/vibium');
+    const binDir = path.dirname(shim);
+    try {
+      const before = fs.readFileSync(shim, 'utf-8');
+      fs.chmodSync(binDir, 0o555);
+      const setup = run(shim, 'setup');
+      assert.strictEqual(setup.status, 0, setup.stderr);
+      assert.match(setup.stdout, /REAL_BINARY setup/);
+      assert.strictEqual(fs.readFileSync(shim, 'utf-8'), before);
+    } finally {
+      fs.chmodSync(binDir, 0o755);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Packaging: shim replacement guard (#356)', () => {
   const { shouldReplaceShim } = require('../../packages/vibium/scripts/link-binary');
 

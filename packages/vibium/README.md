@@ -59,6 +59,10 @@ The same package ships a `vibium` command-line tool. It is a native binary, so
 once installed it drives the browser from a shell or a non-Node harness (Make,
 Python, bash) with no Node runtime involved.
 
+npm 12 and later do not run install scripts. There the `vibium` command starts
+through a small Node launcher until you run `vibium setup`, which links the
+binary in its place.
+
 ```bash
 npx vibium go https://example.com   # or node_modules/.bin/vibium
 npx vibium map                      # list interactive elements as @refs
@@ -84,7 +88,7 @@ npx vibium "open example.com and screenshot the pricing page"
 ## Requirements
 
 - Node.js 18+ for the JavaScript API. The `vibium` CLI is a native binary and
-  needs no Node runtime to run.
+  needs no Node runtime to run once it is linked (see [CLI](#cli)).
 
 ## Links
 

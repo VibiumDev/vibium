@@ -29,6 +29,19 @@ function getVibiumBinPath() {
 
 const vibiumPath = getVibiumBinPath();
 const args = process.argv.slice(2);
+
+// npm 12 runs no install scripts, so postinstall never links the binary
+// over this shim (#678). Setup is the next step users run: link it then.
+if (args.find((arg) => !arg.startsWith('-')) === 'setup') {
+  const { linkBinaryOverShim, shouldReplaceShim } = require('../scripts/link-binary');
+  if (shouldReplaceShim(os.platform(), process.versions.pnp, path.dirname(__dirname))) {
+    try {
+      linkBinaryOverShim(__filename, vibiumPath);
+    } catch {
+      // A read-only install keeps the shim, which still works.
+    }
+  }
+}
 const binName = path.basename(process.argv[1] || 'vibium', path.extname(process.argv[1] || ''));
 try {
   execFileSync(vibiumPath, args, { stdio: 'inherit', argv0: binName });
