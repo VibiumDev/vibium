@@ -12,13 +12,13 @@ A script that opens a browser, visits a website, takes a screenshot, and clicks 
 
 ## Step 1: Install Python
 
-Vibium requires Python 3.9 or higher. Check if you have it:
+Vibium requires Python 3.11 or higher. Check if you have it:
 
 ```bash
 python3 --version
 ```
 
-If you see a version number (like `Python 3.9.0` or higher), skip to Step 2.
+If you see a version number (like `Python 3.11.0` or higher), skip to Step 2.
 
 ### macOS
 
@@ -60,9 +60,10 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ```bash
 pip install vibium
+vibium install
 ```
 
-This downloads Vibium and the vibium binary for your platform. Chrome downloads automatically on first run (or run `vibium install` to pre-download it).
+The first command downloads Vibium and the vibium binary for your platform. The second downloads Chrome for Testing and chromedriver so your first script does not have to. (Chrome also downloads automatically on first run, so this step is optional — but pre-downloading makes the first run fast and rules out install problems before you write any code.)
 
 | Platform | Cache path |
 |----------|------------|
@@ -99,7 +100,7 @@ with open("screenshot.png", "wb") as f:
 print("Saved screenshot.png")
 
 # Find and click the link
-link = vibe.find("a")
+link = vibe.find(css="a")
 print("Found link:", link.text())
 link.click()
 print("Clicked!")
@@ -135,7 +136,7 @@ Check your folder - there's now a `screenshot.png` file!
 | `bro.page()` | Gets the default page (tab) |
 | `vibe.go(url)` | Navigates to a URL |
 | `vibe.screenshot()` | Captures the page as PNG bytes |
-| `vibe.find(selector)` | Finds an element by CSS selector |
+| `vibe.find(css="a")` | Finds an element by CSS selector |
 | `link.text()` | Gets the element's text content |
 | `link.click()` | Clicks the element |
 | `bro.stop()` | Closes the browser |
@@ -189,6 +190,16 @@ Then install vibium:
 ```bash
 pip install vibium
 ```
+
+### "BrowserCrashedError: ... chromedriver not found"
+
+The browser binaries have not been downloaded yet. With your virtual environment active, run:
+
+```bash
+vibium install
+```
+
+Then re-run your script.
 
 ### Browser doesn't open
 

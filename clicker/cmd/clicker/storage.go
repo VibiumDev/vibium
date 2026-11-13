@@ -12,6 +12,9 @@ func newStorageCmd() *cobra.Command {
 	storageCmd := &cobra.Command{
 		Use:   "storage",
 		Short: "Export or restore browser state (cookies, localStorage, sessionStorage)",
+		// Unlike other subcommand parents, running this bare does real work
+		// (prints the state); the annotation keeps it in `vibium commands`.
+		Annotations: map[string]string{"standalone": "true"},
 		Example: `  vibium storage
   # Print state as JSON
 
@@ -29,11 +32,24 @@ func newStorageCmd() *cobra.Command {
 			if output != "" {
 				// Save to file
 				text := extractText(result)
-				if err := os.WriteFile(output, []byte(text), 0644); err != nil {
+				// The export carries cookies and localStorage (session and auth
+				// tokens), so restrict it to the owner the way config writes do
+				// (#655): WriteFile's mode respects umask and means nothing on
+				// Windows, so chmod/ACL after the write.
+				if err := os.WriteFile(output, []byte(text), 0600); err != nil {
 					printError(fmt.Errorf("failed to write file: %w", err))
 					return
 				}
-				fmt.Printf("State saved to %s\n", output)
+				if err := restrictToOwner(output); err != nil {
+					printError(fmt.Errorf("failed to set permissions on %s: %w", output, err))
+					return
+				}
+				msg := fmt.Sprintf("State saved to %s", output)
+				if jsonOutput {
+					printJSON(jsonEnvelope{OK: true, Result: msg})
+					return
+				}
+				fmt.Println(msg)
 				return
 			}
 			printResult(result)
@@ -50,8 +66,8 @@ func newStorageCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: invalid path: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("invalid path: %w", err))
+				return
 			}
 
 			result, err := daemonCall("browser_restore_storage", map[string]interface{}{"path": path})

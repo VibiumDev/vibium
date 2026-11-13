@@ -33,7 +33,9 @@ Both forms are equivalent; the flag takes precedence over the environment.
 Session names may use letters, digits, `-` and `_` (max 64 chars). On
 macOS/Linux the session's socket path must also fit the OS socket-path
 limit — if a long name pushes it over, vibium says so and a shorter name
-(or a shorter `VIBIUM_CACHE_DIR`) fixes it.
+(or a shorter `VIBIUM_RUNTIME_DIR`) fixes it. The socket and PID file live in
+`VIBIUM_RUNTIME_DIR`, else `$XDG_RUNTIME_DIR/vibium`, else a private per-user
+directory under the system temp dir.
 
 ## Inspecting sessions
 
@@ -45,7 +47,7 @@ vibium daemon v26.5.31
 status:   running
 pid:      40767
 uptime:   2m10s
-socket:   /Users/paul/Library/Caches/vibium/vibium-buyer.sock
+socket:   /tmp/vibium-501/vibium-buyer.sock
 session:  buyer
 ```
 

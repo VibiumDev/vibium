@@ -4,6 +4,7 @@ import com.vibium.Vibium;
 import com.vibium.Page;
 import com.vibium.Browser;
 
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import org.junit.jupiter.api.*;
 
@@ -55,7 +56,7 @@ class DialogTest {
             latch.countDown();
         });
 
-        page.find("#alert-btn").click();
+        page.find(new SelectorOptions().css("#alert-btn")).click();
         assertTrue(latch.await(5, TimeUnit.SECONDS));
         assertEquals("hello", dialogMessage.get());
     }

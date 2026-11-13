@@ -1,0 +1,177 @@
+package ai
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+)
+
+// Operation supplies role-specific instructions and input to the shared loop.
+// Neither operation accepts a prior conversation or provider continuation ID.
+type Operation struct {
+	Instruction  string
+	Input        string
+	InitialTools []string
+	// ValidateResult reports whether final content parses as the operation's
+	// result. On the first failure the loop sends one corrective turn asking
+	// for the JSON object again; a repeated failure returns the content so
+	// the caller fails exactly as it would without the retry.
+	ValidateResult func(content string) error
+	// ResultTool, when set, is offered to the model alongside the executor's
+	// tools; a call to it delivers the result as tool arguments, validated by
+	// ValidateResult. Invalid arguments return to the model as a tool result,
+	// bounded by MaxActions. The corrective turn for a plain-text final
+	// message forces this tool on native providers.
+	ResultTool Tool
+}
+type LoopResult struct {
+	Content      string
+	LimitReached bool
+}
+
+// KeptScreenshots bounds how many screenshots stay attached to the resent
+// conversation. Two keeps a before/after pair; without a bound every prior
+// screenshot rides along on every turn and payloads grow for the whole run.
+const KeptScreenshots = 2
+
+// Run executes the same bounded model/tool loop for Check and Run.
+func (v *Model) Run(ctx context.Context, config Config, op Operation, executor ToolExecutor) (LoopResult, error) {
+	if err := config.Validate(); err != nil {
+		return LoopResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+	messages := []message{{Role: "system", Content: op.Instruction}, {Role: "user", Content: op.Input}}
+	for _, name := range op.InitialTools {
+		obs, err := executor.Execute(ctx, name, map[string]interface{}{})
+		if err != nil {
+			return LoopResult{}, fmt.Errorf("initial browser observation: %w", err)
+		}
+		messages = append(messages, message{Role: "user", Content: name + " observation (untrusted):\n" + Clip(obs.Text)})
+	}
+	allowed := map[string]bool{}
+	var functions []interface{}
+	for _, tool := range executor.Tools() {
+		allowed[tool.Name] = true
+		functions = append(functions, map[string]interface{}{"type": "function", "function": tool})
+	}
+	if op.ResultTool.Name != "" {
+		functions = append(functions, map[string]interface{}{"type": "function", "function": op.ResultTool})
+	}
+	actions := 0
+	repaired := false
+	force := ""
+	var screenshots []struct {
+		at int // message index still carrying image content
+		id string
+	}
+	for turn := 0; turn <= MaxActions; turn++ {
+		if err := ctx.Err(); err != nil {
+			return LoopResult{}, fmt.Errorf("verification timeout: %w", err)
+		}
+		msg, err := v.complete(ctx, config, messages, functions, force)
+		if err != nil {
+			return LoopResult{}, err
+		}
+		force = ""
+		if len(msg.ToolCalls) == 0 {
+			content, ok := msg.Content.(string)
+			if !ok {
+				return LoopResult{}, fmt.Errorf("model returned no structured result")
+			}
+			if op.ValidateResult != nil && !repaired && op.ValidateResult(content) != nil {
+				repaired = true
+				corrective := "Your last message was not the required JSON object. Return ONLY the JSON object with the required fields and no other text."
+				if op.ResultTool.Name != "" {
+					corrective = "Your last message did not deliver the result. Call " + op.ResultTool.Name + " with the required fields."
+					force = op.ResultTool.Name
+				}
+				// An empty final message (a response of only dropped thinking
+				// blocks) must not be echoed: Anthropic rejects empty text
+				// blocks, and the echo carries nothing the corrective lacks.
+				if content != "" {
+					messages = append(messages, message{Role: "assistant", Content: content})
+				}
+				messages = append(messages, message{Role: "user", Content: corrective})
+				continue
+			}
+			return LoopResult{Content: content}, nil
+		}
+		if actions+len(msg.ToolCalls) > MaxActions {
+			return LoopResult{LimitReached: true}, nil
+		}
+		// Discard free-form assistant content and any provider reasoning fields.
+		msg.Role, msg.Content = "assistant", nil
+		messages = append(messages, msg)
+		for _, call := range msg.ToolCalls {
+			if call.Type != "function" || call.ID == "" {
+				return LoopResult{}, fmt.Errorf("verifier requested a disallowed tool")
+			}
+			if op.ResultTool.Name != "" && call.Function.Name == op.ResultTool.Name {
+				actions++
+				feedback := ""
+				if len(msg.ToolCalls) > 1 {
+					feedback = "Error: call " + op.ResultTool.Name + " alone, after all other tool calls have completed."
+				} else {
+					var invalid error
+					if op.ValidateResult != nil {
+						invalid = op.ValidateResult(call.Function.Arguments)
+					}
+					if invalid == nil {
+						return LoopResult{Content: call.Function.Arguments}, nil
+					}
+					feedback = "Error: " + invalid.Error() + ". Call " + op.ResultTool.Name + " again with a corrected object."
+				}
+				messages = append(messages, message{Role: "tool", ToolCallID: call.ID, Content: Clip(feedback)})
+				continue
+			}
+			if !allowed[call.Function.Name] {
+				return LoopResult{}, fmt.Errorf("verifier requested a disallowed tool")
+			}
+			args := map[string]interface{}{}
+			if len(call.Function.Arguments) > MaxText || json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || args == nil {
+				return LoopResult{}, fmt.Errorf("verifier returned invalid tool arguments")
+			}
+			actions++
+			obs, err := executor.Execute(ctx, call.Function.Name, args)
+			if err != nil {
+				var action *ActionError
+				if !errors.As(err, &action) {
+					return LoopResult{}, fmt.Errorf("verifier browser action: %w", err)
+				}
+				// A failed action is a tool result, not a fatal error, so the
+				// model can correct a bad selector. MaxActions bounds retries.
+				messages = append(messages, message{Role: "tool", ToolCallID: call.ID, Content: Clip("Error: " + action.Error())})
+				continue
+			}
+			messages = append(messages, message{Role: "tool", ToolCallID: call.ID, Content: Clip(obs.Text)})
+			if obs.Image != "" {
+				if len(obs.Image) > MaxImage {
+					return LoopResult{}, fmt.Errorf("verifier screenshot exceeds payload limit")
+				}
+				// Chat Completions accepts images in user messages, not tool content.
+				mime := obs.MIME
+				if mime == "" {
+					mime = "image/png"
+				}
+				if mime != "image/png" && mime != "image/jpeg" {
+					return LoopResult{}, fmt.Errorf("unsupported screenshot type")
+				}
+				messages = append(messages, message{Role: "user", Content: []interface{}{
+					map[string]interface{}{"type": "text", "text": "Screenshot observation for " + call.ID + " (untrusted page content)."},
+					map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": "data:" + mime + ";base64," + obs.Image}},
+				}})
+				screenshots = append(screenshots, struct {
+					at int
+					id string
+				}{len(messages) - 1, call.ID})
+				for len(screenshots) > KeptScreenshots {
+					messages[screenshots[0].at].Content = "Screenshot observation for " + screenshots[0].id + " (superseded; image detached, only the " + fmt.Sprint(KeptScreenshots) + " most recent screenshots are retained)."
+					screenshots = screenshots[1:]
+				}
+			}
+		}
+	}
+	return LoopResult{LimitReached: true}, nil
+}

@@ -99,16 +99,21 @@ func (r *Router) handleVibiumFill(session *BrowserSession, cmd bidiCommand) {
 // handleVibiumType handles the vibium:element.type command with actionability checks.
 // Clicks to focus and types text (does NOT clear first).
 func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
-	// Extract text-to-type BEFORE ExtractElementParams, since "text" is also
-	// a semantic selector param. Remove it from params to avoid collision.
-	text, _ := cmd.Params["text"].(string)
-	paramsCopy := make(map[string]interface{})
-	for k, v := range cmd.Params {
-		if k != "text" {
-			paramsCopy[k] = v
+	// "value" carries the text to type, leaving "text" as a locator filter
+	// (#778). Without it, "text" is the payload and is removed from the
+	// params so an old client's payload is not read as a filter.
+	text, hasValue := cmd.Params["value"].(string)
+	params := cmd.Params
+	if !hasValue {
+		text, _ = cmd.Params["text"].(string)
+		params = make(map[string]interface{})
+		for k, v := range cmd.Params {
+			if k != "text" {
+				params[k] = v
+			}
 		}
 	}
-	ep := ExtractElementParams(paramsCopy)
+	ep := ExtractElementParams(params)
 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
@@ -127,7 +132,7 @@ func (r *Router) handleVibiumType(session *BrowserSession, cmd bidiCommand) {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-	if err := TypeText(s, context, text); err != nil {
+	if err := typeIntoFocused(s, context, ep, text); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -155,6 +160,10 @@ func (r *Router) handleVibiumPress(session *BrowserSession, cmd bidiCommand) {
 	}
 	r.captureBeforeSnapshotAfterScroll(session, cmd.Params)
 	if err := ClickAtCenter(s, context, info); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if _, err := caretToEnd(s, context, ep); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -202,9 +211,21 @@ func (r *Router) handleVibiumClear(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"cleared": true})
 }
 
-// handleVibiumCheck handles the vibium:element.check command.
+// handleVibiumCheck handles the vibium:element.set command.
 // Clicks the checkbox only if it's not already checked.
 func (r *Router) handleVibiumCheck(session *BrowserSession, cmd bidiCommand) {
+	if value, exists := cmd.Params["value"]; exists {
+		selected, ok := value.(bool)
+		if !ok {
+			r.sendError(session, cmd.ID, fmt.Errorf("set value must be a boolean"))
+			return
+		}
+		if !selected {
+			r.handleVibiumUncheck(session, cmd)
+			return
+		}
+	}
+
 	ep := ExtractElementParams(cmd.Params)
 
 	context, err := r.resolveContext(session, cmd.Params)
@@ -235,7 +256,7 @@ func (r *Router) handleVibiumCheck(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"checked": true})
 }
 
-// handleVibiumUncheck handles the vibium:element.uncheck command.
+// handleVibiumUncheck handles the vibium:element.unset command.
 // Clicks the checkbox only if it's currently checked.
 func (r *Router) handleVibiumUncheck(session *BrowserSession, cmd bidiCommand) {
 	ep := ExtractElementParams(cmd.Params)
@@ -265,6 +286,10 @@ func (r *Router) handleVibiumUncheck(session *BrowserSession, cmd bidiCommand) {
 		}
 	}
 
+	if selected, err := IsChecked(s, context, ep); err != nil || selected {
+		r.sendError(session, cmd.ID, fmt.Errorf("could not unset checkbox; select another radio in its group to clear a radio"))
+		return
+	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"unchecked": true})
 }
 
@@ -383,10 +408,8 @@ func (r *Router) handleVibiumDragTo(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := pointerTarget(srcInfo)
+	dstX, dstY := pointerTarget(targetInfo)
 
 	dragParams := map[string]interface{}{
 		"context": context,
@@ -539,27 +562,10 @@ func (r *Router) handleVibiumElSetFiles(session *BrowserSession, cmd bidiCommand
 		files[i] = s
 	}
 
-	if err := RequireFileInput(NewAPISession(r, session, context), context, ep); err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Resolve the element to get its BiDi sharedId
-	sharedID, err := r.resolveElementRef(session, context, ep)
-	if err != nil {
-		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	// Call input.setFiles
-	_, err = r.sendInternalCommand(session, "input.setFiles", map[string]interface{}{
-		"context": context,
-		"element": map[string]interface{}{
-			"sharedId": sharedID,
-		},
-		"files": files,
-	})
-	if err != nil {
+	// Upload does the file-input check, path validation and the setFiles
+	// call; going through it keeps this path and the CLI/MCP path one
+	// implementation.
+	if err := Upload(NewAPISession(r, session, context), context, ep, files, r.connectURL != ""); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -588,10 +594,21 @@ func (r *Router) pressKey(session *BrowserSession, context, key string) error {
 // Exported standalone input primitives — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
 
+// pointerTarget returns the viewport coordinates for pointer actions on an
+// element: the in-view center from the actionability script when present,
+// else the bounding-box center (plain and forced resolutions). The box center
+// sits outside the viewport for elements larger than twice the viewport, and
+// out-of-bounds pointer coordinates are a WebDriver error (#340).
+func pointerTarget(info *ElementInfo) (int, int) {
+	if info.Point.X != 0 || info.Point.Y != 0 {
+		return int(info.Point.X), int(info.Point.Y)
+	}
+	return int(info.Box.X + info.Box.Width/2), int(info.Box.Y + info.Box.Height/2)
+}
+
 // ClickAtCenter performs a mouse click at the center of an element.
 func ClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	clickParams := map[string]interface{}{
 		"context": context,
@@ -617,8 +634,7 @@ func ClickAtCenter(s Session, context string, info *ElementInfo) error {
 
 // DblClickAtCenter performs a double-click at the center of an element.
 func DblClickAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	dblclickParams := map[string]interface{}{
 		"context": context,
@@ -756,8 +772,7 @@ func Hover(s Session, context string, ep ElementParams) error {
 
 // HoverAtCenter moves the mouse to the center of an element without clicking.
 func HoverAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	hoverParams := map[string]interface{}{
 		"context": context,
@@ -781,8 +796,7 @@ func HoverAtCenter(s Session, context string, info *ElementInfo) error {
 
 // TapAtCenter performs a touch tap at the center of an element.
 func TapAtCenter(s Session, context string, info *ElementInfo) error {
-	x := int(info.Box.X + info.Box.Width/2)
-	y := int(info.Box.Y + info.Box.Height/2)
+	x, y := pointerTarget(info)
 
 	tapParams := map[string]interface{}{
 		"context": context,
@@ -826,6 +840,97 @@ func Fill(s Session, context string, ep ElementParams, value string) error {
 	return nil
 }
 
+// Caret modes reported by caretToEnd. Anything else means the caret is placed.
+const (
+	// caretModeSegmented prefixes a date/time control: the value is a set of
+	// segments rather than text, so there is nothing to append to.
+	caretModeSegmented = "segmented"
+	// caretModeNoCaret means the caret could not be placed at all.
+	caretModeNoCaret = "nocaret"
+)
+
+// caretToEnd moves the caret past the element's existing content, ignoring
+// elements that cannot carry one.
+//
+// TypeInto, PressOn and their router twins focus by clicking the element's
+// center, and a click in a text field puts the caret at the character nearest
+// that x-coordinate — a fixed fraction of the field's width, independent of
+// how much text is there. A value long enough to reach that point got new
+// text spliced into its middle, and which character a press acted on
+// depended on CSS width, font metrics and engine (#488). Collapsing the
+// caret to the end afterwards restores the documented "appends to existing
+// content" contract.
+func caretToEnd(s Session, context string, ep ElementParams) (string, error) {
+	script, args := buildElActionScript(ep, nil, nil, `
+			// setSelectionRange exists on every HTMLInputElement but throws on
+			// types that do not support selection, so its presence is not a
+			// test for one. These two lists name the types that reach that
+			// throw and still hold something a caller can edit.
+			const appendable = ['number', 'email'];
+			const segmented = ['date', 'time', 'month', 'week', 'datetime-local'];
+			const tag = el.tagName ? el.tagName.toLowerCase() : '';
+			const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : '';
+			if (segmented.indexOf(inputType) !== -1) {
+				return 'segmented:' + inputType;
+			}
+			const n = el.value !== undefined && el.value !== null ? String(el.value).length : null;
+			if (n !== null && typeof el.setSelectionRange === 'function') {
+				try {
+					el.setSelectionRange(n, n);
+				} catch (e) {
+					// No selection API on this type. The same element does have
+					// one while its type is text, and the value survives the
+					// round trip, so borrow it: the caret placed as text is
+					// still there when the type is restored. Keeping real key
+					// events is what this buys over writing the value directly,
+					// and maxlength and readonly keep working by themselves.
+					// Everything else that throws here — checkbox, color, file,
+					// the buttons — has no text to put a caret in front of, so
+					// it is left exactly as it was.
+					if (appendable.indexOf(inputType) !== -1) {
+						try {
+							el.type = 'text';
+							el.setSelectionRange(n, n);
+							el.type = inputType;
+						} catch (e2) {
+							return 'nocaret';
+						}
+					}
+				}
+			} else if (el.isContentEditable) {
+				const r = document.createRange();
+				r.selectNodeContents(el);
+				r.collapse(false);
+				const sel = window.getSelection();
+				sel.removeAllRanges();
+				sel.addRange(r);
+			}
+			return 'caret';
+		`)
+	resp, err := CallScript(s, context, script, args)
+	if err != nil {
+		return "", err
+	}
+	return parseScriptResult(resp)
+}
+
+// typeIntoFocused types into an element that has already been focused, refusing
+// the cases where appending is not defined rather than typing into them blind.
+func typeIntoFocused(s Session, context string, ep ElementParams, text string) error {
+	mode, err := caretToEnd(s, context, ep)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(mode, caretModeSegmented+":") {
+		return fmt.Errorf("type: input[type=%s] holds segments rather than text, so there is nothing to append to; use fill to set it",
+			strings.TrimPrefix(mode, caretModeSegmented+":"))
+	}
+	if mode == caretModeNoCaret {
+		return fmt.Errorf("type: this element cannot hold a caret, so typing would land at an arbitrary position; use fill to set it")
+	}
+	return TypeText(s, context, text)
+}
+
 // TypeInto resolves an element with actionability checks, clicks to focus, and types text.
 func TypeInto(s Session, context string, ep ElementParams, text string) error {
 	info, err := resolveWithActionability(s, context, ep, ClickChecks)
@@ -835,7 +940,7 @@ func TypeInto(s Session, context string, ep ElementParams, text string) error {
 	if err := ClickAtCenter(s, context, info); err != nil {
 		return err
 	}
-	return TypeText(s, context, text)
+	return typeIntoFocused(s, context, ep, text)
 }
 
 // PressOn resolves an element with actionability checks, clicks to focus, and presses a key.
@@ -845,6 +950,9 @@ func PressOn(s Session, context string, ep ElementParams, key string) error {
 		return err
 	}
 	if err := ClickAtCenter(s, context, info); err != nil {
+		return err
+	}
+	if _, err := caretToEnd(s, context, ep); err != nil {
 		return err
 	}
 	return PressKey(s, context, key)
@@ -882,6 +990,9 @@ func Uncheck(s Session, context string, ep ElementParams) (bool, error) {
 	if checked {
 		if err := ClickAtCenter(s, context, info); err != nil {
 			return false, err
+		}
+		if selected, err := IsChecked(s, context, ep); err != nil || selected {
+			return false, fmt.Errorf("could not unset checkbox; select another radio in its group to clear a radio")
 		}
 		return true, nil // was toggled
 	}
@@ -963,10 +1074,8 @@ func DragTo(s Session, context string, source, target ElementParams) error {
 		return fmt.Errorf("target: %w", err)
 	}
 
-	srcX := int(srcInfo.Box.X + srcInfo.Box.Width/2)
-	srcY := int(srcInfo.Box.Y + srcInfo.Box.Height/2)
-	dstX := int(targetInfo.Box.X + targetInfo.Box.Width/2)
-	dstY := int(targetInfo.Box.Y + targetInfo.Box.Height/2)
+	srcX, srcY := pointerTarget(srcInfo)
+	dstX, dstY := pointerTarget(targetInfo)
 
 	dragParams := map[string]interface{}{
 		"context": context,
@@ -1014,6 +1123,85 @@ func ScrollWheel(s Session, context string, x, y, deltaX, deltaY int) error {
 	}
 
 	_, err := s.SendBidiCommand("input.performActions", scrollParams)
+	return err
+}
+
+// DirectionalScroll scrolls the active context by the given deltas, picking
+// the mechanism that actually moves the intended document (#511).
+//
+// A synthesized wheel is dispatched in top-level viewport coordinates, so in a
+// subframe the (x, y) taken from the frame's own viewport center lands on the
+// page behind the frame: Chrome scrolls the wrong document, Firefox drops the
+// event, and the frame never moves. Inside a subframe we therefore scroll
+// programmatically in the frame's own context, which is coordinate-free and
+// cannot touch the parent.
+//
+// At the top level the wheel is kept — a page may drive behaviour off real
+// wheel events — but verified rather than assumed: the first wheel after a
+// navigation arrives before the new document can be hit-tested and is dropped,
+// while the command still reports success. When the offset did not move we
+// fall back to a programmatic scroll, so "scrolled" means it scrolled.
+func DirectionalScroll(s Session, context string, x, y, deltaX, deltaY int) error {
+	if inSubframe(s, context) {
+		return scrollContextBy(s, context, deltaX, deltaY)
+	}
+
+	beforeY, beforeX, haveBefore := documentScrollOffset(s, context)
+	if err := ScrollWheel(s, context, x, y, deltaX, deltaY); err != nil {
+		return err
+	}
+	if haveBefore {
+		afterY, afterX, ok := documentScrollOffset(s, context)
+		if ok && afterX == beforeX && afterY == beforeY {
+			return scrollContextBy(s, context, deltaX, deltaY)
+		}
+	}
+	return nil
+}
+
+// inSubframe reports whether the context is a nested browsing context. The
+// reference comparison never touches a cross-origin property, so it does not
+// throw; on any error we assume top-level and keep the wheel path.
+func inSubframe(s Session, context string) bool {
+	resp, err := CallScript(s, context, `() => String(window !== window.top)`, []map[string]interface{}{})
+	if err != nil {
+		return false
+	}
+	val, err := parseScriptResult(resp)
+	return err == nil && val == "true"
+}
+
+// documentScrollOffset returns the active context's scroll offsets (top, left).
+func documentScrollOffset(s Session, context string) (top, left int, ok bool) {
+	resp, err := CallScript(s, context,
+		`() => { const e = document.scrollingElement || document.documentElement;
+			return JSON.stringify({ top: Math.round(e.scrollTop), left: Math.round(e.scrollLeft) }); }`,
+		[]map[string]interface{}{})
+	if err != nil {
+		return 0, 0, false
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return 0, 0, false
+	}
+	var off struct {
+		Top  int `json:"top"`
+		Left int `json:"left"`
+	}
+	if err := json.Unmarshal([]byte(val), &off); err != nil {
+		return 0, 0, false
+	}
+	return off.Top, off.Left, true
+}
+
+// scrollContextBy scrolls the active context's own window by the given deltas.
+func scrollContextBy(s Session, context string, deltaX, deltaY int) error {
+	_, err := CallScript(s, context,
+		`(dx, dy) => { window.scrollBy(dx, dy); return 'ok'; }`,
+		[]map[string]interface{}{
+			{"type": "number", "value": deltaX},
+			{"type": "number", "value": deltaY},
+		})
 	return err
 }
 
@@ -1130,6 +1318,38 @@ func buildSetValueScript(ep ElementParams, value string) (string, []map[string]i
 				nativeSetter.call(el, value);
 			} else {
 				el.value = value;
+			}
+			// Assigning through the value setter runs the input type's value
+			// sanitization algorithm, which discards a string it cannot parse
+			// without throwing: number and the date family fall back to "",
+			// range and color to a substitute value (issue #530). Report that
+			// as an error instead of 'ok' so the caller learns the field never
+			// took the value.
+			//
+			// Only wholesale rejection is an error. Sanitization also
+			// normalizes accepted values (range clamps and snaps, color
+			// lowercases and resolves CSS colors, text strips line breaks), so
+			// the value is not compared back byte-for-byte; each family is
+			// asked only whether its input was parseable at all. range uses
+			// the HTML valid-floating-point-number grammar (no whitespace, no
+			// leading +, no Infinity — measured on both engines); color asks
+			// the browser's own CSS parser, since engines accept named and
+			// functional colors. The empty string is exempt: clear writes ""
+			// through this same builder, and fill "" means clear (#187).
+			if (value !== '' && el instanceof window.HTMLInputElement) {
+				const t = el.type;
+				let rejected = false;
+				if (['number', 'date', 'time', 'month', 'week', 'datetime-local'].indexOf(t) !== -1) {
+					rejected = el.value === '';
+				} else if (t === 'range') {
+					rejected = !/^-?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(value);
+				} else if (t === 'color') {
+					rejected = !(window.CSS && CSS.supports('color', value));
+				}
+				if (rejected) {
+					return 'input[type=' + t + '] did not accept ' + JSON.stringify(value) +
+						'; the field holds ' + JSON.stringify(el.value);
+				}
 			}
 			el.dispatchEvent(new Event('input', { bubbles: true }));
 			el.dispatchEvent(new Event('change', { bubbles: true }));

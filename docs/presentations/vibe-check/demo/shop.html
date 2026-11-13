@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VAR Parts · Demo store</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#111517;color:#f4f1e9;font-family:Arial,Helvetica,sans-serif}header{height:100px;padding:0 64px;border-bottom:1px solid #343b3d;display:flex;align-items:center;justify-content:space-between}header strong{font-size:30px;color:#ff7138}nav{display:flex;align-items:center;gap:38px}a{color:inherit;text-decoration:none;font-size:23px}a:focus-visible,button:focus-visible{outline:3px solid #f6c768;outline-offset:5px}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;background:#ff7138;color:#171b1c;border-radius:50%;margin-left:10px;font-size:21px;font-weight:bold}main{max-width:1120px;margin:65px auto}.product{display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:center}.art{background:#20282b;border-radius:22px;padding:32px;display:flex;align-items:center;justify-content:center}.art svg{width:100%;height:345px}h1{font-size:52px;line-height:1.1;letter-spacing:-1.5px;margin:0 0 28px}p{font-size:25px;line-height:1.5;color:#b9c1c3;margin:20px 0}.price{font-size:36px;color:#ff995d;font-weight:bold;margin:28px 0}button,.shop-link{display:inline-block;background:#fa652e;color:#15191a;border:none;border-radius:10px;font-size:26px;font-weight:bold;padding:21px 35px;cursor:pointer}button:disabled{background:#263e33;color:#a3dfbb;cursor:default}#status{font-size:27px;color:#a3dfbb;min-height:41px;font-weight:bold}.cart-heading{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid #343b3d;padding-bottom:20px}.cart-heading h1{margin:0}.empty{text-align:center;padding:56px 0}.empty svg{width:96px;height:96px;color:#aebabc}.empty h2{font-size:44px;margin:22px 0}.empty p{margin:18px 0 34px}.cart-item{display:grid;grid-template-columns:160px 1fr auto;gap:35px;align-items:center;padding:40px 0;border-bottom:1px solid #343b3d}.cart-item .art{padding:12px}.cart-item svg{height:125px}.cart-item h2{font-size:33px;margin:0}.cart-item p{font-size:25px;margin:12px 0 0}.total{display:flex;justify-content:space-between;font-size:33px;margin-top:35px}.demo{font-size:18px;color:#9ba6a9;margin-left:22px;font-weight:normal}
+</style>
+<header><div><strong>VAR Parts</strong><span class="demo">Demo store</span></div><nav><a id="shop-link" href="/">Shop</a><a id="cart-link" href="?view=cart">Cart <span id="badge" class="badge">0</span></a></nav></header>
+<main id="main"></main>
+<template id="battery"><svg viewBox="0 0 400 340" role="img" aria-label="Black battery pack with an orange lightning bolt"><ellipse cx="200" cy="307" rx="122" ry="16" fill="#101719"/><rect x="100" y="42" width="200" height="245" rx="25" fill="#0e1214" stroke="#4a565a" stroke-width="3"/><rect x="125" y="60" width="150" height="7" rx="3" fill="#647276"/><rect x="177" y="22" width="46" height="20" rx="5" fill="#7d8d93"/><path d="M217 97 161 181h37l-15 65 58-94h-38z" fill="#ff7138"/><circle cx="162" cy="263" r="4" fill="#a3dfbb"/><circle cx="181" cy="263" r="4" fill="#a3dfbb"/><circle cx="200" cy="263" r="4" fill="#a3dfbb"/><circle cx="219" cy="263" r="4" fill="#a3dfbb"/></svg></template>
+<script>
+const params=new URLSearchParams(location.search);
+const fixed=params.get('fixed')==='1';
+const shopURL=location.pathname+(fixed?'?fixed=1':'');
+const cartURL=shopURL+(fixed?'&':'?')+'view=cart';
+document.querySelector('#shop-link').href=shopURL;
+document.querySelector('#cart-link').href=cartURL;
+const badge=Number(sessionStorage.getItem('cart-badge')||0);
+const quantity=Number(sessionStorage.getItem('cart-quantity')||0);
+document.querySelector('#badge').textContent=badge;
+const art=document.querySelector('#battery').innerHTML;
+const main=document.querySelector('#main');
+if(params.get('view')==='cart'){
+ document.title='Your cart · VAR Parts demo';
+ main.innerHTML='<div class="cart-heading"><h1>Your cart</h1><p>'+quantity+' item'+(quantity===1?'':'s')+'</p></div>'+(quantity===0?
+ '<div class="empty"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M10 15h12l12 48h43l12-35H26M38 80h1M74 80h1" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg><h2>Your cart is empty</h2><p>Looks like you haven’t added anything yet.</p><a class="shop-link" href="'+shopURL+'">Continue shopping</a></div>':
+ '<div class="cart-item"><div class="art">'+art+'</div><div><h2>Vibium Battery Pack</h2><p>Quantity: '+quantity+'</p></div><div class="price">$89.99</div></div><div class="total"><strong>Subtotal</strong><strong>$'+(quantity*89.99).toFixed(2)+'</strong></div>');
+}else{
+ main.innerHTML='<div class="product"><div class="art">'+art+'</div><div><h1>Vibium Battery Pack</h1><p>A little extra energy for your next big idea.</p><p>10,000 mAh · USB-C · Ready to go</p><div class="price">$89.99</div><button id="add">Add to cart</button><p id="status" role="status" aria-live="polite"></p></div></div>';
+ document.querySelector('#add').addEventListener('click',()=>{
+  // The broken mode updates the confirmation UI but drops the cart write.
+  if(fixed)sessionStorage.setItem('cart-quantity',String(quantity+1));
+  sessionStorage.setItem('cart-badge',String(badge+1));
+  document.querySelector('#badge').textContent=badge+1;
+  document.querySelector('#status').textContent='Added to cart';
+  const button=document.querySelector('#add');button.disabled=true;button.textContent='Added';
+ });
+}
+</script>
+</html>

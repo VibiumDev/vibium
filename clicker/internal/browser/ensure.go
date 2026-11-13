@@ -16,23 +16,38 @@ func SkipBrowserDownload() bool {
 // EngineInstalled reports whether the selected engine is already installed.
 // It only stats local paths — no network.
 func EngineInstalled(engine string) bool {
+	return EngineInstalledForChannel(engine, "")
+}
+
+// EngineInstalledForChannel reports whether the engine is installed for a
+// specific channel. An empty channel means the VIBIUM_ENGINE_CHANNEL
+// default.
+func EngineInstalledForChannel(engine, channel string) bool {
 	if engine == "firefox" {
-		return IsFirefoxInstalled()
+		return IsFirefoxInstalledForChannel(channel)
 	}
-	return IsInstalled()
+	return IsInstalledForChannel(channel)
 }
 
 // EnsureInstalled installs the selected engine if it is not already present.
 // When VIBIUM_SKIP_BROWSER_DOWNLOAD is set it is a no-op, so a later launch
 // fails (or finds a user-provided browser) exactly as it did before.
 func EnsureInstalled(engine string) error {
-	if SkipBrowserDownload() || EngineInstalled(engine) {
+	return EnsureInstalledForChannel(engine, "")
+}
+
+// EnsureInstalledForChannel installs the engine for a specific channel. The
+// daemon resolves a per-call --channel that need not match the environment,
+// so installing the environment's channel there would download a browser the
+// launch then fails to find.
+func EnsureInstalledForChannel(engine, channel string) error {
+	if SkipBrowserDownload() || EngineInstalledForChannel(engine, channel) {
 		return nil
 	}
 	if engine == "firefox" {
-		_, err := InstallFirefox()
+		_, err := InstallFirefoxForChannel(channel)
 		return err
 	}
-	_, err := Install()
+	_, err := InstallForChannel(channel)
 	return err
 }

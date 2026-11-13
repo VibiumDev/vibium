@@ -47,6 +47,14 @@ describe('CLI: storage export/restore', () => {
     });
 
     execSync(`${VIBIUM} storage -o ${statePath}`, { encoding: 'utf-8', timeout: 30000 });
+
+    // The export carries cookies and localStorage (session/auth tokens), so it
+    // must not be world-readable (#655 class). Windows uses an ACL, not modes.
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(statePath).mode & 0o777, 0o600,
+        'storage export must be owner-only (0600)');
+    }
+
     const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
 
     // The bug: Evaluate returns the JSON.stringify'd page result as a Go string,
@@ -111,5 +119,19 @@ describe('CLI: storage export/restore', () => {
       timeout: 30000,
     }).trim();
     assert.strictEqual(legacy, 'legacy_value', 'legacy state file should still restore');
+  });
+
+  test('storage -o honors --json', () => {
+    // Without -o this command already emits the envelope; the -o branch
+    // returned early with plain text instead (#451).
+    const outPath = path.join(tmpDir, 'state-json.json');
+    const out = execSync(`${VIBIUM} storage -o ${outPath} --json`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const env = JSON.parse(out.trim()); // throws on the unfixed binary
+    assert.strictEqual(env.ok, true, 'envelope should report ok');
+    assert.match(env.result, /^State saved to /, 'result should carry the human message');
+    assert.ok(fs.existsSync(outPath), 'the state file should still be written');
   });
 });

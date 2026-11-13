@@ -19,15 +19,23 @@ import (
 
 const firefoxVersionsURL = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 
-// InstallFirefox downloads Firefox from Mozilla's release archive into the
-// vibium cache and returns the executable path. Skips the download if the
-// current version is already installed. The channel comes from
-// VIBIUM_ENGINE_CHANNEL (default "release"; "beta" for pre-release testing).
+// InstallFirefox downloads Firefox for the VIBIUM_ENGINE_CHANNEL channel
+// (default "release"; "beta" for pre-release testing).
+func InstallFirefox() (string, error) {
+	return InstallFirefoxForChannel("")
+}
+
+// InstallFirefoxForChannel downloads Firefox from Mozilla's release archive
+// into the vibium cache and returns the executable path. Skips the download
+// if the current version is already installed. An empty channel means the
+// VIBIUM_ENGINE_CHANNEL default; passing it explicitly lets a long-lived
+// daemon install for a per-call channel without mutating process-wide
+// environment state, mirroring paths.GetFirefoxExecutableForChannel.
 //
 // Windows is unsupported: Mozilla ships only installer executables there, no
 // archive build we can unpack into the cache. Install Firefox manually and
 // set VIBIUM_ENGINE_PATH instead.
-func InstallFirefox() (string, error) {
+func InstallFirefoxForChannel(channel string) (string, error) {
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return "", fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
@@ -43,13 +51,15 @@ func InstallFirefox() (string, error) {
 		return "", fmt.Errorf("Firefox auto-install is not supported on Windows: install Firefox and set VIBIUM_ENGINE_PATH to firefox.exe")
 	}
 
-	channel := paths.FirefoxChannel()
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
 	version, err := resolveFirefoxVersion(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Firefox version info: %w", err)
 	}
 
-	ffDir, err := paths.GetFirefoxDir()
+	ffDir, err := paths.GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -57,14 +67,14 @@ func InstallFirefox() (string, error) {
 	exePath := paths.FirefoxPathInVersion(versionDir)
 
 	if _, err := os.Stat(exePath); err == nil {
-		fmt.Printf("Firefox v%s already installed.\n", version)
+		progressf("Firefox v%s already installed.\n", version)
 		return exePath, nil
 	}
 
-	fmt.Printf("Installing Firefox v%s (%s channel)...\n", version, channel)
+	progressf("Installing Firefox v%s (%s channel)...\n", version, channel)
 
 	downloadURL := firefoxDownloadURL(version)
-	fmt.Printf("Downloading Firefox from %s...\n", downloadURL)
+	progressf("Downloading Firefox from %s...\n", downloadURL)
 
 	pattern := "firefox-*.tar.xz"
 	if runtime.GOOS == "darwin" {
@@ -107,9 +117,19 @@ func InstallFirefox() (string, error) {
 	return exePath, nil
 }
 
-// IsFirefoxInstalled checks if a usable Firefox executable is available.
+// IsFirefoxInstalled checks if a usable Firefox executable is available for
+// the VIBIUM_ENGINE_CHANNEL channel.
 func IsFirefoxInstalled() bool {
-	p, err := paths.GetFirefoxExecutable()
+	return IsFirefoxInstalledForChannel("")
+}
+
+// IsFirefoxInstalledForChannel checks a specific channel's cache. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default.
+func IsFirefoxInstalledForChannel(channel string) bool {
+	if channel == "" {
+		channel = paths.FirefoxChannel()
+	}
+	p, err := paths.GetFirefoxExecutableForChannel(channel)
 	if err != nil {
 		return false
 	}
@@ -118,13 +138,18 @@ func IsFirefoxInstalled() bool {
 }
 
 // resolveFirefoxVersion returns the Firefox version to install:
-// VIBIUM_ENGINE_VERSION when set, otherwise the channel's current version
-// from Mozilla's product-details JSON. The pin exists because "latest"
-// changes out from under CI and fleets (a beta pin silently jumped 154 to
-// 155 the day 154 reached release); it also skips the network round-trip.
+// VIBIUM_ENGINE_VERSION when set, the baked known-good version for the
+// release channel, otherwise the channel's current version from Mozilla's
+// product-details JSON. Release installs stay off the network and off
+// untested versions — Firefox 155 broke every fresh install on its release
+// day (#464) because this used to resolve "latest" for everyone. Beta
+// keeps tracking the current beta: a pinned beta would blind beta-watch.
 func resolveFirefoxVersion(channel string) (string, error) {
 	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
 		return v, nil
+	}
+	if channel == "release" {
+		return paths.PinnedFirefoxVersion, nil
 	}
 	return fetchLatestFirefoxVersion(channel)
 }
@@ -206,7 +231,7 @@ func verifyFirefoxArchive(archivePath, version string) error {
 	if err := verifyArchiveAgainstSums(archivePath, sums, relPath); err != nil {
 		return err
 	}
-	fmt.Printf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
+	progressf("Verified Firefox archive against Mozilla's SHA256SUMS.\n")
 	return nil
 }
 
@@ -288,7 +313,7 @@ func downloadToTemp(downloadURL, pattern string) (string, error) {
 	}
 	tmpPath := tmpFile.Name()
 
-	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: progressOut()}
 	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)

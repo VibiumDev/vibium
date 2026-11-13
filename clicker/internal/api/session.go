@@ -12,10 +12,10 @@ import (
 // and the MCP server (direct bidi.Client) can share the same browser-automation
 // logic. All shared standalone functions (Navigate, Click, etc.) accept a Session.
 type Session interface {
-	// SendBidiCommand sends a BiDi command and returns the full response JSON.
-	// The response format matches the proxy's sendInternalCommand output:
-	//   {"result": { ... }}   (success)
-	//   {"type":"error", "error":"...", "message":"..."}  (error)
+	// SendBidiCommand sends a BiDi command and returns the full response JSON,
+	// shaped {"result": { ... }}. An engine-level rejection is returned as a
+	// Go error on both transports (#509), never as an error envelope in the
+	// response.
 	SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error)
 
 	// SendBidiCommandWithTimeout is like SendBidiCommand but with a custom timeout.
@@ -76,9 +76,9 @@ func (p *APISession) SetLastElementBox(box *BoxInfo) {
 // ---------------------------------------------------------------------------
 
 // AgentSession wraps a bidi.Client so that shared standalone functions can send
-// BiDi commands through the Session interface. The bidi.Client already handles
-// error responses as Go errors, so checkBidiError on wrapped responses is a
-// safe no-op.
+// BiDi commands through the Session interface. The bidi.Client reports error
+// responses as Go errors, the same contract sendInternalCommand keeps for the
+// proxy transport.
 type AgentSession struct {
 	Client   *bidi.Client
 	Context  string             // optional explicit context override (active tab)
@@ -93,11 +93,40 @@ func NewAgentSession(client *bidi.Client) *AgentSession {
 	return &AgentSession{Client: client}
 }
 
-func (m *AgentSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+func (m *AgentSession) send(method string, params map[string]interface{}, timeout time.Duration) (*bidi.Message, error) {
 	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
 		return nil, err
 	}
-	msg, err := m.Client.SendCommand(method, params)
+	call := func() (*bidi.Message, error) {
+		if timeout == 0 {
+			return m.Client.SendCommand(method, params)
+		}
+		return m.Client.SendCommandWithTimeout(method, params, timeout)
+	}
+	opened, stop := m.Prompts.watch(method, params)
+	defer stop()
+	if opened == nil {
+		return call()
+	}
+	type reply struct {
+		msg *bidi.Message
+		err error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		msg, err := call()
+		done <- reply{msg, err}
+	}()
+	select {
+	case r := <-done:
+		return r.msg, r.err
+	case <-opened:
+		return nil, m.Prompts.blockedError(params)
+	}
+}
+
+func (m *AgentSession) SendBidiCommand(method string, params map[string]interface{}) (json.RawMessage, error) {
+	msg, err := m.send(method, params, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -111,10 +140,7 @@ func (m *AgentSession) SendBidiCommand(method string, params map[string]interfac
 }
 
 func (m *AgentSession) SendBidiCommandWithTimeout(method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
-	if err := checkPromptBlocked(m.Prompts, method, params); err != nil {
-		return nil, err
-	}
-	msg, err := m.Client.SendCommandWithTimeout(method, params, timeout)
+	msg, err := m.send(method, params, timeout)
 	if err != nil {
 		return nil, err
 	}

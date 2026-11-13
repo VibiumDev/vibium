@@ -24,6 +24,7 @@ record.zip
 │   ├── page@abc123-1773879004791.jpeg  # Screenshot frames (pageId-timestamp.ext)
 │   └── page@abc123-1773879004850.jpeg  # Other resources (pageId-timestamp.ext)
 ├── video/<context>.webm    # Native video track (when recorded; see below)
+├── video/<context>.mp4     # Video of a device, from its stream (see below)
 └── video/index.json        # Video manifest
 ```
 
@@ -46,6 +47,39 @@ If the video pipeline failed, the entry carries an `error` field and the
 file may be absent or partial. Chunk artifacts carry no video file; their
 manifest instead records `videoRange: [startMs, endMs]`, the chunk's span
 within the session video.
+
+### Video of a device
+
+A session on a Vibium Station or a Roadie drives a device, not a browser
+that can write a file. Its video is the stream the station or the Roadie
+serves of the device's screen. Vibium joins that stream as a viewer and
+stores the H.264 it receives in an MP4, without re-encoding.
+
+```json
+{"version":1,"videos":[{"file":"video/screen.mp4","context":"screen","startedAt":1794285267660,"offsetMs":-120,"durationMs":43557,"width":444,"height":972,"mimeType":"video/mp4"}]}
+```
+
+- `mimeType` is `video/mp4`. The file has one H.264 video track.
+- `audio` is `true` when the file also has an audio track. The field is
+  absent when the recording said and heard nothing while the video ran.
+  - The track is everything the recording said and heard, mixed into one
+    channel. Each sound is at the time it sounded.
+  - The track is AAC-LC, mono, 16 kHz.
+  - The same audio stays under `audio/`, unmixed. A player that reads
+    `audio/` SHOULD mute the file.
+- `offsetMs` MAY be negative. The stream is joined just before the
+  recording starts, so the video covers all of it.
+- `startedAt` is when the first frame arrived at the machine running Vibium.
+  A frame is on screen a little earlier than it arrives.
+- `durationMs` is the video's length.
+- `gaps` counts the times the stream lost packets. After a loss the video
+  holds its last picture until the next key frame. The field is absent when
+  there were none.
+- `error` says why the stream ended before the recording did. The file then
+  holds the video up to that point.
+- `width` and `height` are the stream's. A viewer and a recording see the
+  same picture.
+- A key frame arrives about every 2 seconds. A player can seek to any of them.
 
 Resource files use Playwright-compatible naming: `<pageId>-<wallTimeMs>.<ext>` (e.g., `resources/page@abc123-1773879004791.jpeg`).
 
@@ -141,7 +175,7 @@ Every vibium command emits a `before`/`after` pair automatically — both mutati
 | `startTime` | number | Relative ms since recording start. |
 | `pageId` | string | Browsing context ID of the page the action targets. Present on actions, absent on groups. |
 | `parentId` | string | `call@<N>` of the enclosing action group, if the action is inside a `startGroup()`/`stopGroup()` span. Absent for top-level actions. |
-| `beforeSnapshot` | string | `"before@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured before the action ran. Present on interaction actions (`click`, `fill`, `hover`, etc.) that resolve an element — the snapshot is taken after scrolling the element into view. Click-like actions (`click`, `dblclick`, `hover`, `tap`, `check`, `uncheck`, `dragTo`) have `beforeSnapshot` only. Fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) have both `beforeSnapshot` and `afterSnapshot`. Query actions (`find`, `text`, `navigate`, etc.) have `afterSnapshot` only. |
+| `beforeSnapshot` | string | `"before@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured before the action ran. Present on interaction actions (`click`, `fill`, `hover`, etc.) that resolve an element — the snapshot is taken after scrolling the element into view. Click-like actions (`click`, `dblclick`, `hover`, `tap`, `set`, `unset`, `dragTo`) have `beforeSnapshot` only. Fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) have both `beforeSnapshot` and `afterSnapshot`. Query actions (`find`, `text`, `navigate`, etc.) have `afterSnapshot` only. |
 
 **`input` fields** (emitted for element-targeting actions only):
 
@@ -151,7 +185,7 @@ Every vibium command emits a `before`/`after` pair automatically — both mutati
 | `point` | object | `{x, y}` — center of the resolved element's bounding box (viewport coordinates). Compatible with Playwright's trace viewer click-dot overlay. |
 | `box` | object | `{x, y, width, height}` — full bounding box of the resolved element (viewport coordinates). Used by the record player to draw a highlight rectangle. |
 
-Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `check`, etc.). Absent for non-element actions (`page.navigate`, `page.eval`, etc.) and action groups.
+Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `set`, etc.). Absent for non-element actions (`page.navigate`, `page.eval`, etc.) and action groups.
 
 **`after` fields:**
 
@@ -159,7 +193,7 @@ Present for actions that resolve an element (`click`, `fill`, `hover`, `type`, `
 |-------|------|-------------|
 | `callId` | string | `call@<N>` — matches the corresponding `before` event. |
 | `endTime` | number | Relative ms since recording start. |
-| `afterSnapshot` | string | `"after@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured after the action completed. Present on fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) and all non-interaction actions (`navigate`, `find`, `text`, etc.). Absent on click-like actions (`click`, `dblclick`, `hover`, `tap`, `check`, `uncheck`, `dragTo`) which use `beforeSnapshot` only, and absent on groups. |
+| `afterSnapshot` | string | `"after@call@<N>"` — references the `snapshotName` of a `frame-snapshot` event captured after the action completed. Present on fill-like actions (`fill`, `type`, `press`, `clear`, `selectOption`) and all non-interaction actions (`navigate`, `find`, `text`, etc.). Absent on click-like actions (`click`, `dblclick`, `hover`, `tap`, `set`, `unset`, `dragTo`) which use `beforeSnapshot` only, and absent on groups. |
 
 The `dispatch()` wrapper in the router records these markers — every vibium command that goes through `dispatch()` gets recorded. Recording commands themselves (`recording.start`, `recording.stop`, etc.) are excluded since they control recording.
 

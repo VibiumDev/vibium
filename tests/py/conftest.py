@@ -2,8 +2,15 @@
 
 import pytest
 import pytest_asyncio
+import websockets
 
 from test_server import start_test_server
+
+# Resolve websockets' lazy submodule import while this is the only thread.
+# Deferring it to fixture time lets it race the client's background threads
+# inside CPython's importlib bookkeeping, which raises KeyError: <thread id>
+# on 3.9 and fails innocent runs (#543).
+_ = websockets.serve
 
 # Hooks are discovered by name in the conftest namespace, so the star import
 # registers the whole capability adapter.
@@ -110,7 +117,6 @@ async def fresh_async_browser():
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def ws_echo_server():
     """Start a simple WebSocket echo server. Returns ws:// URL."""
-    import websockets
 
     async def echo(websocket):
         async for message in websocket:

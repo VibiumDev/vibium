@@ -15,11 +15,18 @@
 # GPU passthrough must NOT be shimmed, since the shim hides the GPU rather than
 # speeding it up. See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
 #
-# Usage: scripts/mtl-verdict.sh <cache-file>
+# Usage: scripts/mtl-verdict.sh <cache-file> [legacy-cache-file]
 
 set -u
-CACHE="${1:?usage: mtl-verdict.sh <cache-file>}"
+CACHE="${1:?usage: mtl-verdict.sh <cache-file> [legacy-cache-file]}"
+LEGACY="${2:-}"
 SRC="$(dirname "$0")/mtlprobe.m"
+
+# A per-checkout verdict from before the cache moved to the machine.
+if [ -n "$LEGACY" ] && [ -f "$LEGACY" ] && [ "$(cat "$LEGACY")" = "1" ]; then
+	mkdir -p "$(dirname "$CACHE")" 2>/dev/null
+	printf '1' >"$CACHE" 2>/dev/null
+fi
 
 # A cached 1 stands; a 0 is never written, so absence means "probe again".
 if [ -f "$CACHE" ] && [ "$(cat "$CACHE")" = "1" ]; then

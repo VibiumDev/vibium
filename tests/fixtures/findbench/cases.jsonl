@@ -1,0 +1,11 @@
+{"screenshot":"fixture.png","description":"the Add to Cart button","truth":{"x":20,"y":360.4375,"width":83.4375,"height":21}}
+{"screenshot":"fixture.png","description":"the search box","truth":{"x":20,"y":397.4375,"width":153,"height":21}}
+{"screenshot":"fixture.png","description":"the Learn more link","truth":{"x":107.890625,"y":361.4375,"width":81.828125,"height":18}}
+{"screenshot":"fixture.png","description":"the thumbnail on the second row","truth":{"x":20,"y":248.4375,"width":96,"height":96}}
+{"screenshot":"fixture.png","description":"the thumbnail in the first row that looks different from the others","truth":{"x":292,"y":112.4375,"width":96,"height":96}}
+{"screenshot":"fixture.png","description":"the Checkout button","truth":null}
+{"screenshot":"varparts.png","description":"the Shop link in the header","truth":{"x":1086.09375,"y":22,"width":34.078125,"height":20}}
+{"screenshot":"varparts.png","description":"the Vibium Battery Pack photo","truth":{"x":33,"y":206,"width":284,"height":284}}
+{"screenshot":"varparts.png","description":"the Gripper End-Effector product photo","truth":{"x":343,"y":206,"width":284,"height":284}}
+{"screenshot":"varparts.png","description":"the Add to Cart button under the Vibium Battery Pack","truth":{"x":49,"y":658,"width":252,"height":40}}
+{"screenshot":"varparts.png","description":"the cart button in the top right of the header","truth":{"x":1208,"y":12,"width":40,"height":40}}

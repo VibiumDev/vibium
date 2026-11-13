@@ -27,28 +27,28 @@ after(async () => {
 describe('Element Accessibility: role()', () => {
   test('role() returns "link" for <a> element', async () => {
     await vibe.go(`${baseURL}/example`);
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const role = await link.role();
     assert.strictEqual(role, 'link');
   });
 
   test('role() returns "heading" for <h1> element', async () => {
     await vibe.go(`${baseURL}/example`);
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     const role = await h1.role();
     assert.strictEqual(role, 'heading');
   });
 
   test('role() reads explicit role attribute', async () => {
     await vibe.setContent('<div role="alert" id="msg">Error!</div>');
-    const el = await vibe.find('#msg');
+    const el = await vibe.find({ css: '#msg' });
     const role = await el.role();
     assert.strictEqual(role, 'alert');
   });
 
   test('fluent: find().role() chains', async () => {
     await vibe.go(`${baseURL}/example`);
-    const role = await vibe.find('a').role();
+    const role = await vibe.find({ css: 'a' }).role();
     assert.strictEqual(role, 'link');
   });
 });
@@ -58,14 +58,14 @@ describe('Element Accessibility: role()', () => {
 describe('Element Accessibility: label()', () => {
   test('label() returns accessible name for a link', async () => {
     await vibe.go(`${baseURL}/example`);
-    const link = await vibe.find('a');
+    const link = await vibe.find({ css: 'a' });
     const label = await link.label();
     assert.ok(label.length > 0, `label should not be empty, got: "${label}"`);
   });
 
   test('label() reads aria-label', async () => {
     await vibe.setContent('<button aria-label="Close dialog">X</button>');
-    const btn = await vibe.find('button');
+    const btn = await vibe.find({ css: 'button' });
     const label = await btn.label();
     assert.strictEqual(label, 'Close dialog');
   });
@@ -75,7 +75,7 @@ describe('Element Accessibility: label()', () => {
       <span id="lbl">Username</span>
       <input id="inp" aria-labelledby="lbl" />
     `);
-    const input = await vibe.find('#inp');
+    const input = await vibe.find({ css: '#inp' });
     const label = await input.label();
     assert.strictEqual(label, 'Username');
   });
@@ -85,14 +85,14 @@ describe('Element Accessibility: label()', () => {
       <label for="email">Email Address</label>
       <input id="email" type="email" />
     `);
-    const input = await vibe.find('#email');
+    const input = await vibe.find({ css: '#email' });
     const label = await input.label();
     assert.strictEqual(label, 'Email Address');
   });
 
   test('fluent: find().label() chains', async () => {
     await vibe.setContent('<button aria-label="Submit form">Go</button>');
-    const label = await vibe.find('button').label();
+    const label = await vibe.find({ css: 'button' }).label();
     assert.strictEqual(label, 'Submit form');
   });
 });
@@ -228,6 +228,55 @@ describe('Page Accessibility: a11yTree()', () => {
     assert.ok(levels.includes(1), 'should have h1 level=1');
     assert.ok(levels.includes(2), 'should have h2 level=2');
     assert.ok(levels.includes(3), 'should have h3 level=3');
+  });
+
+  test('names buttons, links and headings from their text content', async () => {
+    await vibe.setContent(`
+      <button>Save</button>
+      <button aria-label="Close">X</button>
+      <a href="#x">Documentation</a>
+      <h2>Section Heading</h2>
+    `);
+    const tree = await vibe.a11yTree();
+
+    function findAll(node, role) {
+      const found = [];
+      if (node.role === role) found.push(node);
+      if (node.children) {
+        for (const child of node.children) {
+          found.push(...findAll(child, role));
+        }
+      }
+      return found;
+    }
+
+    const buttonNames = findAll(tree, 'button').map(n => n.name);
+    assert.ok(buttonNames.includes('Save'), `button should be named from its text, got: ${buttonNames.join(', ')}`);
+    assert.ok(buttonNames.includes('Close'), `aria-label should still win over text, got: ${buttonNames.join(', ')}`);
+    assert.strictEqual(findAll(tree, 'link')[0].name, 'Documentation');
+    assert.strictEqual(findAll(tree, 'heading')[0].name, 'Section Heading');
+  });
+
+  test('does not name plain divs from their text content', async () => {
+    await vibe.setContent('<div role="region" aria-label="wrap"><div>Just some prose in a wrapper.</div><button>Go</button></div>');
+    const tree = await vibe.a11yTree({ everything: true });
+
+    function findAll(node, role) {
+      const found = [];
+      if (node.role === role) found.push(node);
+      if (node.children) {
+        for (const child of node.children) {
+          found.push(...findAll(child, role));
+        }
+      }
+      return found;
+    }
+
+    const generics = findAll(tree, 'generic');
+    assert.ok(generics.length > 0, 'everything:true should surface the plain div');
+    for (const g of generics) {
+      assert.ok(!g.name, `plain div should stay nameless, got: "${g.name}"`);
+    }
   });
 
   test('root option scopes tree to a subtree', async () => {

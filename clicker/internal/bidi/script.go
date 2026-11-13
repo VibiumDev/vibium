@@ -3,6 +3,8 @@ package bidi
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // RealmInfo represents information about a JavaScript realm.
@@ -82,6 +84,25 @@ func (e *ScriptException) Error() string {
 		return "script threw an exception"
 	}
 	return "script exception: " + e.Text
+}
+
+// InvalidSelectorError marks a selector the browser rejected as unparseable.
+// It can never match, so polling loops return it immediately instead of
+// retrying until the timeout and misreporting "element not found" (#616).
+type InvalidSelectorError struct{ Text string }
+
+func (e *InvalidSelectorError) Error() string { return "invalid selector: " + e.Text }
+
+// AsInvalidSelector returns an *InvalidSelectorError if text is the exception
+// querySelectorAll or document.evaluate throws on a malformed selector, or
+// nil otherwise. Chrome and Firefox both phrase CSS rejections "is not a
+// valid selector" and XPath rejections "is not a valid XPath expression";
+// any other exception is transient and keeps the caller's retry behavior.
+func AsInvalidSelector(text string) *InvalidSelectorError {
+	if strings.Contains(text, "is not a valid selector") || strings.Contains(text, "is not a valid XPath expression") {
+		return &InvalidSelectorError{Text: text}
+	}
+	return nil
 }
 
 // ParseScriptResult decodes the payload of a script.evaluate or
@@ -169,6 +190,13 @@ func (c *Client) Evaluate(context, expression string) (interface{}, error) {
 // CallFunction calls a JavaScript function with arguments.
 // If context is empty, it uses the first available context.
 func (c *Client) CallFunction(context, functionDeclaration string, args []interface{}) (interface{}, error) {
+	return c.CallFunctionIn(context, "", functionDeclaration, args, 0)
+}
+
+// CallFunctionIn is CallFunction in a named sandbox: a realm that shares the
+// page's DOM but not its globals, so what it stores is invisible to the page.
+// An empty sandbox is the page's own realm, and a zero timeout is the default.
+func (c *Client) CallFunctionIn(context, sandbox, functionDeclaration string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	// If no context provided, get the first one from the tree
 	if context == "" {
 		tree, err := c.GetTree()
@@ -187,15 +215,22 @@ func (c *Client) CallFunction(context, functionDeclaration string, args []interf
 		serializedArgs[i] = serializeValue(arg)
 	}
 
+	target := map[string]interface{}{"context": context}
+	if sandbox != "" {
+		target["sandbox"] = sandbox
+	}
 	params := map[string]interface{}{
 		"functionDeclaration": functionDeclaration,
-		"target":              map[string]interface{}{"context": context},
+		"target":              target,
 		"arguments":           serializedArgs,
 		"awaitPromise":        true,
 		"resultOwnership":     "none",
 	}
 
-	msg, err := c.SendCommand("script.callFunction", params)
+	if timeout == 0 {
+		timeout = defaultCommandTimeout
+	}
+	msg, err := c.SendCommandWithTimeout("script.callFunction", params, timeout)
 	if err != nil {
 		return nil, err
 	}

@@ -131,6 +131,7 @@ Create a file called `Hello.java`:
 
 ```java
 import com.vibium.Vibium;
+import com.vibium.types.SelectorOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -150,7 +151,7 @@ public class Hello {
         System.out.println("Saved screenshot.png");
 
         // Find and click the link
-        var link = vibe.find("a");
+        var link = vibe.find(new SelectorOptions().css("a"));
         System.out.println("Found link: " + link.text());
         link.click();
         System.out.println("Clicked!");
@@ -211,7 +212,7 @@ Check your folder - there's now a `screenshot.png` file!
 | `bro.page()` | Gets the default page (tab) |
 | `vibe.go(url)` | Navigates to a URL |
 | `vibe.screenshot()` | Captures the page as PNG bytes |
-| `vibe.find(selector)` | Finds an element by CSS selector |
+| `vibe.find(new SelectorOptions().css("a"))` | Finds an element by CSS selector |
 | `link.text()` | Gets the element's text content |
 | `link.click()` | Clicks the element |
 | `bro.stop()` | Closes the browser |

@@ -7,6 +7,8 @@
 const { test, describe, before, after } = require("../../helpers/capabilities").suite("core");
 const assert = require('node:assert');
 const { execSync, spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('path');
 const { VIBIUM } = require("../../helpers");
 
@@ -50,13 +52,22 @@ describe('CLI: Input Tools', () => {
     assert.match(result, /vibium keys/, 'Should list keys');
   });
 
-  test('skill command installs to ~/.claude/skills/', () => {
-    const result = execSync(`${VIBIUM} add-skill`, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    assert.match(result, /Installed Vibium skill/, 'Should confirm install');
-    assert.match(result, /SKILL\.md/, 'Should mention SKILL.md');
+  test('skill command installs for detected agents', () => {
+    // GROK_HOME marks Grok as present; the host's real HOME decides Claude,
+    // so only the Grok expectation is deterministic here.
+    const grokHome = fs.mkdtempSync(path.join(os.tmpdir(), 'grok-home-'));
+    try {
+      const result = execSync(`${VIBIUM} add-skill`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        env: { ...process.env, GROK_HOME: grokHome },
+      });
+      assert.match(result, /Installed Vibium skill/, 'Should confirm install');
+      assert.match(result, /SKILL\.md/, 'Should mention SKILL.md');
+      assert.ok(result.includes(grokHome), 'Should install for Grok under GROK_HOME');
+    } finally {
+      fs.rmSync(grokHome, { recursive: true, force: true });
+    }
   });
 });
 
@@ -178,5 +189,62 @@ describe('CLI: fill edge cases', () => {
       timeout: 30000,
     });
     assert.strictEqual(value.trim(), '', 'field should be cleared');
+  });
+
+  test('fill errors when the input type rejects the value (#530)', () => {
+    execSync(`${VIBIUM} content '<input id="n" type="number"><input id="d" type="date"><input id="r" type="range" min="0" max="100"><input id="c" type="color">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const cases = [
+      ['#n', 'abc', 'number'],
+      ['#d', 'not-a-date', 'date'],
+      ['#r', 'abc', 'range'],
+      ['#c', 'notacolor', 'color'],
+    ];
+    for (const [sel, val, type] of cases) {
+      try {
+        execSync(`${VIBIUM} fill "${sel}" "${val}"`, { encoding: 'utf-8', timeout: 30000, stdio: 'pipe' });
+        assert.fail(`fill "${sel}" "${val}" should have errored, the ${type} input discards it`);
+      } catch (err) {
+        const output = String(err.stderr) + String(err.stdout);
+        assert.match(output, new RegExp(`input\\[type=${type}\\] did not accept`), `should name the rejecting type for ${sel}`);
+        assert.doesNotMatch(output, /Filled/, `should not report success for ${sel}`);
+      }
+    }
+  });
+
+  test('fill succeeds when the input merely normalizes the value (#530)', () => {
+    execSync(`${VIBIUM} content '<input id="r" type="range" min="0" max="100"><input id="c" type="color">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    // Accepted-but-transformed values must not trip the rejection check:
+    // range clamps to its bounds, color resolves CSS colors to #rrggbb.
+    const cases = [
+      ['#r', '-5', '0'],
+      ['#c', 'red', '#ff0000'],
+      ['#c', '#AABBCC', '#aabbcc'],
+    ];
+    for (const [sel, val, stored] of cases) {
+      const result = execSync(`${VIBIUM} fill "${sel}" "${val}"`, { encoding: 'utf-8', timeout: 30000 });
+      assert.match(result, /Filled/, `fill "${sel}" "${val}" should succeed`);
+      const value = execSync(`${VIBIUM} eval 'document.querySelector("${sel}").value'`, {
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+      assert.strictEqual(value.trim(), stored, `${sel} should hold the normalized value`);
+    }
+  });
+
+  test('fill "" still clears a type that cannot hold "" (#530, #187)', () => {
+    // clear writes "" through the same script; a color input can never hold
+    // "", so the rejection check must exempt empty writes.
+    execSync(`${VIBIUM} content '<input id="c" type="color" value="#aabbcc">'`, {
+      encoding: 'utf-8',
+      timeout: 30000,
+    });
+    const result = execSync(`${VIBIUM} fill "#c" ""`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(result, /Filled/, 'fill "" should stay exempt from the rejection check');
   });
 });

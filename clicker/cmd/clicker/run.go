@@ -1,0 +1,88 @@
+package main
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/agent"
+	"github.com/vibium/clicker/internal/ai"
+	"github.com/vibium/clicker/internal/daemon"
+	runop "github.com/vibium/clicker/internal/run"
+)
+
+func newRunCmd() *cobra.Command {
+	var output, report string
+	var keepOpen bool
+	cmd := &cobra.Command{
+		Use: `run "<goal>"`, Short: "Accomplish a goal in the live browser with configured model tools",
+		Long: "Accomplish a live browser goal using VIBIUM_AI_* configuration.\nReturns completed or not_completed with evidence. Check setup with vibium ready ai.\nCloses only a browser it starts, after saving evidence; --keep-open preserves it.",
+		Example: `  vibium run "change my timezone to America/Chicago"
+  # Accomplishes the goal in the existing browser and reports its result.
+  vibium run "open https://example.com" -o run.zip --keep-open
+  # Saves the live recording and leaves a newly started browser open.
+  vibium run "change my timezone to America/Chicago" --report result.json
+  # Also saves {"status":"completed",...} with evidence to a new JSON file.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			result, err := runGoal(cmd, args[0], output, report, keepOpen)
+			if err != nil {
+				printError(err)
+				return
+			}
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: result})
+				exitExpected(cmd, "completed", result.Status)
+				return
+			}
+			fmt.Printf("RUN: %s\n\n%s\n\n%s\n", result.Goal, result.Verdict(), result.Summary)
+			for _, e := range result.Evidence {
+				fmt.Printf("- %s\n", e.Summary)
+			}
+			if output != "" {
+				fmt.Printf("Recording saved to %s\n", output)
+			}
+			if report != "" {
+				fmt.Printf("Report saved to %s\n", report)
+			}
+			exitExpected(cmd, "completed", result.Status)
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "Save a new live recording ZIP; an active recording exports its current chunk without continuous video")
+	cmd.Flags().StringVar(&report, "report", "", "Save the result and concise evidence as a new JSON file")
+	cmd.Flags().BoolVar(&keepOpen, "keep-open", false, "Keep a browser started by Run open after saving evidence")
+	cmd.Flags().String("base-url", "", "Site under test: opened first unless the current page already shares its origin; relative navigation paths resolve against it")
+	cmd.Flags().String("expect", "", "Gate automation on the result: with completed, NOT_COMPLETED exits 2 (execution errors keep exit 1)")
+	addModelFlags(cmd)
+	cmd.Example += "\n  vibium run \"add a battery pack to the cart\" --base-url http://localhost:3000\n  # Accomplishes the goal against that site; a page already on its origin keeps its state."
+	cmd.Example += "\n  vibium run \"add a battery pack to the cart\" --expect completed\n  # Exits 0 when completed, 2 when not_completed for CI gating."
+	return cmd
+}
+func runGoal(cmd *cobra.Command, goal, output, report string, keepOpen bool) (*runop.Result, error) {
+	files := operationFiles{output: output, report: report}
+	if err := files.validate(cmd); err != nil {
+		return nil, err
+	}
+	if err := validateExpect(cmd, "completed"); err != nil {
+		return nil, err
+	}
+	config, err := ai.ResolveConfig("run", modelOverrides(cmd))
+	if err != nil {
+		return nil, fmt.Errorf("%w; run vibium ready ai for setup checks", err)
+	}
+	baseSite, _ := cmd.Flags().GetString("base-url")
+	req := runop.Request{Goal: goal, Output: files.output, BaseSite: baseSite, Config: config}
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+	options := agent.OperationCLIOptions{LaunchOptions: requestedLaunchOptions(), KeepOpen: keepOpen}
+	return runWithReport(files.report, func() (*runop.Result, error) {
+		result, err := daemon.Run(req, options)
+		if isConnectionError(err) {
+			daemon.CleanStale()
+			if err = autoStartDaemon(); err == nil {
+				result, err = daemon.Run(req, options)
+			}
+		}
+		return result, err
+	})
+}

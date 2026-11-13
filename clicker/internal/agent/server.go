@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vibium/clicker/internal/log"
+	"github.com/vibium/clicker/internal/toolschema"
 )
 
 // JSON-RPC 2.0 request structure
@@ -93,11 +94,9 @@ type ToolsListResult struct {
 	Tools []Tool `json:"tools"`
 }
 
-type Tool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"inputSchema"`
-}
+// Tool moved to toolschema so every surface shares one definition (#571);
+// the alias keeps agent's MCP wire types reading naturally.
+type Tool = toolschema.Tool
 
 type ToolsCallParams struct {
 	Name      string                 `json:"name"`
@@ -107,6 +106,8 @@ type ToolsCallParams struct {
 type ToolsCallResult struct {
 	Content []Content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
+	// Structured is the machine-readable result, when a tool has one.
+	Structured interface{} `json:"structuredContent,omitempty"`
 }
 
 type Content struct {
@@ -153,11 +154,13 @@ type Server struct {
 
 // ServerOptions configures the MCP server.
 type ServerOptions struct {
-	ScreenshotDir  string      // Directory for saving screenshots (empty = disabled)
-	Engine         string      // Browser to launch: "chrome" (default) or "firefox"
-	Headless       bool        // Launch browsers without a visible window
-	ConnectURL     string      // Remote BiDi WebSocket URL (empty = local browser)
-	ConnectHeaders http.Header // Headers for remote WebSocket connection
+	ScreenshotDir  string                 // Directory for saving screenshots (empty = disabled)
+	Engine         string                 // Browser to launch: "chrome" (default) or "firefox"
+	Headless       bool                   // Launch browsers without a visible window
+	UserDataDir    string                 // Persistent profile dir for local launches (empty = temp profile)
+	ConnectURL     string                 // Remote BiDi WebSocket URL (empty = local browser)
+	ConnectHeaders http.Header            // Headers for remote WebSocket connection
+	ConnectCaps    map[string]interface{} // Extra alwaysMatch capabilities for classic endpoints
 }
 
 // NewServer creates a new MCP server.
@@ -165,7 +168,7 @@ func NewServer(version string, opts ServerOptions) *Server {
 	return &Server{
 		reader:   bufio.NewReader(os.Stdin),
 		writer:   os.Stdout,
-		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
+		handlers: NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.UserDataDir, opts.ConnectURL, opts.ConnectHeaders, opts.ConnectCaps),
 		version:  version,
 		busy:     make(chan struct{}, 1),
 	}
@@ -272,6 +275,27 @@ func (s *Server) route(req Request) (interface{}, *Error) {
 	}
 }
 
+// supportedProtocolVersions are the MCP protocol versions vibium's initialize
+// handshake speaks, newest first. vibium's tool surface is identical across
+// them, so negotiation is in practice the version string. The first entry is
+// the fallback when a client asks for a version not listed here.
+var supportedProtocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
+
+// NegotiateProtocolVersion echoes the client's requested MCP version when
+// vibium supports it, and otherwise answers with the newest version it does,
+// as the MCP initialize handshake expects. It was hard-coded to 2024-11-05, so
+// a client that has dropped that version (anubis_mcp 2.0) could not complete
+// the handshake and could not talk to vibium at all (#650). Exported because
+// the daemon serves the same handshake over its socket.
+func NegotiateProtocolVersion(requested string) string {
+	for _, v := range supportedProtocolVersions {
+		if v == requested {
+			return requested
+		}
+	}
+	return supportedProtocolVersions[0]
+}
+
 // handleInitialize handles the initialize request.
 func (s *Server) handleInitialize(params json.RawMessage) (interface{}, *Error) {
 	var p InitializeParams
@@ -286,7 +310,7 @@ func (s *Server) handleInitialize(params json.RawMessage) (interface{}, *Error) 
 	}
 
 	return InitializeResult{
-		ProtocolVersion: "2024-11-05",
+		ProtocolVersion: NegotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities: ServerCapabilities{
 			Tools: &ToolsCapability{},
 		},

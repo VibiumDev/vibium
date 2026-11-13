@@ -43,8 +43,10 @@ describe('CLI: Viewport & Window Commands', () => {
     assert.ok(typeof win.height === 'number', 'Should have numeric height');
   });
 
+  // Window heights stay under ~660: macOS clamps a window to the visible
+  // desktop, and the CI runner's leaves only 677px below the menu bar.
   test('window with args sets dimensions', () => {
-    execSync(`${VIBIUM} window 900 700`, {
+    execSync(`${VIBIUM} window 900 640`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -54,14 +56,14 @@ describe('CLI: Viewport & Window Commands', () => {
     });
     const win = JSON.parse(result);
     assert.strictEqual(win.width, 900);
-    assert.strictEqual(win.height, 700);
+    assert.strictEqual(win.height, 640);
   });
 
   test('window resize survives closing the active page (#346)', () => {
     execSync(`${VIBIUM} page new`, { encoding: 'utf-8', timeout: 30000 });
     execSync(`${VIBIUM} page switch 0`, { encoding: 'utf-8', timeout: 30000 });
     execSync(`${VIBIUM} page close`, { encoding: 'utf-8', timeout: 30000 });
-    execSync(`${VIBIUM} window 910 710`, {
+    execSync(`${VIBIUM} window 910 650`, {
       encoding: 'utf-8',
       timeout: 30000,
     });
@@ -71,6 +73,6 @@ describe('CLI: Viewport & Window Commands', () => {
     });
     const win = JSON.parse(result);
     assert.strictEqual(win.width, 910);
-    assert.strictEqual(win.height, 710);
+    assert.strictEqual(win.height, 650);
   });
 });

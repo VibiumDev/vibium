@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/vibium/clicker/internal/log"
 )
 
 // platformChromeArgs returns Windows-specific Chrome launch arguments.
@@ -34,6 +36,26 @@ func killProcessGroup(pid int) {}
 func killByPid(pid int) {
 	// /T kills the entire process tree, /F forces termination
 	exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid)).Run()
+}
+
+// killBrowserProfileProcesses terminates the Firefox processes started against
+// this session's profile dir. taskkill /T on the launched PID misses them
+// because the Windows launcher process re-parents the real browser out of our
+// tree (#622); matching on the unique profile instead is parentage-independent
+// and leaves the user's own Firefox untouched.
+func killBrowserProfileProcesses(profileDir string) {
+	script := firefoxProfileKillScript(profileDir)
+	if err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Run(); err != nil {
+		log.Debug("firefox profile sweep failed", "profile", profileDir, "error", err)
+	}
+}
+
+// waitProcessGroupIdle gives the browser the grace period to finish the exit
+// the session teardown's BiDi browser.close started, so it can flush a
+// persistent profile. Windows has no process groups to poll, so this sleeps
+// out the budget; the force kill that follows in Close finishes the tree.
+func waitProcessGroupIdle(pid int, timeout time.Duration) {
+	time.Sleep(timeout)
 }
 
 // waitForProcessDead polls until the given PID has exited or timeout is reached.

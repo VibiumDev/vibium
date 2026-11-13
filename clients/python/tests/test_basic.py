@@ -50,7 +50,7 @@ def test_sync_api():
         assert "/example" in url, f"Expected URL with '/example', got: {url}"
 
         # Test find (CSS) and text
-        h1 = vibe.find("h1")
+        h1 = vibe.find(css="h1")
         h1_text = h1.text()
         assert h1_text == "Example Domain", f"Expected 'Example Domain', got: {h1_text}"
 
@@ -59,7 +59,7 @@ def test_sync_api():
         assert heading.info.text == "Example Domain", f"Expected 'Example Domain', got: {heading.info.text}"
 
         # Test find link and click
-        link = vibe.find("a")
+        link = vibe.find(css="a")
         link_text = link.text()
         assert link_text, f"Expected link text, got: {link_text}"
 

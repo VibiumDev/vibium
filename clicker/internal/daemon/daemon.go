@@ -36,15 +36,17 @@ type Options struct {
 	ScreenshotDir  string
 	Engine         string // Browser to launch: "chrome" (default) or "firefox"
 	Headless       bool
+	UserDataDir    string // Persistent profile dir for local launches (empty = temp profile)
 	IdleTimeout    time.Duration
-	ConnectURL     string      // Remote BiDi WebSocket URL (empty = local browser)
-	ConnectHeaders http.Header // Headers for remote WebSocket connection
+	ConnectURL     string                 // Remote BiDi WebSocket URL (empty = local browser)
+	ConnectHeaders http.Header            // Headers for remote WebSocket connection
+	ConnectCaps    map[string]interface{} // Extra alwaysMatch capabilities for classic endpoints
 }
 
 // New creates a new Daemon instance.
 func New(opts Options) *Daemon {
 	return &Daemon{
-		handlers:     agent.NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.ConnectURL, opts.ConnectHeaders),
+		handlers:     agent.NewHandlers(opts.ScreenshotDir, opts.Engine, opts.Headless, opts.UserDataDir, opts.ConnectURL, opts.ConnectHeaders, opts.ConnectCaps),
 		version:      opts.Version,
 		idleTimeout:  opts.IdleTimeout,
 		startTime:    time.Now(),

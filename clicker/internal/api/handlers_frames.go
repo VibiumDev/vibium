@@ -54,10 +54,6 @@ func (r *Router) getFrameTree(session *BrowserSession, context string) ([]map[st
 		return nil, err
 	}
 
-	if err := checkBidiError(resp); err != nil {
-		return nil, err
-	}
-
 	var result struct {
 		Result struct {
 			Contexts []contextInfo `json:"contexts"`
@@ -96,9 +92,6 @@ func ListFrames(s Session, context string) ([]FrameInfo, error) {
 	})
 	if err != nil {
 		return nil, err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, bidiErr
 	}
 
 	var result struct {

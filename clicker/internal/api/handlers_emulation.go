@@ -33,13 +33,9 @@ func (r *Router) handlePageSetViewport(session *BrowserSession, cmd bidiCommand)
 		params["devicePixelRatio"] = dpr
 	}
 
-	resp, err := r.sendInternalCommand(session, "browsingContext.setViewport", params)
+	_, err = r.sendInternalCommand(session, "browsingContext.setViewport", params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -166,7 +162,7 @@ func EmulateMedia(s Session, context string, overrides map[string]interface{}) e
 		return fmt.Errorf("failed to serialize overrides: %w", err)
 	}
 
-	resp, err := s.SendBidiCommand("script.callFunction", map[string]interface{}{
+	_, err = s.SendBidiCommand("script.callFunction", map[string]interface{}{
 		"functionDeclaration": emulateMediaScript,
 		"target":              map[string]interface{}{"context": context},
 		"arguments": []map[string]interface{}{
@@ -175,10 +171,7 @@ func EmulateMedia(s Session, context string, overrides map[string]interface{}) e
 		"awaitPromise":    false,
 		"resultOwnership": "root",
 	})
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	return err
 }
 
 // handlePageSetContent handles vibium:page.setContent — replaces the page HTML.
@@ -204,13 +197,9 @@ func (r *Router) handlePageSetContent(session *BrowserSession, cmd bidiCommand) 
 		"resultOwnership": "root",
 	}
 
-	resp, err := r.sendInternalCommand(session, "script.callFunction", params)
+	_, err = r.sendInternalCommand(session, "script.callFunction", params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -322,9 +311,6 @@ func activeClientWindow(s Session) (*WindowInfo, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get window: %w", err)
 	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, "", bidiErr
-	}
 
 	var getResult struct {
 		Result struct {
@@ -393,48 +379,90 @@ func SetWindow(s Session, opts SetWindowOpts) error {
 		return fmt.Errorf("unsupported window state: %s", opts.State)
 	}
 
-	resp, err := s.SendBidiCommand("browser.setClientWindowState", params)
+	_, err = s.SendBidiCommand("browser.setClientWindowState", params)
 	if err != nil {
 		return fmt.Errorf("failed to set window: %w", err)
 	}
-	return checkBidiError(resp)
+	return nil
 }
 
-// geolocationScript is the JS that overrides navigator.geolocation.
-const geolocationScript = "(coordsJSON) => {\n" +
-	"const coords = JSON.parse(coordsJSON);\n" +
-	"const geo = navigator.geolocation;\n" +
-	"geo.getCurrentPosition = function(success, error, options) {\n" +
-	"  success({ coords: { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,\n" +
-	"    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
-	"};\n" +
-	"geo.watchPosition = function(success, error, options) {\n" +
-	"  success({ coords: { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,\n" +
-	"    altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
-	"  return 0;\n" +
-	"};\n" +
-	"return 'ok';\n" +
-	"}"
+// ViewportCenter returns the viewport's center point. Pointer actions with a
+// fixed origin break as soon as the viewport is not the size the constant
+// assumed: Firefox rejects out-of-bounds coordinates outright, and on larger
+// viewports a fixed point can land inside whatever scrollable element happens
+// to cover it (#443, #444).
+func ViewportCenter(s Session, context string) (int, int, error) {
+	resp, err := CallScript(s, context,
+		`() => JSON.stringify({ width: window.innerWidth, height: window.innerHeight })`,
+		[]map[string]interface{}{})
+	if err != nil {
+		return 0, 0, err
+	}
+	val, err := parseScriptResult(resp)
+	if err != nil {
+		return 0, 0, err
+	}
+	var size struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	}
+	if err := json.Unmarshal([]byte(val), &size); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse viewport: %w", err)
+	}
+	return size.Width / 2, size.Height / 2, nil
+}
 
-// SetGeolocation overrides the browser geolocation via a JS override.
+// geolocationScript returns the JS that overrides navigator.geolocation with
+// the given coordinates. The coordinates are baked into the declaration
+// because addPreloadScript passes no arguments to its function.
+//
+// The script is written to run any number of times in a document: the first
+// run installs an override that reads the coordinates from a window slot at
+// query time, later runs only update the slot. Repeated setGeolocation calls
+// stack one preload script each, and on a new document they all run in the
+// order they were added, so the last call wins without any script-removal
+// bookkeeping.
+func geolocationScript(coordsJSON string) string {
+	return "() => {\n" +
+		"window.__vibiumGeoCoords = " + coordsJSON + ";\n" +
+		"if (window.__vibiumGeoInstalled) return 'ok';\n" +
+		"window.__vibiumGeoInstalled = true;\n" +
+		"const pos = () => ({ coords: { latitude: window.__vibiumGeoCoords.latitude,\n" +
+		"  longitude: window.__vibiumGeoCoords.longitude, accuracy: window.__vibiumGeoCoords.accuracy,\n" +
+		"  altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() });\n" +
+		"const geo = navigator.geolocation;\n" +
+		"geo.getCurrentPosition = function(success, error, options) { success(pos()); };\n" +
+		"geo.watchPosition = function(success, error, options) { success(pos()); return 0; };\n" +
+		"return 'ok';\n" +
+		"}"
+}
+
+// SetGeolocation overrides the browser geolocation via a JS override, for the
+// current document and every later document in the context.
 func SetGeolocation(s Session, context string, lat, lon, accuracy float64) error {
 	coordsJSON, _ := json.Marshal(map[string]float64{
 		"latitude":  lat,
 		"longitude": lon,
 		"accuracy":  accuracy,
 	})
+	decl := geolocationScript(string(coordsJSON))
 
-	resp, err := s.SendBidiCommand("script.callFunction", map[string]interface{}{
-		"functionDeclaration": geolocationScript,
+	_, err := s.SendBidiCommand("script.callFunction", map[string]interface{}{
+		"functionDeclaration": decl,
 		"target":              map[string]interface{}{"context": context},
-		"arguments": []map[string]interface{}{
-			{"type": "string", "value": string(coordsJSON)},
-		},
-		"awaitPromise":    false,
-		"resultOwnership": "root",
+		"awaitPromise":        false,
+		"resultOwnership":     "root",
 	})
 	if err != nil {
 		return err
 	}
-	return checkBidiError(resp)
+
+	// The call above dies with the document, so a navigation or reload
+	// silently dropped the override (#345). Register the same script as a
+	// preload so every new document in this context gets it re-applied.
+	_, err = s.SendBidiCommand("script.addPreloadScript", map[string]interface{}{
+		"functionDeclaration": decl,
+		"contexts":            []interface{}{context},
+	})
+	return err
 }

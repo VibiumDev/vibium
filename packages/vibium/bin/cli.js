@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 // Find vibium binary from platform package and run it.
 
+const { nodeVersionError } = require('./node-version-check');
+const versionError = nodeVersionError(process.versions.node, process.execPath);
+if (versionError) {
+  console.error(versionError);
+  process.exit(1);
+}
+
 const { execFileSync } = require('child_process');
 const path = require('path');
 const os = require('os');

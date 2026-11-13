@@ -6,6 +6,7 @@ import com.vibium.Element;
 import com.vibium.Browser;
 
 import com.vibium.types.BoundingBox;
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 import org.junit.jupiter.api.*;
 
@@ -42,7 +43,7 @@ class ElementTest {
     @Test
     void testClick() {
         page.go(server.baseUrl() + "/links");
-        Element link = page.find(".link");
+        Element link = page.find(new SelectorOptions().css(".link"));
         link.click();
         // waitForLoad can return before the click's navigation starts;
         // wait for the destination URL instead.
@@ -53,7 +54,7 @@ class ElementTest {
     @Test
     void testFill() {
         page.go(server.baseUrl() + "/inputs");
-        Element input = page.find("#text-input");
+        Element input = page.find(new SelectorOptions().css("#text-input"));
         input.fill("hello world");
         assertEquals("hello world", input.value());
     }
@@ -61,14 +62,14 @@ class ElementTest {
     @Test
     void testText() {
         page.go(server.baseUrl());
-        Element heading = page.find("h1");
+        Element heading = page.find(new SelectorOptions().css("h1"));
         assertTrue(heading.text().contains("Welcome"));
     }
 
     @Test
     void testAttr() {
         page.go(server.baseUrl());
-        Element link = page.find("a[href='/subpage']");
+        Element link = page.find(new SelectorOptions().css("a[href='/subpage']"));
         assertEquals("/subpage", link.attr("href"));
         // Alias
         assertEquals("/subpage", link.getAttribute("href"));
@@ -77,14 +78,14 @@ class ElementTest {
     @Test
     void testIsVisible() {
         page.go(server.baseUrl());
-        Element heading = page.find("h1");
+        Element heading = page.find(new SelectorOptions().css("h1"));
         assertTrue(heading.isVisible());
     }
 
     @Test
     void testBounds() {
         page.go(server.baseUrl());
-        Element heading = page.find("h1");
+        Element heading = page.find(new SelectorOptions().css("h1"));
         BoundingBox box = heading.bounds();
         assertNotNull(box);
         assertTrue(box.width() > 0);
@@ -97,17 +98,20 @@ class ElementTest {
     @Test
     void testCheckUncheck() {
         page.go(server.baseUrl() + "/form");
-        Element checkbox = page.find("#agree");
-        checkbox.check();
-        assertTrue(checkbox.isChecked());
-        checkbox.uncheck();
-        assertFalse(checkbox.isChecked());
+        Element checkbox = page.find(new SelectorOptions().css("#agree"));
+        checkbox.set();
+        checkbox.set(false);
+        assertFalse(checkbox.isSet());
+        checkbox.set(true);
+        assertTrue(checkbox.isSet());
+        checkbox.unset();
+        assertFalse(checkbox.isSet());
     }
 
     @Test
     void testSelectOption() {
         page.go(server.baseUrl() + "/form");
-        Element select = page.find("#color");
+        Element select = page.find(new SelectorOptions().css("#color"));
         select.selectOption("blue");
         assertEquals("blue", select.value());
     }
@@ -115,7 +119,7 @@ class ElementTest {
     @Test
     void testScreenshot() {
         page.go(server.baseUrl());
-        Element heading = page.find("h1");
+        Element heading = page.find(new SelectorOptions().css("h1"));
         byte[] data = heading.screenshot();
         assertNotNull(data);
         assertTrue(data.length > 0);

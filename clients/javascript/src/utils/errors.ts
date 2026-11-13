@@ -17,17 +17,25 @@ export class ConnectionError extends Error {
 
 /**
  * TimeoutError is thrown when a wait operation times out.
+ *
+ * Constructed from a selector/timeout pair, or from a single complete
+ * message for timeouts the engine reports.
  */
 export class TimeoutError extends Error {
+  public timeout: number;
   constructor(
     public selector: string,
-    public timeout: number,
+    timeout?: number,
     public reason?: string
   ) {
-    const msg = reason
-      ? `Timeout after ${timeout}ms waiting for '${selector}': ${reason}`
-      : `Timeout after ${timeout}ms waiting for '${selector}'`;
-    super(msg);
+    super(
+      timeout === undefined
+        ? selector
+        : reason
+          ? `Timeout after ${timeout}ms waiting for '${selector}': ${reason}`
+          : `Timeout after ${timeout}ms waiting for '${selector}'`
+    );
+    this.timeout = timeout ?? 0;
     this.name = 'TimeoutError';
   }
 }
@@ -40,6 +48,49 @@ export class ElementNotFoundError extends Error {
     super(`Element not found: ${selector}`);
     this.name = 'ElementNotFoundError';
   }
+}
+
+/**
+ * BiDiError is thrown when the engine reports a command failure with no more
+ * specific mapping. Mirrors the Python client's BiDiError.
+ */
+export class BiDiError extends Error {
+  constructor(
+    public error: string,
+    message: string
+  ) {
+    super(`${error}: ${message}`);
+    this.name = 'BiDiError';
+  }
+}
+
+/**
+ * SpeechError is thrown when say or listen fails. `code` names the failure,
+ * such as 'no_speech' or 'not_configured'.
+ */
+export class SpeechError extends Error {
+  constructor(
+    public code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'SpeechError';
+  }
+}
+
+/**
+ * Maps an engine error response onto the exported error classes, the same
+ * way the Python client does: element-not-found failures and engine-reported
+ * timeouts get their dedicated classes, everything else is a BiDiError.
+ */
+export function errorFromResponse(code: string, message: string): Error {
+  if (message.includes('element not found')) {
+    return new ElementNotFoundError(message);
+  }
+  if (code === 'timeout') {
+    return new TimeoutError(message);
+  }
+  return new BiDiError(code, message);
 }
 
 /**

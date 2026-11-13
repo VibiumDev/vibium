@@ -1,0 +1,94 @@
+name: EOL Watch
+
+# Opens an issue when a language floor this repo carries is inside 60 days
+# of its upstream end of life, or already past it. The floors themselves are
+# read from the repo (requires-python, go.mod, the CI node-version pin), so
+# the check cannot drift from what we actually ship.
+#
+# Why this exists: the Python 3.9 floor outlived its support window by a
+# year and nobody noticed until GitHub rolled ubuntu-latest to 26.04, which
+# ships no 3.9 builds — every Linux CI leg then failed at setup-python in
+# the middle of unrelated work (#686, #687). The calendar is knowable in
+# advance; this turns it into an issue while there is still time to bump
+# calmly. See the Python support policy in CONTRIBUTING.md.
+#
+# Deliberately an issue, not an automated bump PR: moving a floor is a
+# product decision with doc and release fallout. The automation's job is to
+# make sure the decision happens, not to make it.
+
+on:
+  schedule:
+    # Monthly. GitHub pauses schedules on repos with no activity for 60
+    # days; workflow_dispatch below covers manual re-checks either way.
+    - cron: '17 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare floors against endoflife.date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The floors, read from where they are enforced.
+          py=$(grep -oE 'requires-python = ">=[0-9]+\.[0-9]+"' clients/python/pyproject.toml | grep -oE '[0-9]+\.[0-9]+')
+          go=$(awk '/^go /{print $2}' clicker/go.mod | grep -oE '^[0-9]+\.[0-9]+')
+          node=$(grep -m1 "node-version:" .github/workflows/test.yml | grep -oE '[0-9]+')
+
+          deadline=$(date -d '+60 days' +%s)
+          findings=""
+
+          # endoflife.date reports eol as a date, or a boolean: false means
+          # no retirement scheduled, true means already retired (Go uses the
+          # booleans exclusively). An unknown cycle is reported rather than
+          # skipped — silence here would recreate the problem this workflow
+          # exists to prevent.
+          check() {
+            local product=$1 cycle=$2 slug=$3 eol
+            eol=$(curl -sf --retry 3 "https://endoflife.date/api/${slug}.json" |
+              jq -r --arg c "$cycle" '[.[] | select(.cycle == $c)][0].eol // "missing"')
+            case "$eol" in
+              false) ;;
+              true) findings="${findings}- ${product} ${cycle} is already end of life"$'\n' ;;
+              missing) findings="${findings}- ${product} ${cycle} not found on endoflife.date — check manually"$'\n' ;;
+              *) if [ "$(date -d "$eol" +%s)" -le "$deadline" ]; then
+                   findings="${findings}- ${product} ${cycle} reaches end of life on ${eol}"$'\n'
+                 fi ;;
+            esac
+          }
+
+          check Python "$py" python
+          check Go "$go" go
+          check Node.js "$node" nodejs
+
+          if [ -z "$findings" ]; then
+            echo "All floors are inside their support windows."
+            exit 0
+          fi
+
+          echo "Floors approaching or past end of life:"
+          printf '%s' "$findings"
+
+          # One open issue at a time: a later month's findings land as a
+          # comment on the existing issue instead of a duplicate.
+          existing=$(gh issue list --label eol-watch --state open --json number --jq '.[0].number // empty')
+          body="$(printf '%s\n\n%s' "$findings" \
+            'Per the Python support policy in CONTRIBUTING.md, bump the floor in a minor release: `requires-python` in `clients/python/pyproject.toml` and `packages/python/*/pyproject.toml`, the `python_version`/`python-version` pins in the CI workflows, and the versions named in the client README, the getting-started tutorial, and CONTRIBUTING. For Go and Node, the floor lives in `clicker/go.mod` and the `node-version` pin in `test.yml`.')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create eol-watch --description "A supported-version floor is reaching end of life" --color D93F0B --force
+            gh issue create --title "A version floor is approaching end of life" --label eol-watch --body "$body"
+          fi

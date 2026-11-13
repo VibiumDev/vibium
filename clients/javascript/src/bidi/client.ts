@@ -1,6 +1,7 @@
 import { createInterface, Interface as ReadlineInterface } from 'readline';
 import { Writable, Readable } from 'stream';
 import { BiDiCommand, BiDiResponse, BiDiEvent, BiDiMessage, isResponse, isEvent } from './types';
+import { TimeoutError, errorFromResponse } from '../utils/errors';
 
 export type EventHandler = (event: BiDiEvent) => void;
 
@@ -97,7 +98,7 @@ export class BiDiClient {
     this.pendingCommands.delete(response.id);
 
     if (response.type === 'error' && response.error) {
-      pending.reject(new Error(`${response.error}: ${response.message}`));
+      pending.reject(errorFromResponse(response.error, response.message ?? ''));
     } else {
       pending.resolve(response.result);
     }
@@ -160,7 +161,7 @@ export class BiDiClient {
 
       const timer = setTimeout(() => {
         this.pendingCommands.delete(id);
-        reject(new Error(`Command '${method}' timed out after ${timeout}ms`));
+        reject(new TimeoutError(`Command '${method}' timed out after ${timeout}ms`));
       }, timeout);
 
       this.pendingCommands.set(id, {

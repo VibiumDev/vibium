@@ -21,10 +21,16 @@ func newWindowCmd() *cobra.Command {
   vibium window 1920 1080 0 0
   # Set window to 1920x1080 at position (0, 0)
 
+  vibium window 1920 1080 -1920 25
+  # Move to a monitor left of the primary display
+
   vibium window --state maximized
   # Maximize the window`,
-		Args: cobra.RangeArgs(0, 4),
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) > 4 {
+				fmt.Fprintf(os.Stderr, "Error: accepts between 0 and 4 arg(s), received %d\n", len(args))
+				os.Exit(1)
+			}
 			state, _ := cmd.Flags().GetString("state")
 
 			if len(args) == 0 && state == "" {
@@ -88,5 +94,7 @@ func newWindowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("state", "", "Window state: normal, maximized, minimized, fullscreen")
-	return cmd
+	// A window x/y left or above the primary display is negative:
+	// `window 1920 1080 -1920 25`.
+	return lateParse(cmd)
 }

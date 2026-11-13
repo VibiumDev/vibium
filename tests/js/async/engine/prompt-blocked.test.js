@@ -51,7 +51,7 @@ describe('Prompt-blocked context', () => {
     let dialogOpen = false;
     vibe.onDialog(() => { dialogOpen = true; });
 
-    vibe.find('#alert-btn').click().catch(() => {});
+    vibe.find({ css: '#alert-btn' }).click().catch(() => {});
     for (let i = 0; i < 50 && !dialogOpen; i++) {
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -88,7 +88,7 @@ describe('Prompt-blocked context', () => {
       dialog.accept().catch(() => {});
     });
 
-    await vibe.find('#alert-btn').click();
+    await vibe.find({ css: '#alert-btn' }).click();
     await vibe.wait(500);
 
     // Once the prompt is handled the context must be usable again — the
@@ -99,18 +99,21 @@ describe('Prompt-blocked context', () => {
     await vibe.close();
   });
 
-  test('a prompt on one page does not block another page', async () => {
+  // Two pages, two navigations and a dialog poll do not fit the default 30s
+  // test timeout on a loaded CI runner (the macOS legs run the suite beside
+  // three others on 3 cores); the dialog still has to stay open and
+  // unhandled, so the poll itself cannot be replaced with a capture.
+  test('a prompt on one page does not block another page', { timeout: 60000 }, async () => {
     const blocked = await bro.newPage();
     const other = await bro.newPage();
-    await blocked.go(baseURL);
-    await other.go(baseURL);
+    await Promise.all([blocked.go(baseURL), other.go(baseURL)]);
 
     let dialogOpen = false;
     blocked.onDialog(() => { dialogOpen = true; });
     // The click is not awaited because the alert blocks it; under load a
     // swallowed click failure would strand the poll, so retry periodically.
     for (let i = 0; i < 150 && !dialogOpen; i++) {
-      if (i % 15 === 0) blocked.find('#alert-btn').click().catch(() => {});
+      if (i % 15 === 0) blocked.find({ css: '#alert-btn' }).click().catch(() => {});
       await new Promise((r) => setTimeout(r, 100));
     }
     assert.ok(dialogOpen, 'the alert should have opened on the first page');

@@ -24,8 +24,12 @@ const stopScreencastTimeout = 15 * time.Second
 // returned and the recording must not start. In auto mode (video omitted),
 // failures are recorded as videoUnavailable on the recorder and the
 // recording proceeds without video.
-func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptions, remote bool, viewport map[string]interface{}) error {
+//
+// stream is what OpenStreamVideo returned for this recording. A joined
+// stream is the video; the engine is not asked for a screencast.
+func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptions, remote bool, viewport map[string]interface{}, stream *StreamVideo) error {
 	if opts.Video.Mode == VideoOff {
+		stream.Abort()
 		return nil
 	}
 	fail := func(err error) error {
@@ -33,6 +37,17 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 			return err
 		}
 		recorder.SetVideoUnavailable(err.Error())
+		return nil
+	}
+	if stream != nil {
+		if stream.rec == nil {
+			return fail(errors.New(stream.reason))
+		}
+		context, err := s.GetContextID()
+		if err != nil || context == "" {
+			context = "screen"
+		}
+		recorder.setStreamVideo(stream, context)
 		return nil
 	}
 
@@ -65,9 +80,6 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 	resp, err := s.SendBidiCommand("browsingContext.startScreencast", params)
 	if err != nil {
 		return fail(videoSupportError(err))
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return fail(videoSupportError(bidiErr))
 	}
 
 	var result struct {
@@ -112,6 +124,9 @@ func StartRecordingVideo(s Session, recorder *Recorder, opts RecordingStartOptio
 // — the zip still delivers, with the video absent or partial — because
 // fail-fast applies only at start.
 func StopRecordingVideo(s Session, recorder *Recorder) {
+	if recorder.finishStream() {
+		return
+	}
 	track := recorder.ActiveVideo()
 	if track == nil || track.ID == "" {
 		return
@@ -131,10 +146,6 @@ func StopRecordingVideo(s Session, recorder *Recorder) {
 	}, stopScreencastTimeout)
 	if err != nil {
 		recorder.FinishVideo("", err.Error())
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		recorder.FinishVideo("", bidiErr.Error())
 		return
 	}
 
@@ -183,7 +194,10 @@ func FinalizeRecordingOffline(recorder *Recorder) {
 		return
 	}
 	if recorder.IsRecording() && recorder.Options().Path != "" {
-		recorder.FinishVideo("", "browser connection lost before the screencast could be stopped")
+		// A device's stream is its own connection and outlives the session's.
+		if !recorder.finishStream() {
+			recorder.FinishVideo("", "browser connection lost before the screencast could be stopped")
+		}
 		if zipData, err := recorder.Stop(); err == nil {
 			WriteRecordToFile(zipData, recorder.Options().Path)
 			return
@@ -198,6 +212,9 @@ func RecordingSavedSentence(path string, s RecordingSummary) string {
 	msg := fmt.Sprintf("Saved %s (%d steps", path, s.Steps)
 	if len(s.Videos) > 0 && s.Videos[0].Error == "" && s.Videos[0].DurationMs > 0 {
 		msg += fmt.Sprintf(", %ds video", (s.Videos[0].DurationMs+500)/1000)
+		if s.Videos[0].Audio {
+			msg += " with sound"
+		}
 	}
 	msg += ")"
 	if s.VideoUnavailable != "" {

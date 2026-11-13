@@ -1,5 +1,10 @@
+import { callable } from './callable';
+import { RunOptions, RunResult, sendRun } from './run';
+import { CheckOptions, CheckResult, sendCheck } from './check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, sendSay, sendListen } from './speech';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
+import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
 import { BrowserContext } from './context';
 import { Route } from './route';
 import { Request, Response } from './network';
@@ -8,8 +13,8 @@ import { ConsoleMessage } from './console';
 import { Download } from './download';
 import { WebSocketInfo } from './websocket';
 import { Clock } from './clock';
-import { matchPattern } from './utils/match';
 import { debug } from './utils/debug';
+import { toEvalExpression } from './utils/eval-expression';
 
 export interface FindOptions {
   /** Timeout in milliseconds to wait for element. Default: 30000 */
@@ -23,23 +28,90 @@ export interface ScreenshotOptions {
   clip?: { x: number; y: number; width: number; height: number };
 }
 
-interface VibiumFindResult {
-  tag: string;
-  text: string;
-  box: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+/** Options for pdf(). Unset options keep the browser's print defaults. */
+export interface PdfOptions {
+  /** Landscape orientation (default: portrait). */
+  landscape?: boolean;
+  /** Print scale, 0.1-2 (default: 1). */
+  scale?: number;
+  /** Print background graphics (default: false). */
+  background?: boolean;
+  /** Top margin in cm (default: 1). */
+  marginTop?: number;
+  /** Bottom margin in cm (default: 1). */
+  marginBottom?: number;
+  /** Left margin in cm (default: 1). */
+  marginLeft?: number;
+  /** Right margin in cm (default: 1). */
+  marginRight?: number;
+  /** Page width in cm (default: 21.59). */
+  pageWidth?: number;
+  /** Page height in cm (default: 27.94). */
+  pageHeight?: number;
+  /** Pages to print, e.g. [1, '3-5'] (default: all). */
+  pageRanges?: Array<number | string>;
+  /** Shrink content to fit the page width (default: true). */
+  shrinkToFit?: boolean;
 }
 
-interface VibiumFindAllResult {
-  elements: Array<{ tag: string; text: string; box: { x: number; y: number; width: number; height: number }; index: number }>;
-  count: number;
-}
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
+
+// Exposed host functions are connection-scoped, not Page-instance-scoped:
+// browser.page() hands out a fresh Page object for the same context, and
+// every instance sees every event. One registry and one dispatcher per
+// client means one execution and one reply per call, whichever instance
+// registered the function.
+const exposeRegistries = new WeakMap<BiDiClient, Map<string, (...args: unknown[]) => unknown>>();
+
+function exposeRegistry(client: BiDiClient): Map<string, (...args: unknown[]) => unknown> {
+  let registry = exposeRegistries.get(client);
+  if (!registry) {
+    const fns = new Map<string, (...args: unknown[]) => unknown>();
+    registry = fns;
+    exposeRegistries.set(client, fns);
+    client.onEvent((event) => {
+      if (event.method !== 'vibium:expose.call') return;
+      handleExposeCall(client, fns, event.params as Record<string, unknown>);
+    });
+  }
+  return registry;
+}
+
+async function handleExposeCall(
+  client: BiDiClient,
+  fns: Map<string, (...args: unknown[]) => unknown>,
+  params: Record<string, unknown>,
+): Promise<void> {
+  const name = params.name as string;
+  const seq = params.seq as number;
+  const context = params.context as string;
+  const realm = params.realm as string | undefined;
+
+  // Every outcome answers: an unanswered call leaves the page's promise
+  // parked forever. The reply carries the calling realm back, so the engine
+  // delivers into the document that made the call, not whatever the context
+  // shows after a navigation.
+  const reply = (body: { result?: unknown; error?: string }) => {
+    client.send('vibium:expose.result', { context, realm, seq, ...body }).catch(() => {});
+  };
+
+  const fn = fns.get(name);
+  if (!fn) {
+    reply({ error: `${name} is not exposed` });
+    return;
+  }
+
+  try {
+    const result = await fn(...((params.args as unknown[]) ?? []));
+    // Results cross as JSON; catching the serialization failure here turns
+    // it into a page-side rejection instead of a forever-pending promise.
+    JSON.stringify(result);
+    reply({ result: result === undefined ? null : result });
+  } catch (e) {
+    reply({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
 
 /** Page-level keyboard input. */
 export class Keyboard {
@@ -88,6 +160,10 @@ export class Keyboard {
 export class Mouse {
   private client: BiDiClient;
   private contextId: string;
+  // Last pointer position, so wheel() scrolls where the mouse is rather than
+  // at (0, 0). Updated by every action that repositions the pointer (#726).
+  private lastX = 0;
+  private lastY = 0;
 
   constructor(client: BiDiClient, contextId: string) {
     this.client = client;
@@ -101,6 +177,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Move mouse to (x, y) coordinates. */
@@ -110,6 +188,8 @@ export class Mouse {
       x,
       y,
     });
+    this.lastX = x;
+    this.lastY = y;
   }
 
   /** Press mouse button down. */
@@ -126,16 +206,34 @@ export class Mouse {
     });
   }
 
-  /** Scroll the mouse wheel. */
+  /** Scroll the mouse wheel at the current pointer position. */
   async wheel(deltaX: number, deltaY: number): Promise<void> {
     await this.client.send('vibium:mouse.wheel', {
       context: this.contextId,
-      x: 0,
-      y: 0,
+      x: this.lastX,
+      y: this.lastY,
       deltaX,
       deltaY,
     });
   }
+}
+
+export type SwipeDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface SwipeOptions {
+  /** Start at an edge or corner of the viewport, its center (default), or a point. */
+  from?:
+    | 'top' | 'bottom' | 'left' | 'right'
+    | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    | 'center' | { x: number; y: number };
+  /** Pixels to move (default: half the viewport). */
+  distance?: number;
+  /** 'slow', 'normal', 'fast', or pixels per second. Instead of duration. */
+  speed?: 'slow' | 'normal' | 'fast' | number;
+  /** Milliseconds the move takes (default 300). */
+  duration?: number;
+  /** Milliseconds to rest at the end before lifting. */
+  hold?: number;
 }
 
 /** Page-level touch input. */
@@ -154,6 +252,48 @@ export class Touch {
       context: this.contextId,
       x,
       y,
+    });
+  }
+
+  /**
+   * Swipe in a direction, or from (x1, y1) to (x2, y2). The finger stays down
+   * for the move, so the gesture reads as a swipe/fling rather than two taps.
+   *
+   *   swipe('up')                                   // from the center, half the viewport
+   *   swipe('up', { from: 'bottom', speed: 'fast' }) // phone home gesture via Roadie
+   *   swipe(40, 100, 240, 100, 200)                 // coordinates, 200ms
+   */
+  async swipe(direction: SwipeDirection, options?: SwipeOptions): Promise<void>;
+  async swipe(x1: number, y1: number, x2: number, y2: number, durationMs?: number): Promise<void>;
+  async swipe(
+    a: SwipeDirection | number,
+    b?: SwipeOptions | number,
+    x2?: number,
+    y2?: number,
+    durationMs?: number,
+  ): Promise<void> {
+    let params: Record<string, unknown>;
+    if (typeof a === 'string') {
+      const { from, ...rest } = (b as SwipeOptions | undefined) ?? {};
+      params = { direction: a, ...rest };
+      if (typeof from === 'string') params.from = from;
+      else if (from) Object.assign(params, { fromX: from.x, fromY: from.y });
+    } else {
+      params = { x1: a, y1: b, x2, y2 };
+      if (durationMs !== undefined) params.duration = durationMs;
+    }
+    await this.client.send('vibium:touch.swipe', { context: this.contextId, ...params });
+  }
+
+  /**
+   * Press and hold at (x, y) for durationMs before releasing (default 500).
+   */
+  async longPress(x: number, y: number, durationMs?: number): Promise<void> {
+    await this.client.send('vibium:touch.longPress', {
+      context: this.contextId,
+      x,
+      y,
+      ...(durationMs !== undefined ? { duration: durationMs } : {}),
     });
   }
 }
@@ -177,6 +317,8 @@ export interface A11yNode {
   children?: A11yNode[];
 }
 
+export interface Page { (goal: string, options?: RunOptions): Promise<RunResult>; }
+
 export class Page {
   private client: BiDiClient;
   private contextId: string;
@@ -196,11 +338,11 @@ export class Page {
   private requestCallbacks: ((request: Request) => void)[] = [];
   private responseCallbacks: ((response: Response) => void)[] = [];
   private dialogCallbacks: ((dialog: Dialog) => void)[] = [];
+  private dialogPolicyManual = false;
   private consoleCallbacks: ((msg: ConsoleMessage) => void)[] = [];
   private errorCallbacks: ((error: Error) => void)[] = [];
   private downloadCallbacks: ((download: Download) => void)[] = [];
   private navigationCallbacks: ((url: string) => void)[] = [];
-  private pendingDownloads: Map<string, Download> = new Map();
   private wsCallbacks: ((ws: WebSocketInfo) => void)[] = [];
   private wsConnections: Map<number, WebSocketInfo> = new Map();
   private wsSetup: Promise<unknown> | null = null;
@@ -281,8 +423,6 @@ export class Page {
         this.handleUserPromptOpened(params);
       } else if (event.method === 'browsingContext.downloadWillBegin') {
         this.handleDownloadWillBegin(params);
-      } else if (event.method === 'browsingContext.downloadEnd') {
-        this.handleDownloadCompleted(params);
       } else if (event.method === 'log.entryAdded') {
         // log.entryAdded uses source.context, not params.context
         const source = params.source as { context?: string } | undefined;
@@ -313,6 +453,7 @@ export class Page {
       }
     };
     this.client.onEvent(this.eventHandler);
+    return callable(this);
   }
 
   /** The browsing context ID for this page. */
@@ -327,6 +468,26 @@ export class Page {
   /** The parent BrowserContext that owns this page. */
   get context(): BrowserContext {
     return this._context;
+  }
+
+  /** Accomplish a live browser goal; provider settings are read in the runtime. */
+  run(goal: string, options: RunOptions = {}): Promise<RunResult> {
+    return sendRun(this.client, goal, options, this.contextId);
+  }
+
+  /** Verify this exact page, or inspect a read-only archive. */
+  check(claim: string, options: CheckOptions = {}): Promise<CheckResult> {
+    return sendCheck(this.client, claim, options, this.contextId);
+  }
+
+  /** Speak text into this page's microphone, or into the device. */
+  say(text: string, options: SayOptions = {}): Promise<SayResult> {
+    return sendSay(this.client, text, options, this.contextId);
+  }
+
+  /** Hear what this page, or the device, plays, and return its words. */
+  listen(options: ListenOptions = {}): Promise<ListenResult> {
+    return sendListen(this.client, options, this.contextId);
   }
 
   /** Navigate to a URL. */
@@ -533,20 +694,21 @@ export class Page {
   }
 
   /** Print the page to PDF. Returns a PDF buffer. Only works in headless mode. */
-  async pdf(): Promise<Buffer> {
+  async pdf(options?: PdfOptions): Promise<Buffer> {
     const result = await this.client.send<{ data: string }>('vibium:page.pdf', {
       context: this.contextId,
+      ...options,
     });
     return Buffer.from(result.data, 'base64');
   }
 
   // --- Evaluation ---
 
-  /** Evaluate a JS expression and return the deserialized value. */
-  async evaluate<T = unknown>(expression: string): Promise<T> {
+  /** Evaluate a JS expression string or argless function and return the deserialized value. */
+  async evaluate<T = unknown>(expression: string | (() => T | Promise<T>)): Promise<T> {
     const result = await this.client.send<{ value: T }>('vibium:page.eval', {
       context: this.contextId,
-      expression,
+      expression: toEvalExpression(expression),
     });
     return result.value;
   }
@@ -569,8 +731,27 @@ export class Page {
     });
   }
 
-  /** Expose a function on window. The function body is injected as a string. */
-  async expose(name: string, fn: string): Promise<void> {
+  /**
+   * Expose a function on window.
+   *
+   * Pass a function to expose a host callback: the page calls
+   * window[name](...args), this function runs here, and its return value
+   * resolves the page's promise. Arguments and results cross as JSON.
+   * Pass a string to inject it as JS source instead, defining window[name]
+   * inside the page.
+   *
+   * Either form survives navigation, and re-exposing a name replaces it.
+   */
+  async expose(name: string, fn: string | ((...args: unknown[]) => unknown)): Promise<void> {
+    if (typeof fn === 'function') {
+      exposeRegistry(this.client).set(name, fn);
+      await this.client.send('vibium:page.exposeFunction', {
+        context: this.contextId,
+        name,
+      });
+      return;
+    }
+    exposeRegistries.get(this.client)?.delete(name);
     await this.client.send('vibium:page.expose', {
       context: this.contextId,
       name,
@@ -640,61 +821,57 @@ export class Page {
     return result.value;
   }
 
-  /** Find an element by CSS selector or semantic options. Waits for element to exist. */
+  /**
+   * Find an element. A string is a natural-language description; an options
+   * object gives an exact locator (css, tag, role, text, ...) or a reference
+   * image. Waits for the element to exist.
+   */
   find(selector: string | SelectorOptions, options?: FindOptions): FluentElement {
     const promise = (async () => {
       const params: Record<string, unknown> = {
         context: this.contextId,
         timeout: options?.timeout,
+        ...(await locatorParams(selector)),
       };
+      if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      debug('page.find', { ...params, image: params.image ? '<image>' : undefined });
 
-      if (typeof selector === 'string') {
-        debug('page.find', { selector, timeout: options?.timeout });
-        params.selector = selector;
-      } else {
-        debug('page.find', { ...selector, timeout: options?.timeout });
-        Object.assign(params, selector);
-        if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+      const result = await this.client.send<FoundElement>('vibium:page.find', params);
+      const info = infoFrom(result);
+      if (resolvedHandle(selector)) {
+        return new Element(this.client, this.contextId, handleSelector(result), info);
       }
-
-      const result = await this.client.send<VibiumFindResult>('vibium:page.find', params);
-
-      const info: ElementInfo = {
-        tag: result.tag,
-        text: result.text,
-        box: result.box,
-      };
-
-      const selectorStr = typeof selector === 'string' ? selector : '';
-      const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
-      return new Element(this.client, this.contextId, selectorStr, info, undefined, selectorParams);
+      return new Element(this.client, this.contextId, cssOf(params), info, undefined, reusableParams(params));
     })();
     return fluent(promise);
   }
 
-  /** Find all elements matching a CSS selector or semantic options. Waits for at least one. */
+  /**
+   * Find all elements matching a description, image, css, or semantic
+   * options. Waits up to the timeout for at least one match, then returns an
+   * empty array if there is none. A timeout of 0 checks once without waiting.
+   *
+   * Each element carries a snapshot of its tag, text, and box taken at
+   * findAll time, readable via `el.info` with no further round trips:
+   * els.map(el => el.info.text). Live reads like el.text() re-resolve the
+   * element and fail if the page has changed since findAll.
+   */
   async findAll(selector: string | SelectorOptions, options?: FindOptions): Promise<Element[]> {
     const params: Record<string, unknown> = {
       context: this.contextId,
       timeout: options?.timeout,
+      ...(await locatorParams(selector)),
     };
+    if (typeof selector !== 'string' && selector.timeout && !options?.timeout) params.timeout = selector.timeout;
+    debug('page.findAll', { ...params, image: params.image ? '<image>' : undefined });
 
-    if (typeof selector === 'string') {
-      debug('page.findAll', { selector, timeout: options?.timeout });
-      params.selector = selector;
-    } else {
-      debug('page.findAll', { ...selector, timeout: options?.timeout });
-      Object.assign(params, selector);
-      if (selector.timeout && !options?.timeout) params.timeout = selector.timeout;
-    }
-
-    const result = await this.client.send<VibiumFindAllResult>('vibium:page.findAll', params);
-
-    const selectorStr = typeof selector === 'string' ? selector : '';
-    const selectorParams = typeof selector === 'string' ? { selector } : { ...selector };
+    const result = await this.client.send<{ elements: FoundElement[]; count: number }>('vibium:page.findAll', params);
+    const resolved = resolvedHandle(selector);
+    const reuse = reusableParams(params);
     return result.elements.map((el) => {
-      const info: ElementInfo = { tag: el.tag, text: el.text, box: el.box };
-      return new Element(this.client, this.contextId, selectorStr, info, el.index, selectorParams);
+      const info = infoFrom(el);
+      if (resolved) return new Element(this.client, this.contextId, handleSelector(el), info);
+      return new Element(this.client, this.contextId, cssOf(params), info, el.index, reuse);
     });
   }
 
@@ -705,27 +882,29 @@ export class Page {
    * The handler receives a Route object that can fulfill, continue, or abort the request.
    */
   async route(pattern: string, handler: (route: Route) => void): Promise<void> {
-    // Register the intercept with the Go proxy (only once for the first route)
-    if (this.interceptId === null) {
-      const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
-        context: this.contextId,
-      });
-      this.interceptId = result.intercept;
-    }
+    // The binary compiles the pattern, owns the intercept lifecycle, and
+    // annotates blocked request events with the patterns that matched, so
+    // dispatch below never interprets the glob itself.
+    const result = await this.client.send<{ intercept: string }>('vibium:page.route', {
+      context: this.contextId,
+      pattern,
+    });
+    this.interceptId = result.intercept;
 
     this.ensureDataCollector();
-    this.routes.push({ pattern, handler, interceptId: this.interceptId ?? undefined });
+    this.routes.push({ pattern, handler, interceptId: result.intercept });
   }
 
   /** Remove a previously registered route. If no handler given, removes all routes for the pattern. */
   async unroute(pattern: string): Promise<void> {
+    const removed = this.routes.filter(r => r.pattern === pattern).length;
     this.routes = this.routes.filter(r => r.pattern !== pattern);
-
-    // If no routes left, remove the intercept
-    if (this.routes.length === 0 && this.interceptId) {
-      await this.client.send('network.removeIntercept', {
-        intercept: this.interceptId,
-      });
+    // The binary refcounts pattern registrations and tears the intercept
+    // down when the last one goes.
+    for (let i = 0; i < removed; i++) {
+      await this.client.send('vibium:page.unroute', { context: this.contextId, pattern });
+    }
+    if (this.routes.length === 0) {
       this.interceptId = null;
     }
   }
@@ -755,6 +934,7 @@ export class Page {
     }
     if (!event || event === 'dialog') {
       this.dialogCallbacks = [];
+      this.syncDialogPolicy();
     }
     if (!event || event === 'console') {
       this.consoleCallbacks = [];
@@ -779,162 +959,84 @@ export class Page {
     }
   }
 
-  /** @internal Capture a request matching a URL pattern. */
-  _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Request>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for request matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (request: Request) => {
-        if (matchPattern(pattern, request.url())) {
-          clearTimeout(timer);
-          this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler);
-          resolve(request);
-        }
-      };
-      this.requestCallbacks.push(handler);
+  /**
+   * @internal Capture a request matching a URL pattern. The binary matches
+   * the pattern and waits for the event; this just awaits the command.
+   */
+  async _captureRequest(pattern: string, options?: { timeout?: number }): Promise<Request> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureRequest', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Request(result.event, this.client);
   }
 
   /** @internal Capture a response matching a URL pattern. */
-  _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
+  async _captureResponse(pattern: string, options?: { timeout?: number }): Promise<Response> {
     this.ensureDataCollector();
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Response>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for response matching '${pattern}'`));
-      }, timeout);
-
-      const handler = (response: Response) => {
-        if (matchPattern(pattern, response.url())) {
-          clearTimeout(timer);
-          this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler);
-          resolve(response);
-        }
-      };
-      this.responseCallbacks.push(handler);
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureResponse', {
+      context: this.contextId,
+      pattern,
+      timeout: options?.timeout ?? 10000,
     });
+    return new Response(result.event, this.client);
+  }
+
+  /**
+   * @internal One-shot capture, waited out in the engine
+   * (vibium:page.captureEvent), so no client keeps its own listener and
+   * timeout machinery (#446). Returns the raw event params.
+   */
+  private async captureEventParams(kind: string, options?: { timeout?: number }): Promise<Record<string, unknown>> {
+    const result = await this.client.send<{ event: Record<string, unknown> }>('vibium:page.captureEvent', {
+      context: this.contextId,
+      kind,
+      timeout: options?.timeout ?? 10000,
+    });
+    return result.event;
   }
 
   /** @internal Capture a navigation event. Resolves with the URL. */
-  _captureNavigation(options?: { timeout?: number }): Promise<string> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for navigation`));
-      }, timeout);
-
-      const handler = (url: string) => {
-        clearTimeout(timer);
-        this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler);
-        resolve(url);
-      };
-      this.navigationCallbacks.push(handler);
-    });
+  async _captureNavigation(options?: { timeout?: number }): Promise<string> {
+    const params = await this.captureEventParams('navigation', options);
+    return (params.url as string) ?? '';
   }
 
   /** @internal Capture a download event. */
-  _captureDownload(options?: { timeout?: number }): Promise<Download> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Download>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for download`));
-      }, timeout);
-
-      const handler = (download: Download) => {
-        clearTimeout(timer);
-        this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler);
-        resolve(download);
-      };
-      this.downloadCallbacks.push(handler);
-    });
+  async _captureDownload(options?: { timeout?: number }): Promise<Download> {
+    const params = await this.captureEventParams('download', options);
+    return new Download(this.client, params);
   }
 
-  /** @internal Capture a dialog event. The registered callback prevents auto-dismiss. */
-  _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<Dialog>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        reject(new Error(`Timeout waiting for dialog`));
-      }, timeout);
-
-      const handler = (dialog: Dialog) => {
-        clearTimeout(timer);
-        this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
-        resolve(dialog);
-      };
-      this.dialogCallbacks.push(handler);
-    });
+  /** @internal Capture a dialog event. The pending engine capture keeps the dialog from being auto-dismissed. */
+  async _captureDialog(options?: { timeout?: number }): Promise<Dialog> {
+    const params = await this.captureEventParams('dialog', options);
+    return new Dialog(this.client, this.contextId, params);
   }
 
-  /** @internal Capture a named event. Maps event name to the appropriate callback array. */
-  _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
-    const timeout = options?.timeout ?? 10000;
-    return new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout waiting for event '${name}'`));
-      }, timeout);
-
-      let cleanup: () => void;
-
-      switch (name) {
-        case 'request': {
-          const handler = (req: Request) => { clearTimeout(timer); cleanup(); resolve(req); };
-          this.requestCallbacks.push(handler);
-          cleanup = () => { this.requestCallbacks = this.requestCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'response': {
-          const handler = (resp: Response) => { clearTimeout(timer); cleanup(); resolve(resp); };
-          this.responseCallbacks.push(handler);
-          cleanup = () => { this.responseCallbacks = this.responseCallbacks.filter(cb => cb !== handler); };
-          this.ensureDataCollector();
-          break;
-        }
-        case 'dialog': {
-          const handler = (dialog: Dialog) => { clearTimeout(timer); cleanup(); resolve(dialog); };
-          this.dialogCallbacks.push(handler);
-          cleanup = () => { this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'download': {
-          const handler = (download: Download) => { clearTimeout(timer); cleanup(); resolve(download); };
-          this.downloadCallbacks.push(handler);
-          cleanup = () => { this.downloadCallbacks = this.downloadCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'navigation': {
-          const handler = (url: string) => { clearTimeout(timer); cleanup(); resolve(url); };
-          this.navigationCallbacks.push(handler);
-          cleanup = () => { this.navigationCallbacks = this.navigationCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'console': {
-          const handler = (msg: ConsoleMessage) => { clearTimeout(timer); cleanup(); resolve(msg); };
-          this.consoleCallbacks.push(handler);
-          cleanup = () => { this.consoleCallbacks = this.consoleCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        case 'error': {
-          const handler = (err: Error) => { clearTimeout(timer); cleanup(); resolve(err); };
-          this.errorCallbacks.push(handler);
-          cleanup = () => { this.errorCallbacks = this.errorCallbacks.filter(cb => cb !== handler); };
-          break;
-        }
-        default:
-          clearTimeout(timer);
-          reject(new Error(`Unknown event name: '${name}'`));
+  /** @internal Capture a named event. */
+  async _captureEvent(name: string, options?: { timeout?: number }): Promise<unknown> {
+    switch (name) {
+      case 'request':
+        return this._captureRequest('**', options);
+      case 'response':
+        return this._captureResponse('**', options);
+      case 'download':
+        return this._captureDownload(options);
+      case 'navigation':
+        return this._captureNavigation(options);
+      case 'dialog':
+        return this._captureDialog(options);
+      case 'console':
+        return new ConsoleMessage(await this.captureEventParams('console', options));
+      case 'error': {
+        const params = await this.captureEventParams('error', options);
+        return new Error((params.text as string) ?? 'Unknown error');
       }
-    });
+      default:
+        throw new Error(`Unknown event name: '${name}'`);
+    }
   }
 
   /** Set extra HTTP headers for all requests in this page. */
@@ -1013,7 +1115,33 @@ export class Page {
    * If no handler is registered, dialogs are automatically dismissed.
    */
   onDialog(handler: (dialog: Dialog) => void): void {
+    this.addDialogCallback(handler);
+  }
+
+  /**
+   * The engine dismisses dialogs itself while no handler is registered
+   * (#446); handlers flip it to manual so the dialog stays open for them.
+   * sendSetup, so the policy is acknowledged before any later command can
+   * trigger a dialog.
+   */
+  private syncDialogPolicy(): void {
+    const manual = this.dialogCallbacks.length > 0;
+    if (manual === this.dialogPolicyManual) return;
+    this.dialogPolicyManual = manual;
+    this.client.sendSetup('vibium:dialog.setPolicy', {
+      context: this.contextId,
+      policy: manual ? 'manual' : 'dismiss',
+    }).catch(() => {});
+  }
+
+  private addDialogCallback(handler: (dialog: Dialog) => void): void {
     this.dialogCallbacks.push(handler);
+    this.syncDialogPolicy();
+  }
+
+  private removeDialogCallback(handler: (dialog: Dialog) => void): void {
+    this.dialogCallbacks = this.dialogCallbacks.filter(cb => cb !== handler);
+    this.syncDialogPolicy();
   }
 
   /** Register a handler for console messages, or pass 'collect' to buffer them for consoleMessages(). */
@@ -1098,12 +1226,14 @@ export class Page {
     const requestId = request?.request as string | undefined;
 
     if (isBlocked && requestId) {
-      // This is an intercepted request — match against routes
-      const requestUrl = (request?.url as string) ?? '';
+      // This is an intercepted request. The binary already matched the URL
+      // against every registered pattern (vibiumMatchedPatterns), so
+      // dispatch is a membership check, not a glob evaluation.
+      const matched = (params.vibiumMatchedPatterns as string[] | undefined) ?? [];
       const req = new Request(params, this.client);
 
       for (const routeEntry of this.routes) {
-        if (matchPattern(routeEntry.pattern, requestUrl)) {
+        if (matched.includes(routeEntry.pattern)) {
           const route = new Route(this.client, requestId, req);
           // Catch errors from async route handlers (fire-and-forget pattern)
           try {
@@ -1135,21 +1265,18 @@ export class Page {
   }
 
   private handleUserPromptOpened(params: Record<string, unknown>): void {
+    // With no handler registered the engine dismisses the dialog itself
+    // (#446), so there is nothing to do here but deliver.
     const dialog = new Dialog(this.client, this.contextId, params);
 
-    if (this.dialogCallbacks.length > 0) {
-      for (const cb of this.dialogCallbacks) {
-        // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
-        try {
-          const result = cb(dialog) as unknown;
-          if (result && typeof (result as Promise<void>).catch === 'function') {
-            (result as Promise<void>).catch(() => {});
-          }
-        } catch (_) { /* ignore sync errors from handler */ }
-      }
-    } else {
-      // Auto-dismiss if no handler registered (matches Playwright behavior)
-      dialog.dismiss().catch(() => {});
+    for (const cb of this.dialogCallbacks) {
+      // Catch errors from async handlers (dialog.accept/dismiss are fire-and-forget)
+      try {
+        const result = cb(dialog) as unknown;
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch (_) { /* ignore sync errors from handler */ }
     }
   }
 
@@ -1171,29 +1298,11 @@ export class Page {
   }
 
   private handleDownloadWillBegin(params: Record<string, unknown>): void {
-    const url = (params.url as string) ?? '';
-    const suggestedFilename = (params.suggestedFilename as string) ?? '';
-    const navigation = (params.navigation as string) ?? '';
-
-    const download = new Download(this.client, url, suggestedFilename);
-    if (navigation) {
-      this.pendingDownloads.set(navigation, download);
-    }
-
+    // Completion is awaited in the engine by navigation id (#446), so
+    // there is no client-side pending map to feed on downloadEnd.
+    const download = new Download(this.client, params);
     for (const cb of this.downloadCallbacks) {
       cb(download);
-    }
-  }
-
-  private handleDownloadCompleted(params: Record<string, unknown>): void {
-    const navigation = (params.navigation as string) ?? '';
-    const status = (params.status as string) ?? 'complete';
-    const filepath = (params.filepath as string) ?? null;
-
-    const download = this.pendingDownloads.get(navigation);
-    if (download) {
-      download._complete(status, filepath);
-      this.pendingDownloads.delete(navigation);
     }
   }
 

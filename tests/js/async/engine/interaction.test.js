@@ -1,6 +1,6 @@
 /**
  * JS Library Tests: Element Interaction
- * Tests click, dblclick, fill, type, press, clear, check, uncheck,
+ * Tests click, dblclick, fill, type, press, clear, set, unset,
  * selectOption, hover, focus, tap, scrollIntoView, dispatchEvent.
  */
 
@@ -29,13 +29,13 @@ describe('Interaction: Checkpoint', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    const username = await vibe.find('#username');
+    const username = await vibe.find({ css: '#username' });
     await username.fill('tomsmith');
 
-    const password = await vibe.find('#password');
+    const password = await vibe.find({ css: '#password' });
     await password.fill('SuperSecretPassword!');
 
-    const loginBtn = await vibe.find('button[type="submit"]');
+    const loginBtn = await vibe.find({ css: 'button[type="submit"]' });
     await loginBtn.click();
 
     await vibe.waitForURL('**/secure');
@@ -43,26 +43,29 @@ describe('Interaction: Checkpoint', () => {
     assert.ok(url.includes('/secure'), `Should be on /secure page, got: ${url}`);
   });
 
-  test('checkbox: check and uncheck', async () => {
+  test('checkbox: set and unset', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/checkboxes');
 
-    const first = await vibe.find('input[type="checkbox"]');
+    const first = await vibe.find({ css: 'input[type="checkbox"]' });
 
     // First checkbox starts unchecked
-    await first.check();
-    assert.strictEqual(await first.isChecked(), true, 'First checkbox should be checked');
+    await first.set();
+    await first.set(false);
+    assert.strictEqual(await first.isSet(), false);
+    await first.set(true);
+    assert.strictEqual(await first.isSet(), true, 'First checkbox should be checked');
 
     // Uncheck it
-    await first.uncheck();
-    assert.strictEqual(await first.isChecked(), false, 'First checkbox should be unchecked');
+    await first.unset();
+    assert.strictEqual(await first.isSet(), false, 'First checkbox should be unchecked');
   });
 
   test('hover reveals hidden content', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/hovers');
 
-    const figures = await vibe.findAll('.figure');
+    const figures = await vibe.findAll({ css: '.figure' });
     await figures[0].hover();
 
     // Poll for CSS transition to complete (opacity 0 → 1)
@@ -91,7 +94,7 @@ describe('Interaction: Click variants', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
 
-    const link = await vibe.find('a[href="/login"]');
+    const link = await vibe.find({ css: 'a[href="/login"]' });
     await link.click();
 
     await vibe.waitForURL('**/login');
@@ -103,7 +106,7 @@ describe('Interaction: Click variants', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/example');
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     await h1.dblclick();
 
     // Double-clicking on text should select it
@@ -119,7 +122,7 @@ describe('Interaction: Input methods', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    const username = await vibe.find('#username');
+    const username = await vibe.find({ css: '#username' });
     await username.fill('firstvalue');
     await username.fill('secondvalue');
 
@@ -133,7 +136,7 @@ describe('Interaction: Input methods', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/inputs');
 
-    const input = await vibe.find('input');
+    const input = await vibe.find({ css: 'input' });
     await input.type('123');
     await input.type('45');
 
@@ -147,7 +150,7 @@ describe('Interaction: Input methods', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    const username = await vibe.find('#username');
+    const username = await vibe.find({ css: '#username' });
     await username.fill('sometext');
     await username.clear();
 
@@ -161,10 +164,10 @@ describe('Interaction: Input methods', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    const username = await vibe.find('#username');
+    const username = await vibe.find({ css: '#username' });
     await username.fill('tomsmith');
 
-    const password = await vibe.find('#password');
+    const password = await vibe.find({ css: '#password' });
     await password.fill('SuperSecretPassword!');
 
     // Press Enter to submit instead of clicking
@@ -181,7 +184,7 @@ describe('Interaction: Select', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/dropdown');
 
-    const dropdown = await vibe.find('#dropdown');
+    const dropdown = await vibe.find({ css: '#dropdown' });
     await dropdown.selectOption('2');
 
     const value = await vibe.evaluate(`
@@ -196,7 +199,7 @@ describe('Interaction: Focus', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/login');
 
-    const username = await vibe.find('#username');
+    const username = await vibe.find({ css: '#username' });
     await username.focus();
 
     const activeId = await vibe.evaluate(`
@@ -212,7 +215,7 @@ describe('Interaction: Scroll', () => {
     await vibe.go(baseURL);
 
     // The footer is below the fold
-    const footer = await vibe.find('#page-footer');
+    const footer = await vibe.find({ css: '#page-footer' });
     await footer.scrollIntoView();
 
     const inView = await vibe.evaluate(`(() => {
@@ -230,7 +233,7 @@ describe('Interaction: findAll index bug fix', () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/checkboxes');
 
-    const checkboxes = await vibe.findAll('input[type="checkbox"]');
+    const checkboxes = await vibe.findAll({ css: 'input[type="checkbox"]' });
     assert.strictEqual(checkboxes.length, 2, 'Should find 2 checkboxes');
 
     // Second checkbox starts checked
@@ -268,7 +271,7 @@ describe('Interaction: dispatchEvent', () => {
       });
     `);
 
-    const h1 = await vibe.find('h1');
+    const h1 = await vibe.find({ css: 'h1' });
     await h1.dispatchEvent('click', { bubbles: true });
 
     const fired = await vibe.evaluate(`
@@ -281,25 +284,26 @@ describe('Interaction: dispatchEvent', () => {
 // --- Regression: fill/select edge cases (#117, #140) ---
 
 describe('Interaction: fill/select regressions', () => {
-  const FORM = 'data:text/html,' + encodeURIComponent(
+  // Set via setContent, not a data: URL: Firefox 159 blocks top-level data:
+  // navigation (#648).
+  const FORM =
     '<input id="i" type="text">' +
     '<textarea id="t"></textarea>' +
-    '<select id="s"><option value="">--</option><option value="CA">California</option></select>'
-  );
+    '<select id="s"><option value="">--</option><option value="CA">California</option></select>';
 
   test('fill works on <textarea> (no "Illegal invocation") (#117)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
-    await vibe.find('#t').fill('hello textarea');
+    await vibe.setContent(FORM);
+    await vibe.find({ css: '#t' }).fill('hello textarea');
     const value = await vibe.evaluate(`document.querySelector('#t').value`);
     assert.strictEqual(value, 'hello textarea', 'textarea should be filled');
   });
 
   test('selectOption rejects when no option matches (#140)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
+    await vibe.setContent(FORM);
     await assert.rejects(
-      () => vibe.find('#s').selectOption('NoSuchValue'),
+      () => vibe.find({ css: '#s' }).selectOption('NoSuchValue'),
       /option/i,
       'selectOption should error instead of silently no-op',
     );
@@ -307,8 +311,8 @@ describe('Interaction: fill/select regressions', () => {
 
   test('selectOption matches by visible label (#140)', async () => {
     const vibe = await bro.page();
-    await vibe.go(FORM);
-    await vibe.find('#s').selectOption('California');
+    await vibe.setContent(FORM);
+    await vibe.find({ css: '#s' }).selectOption('California');
     const value = await vibe.evaluate(`document.querySelector('#s').value`);
     assert.strictEqual(value, 'CA', 'label "California" should select value "CA"');
   });

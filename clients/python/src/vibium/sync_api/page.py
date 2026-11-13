@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from ..check import CheckResult, send_check
+from ..speech import ListenResult, SayResult, SAY_TIMEOUT, SYNC_SLACK, listen_timeout
+from ..run import RunResult
+
 import shutil
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from .._locator import ImageInput
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from .._types import A11yNode
 from .element import Element
@@ -70,6 +75,27 @@ class Touch:
     def tap(self, x: float, y: float) -> None:
         self._loop.run(self._async.tap(x, y))
 
+    def swipe(
+        self,
+        x1: Union[float, str],
+        y1: Optional[float] = None,
+        x2: Optional[float] = None,
+        y2: Optional[float] = None,
+        duration_ms: Optional[int] = None,
+        *,
+        from_: Union[str, Tuple[float, float], None] = None,
+        distance: Optional[float] = None,
+        speed: Union[str, float, None] = None,
+        hold_ms: Optional[int] = None,
+    ) -> None:
+        self._loop.run(self._async.swipe(
+            x1, y1, x2, y2, duration_ms,
+            from_=from_, distance=distance, speed=speed, hold_ms=hold_ms,
+        ))
+
+    def long_press(self, x: float, y: float, duration_ms: Optional[int] = None) -> None:
+        self._loop.run(self._async.long_press(x, y, duration_ms))
+
 
 class Page:
     """Synchronous wrapper for async Page."""
@@ -78,15 +104,32 @@ class Page:
         self._async = async_page
         self._loop = loop_thread
 
-        self.keyboard = Keyboard(async_page.keyboard, loop_thread)
-        self.mouse = Mouse(async_page.mouse, loop_thread)
-        self.touch = Touch(async_page.touch, loop_thread)
-        self.clock = Clock(async_page.clock, loop_thread)
+        self._keyboard = Keyboard(async_page.keyboard, loop_thread)
+        self._mouse = Mouse(async_page.mouse, loop_thread)
+        self._touch = Touch(async_page.touch, loop_thread)
+        self._clock = Clock(async_page.clock, loop_thread)
 
         # Sync event state
         self._console_messages: List[Dict[str, str]] = []
         self._errors: List[Dict[str, str]] = []
         self._cached_context: Optional[BrowserContextType] = None
+
+
+    @property
+    def keyboard(self) -> Keyboard:
+        return self._keyboard
+
+    @property
+    def mouse(self) -> Mouse:
+        return self._mouse
+
+    @property
+    def touch(self) -> Touch:
+        return self._touch
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     def __repr__(self) -> str:
         try:
@@ -109,6 +152,26 @@ class Page:
         return self._cached_context
 
     # --- Navigation ---
+
+    def __call__(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return self.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+
+    def run(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        """Accomplish a live goal; the existing runtime owns the model loop."""
+        return self._loop.run(self._async.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
+
+    def check(self, claim: str, *, record: Optional[str] = None, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return self._loop.run(self._async.check(claim, record=record, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort), timeout=210)
+
+    def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak text into this page's microphone, or into the device."""
+        return self._loop.run(self._async.say(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir), timeout=SAY_TIMEOUT + SYNC_SLACK)
+
+    def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Hear what this page, or the device, plays, and return its words."""
+        return self._loop.run(self._async.listen(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe), timeout=listen_timeout(timeout, duration) + SYNC_SLACK)
+
 
     def go(self, url: str) -> None:
         self._loop.run(self._async.go(url))
@@ -140,6 +203,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -149,11 +217,20 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> Element:
+        """Find an element; see the async page.find for the forms."""
         async_el = self._loop.run(self._async.find(
-            selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+            selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
         return Element(async_el, self._loop)
 
@@ -162,6 +239,11 @@ class Page:
         selector: Optional[str] = None,
         /,
         *,
+        description: Optional[str] = None,
+        image: Optional[ImageInput] = None,
+        css: Optional[str] = None,
+        tag: Optional[str] = None,
+        name: Optional[str] = None,
         role: Optional[str] = None,
         text: Optional[str] = None,
         label: Optional[str] = None,
@@ -171,13 +253,22 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        strategy: Optional[str] = None,
+        details: Optional[bool] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        ai_base_url: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> List[Element]:
-        async_elements = self._loop.run(self._async.find_all(
-            selector, role=role, text=text, label=label, placeholder=placeholder,
-            alt=alt, title=title, testid=testid, xpath=xpath, near=near, timeout=timeout,
+        """Find all matching elements; see the async page.find_all."""
+        async_els = self._loop.run(self._async.find_all(
+            selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            strategy=strategy, details=details, provider=provider, model=model,
+            ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
-        return [Element(el, self._loop) for el in async_elements]
+        return [Element(e, self._loop) for e in async_els]
 
     # --- Waiting ---
 
@@ -220,8 +311,11 @@ class Page:
     ) -> bytes:
         return self._loop.run(self._async.screenshot(full_page=full_page, clip=clip))
 
-    def pdf(self) -> bytes:
-        return self._loop.run(self._async.pdf())
+    def pdf(self, **options: Any) -> bytes:
+        """Print the page to PDF. Same keyword options as the async API:
+        landscape, scale, background, margin_top/bottom/left/right,
+        page_width, page_height, page_ranges, shrink_to_fit."""
+        return self._loop.run(self._async.pdf(**options))
 
     # --- Evaluation ---
 
@@ -239,7 +333,17 @@ class Page:
     def add_style(self, source: str) -> None:
         self._loop.run(self._async.add_style(source))
 
-    def expose(self, name: str, fn: str) -> None:
+    def expose(self, name: str, fn: Union[str, Callable[..., Any]]) -> None:
+        if callable(fn):
+            async def _host(*args: Any) -> Any:
+                # The user's function is synchronous and may block or call
+                # back into this sync API; either would wedge the event loop
+                # delivering the call, so it runs on a worker thread.
+                import asyncio
+                return await asyncio.get_running_loop().run_in_executor(None, lambda: fn(*args))
+
+            self._loop.run(self._async.expose(name, _host))
+            return
         self._loop.run(self._async.expose(name, fn))
 
     # --- Emulation ---
@@ -537,7 +641,10 @@ class Page:
         self._loop.run(_register())
 
     def remove_all_listeners(self, event: Optional[str] = None) -> None:
-        self._async.remove_all_listeners(event)
+        # On the loop thread: removal may send the collector's teardown.
+        async def _remove() -> None:
+            self._async.remove_all_listeners(event)
+        self._loop.run(_remove())
         if not event or event == "console":
             self._console_messages.clear()
         if not event or event == "error":
@@ -717,7 +824,7 @@ class _SyncCapturedDialog:
 
     def __enter__(self) -> _SyncCapturedDialog:
         self._wait_coro = self._page._loop.run(
-            self._page._async._setup_capture_dialog(self._timeout)
+            self._page._async._setup_capture_dialog(self._timeout, auto_dismiss=True)
         )
         return self
 
@@ -813,10 +920,12 @@ class _SyncCaptureNamespace:
         return _SyncCapturedDownload(self._page, timeout)
 
     def dialog(self, fn: Optional[Callable] = None, timeout: Optional[int] = None) -> Union[Dict[str, Any], _SyncCapturedDialog]:
-        """Wait for a dialog event."""
+        """Wait for a dialog event. The dialog is dismissed as soon as it is
+        captured, so a fn that blocks on it (e.g. a synchronous alert() via
+        evaluate) gets unblocked instead of deadlocking."""
         if fn is not None:
             wait_coro = self._page._loop.run(
-                self._page._async._setup_capture_dialog(timeout)
+                self._page._async._setup_capture_dialog(timeout, auto_dismiss=True)
             )
             fn()
             dialog = self._page._loop.run(wait_coro)

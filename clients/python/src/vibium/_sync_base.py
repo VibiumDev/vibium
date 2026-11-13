@@ -43,6 +43,15 @@ class _EventLoopThread:
         """
         if self._loop is None:
             raise RuntimeError("Event loop not started")
+        if asyncio.isfuture(coro):
+            # Tasks already running on the loop (capture setups start their
+            # wire command eagerly) cannot be resubmitted; await them instead.
+            task = coro
+
+            async def _await():
+                return await task
+
+            coro = _await()
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         try:
             return future.result(timeout=timeout)

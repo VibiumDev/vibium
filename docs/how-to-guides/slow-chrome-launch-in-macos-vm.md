@@ -194,6 +194,28 @@ way the Makefile already passes `VIBIUM_BIN_PATH`. Setting it on the Chrome
 `exec.Cmd` in `clicker/internal/browser/launcher.go` avoids the problem
 entirely and is narrower besides.
 
+### In `make test`
+
+The Makefile does this for you on macOS. `scripts/mtl-verdict.sh` runs the
+probe. When Metal is slow and reports no devices, it records that in
+`~/Library/Caches/vibium/mtl-verdict`. From then on, every checkout and
+worktree on the machine builds `clicker/bin/mtlshim.dylib` with `build-go` and
+points `VIBIUM_VM_FAST_LAUNCH` at it. A healthy probe records nothing, so a
+real Mac is never shimmed.
+
+The verdict is kept per machine because the virtual GPU flips between working
+and dead. A probe that lands in a working window must not switch the shim off
+for a run that outlasts the window.
+
+`make test` prints the decision first:
+
+```
+VM fast launch: on (this machine has shown the dead-GPU stall; VM_FAST_LAUNCH=0 turns it off)
+```
+
+`VM_FAST_LAUNCH=1` or `=0` overrides it for one run. To forget the verdict,
+delete `~/Library/Caches/vibium/mtl-verdict`.
+
 ## Cautions
 
 - **Never enable on real hardware.** Where a GPU exists, the shim doesn't
@@ -205,9 +227,10 @@ entirely and is narrower besides.
   opt-in by construction.
 - **Decide by probe, not by environment.** The criterion is whether
   `MTLCopyAllDevices` is slow and reports zero devices *on that machine* — not
-  whether it's a laptop or CI. Today's CI is Linux, where the flag is inert and
-  the shim irrelevant. If macOS CI is added later, run the probe on the runner:
-  if it's affected, enabling this is legitimate and buys the same ~3x.
+  whether it's a laptop or CI. On Linux and Windows runners the probe never
+  runs. A macOS runner with a working GPU never records a verdict, so it is
+  never shimmed. One that does show the stall gets the shim, which buys the
+  same ~3x there.
 - **Chrome's process model is unchanged**, so local runs exercise the same
   topology as CI and as users. Keep it that way: if a stall reappears, extend
   the shim to cover the entry point rather than reaching for a flag that

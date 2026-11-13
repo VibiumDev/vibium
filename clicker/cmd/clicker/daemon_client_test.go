@@ -6,10 +6,10 @@ import (
 )
 
 func TestRequestedLaunchOptionsOnlyIncludesExplicitValues(t *testing.T) {
-	oldHeadless, oldEngine, oldChannel := headless, engineName, firefoxChannel
+	oldHeadless, oldEngine, oldChannel := headless, engineName, engineChannel
 	oldHeadlessSet, oldEngineSet, oldChannelSet := headlessSet, engineSet, channelSet
 	t.Cleanup(func() {
-		headless, engineName, firefoxChannel = oldHeadless, oldEngine, oldChannel
+		headless, engineName, engineChannel = oldHeadless, oldEngine, oldChannel
 		headlessSet, engineSet, channelSet = oldHeadlessSet, oldEngineSet, oldChannelSet
 	})
 
@@ -45,7 +45,7 @@ func TestRequestedLaunchOptionsOnlyIncludesExplicitValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			headless = tt.headless
 			engineName = tt.engine
-			firefoxChannel = tt.channel
+			engineChannel = tt.channel
 			headlessSet, engineSet, channelSet = tt.headlessSet, tt.engineSet, tt.channelSet
 			if got := requestedLaunchOptions(); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("requestedLaunchOptions() = %#v, want %#v", got, tt.want)

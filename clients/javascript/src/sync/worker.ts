@@ -1,3 +1,7 @@
+import { RunOptions } from '../run';
+import { CheckOptions, RecordedCheckOptions } from '../check';
+import { SayOptions, ListenOptions, stopSpeechEngine } from '../speech';
+import { SpeechError } from '../utils/errors';
 import { parentPort, workerData, MessagePort } from 'worker_threads';
 import { browser, Browser } from '../browser';
 import { Page } from '../page';
@@ -142,6 +146,54 @@ const handlers: Record<string, Handler> = {
   // Browser commands
   // ========================
 
+  'browser.run': async (args) => {
+    const [goal, options] = args as [string, RunOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.run(goal, options);
+  },
+  'page.run': async (args) => {
+    const [pageId, goal, options] = args as [number, string, RunOptions];
+    return getPage(pageId).run(goal, options);
+  },
+  'speech.say': async (args) => {
+    const [text, options] = args as [string, SayOptions];
+    return browser.say(text, options);
+  },
+  'speech.listen': async (args) => {
+    const [options] = args as [ListenOptions];
+    return browser.listen(options);
+  },
+  'browser.say': async (args) => {
+    const [text, options] = args as [string, SayOptions];
+    if (!browserInstance) throw new Error('Browser not launched');
+    return browserInstance.say(text, options);
+  },
+  'browser.listen': async (args) => {
+    const [options] = args as [ListenOptions];
+    if (!browserInstance) throw new Error('Browser not launched');
+    return browserInstance.listen(options);
+  },
+  'page.say': async (args) => {
+    const [pageId, text, options] = args as [number, string, SayOptions];
+    return getPage(pageId).say(text, options);
+  },
+  'page.listen': async (args) => {
+    const [pageId, options] = args as [number, ListenOptions];
+    return getPage(pageId).listen(options);
+  },
+  'check.record': async (args) => {
+    const [claim, options] = args as [string, RecordedCheckOptions];
+    return browser.check(claim, options);
+  },
+  'browser.check': async (args) => {
+    const [claim, options] = args as [string, CheckOptions];
+    if (!browserInstance) throw new Error('Browser not started');
+    return browserInstance.check(claim, options);
+  },
+  'page.check': async (args) => {
+    const [pageId, claim, options] = args as [number, string, CheckOptions];
+    return getPage(pageId).check(claim, options);
+  },
   'browser.start': async (args) => {
     const [url, options] = args as [string | undefined, {
       engine?: 'chrome' | 'firefox';
@@ -345,8 +397,8 @@ const handlers: Record<string, Handler> = {
   },
 
   'page.pdf': async (args) => {
-    const [pageId] = args as [number];
-    const buffer = await getPage(pageId).pdf();
+    const [pageId, options] = args as [number, unknown];
+    const buffer = await getPage(pageId).pdf(options as any);
     return { data: buffer.toString('base64') };
   },
 
@@ -740,6 +792,20 @@ const handlers: Record<string, Handler> = {
   },
 
   // --- Page events (simplified for sync) ---
+
+  'page.exposeWithCallback': async (args) => {
+    const [pageId, name, handlerId] = args as [number, string, string];
+    const page = getPage(pageId);
+    await page.expose(name, async (...fnArgs: unknown[]) => {
+      const outcome = await invokeMainThread(handlerId, fnArgs) as
+        { ok: boolean; value?: unknown; error?: string } | null;
+      if (!outcome || outcome.ok !== true) {
+        throw new Error(outcome?.error ?? `${name} handler failed`);
+      }
+      return outcome.value;
+    });
+    return { success: true };
+  },
 
   'page.onDialog': async (args) => {
     const [pageId, action] = args as [number, 'accept' | 'dismiss'];
@@ -1153,6 +1219,24 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
+  'touch.swipe': async (args) => {
+    const [pageId, ...rest] = args as [number, ...unknown[]];
+    const touch = getPage(pageId).touch as unknown as { swipe(...a: unknown[]): Promise<void> };
+    await touch.swipe(...rest);
+    return { success: true };
+  },
+
+  'touch.longPress': async (args) => {
+    const [pageId, x, y, durationMs] = args as [
+      number,
+      number,
+      number,
+      number | undefined,
+    ];
+    await getPage(pageId).touch.longPress(x, y, durationMs);
+    return { success: true };
+  },
+
   // ========================
   // Element commands
   // ========================
@@ -1193,15 +1277,13 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
-  'element.check': async (args) => {
-    const [elementId, options] = args as [number, any];
-    await getElement(elementId).check(options);
-    return { success: true };
+  'element.set': async (args) => {
+    const [elementId, value, options] = args;
+    await getElement(elementId).set(value, options);
   },
-
-  'element.uncheck': async (args) => {
+  'element.unset': async (args) => {
     const [elementId, options] = args as [number, any];
-    await getElement(elementId).uncheck(options);
+    await getElement(elementId).unset(options);
     return { success: true };
   },
 
@@ -1220,6 +1302,12 @@ const handlers: Record<string, Handler> = {
   'element.focus': async (args) => {
     const [elementId, options] = args as [number, any];
     await getElement(elementId).focus(options);
+    return { success: true };
+  },
+
+  'element.highlight': async (args) => {
+    const [elementId, options] = args as [number, any];
+    await getElement(elementId).highlight(options);
     return { success: true };
   },
 
@@ -1320,9 +1408,9 @@ const handlers: Record<string, Handler> = {
     return { enabled };
   },
 
-  'element.isChecked': async (args) => {
+  'element.isSet': async (args) => {
     const [elementId] = args as [number];
-    const checked = await getElement(elementId).isChecked();
+    const checked = await getElement(elementId).isSet();
     return { checked };
   },
 
@@ -1378,6 +1466,7 @@ const handlers: Record<string, Handler> = {
   // ========================
 
   'quit': async () => {
+    await stopSpeechEngine();
     if (!browserInstance) throw new Error('Browser not launched');
     await browserInstance.stop();
     browserInstance = null;
@@ -1399,11 +1488,13 @@ async function handleCommand(cmd: Command): Promise<unknown> {
 parentPort!.on('message', async ({ cmd, port }: { cmd: Command; port: MessagePort }) => {
   let result: unknown;
   let error: string | null = null;
+  let speechCode: string | undefined;
 
   try {
     result = await handleCommand(cmd);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
+    if (err instanceof SpeechError) speechCode = err.code;
   }
 
   // Deliver buffered events BEFORE the result.
@@ -1432,7 +1523,7 @@ parentPort!.on('message', async ({ cmd, port }: { cmd: Command; port: MessagePor
     await invokeMainThread(event.handlerId, event.data);
   }
 
-  port.postMessage({ result, error });
+  port.postMessage({ result, error, speechCode });
 
   Atomics.store(signal, 0, 1);
   Atomics.notify(signal, 0);

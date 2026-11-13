@@ -132,13 +132,9 @@ func (r *Router) handleContextSetCookies(session *BrowserSession, cmd bidiComman
 			"partition": partition,
 		}
 
-		resp, err := r.sendInternalCommand(session, "storage.setCookie", params)
+		_, err := r.sendInternalCommand(session, "storage.setCookie", params)
 		if err != nil {
 			r.sendError(session, cmd.ID, err)
-			return
-		}
-		if bidiErr := checkBidiError(resp); bidiErr != nil {
-			r.sendError(session, cmd.ID, bidiErr)
 			return
 		}
 	}
@@ -166,13 +162,9 @@ func (r *Router) handleContextClearCookies(session *BrowserSession, cmd bidiComm
 		params["filter"] = filter
 	}
 
-	resp, err := r.sendInternalCommand(session, "storage.deleteCookies", params)
+	_, err := r.sendInternalCommand(session, "storage.deleteCookies", params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -335,13 +327,9 @@ func (r *Router) handleContextSetStorage(session *BrowserSession, cmd bidiComman
 				"partition": partition,
 			}
 
-			resp, err := r.sendInternalCommand(session, "storage.setCookie", params)
+			_, err := r.sendInternalCommand(session, "storage.setCookie", params)
 			if err != nil {
 				r.sendError(session, cmd.ID, err)
-				return
-			}
-			if bidiErr := checkBidiError(resp); bidiErr != nil {
-				r.sendError(session, cmd.ID, bidiErr)
 				return
 			}
 		}
@@ -405,13 +393,9 @@ func (r *Router) handleContextClearStorage(session *BrowserSession, cmd bidiComm
 		},
 	}
 
-	resp, err := r.sendInternalCommand(session, "storage.deleteCookies", params)
+	_, err := r.sendInternalCommand(session, "storage.deleteCookies", params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -453,10 +437,6 @@ func (r *Router) handleContextAddInitScript(session *BrowserSession, cmd bidiCom
 	resp, err := r.sendInternalCommand(session, "script.addPreloadScript", params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -501,9 +481,6 @@ func GetCookies(s Session, context string) ([]CookieInfo, error) {
 	resp, err := s.SendBidiCommand("storage.getCookies", params)
 	if err != nil {
 		return nil, err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, bidiErr
 	}
 
 	var result struct {
@@ -561,11 +538,8 @@ func SetCookie(s Session, context, name, value, domain, path string) error {
 		},
 	}
 
-	resp, err := s.SendBidiCommand("storage.setCookie", params)
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	_, err := s.SendBidiCommand("storage.setCookie", params)
+	return err
 }
 
 // DeleteCookies deletes cookies by name in the given browsing context.
@@ -583,11 +557,8 @@ func DeleteCookies(s Session, context, name string) error {
 		}
 	}
 
-	resp, err := s.SendBidiCommand("storage.deleteCookies", params)
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	_, err := s.SendBidiCommand("storage.deleteCookies", params)
+	return err
 }
 
 // --- Helper functions ---
@@ -604,9 +575,6 @@ func (r *Router) getCookiesForContext(session *BrowserSession, userContext strin
 	resp, err := r.sendInternalCommand(session, "storage.getCookies", params)
 	if err != nil {
 		return nil, err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return nil, bidiErr
 	}
 
 	var result struct {

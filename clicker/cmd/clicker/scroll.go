@@ -4,20 +4,22 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/agent"
 )
 
 func newScrollCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "scroll [direction]",
-		Short: "Scroll the page or an element",
+		Use:       "scroll [up|down|left|right]",
+		Short:     "Scroll the page or an element",
+		ValidArgs: []string{"up", "down", "left", "right"},
 		Example: `  vibium scroll
   # Scroll down by default
 
   vibium scroll up
   # Scroll up
 
-  vibium scroll down --amount 5
-  # Scroll down 5 increments
+  vibium scroll right --amount 5
+  # Scroll right 5 increments
 
   vibium scroll down --selector "div.content"
   # Scroll within a specific element`,
@@ -46,8 +48,8 @@ func newScrollCmd() *cobra.Command {
 			printResult(result)
 		},
 	}
-	cmd.Flags().Int("amount", 3, "Number of scroll increments")
-	cmd.Flags().String("selector", "", "CSS selector for element to scroll to")
+	cmd.Flags().Int("amount", 3, agent.ScrollAmountDesc)
+	cmd.Flags().String("selector", "", agent.ScrollSelectorDesc)
 
 	var intoViewTimeout time.Duration
 	intoViewCmd := &cobra.Command{

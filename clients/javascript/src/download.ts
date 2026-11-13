@@ -1,5 +1,4 @@
 import { BiDiClient } from './bidi';
-import * as fs from 'fs/promises';
 
 /** Default timeout for download completion (5 minutes). */
 const DOWNLOAD_TIMEOUT_MS = 300_000;
@@ -9,16 +8,13 @@ export class Download {
   private client: BiDiClient;
   private _url: string;
   private _suggestedFilename: string;
-  private _resolve!: (value: { status: string; filepath: string | null }) => void;
-  private _completionPromise: Promise<{ status: string; filepath: string | null }>;
+  private _navigation: string;
 
-  constructor(client: BiDiClient, url: string, suggestedFilename: string) {
+  constructor(client: BiDiClient, params: Record<string, unknown>) {
     this.client = client;
-    this._url = url;
-    this._suggestedFilename = suggestedFilename;
-    this._completionPromise = new Promise((resolve) => {
-      this._resolve = resolve;
-    });
+    this._url = (params.url as string) ?? '';
+    this._suggestedFilename = (params.suggestedFilename as string) ?? '';
+    this._navigation = (params.navigation as string) ?? '';
   }
 
   /** The URL of the download. */
@@ -31,18 +27,18 @@ export class Download {
     return this._suggestedFilename;
   }
 
-  /** Wait for the download completion promise with a timeout. */
+  /**
+   * Completion is awaited in the engine (vibium:download.await), which
+   * tracks every download by its navigation id, so no client keeps a
+   * pending-downloads map. The engine answers finished downloads
+   * immediately, so asking repeatedly is fine.
+   */
   private _waitForCompletion(): Promise<{ status: string; filepath: string | null }> {
-    let timer: ReturnType<typeof setTimeout>;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS / 1000}s`)),
-        DOWNLOAD_TIMEOUT_MS,
-      );
-    });
-    return Promise.race([this._completionPromise, timeoutPromise]).finally(() => {
-      clearTimeout(timer);
-    });
+    return this.client.send<{ status: string; filepath?: string }>(
+      'vibium:download.await',
+      { navigation: this._navigation, timeout: DOWNLOAD_TIMEOUT_MS },
+      DOWNLOAD_TIMEOUT_MS + 10_000,
+    ).then((result) => ({ status: result.status, filepath: result.filepath || null }));
   }
 
   /** Wait for the download to complete, then save to the specified path. */
@@ -62,10 +58,5 @@ export class Download {
   async path(): Promise<string | null> {
     const result = await this._waitForCompletion();
     return result.filepath;
-  }
-
-  /** Internal: called by Page when downloadCompleted fires. */
-  _complete(status: string, filepath: string | null): void {
-    this._resolve({ status, filepath });
   }
 }

@@ -14,7 +14,7 @@ Firefox: /Users/you/Library/Caches/vibium/firefox/release/153.0.3/Firefox.app/Co
 
 Firefox installs into the vibium cache next to Chrome for Testing. The vibium
 binary auto-installs the selected engine on first launch on macOS and Linux,
-same as Chrome, so all clients get it for free. On Windows, Firefox auto-install is not available:
+same as Chrome, so the CLI, MCP, and every client get it for free. On Windows, Firefox auto-install is not available:
 install Firefox yourself and point `VIBIUM_ENGINE_PATH` at `firefox.exe`.
 
 ### Release channels
@@ -103,11 +103,16 @@ currently requires Firefox, while PDF output may differ between engines.
 |----------|--------|
 | `VIBIUM_ENGINE` | Default engine (`chrome` or `firefox`) when `--engine` is not given |
 | `VIBIUM_ENGINE_PATH` | Use this Firefox executable instead of the vibium cache; when set, channel selection does not apply |
-| `VIBIUM_ENGINE_CHANNEL` | Channel to install and run: `release` (default) or `beta`; same as `--channel` or the clients' `channel` option |
-| `VIBIUM_ENGINE_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the channel's latest; keeps CI and fleets on one version until you move the pin |
+| `VIBIUM_ENGINE_CHANNEL` | Channel to install and run: `release` (default) or `beta` for Firefox, `stable` (default), `beta`, `dev`, or `canary` for Chrome; same as `--channel` or the clients' `channel` option |
+| `VIBIUM_ENGINE_VERSION` | Pin the exact version to install and run (e.g. `153.0.4`) instead of the default; keeps CI and fleets on one version until you move the pin |
 
-The names are engine-neutral, but only Firefox implements them today. Setting
-any of them with `--engine chrome` is an error rather than a silent no-op.
+Without a pin, the default channels (`release`/`stable`) install the
+known-good version baked into this vibium release, so a browser release
+cannot break installs before a vibium release has tested it. The other
+channels install their current version. `VIBIUM_ENGINE_CHANNEL` and
+`VIBIUM_ENGINE_VERSION` apply to both engines; `VIBIUM_ENGINE_PATH` is
+Firefox-only, and setting it with `--engine chrome` is an error rather than
+a silent no-op.
 
 ## Feature notes
 

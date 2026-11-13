@@ -1,5 +1,6 @@
 import { SyncBridge } from './bridge';
 import { ActionOptions, BoundingBox, ElementInfo, SelectorOptions } from '../element';
+import { bridgeLocator } from './locator';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -62,13 +63,13 @@ export class ElementSync {
   }
 
   /** Check a checkbox (no-op if already checked). */
-  check(options?: ActionOptions): void {
-    this.bridge.call('element.check', [this.elementId, options]);
+  set(value: boolean = true, options?: ActionOptions): void {
+    this.bridge.call('element.set', [this.elementId, value, options]);
   }
 
   /** Uncheck a checkbox (no-op if already unchecked). */
-  uncheck(options?: ActionOptions): void {
-    this.bridge.call('element.uncheck', [this.elementId, options]);
+  unset(options?: ActionOptions): void {
+    this.bridge.call('element.unset', [this.elementId, options]);
   }
 
   /** Select an option in a <select> element by value. */
@@ -84,6 +85,11 @@ export class ElementSync {
   /** Focus the element. */
   focus(options?: ActionOptions): void {
     this.bridge.call('element.focus', [this.elementId, options]);
+  }
+
+  /** Highlight the element with a brief outline, for visual debugging. */
+  highlight(options?: ActionOptions): void {
+    this.bridge.call('element.highlight', [this.elementId, options]);
   }
 
   /** Drag this element to a target element. */
@@ -161,8 +167,8 @@ export class ElementSync {
     return result.enabled;
   }
 
-  isChecked(): boolean {
-    const result = this.bridge.call<{ checked: boolean }>('element.isChecked', [this.elementId]);
+  isSet(): boolean {
+    const result = this.bridge.call<{ checked: boolean }>('element.isSet', [this.elementId]);
     return result.checked;
   }
 
@@ -195,12 +201,12 @@ export class ElementSync {
   }
 
   find(selector: string | SelectorOptions, options?: { timeout?: number }): ElementSync {
-    const result = this.bridge.call<{ elementId: number; info: ElementInfo }>('element.find', [this.elementId, selector, options]);
+    const result = this.bridge.call<{ elementId: number; info: ElementInfo }>('element.find', [this.elementId, bridgeLocator(selector), options]);
     return new ElementSync(this.bridge, result.elementId, result.info);
   }
 
   findAll(selector: string | SelectorOptions, options?: { timeout?: number }): ElementSync[] {
-    const result = this.bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('element.findAll', [this.elementId, selector, options]);
+    const result = this.bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('element.findAll', [this.elementId, bridgeLocator(selector), options]);
     return result.elements.map(e => new ElementSync(this.bridge, e.elementId, e.info));
   }
 }

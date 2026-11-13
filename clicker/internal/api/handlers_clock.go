@@ -36,10 +36,6 @@ func (r *Router) handleClockInstall(session *BrowserSession, cmd bidiCommand) {
 			r.sendError(session, cmd.ID, fmt.Errorf("failed to register clock preload: %w", err))
 			return
 		}
-		if bidiErr := checkBidiError(resp); bidiErr != nil {
-			r.sendError(session, cmd.ID, bidiErr)
-			return
-		}
 
 		var result struct {
 			Result struct {
@@ -225,54 +221,36 @@ func (r *Router) handleClockSetTimezone(session *BrowserSession, cmd bidiCommand
 
 // SetTimezone overrides the browser timezone via BiDi emulation.setTimezoneOverride.
 func SetTimezone(s Session, context, timezone string) error {
-	resp, err := s.SendBidiCommand("emulation.setTimezoneOverride", map[string]interface{}{
+	_, err := s.SendBidiCommand("emulation.setTimezoneOverride", map[string]interface{}{
 		"timezone": timezone,
 		"contexts": []interface{}{context},
 	})
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	return err
 }
 
 // ClearTimezone resets the browser timezone to the system default.
 func ClearTimezone(s Session, context string) error {
-	resp, err := s.SendBidiCommand("emulation.setTimezoneOverride", map[string]interface{}{
+	_, err := s.SendBidiCommand("emulation.setTimezoneOverride", map[string]interface{}{
 		"timezone": nil,
 		"contexts": []interface{}{context},
 	})
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	return err
 }
 
 // setTimezoneOverride uses BiDi emulation.setTimezoneOverride to set the browser timezone.
 func (r *Router) setTimezoneOverride(session *BrowserSession, context string, timezone string) error {
-	resp, err := r.sendInternalCommand(session, "emulation.setTimezoneOverride", map[string]interface{}{
+	_, err := r.sendInternalCommand(session, "emulation.setTimezoneOverride", map[string]interface{}{
 		"timezone": timezone,
 		"contexts": []interface{}{context},
 	})
-	if err != nil {
-		return err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
-	}
-	return nil
+	return err
 }
 
 // clearTimezoneOverride resets the browser timezone to the system default.
 func (r *Router) clearTimezoneOverride(session *BrowserSession, context string) error {
-	resp, err := r.sendInternalCommand(session, "emulation.setTimezoneOverride", map[string]interface{}{
+	_, err := r.sendInternalCommand(session, "emulation.setTimezoneOverride", map[string]interface{}{
 		"timezone": nil,
 		"contexts": []interface{}{context},
 	})
-	if err != nil {
-		return err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
-	}
-	return nil
+	return err
 }

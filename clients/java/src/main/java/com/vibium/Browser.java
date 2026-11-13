@@ -5,6 +5,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
+import com.vibium.internal.Check;
+import com.vibium.internal.Run;
+import com.vibium.internal.Speech;
+import com.vibium.types.ListenOptions;
+import com.vibium.types.ListenResult;
+import com.vibium.types.SayOptions;
+import com.vibium.types.SayResult;
+import com.vibium.types.RunResult;
+import com.vibium.types.RunOptions;
+import com.vibium.types.CheckOptions;
+import com.vibium.types.CheckResult;
 import com.vibium.internal.VibiumProcess;
 
 import java.util.ArrayList;
@@ -16,6 +27,26 @@ import java.util.function.Consumer;
  * Manages the browser lifecycle.
  */
 public class Browser {
+
+    /** Accomplish a goal through the existing runtime in this live session. */
+    public RunResult run(String goal) { return run(goal, new RunOptions()); }
+    public RunResult run(String goal, RunOptions options) { return Run.run(client, goal, options, null); }
+
+    /** Verify the existing session with a fresh verifier inference context. */
+    public CheckResult check(String claim) { return check(claim, new CheckOptions()); }
+    /** Inspect an archive when record is supplied; otherwise use this live session. */
+    public CheckResult check(String claim, CheckOptions options) {
+        return Check.run(client, claim, options, null);
+    }
+
+    /** Speak text into the current page's microphone, or into the device. */
+    public SayResult say(String text) { return say(text, new SayOptions()); }
+    public SayResult say(String text, SayOptions options) { return Speech.say(client, text, options, null); }
+
+    /** Hear what the current page, or the device, plays, and return its words. */
+    public ListenResult listen() { return listen(new ListenOptions()); }
+    public ListenResult listen(ListenOptions options) { return Speech.listen(client, options, null); }
+
 
     private final BiDiClient client;
     private final VibiumProcess process;

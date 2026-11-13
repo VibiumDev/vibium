@@ -66,7 +66,7 @@ Vibium's coverage of the classic [WebDriver](https://w3c.github.io/webdriver/) p
 | # | WebDriver | Endpoint | Vibium | Status |
 |---|-----------|----------|--------|--------|
 | 31 | Get Element Shadow Root | `GET /session/{id}/element/{eid}/shadow` | — | ⬜ |
-| 32 | Is Element Selected | `GET /session/{id}/element/{eid}/selected` | `el.isChecked()` | ✅ |
+| 32 | Is Element Selected | `GET /session/{id}/element/{eid}/selected` | `el.isSet()` | ✅ |
 | 33 | Get Element Attribute | `GET /session/{id}/element/{eid}/attribute/{name}` | `el.attr(name)` | ✅ |
 | 34 | Get Element Property | `GET /session/{id}/element/{eid}/property/{name}` | `page.evaluate(fn, el)` | ✅ |
 | 35 | Get Element CSS Value | `GET /session/{id}/element/{eid}/css/{name}` | `page.evaluate(fn, el)` | ✅ |

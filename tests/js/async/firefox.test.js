@@ -147,11 +147,11 @@ describe('JS Firefox', () => {
       const title = await vibe.evaluate('document.title');
       assert.match(title, /The Internet/i, 'Should load the test page');
 
-      const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
+      const link = await vibe.find({ css: 'a[href="/login"]' }, { timeout: 5000 });
       await link.click();
       // find() waits out the navigation; url() right after click races
       // Firefox's transient about:blank
-      const form = await vibe.find('#login', { timeout: 10000 });
+      const form = await vibe.find({ css: '#login' }, { timeout: 10000 });
       assert.ok(form, 'Click should navigate to the login page');
       assert.match(await vibe.url(), /login/, 'Should be on the login page');
 
@@ -174,9 +174,11 @@ describe('JS Firefox', () => {
 
       if (!(await startVideoRecordingOrSkip(t, vibe, { path: zipPath }))) return;
 
-      const link = await vibe.find('a[href="/login"]', { timeout: 5000 });
+      // Keep the video fixture free of credential fields: visiting the login
+      // page intentionally suppresses visual artifacts under recorder privacy.
+      const link = await vibe.find({ css: 'a[href="/checkboxes"]' }, { timeout: 5000 });
       await link.click();
-      await vibe.find('#login', { timeout: 10000 });
+      await vibe.find({ css: '#checkboxes' }, { timeout: 10000 });
 
       const result = await vibe.context.recording.stop();
       assert.strictEqual(result.path, zipPath, 'Result should carry the delivery path');
@@ -298,5 +300,48 @@ describe('JS Firefox', () => {
       assert.ok(!/unsupported channel/.test(stderr),
         `Channel "${channel}" should pass CLI validation`);
     }
+  });
+
+  test('--channel accepts the Chrome channels for chrome (#470)', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    for (const channel of ['stable', 'beta', 'dev', 'canary']) {
+      let stderr = '';
+      try {
+        execFileSync(bin, ['is-installed', '--engine', 'chrome', '--channel', channel],
+          { stdio: 'pipe' });
+      } catch (err) {
+        stderr = err.stderr.toString();
+      }
+      assert.ok(!/unsupported channel|not supported for engine/.test(stderr),
+        `Chrome channel "${channel}" should pass CLI validation`);
+    }
+
+    // Firefox's channel names stay Firefox's: release is not a Chrome channel.
+    assert.throws(
+      () => execFileSync(bin,
+        ['is-installed', '--engine', 'chrome', '--channel', 'release'],
+        { stdio: 'pipe' }),
+      (err) => /unsupported channel/.test(err.stderr.toString()),
+      'Channel "release" should be rejected for chrome'
+    );
+  });
+
+  test('VIBIUM_ENGINE_VERSION passes CLI validation for chrome (#470)', (t) => {
+    const bin = process.env.VIBIUM_BIN_PATH;
+    if (!bin) return skipOrFail(t, 'VIBIUM_BIN_PATH not set');
+
+    let stderr = '';
+    try {
+      execFileSync(bin, ['is-installed', '--engine', 'chrome'], {
+        stdio: 'pipe',
+        env: { ...process.env, VIBIUM_ENGINE_VERSION: '140.0.7000.10' },
+      });
+    } catch (err) {
+      stderr = err.stderr.toString();
+    }
+    assert.ok(!/not supported for engine/.test(stderr),
+      'A version pin should pass CLI validation for chrome');
   });
 });

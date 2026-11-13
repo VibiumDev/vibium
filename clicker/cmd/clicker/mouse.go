@@ -29,13 +29,11 @@ func newMouseCmd() *cobra.Command {
 
   vibium mouse click
   # Left click at current position`,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 0 && len(args) != 2 {
-				return fmt.Errorf("accepts 0 or 2 arg(s), received %d", len(args))
-			}
-			return nil
-		},
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) != 0 && len(args) != 2 {
+				fmt.Fprintf(os.Stderr, "Error: accepts 0 or 2 arg(s), received %d\n", len(args))
+				os.Exit(1)
+			}
 			button, _ := cmd.Flags().GetInt("button")
 
 			params := map[string]interface{}{
@@ -72,8 +70,11 @@ func newMouseCmd() *cobra.Command {
 		Short: "Move the mouse to coordinates",
 		Example: `  vibium mouse move 100 200
   # Move mouse to position (100, 200)`,
-		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) != 2 {
+				fmt.Fprintf(os.Stderr, "Error: accepts 2 arg(s), received %d\n", len(args))
+				os.Exit(1)
+			}
 			x, err := strconv.ParseFloat(args[0], 64)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: invalid x coordinate: %s\n", args[0])
@@ -138,8 +139,10 @@ func newMouseCmd() *cobra.Command {
 	}
 	upCmd.Flags().Int("button", 0, "Mouse button (0=left, 1=middle, 2=right)")
 
-	mouseCmd.AddCommand(clickCmd)
-	mouseCmd.AddCommand(moveCmd)
+	// Coordinates are numeric positionals, so a negative one would otherwise
+	// be read as an unknown flag: `mouse move 100 -50`.
+	mouseCmd.AddCommand(lateParse(clickCmd))
+	mouseCmd.AddCommand(lateParse(moveCmd))
 	mouseCmd.AddCommand(downCmd)
 	mouseCmd.AddCommand(upCmd)
 	return mouseCmd

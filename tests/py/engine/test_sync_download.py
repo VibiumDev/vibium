@@ -5,15 +5,24 @@ import pytest
 pytestmark = pytest.mark.capability("core", "downloads")
 
 
+def _wait_for_download(vibe, downloads, timeout_ms=10000):
+    # The download event can take over a second to arrive on a loaded CI
+    # runner, so poll instead of sampling after a fixed wait.
+    waited = 0
+    while not downloads and waited < timeout_ms:
+        vibe.wait(500)
+        waited += 500
+
+
 def test_download_fires(sync_browser, test_server):
     """on_download fires when download link clicked."""
     vibe = sync_browser.new_page()
     vibe.go(test_server + "/download")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
-    vibe.wait(1000)
+    _wait_for_download(vibe, downloads)
     assert len(downloads) >= 1
 
 
@@ -25,9 +34,9 @@ def test_download_url_filename(sync_browser, test_server):
     vibe.go(test_server + "/download?name=named.txt")
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
-    vibe.wait(1000)
+    _wait_for_download(vibe, downloads)
     assert len(downloads) >= 1
     assert "download-file" in downloads[0].url()
     assert downloads[0].suggested_filename() == "named.txt"
@@ -40,7 +49,7 @@ def test_remove_download_listeners(sync_browser, test_server):
     downloads = []
     vibe.on_download(lambda d: downloads.append(d))
     vibe.remove_all_listeners("download")
-    link = vibe.find("#download-link")
+    link = vibe.find(css="#download-link")
     link.click()
     vibe.wait(1000)
     assert len(downloads) == 0

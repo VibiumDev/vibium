@@ -1,9 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -40,11 +40,13 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 
 	opts := ParseRecordingOptions(cmd.Params)
 
-	// Required video on a remote connection can never deliver into the zip;
-	// fail before touching the browser — unless the caller opted into
-	// leaving the file on the remote host.
-	if r.connectURL != "" && opts.Video.Mode == VideoRequired && !opts.Video.RemoteKeep {
-		r.sendError(session, cmd.ID, errors.New(RemoteVideoMessage))
+	// A station or a Roadie streams the device's screen, and that stream is
+	// the video. Required video on any other remote connection can never
+	// deliver into the zip; fail before touching the browser — unless the
+	// caller opted into leaving the file on the remote host.
+	stream, err := OpenStreamVideo(opts, r.connectURL, r.connectHeaders)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
 		return
 	}
 
@@ -59,7 +61,9 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 	// focus. Fail-fast (video: true on an engine that can't deliver) means
 	// the recording does not start at all.
 	sess := NewAPISession(r, session, lastContext)
-	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport); err != nil {
+	CaptureRecordingSecrets(sess, recorder, nil)
+	if err := StartRecordingVideo(sess, recorder, opts, r.connectURL != "", viewport, stream); err != nil {
+		stream.Abort()
 		r.sendError(session, cmd.ID, err)
 		return
 	}
@@ -74,7 +78,8 @@ func (r *Router) handleRecordingStart(session *BrowserSession, cmd bidiCommand) 
 }
 
 // handleRecordingStop handles vibium:recording.stop — stops recording and returns recording data.
-// Options: path (overrides the path declared at start).
+// Options: path (overrides the path declared at start); upload (true, or a
+// station URL) sends the zip to the station's Record Store as well.
 func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 	// Wait for any in-flight dispatch() to finish so its after-event is recorded.
 	session.dispatchMu.Lock()
@@ -94,6 +99,17 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 		r.sendError(session, cmd.ID, fmt.Errorf("recording is not started"))
 		return
 	}
+
+	// An upload that cannot happen is refused before anything stops, so the
+	// recording keeps going and the caller can stop it another way.
+	upload, err := ResolveUpload(cmd.Params["upload"], r.connectURL, r.connectHeaders)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+
+	// The session's audio track ends before the zip is built.
+	session.speech.StopAudioRecording()
 
 	// Finalize the video first so Stop() can move the engine's file into the
 	// zip. A dead screencast is recorded in the manifest, not an error here.
@@ -127,6 +143,17 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 		result["path"] = path
 	} else {
 		result["data"] = base64.StdEncoding.EncodeToString(zipData)
+	}
+	if upload != nil {
+		up, err := UploadRecording(context.Background(), *upload, zipData, UploadName(path, recorder.Options().Name))
+		if err != nil {
+			if path != "" {
+				err = fmt.Errorf("%w (the recording was saved to %s)", err, path)
+			}
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		result["upload"] = up.Fields()
 	}
 	r.sendSuccess(session, cmd.ID, result)
 }
@@ -274,10 +301,6 @@ func (r *Router) captureScreenshotForRecording(session *BrowserSession, opts Rec
 		return "", "", err
 	}
 
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return "", "", bidiErr
-	}
-
 	var ssResult struct {
 		Result struct {
 			Data string `json:"data"`
@@ -343,10 +366,6 @@ func (r *Router) captureActionSnapshot(session *BrowserSession, recorder *Record
 	opts := recorder.Options()
 	resp, err := r.sendInternalCommandWithTimeout(session, "browsingContext.captureScreenshot", ScreenshotParams(context, opts), 2*time.Second)
 	if err != nil {
-		return ""
-	}
-
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
 		return ""
 	}
 
@@ -445,11 +464,6 @@ func CaptureRecordingScreenshot(s Session, recorder *Recorder, actionEnd time.Ti
 	if err != nil {
 		// Swallowing this is what let a 5s stall go unnoticed for months (#289).
 		log.Debug("recording screenshot failed", "context", context, "error", err)
-		return
-	}
-
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		log.Debug("recording screenshot returned an error", "context", context, "error", bidiErr)
 		return
 	}
 

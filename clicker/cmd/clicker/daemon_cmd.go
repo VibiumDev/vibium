@@ -41,6 +41,7 @@ func newDaemonStartCmd() *cobra.Command {
 		internal    bool // hidden flag for auto-start
 		connectFlag string
 		headerFlags []string
+		capsFlag    string
 	)
 
 	cmd := &cobra.Command{
@@ -58,18 +59,26 @@ func newDaemonStartCmd() *cobra.Command {
   vibium daemon start --connect ws://remote:9515/session
   # Connect to a remote browser instead of launching a local one
 
+  vibium daemon start --connect https://USER:KEY@grid.example.com/wd/hub \
+    --connect-caps '{"vendor:options":{"someOption":"value"}}'
+  # Classic WebDriver endpoint (Selenium Grid, cloud grid): vibium creates
+  # a session with webSocketUrl:true and connects to the BiDi URL it returns
+
   vibium --session projA daemon start
   # Isolated session "projA": own daemon, own browser, socket
-  # vibium-projA.sock; VIBIUM_SESSION=projA does the same`,
+  # vibium-projA.sock; VIBIUM_SESSION=projA does the same
+
+  vibium daemon start --json
+  # {"ok":true,"result":{"pid":79311,"running":true,"started":true}}`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !foreground && !internal {
 				// Daemonize: re-exec as detached child
-				daemonize(idleTimeout, connectFlag, headerFlags)
+				daemonize(idleTimeout, connectFlag, headerFlags, capsFlag)
 				return
 			}
 
 			// Foreground mode (or internal detached child)
-			runDaemonForeground(idleTimeout, connectFlag, headerFlags)
+			runDaemonForeground(idleTimeout, connectFlag, headerFlags, capsFlag)
 		},
 	}
 
@@ -81,6 +90,7 @@ func newDaemonStartCmd() *cobra.Command {
 	cmd.Flags().MarkHidden("_internal")
 	cmd.Flags().StringVar(&connectFlag, "connect", "", "Connect to a remote BiDi WebSocket URL instead of launching a local browser")
 	cmd.Flags().StringArrayVar(&headerFlags, "connect-header", nil, "HTTP header for WebSocket connect (repeatable, format: \"Key: Value\")")
+	cmd.Flags().StringVar(&capsFlag, "connect-caps", "", "Extra alwaysMatch capabilities for classic WebDriver endpoints (JSON object)")
 
 	return cmd
 }
@@ -89,8 +99,20 @@ func newDaemonStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the vibium daemon",
+		Example: `  vibium daemon stop
+  # Daemon stopped.
+
+  vibium daemon stop --json
+  # {"ok":true,"result":{"running":false,"stopped":true}}`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !daemon.IsRunning() {
+				if jsonOutput {
+					printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+						"running": false,
+						"stopped": false,
+					}})
+					return
+				}
 				fmt.Println("Daemon is not running.")
 				return
 			}
@@ -100,6 +122,13 @@ func newDaemonStopCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+					"running": false,
+					"stopped": true,
+				}})
+				return
+			}
 			fmt.Println("Daemon stopped.")
 		},
 	}
@@ -114,7 +143,11 @@ func newDaemonStatusCmd() *cobra.Command {
 				// Exit non-zero so `vibium daemon status` is usable in a
 				// conditional, and keep the human line out of --json output.
 				if jsonOutput {
+					// ok is true because the check ran; running says what it
+					// found. The keys stay top-level rather than moving under
+					// result so existing parsers of .running keep working.
 					printJSON(map[string]interface{}{
+						"ok":      true,
 						"running": false,
 					})
 				} else {
@@ -131,6 +164,7 @@ func newDaemonStatusCmd() *cobra.Command {
 
 			if jsonOutput {
 				printJSON(map[string]interface{}{
+					"ok":      true,
 					"running": true,
 					"version": status.Version,
 					"pid":     status.PID,
@@ -181,10 +215,15 @@ func shutdownDaemonAndWait() error {
 }
 
 // resolveConnect merges CLI flags with env vars. Flags take precedence.
-func resolveConnect(connectFlag string, headerFlags []string) (string, http.Header) {
+func resolveConnect(connectFlag string, headerFlags []string, capsFlag string) (string, http.Header, map[string]interface{}) {
 	connectURL := connectFlag
 	if connectURL == "" {
 		connectURL, _ = connectFromEnv()
+	}
+
+	caps := parseConnectCaps(capsFlag)
+	if caps == nil {
+		caps = connectCapsFromEnv()
 	}
 
 	var headers http.Header
@@ -208,11 +247,11 @@ func resolveConnect(connectFlag string, headerFlags []string) (string, http.Head
 		}
 	}
 
-	return connectURL, headers
+	return connectURL, headers, caps
 }
 
 // runDaemonForeground starts the daemon in the current process.
-func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFlags []string, capsFlag string) {
 	// Clean stale files from a previous crash
 	daemon.CleanStale()
 
@@ -231,16 +270,18 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 		screenshotDir = defaultDir
 	}
 
-	connectURL, connectHeaders := resolveConnect(connectFlag, headerFlags)
+	connectURL, connectHeaders, connectCaps := resolveConnect(connectFlag, headerFlags, capsFlag)
 
 	d := daemon.New(daemon.Options{
 		Version:        version,
 		ScreenshotDir:  screenshotDir,
 		Engine:         engineName,
 		Headless:       headless,
+		UserDataDir:    userDataDir,
 		IdleTimeout:    idleTimeout,
 		ConnectURL:     connectURL,
 		ConnectHeaders: connectHeaders,
+		ConnectCaps:    connectCaps,
 	})
 
 	// Install signal handler for clean shutdown
@@ -263,7 +304,7 @@ func runDaemonForeground(idleTimeout time.Duration, connectFlag string, headerFl
 }
 
 // daemonize spawns the daemon as a detached background process.
-func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string) {
+func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []string, capsFlag string) {
 	// Resolve the socket path first: an unusable path (bad session name,
 	// over-long socket path) should fail here, not in the detached child.
 	socketPath, err := paths.GetSocketPath()
@@ -276,6 +317,13 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 	daemon.CleanStale()
 
 	if daemon.IsRunning() {
+		if jsonOutput {
+			printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+				"running": true,
+				"started": false,
+			}})
+			return
+		}
 		fmt.Println("Daemon is already running.")
 		return
 	}
@@ -295,15 +343,16 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 		args = append(args, "--engine="+engineName)
 	}
 
-	// Forward connect flags to child process
-	if connectFlag != "" {
-		args = append(args, fmt.Sprintf("--connect=%s", connectFlag))
-	}
-	for _, h := range headerFlags {
-		args = append(args, fmt.Sprintf("--connect-header=%s", h))
+	// Connect config reaches the child through its environment, where
+	// resolveConnect reads it, because argv would leak the secrets to ps.
+	connectURL, connectHeaders, _ := resolveConnect(connectFlag, headerFlags, capsFlag)
+	capsJSON := capsFlag
+	if capsJSON == "" {
+		capsJSON = os.Getenv("VIBIUM_CONNECT_CAPS")
 	}
 
 	cmd := exec.Command(exe, args...)
+	cmd.Env = connectSpawnEnv(connectURL, connectHeaders, capsJSON)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -318,11 +367,48 @@ func daemonize(idleTimeout time.Duration, connectFlag string, headerFlags []stri
 
 	// Poll for socket availability
 	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
+		// Stop the process we just spawned. A daemon that is merely slow to
+		// bind (cold browser launch, in-process install) would otherwise come
+		// up moments after this reports failure: a leaked background process
+		// that follow-up commands silently find and use (#724).
+		stopSpawnedDaemon(cmd)
 		fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
 		os.Exit(1)
 	}
 
+	if jsonOutput {
+		printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+			"running": true,
+			"started": true,
+			"pid":     cmd.Process.Pid,
+		}})
+		return
+	}
 	fmt.Printf("Daemon started (pid %d)\n", cmd.Process.Pid)
+}
+
+// stopSpawnedDaemon terminates a daemon this process started but gave up
+// waiting on. SIGTERM first so the daemon's own shutdown path (browser
+// teardown, socket and pid cleanup) runs; kill when the signal cannot be
+// delivered (Windows) or the daemon is too wedged to act on it.
+func stopSpawnedDaemon(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if cmd.Process.Signal(syscall.SIGTERM) != nil {
+		cmd.Process.Kill()
+	}
+	done := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		cmd.Process.Kill()
+		<-done
+	}
 }
 
 // waitForSocket polls until the socket is connectable or timeout.

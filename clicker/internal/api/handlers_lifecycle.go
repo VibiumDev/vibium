@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 )
 
 // handleBrowserPage handles vibium:browser.page — returns the first (default) browsing context.
@@ -62,10 +63,35 @@ func (r *Router) handleBrowserNewPage(session *BrowserSession, cmd bidiCommand) 
 		return
 	}
 
+	r.activateNewPage(session, context)
+
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{
 		"context":     context,
 		"userContext": userContext,
 	})
+}
+
+// activateNewPage raises a freshly created tab, best effort.
+//
+// The CLI and MCP activate the tabs they create, and the router path did
+// not, so the same two lines of user code left a different tab in the
+// foreground depending on the surface — and a background tab is a different
+// execution environment: visibilityState is hidden, rAF is throttled, and
+// headless Chrome composites no frame for it at all (#495, the mechanism
+// behind #491). Activating here makes newPage mean "open a tab and show it"
+// everywhere, which is also what the visible-browser default promises a
+// watching human.
+//
+// Best effort because a page that exists but stayed behind beats a failed
+// creation: some Firefox configurations reject browsingContext.activate as
+// privileged (see launcher_firefox.go).
+func (r *Router) activateNewPage(session *BrowserSession, context string) {
+	_, err := r.sendInternalCommand(session, "browsingContext.activate", map[string]interface{}{
+		"context": context,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[router] newPage: created %s but could not raise it: %v\n", context, err)
+	}
 }
 
 // handleBrowserNewContext handles vibium:browser.newContext — creates a new user context (incognito-like).
@@ -113,6 +139,8 @@ func (r *Router) handleContextNewPage(session *BrowserSession, cmd bidiCommand) 
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+
+	r.activateNewPage(session, context)
 
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{
 		"context":     context,
@@ -239,8 +267,17 @@ type PageInfo struct {
 
 // NewPage creates a new page and returns its context ID.
 func NewPage(s Session, url string) (string, error) {
+	return NewPageInContext(s, url, "")
+}
+
+// NewPageInContext creates a new page inside the given user context; an empty
+// userContext means the browser default.
+func NewPageInContext(s Session, url, userContext string) (string, error) {
 	params := map[string]interface{}{
 		"type": "tab",
+	}
+	if userContext != "" {
+		params["userContext"] = userContext
 	}
 	resp, err := s.SendBidiCommand("browsingContext.create", params)
 	if err != nil {
@@ -256,6 +293,32 @@ func NewPage(s Session, url string) (string, error) {
 		}
 	}
 	return context, nil
+}
+
+// NewUserContext creates a user context (isolated cookies/storage) and
+// returns its id.
+func NewUserContext(s Session) (string, error) {
+	resp, err := s.SendBidiCommand("browser.createUserContext", map[string]interface{}{})
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Result struct {
+			UserContext string `json:"userContext"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("failed to parse createUserContext response: %w", err)
+	}
+	return result.Result.UserContext, nil
+}
+
+// RemoveUserContext closes a user context along with any pages still in it.
+func RemoveUserContext(s Session, userContext string) error {
+	_, err := s.SendBidiCommand("browser.removeUserContext", map[string]interface{}{
+		"userContext": userContext,
+	})
+	return err
 }
 
 // ListPages returns all browsing contexts (pages).
@@ -305,11 +368,8 @@ func SetViewport(s Session, context string, width, height int, dpr float64) erro
 	if dpr > 0 {
 		params["devicePixelRatio"] = dpr
 	}
-	resp, err := s.SendBidiCommand("browsingContext.setViewport", params)
-	if err != nil {
-		return err
-	}
-	return checkBidiError(resp)
+	_, err := s.SendBidiCommand("browsingContext.setViewport", params)
+	return err
 }
 
 // SetContent sets the page HTML content.
@@ -349,8 +409,46 @@ func RequireFileInput(s Session, context string, ep ElementParams) error {
 	return nil
 }
 
+// validateUploadFiles rejects paths the engine cannot deliver. Without it,
+// what a bad path means depends on the engine: Chrome attaches a zero-byte
+// file named after a typo and reports success, Firefox rejects it (#480).
+//
+// Stat alone is not enough: it succeeds on a directory and on a file the
+// process cannot read, and both reach the page as bogus entries. Opening the
+// file is what answers "can this be uploaded".
+func validateUploadFiles(files []string) error {
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("upload: file does not exist: %s", f)
+			}
+			return fmt.Errorf("upload: cannot read %s: %v", f, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("upload: not a file: %s is a directory", f)
+		}
+		handle, err := os.Open(f)
+		if err != nil {
+			return fmt.Errorf("upload: cannot read %s: %v", f, err)
+		}
+		handle.Close()
+	}
+	return nil
+}
+
 // Upload sets files on an <input type="file"> element.
-func Upload(s Session, context string, ep ElementParams, files []string) error {
+//
+// remote reports whether the browser runs on another host, in which case the
+// local filesystem says nothing about the paths and validation is left to
+// the engine.
+func Upload(s Session, context string, ep ElementParams, files []string, remote bool) error {
+	if !remote {
+		if err := validateUploadFiles(files); err != nil {
+			return err
+		}
+	}
+
 	if err := RequireFileInput(s, context, ep); err != nil {
 		return err
 	}
@@ -367,7 +465,15 @@ func Upload(s Session, context string, ep ElementParams, files []string) error {
 		},
 		"files": files,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// Through APISession, SendBidiCommand reports transport failures only:
+	// an engine-level rejection arrives as a normal response whose payload
+	// is an error, so without this the proxy answered "set": true for a
+	// file the browser refused and every client built on it reported
+	// success (#481). Through AgentSession this is a safe no-op.
+	return nil
 }
 
 // MouseMove moves the mouse to the given coordinates.
@@ -456,6 +562,47 @@ func MouseClick(s Session, context string, x, y, button int) error {
 			},
 		},
 	}
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
+// TouchTap taps a touch pointer at (x, y). It shares touchPointerActions with
+// the client-facing touch handlers so both stacks emit the same gesture (#682).
+func TouchTap(s Session, context string, x, y int) error {
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": x, "y": y, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pointerUp", "button": 0},
+	}, context)
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
+// TouchSwipe drags a touch pointer along p, keeping the finger down for the
+// move so the gesture reads as a swipe/fling rather than two taps.
+func TouchSwipe(s Session, context string, p SwipePath) error {
+	actions := []map[string]interface{}{
+		{"type": "pointerMove", "x": p.X1, "y": p.Y1, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pointerMove", "x": p.X2, "y": p.Y2, "duration": p.Duration},
+	}
+	if p.Hold > 0 {
+		actions = append(actions, map[string]interface{}{"type": "pause", "duration": p.Hold})
+	}
+	actions = append(actions, map[string]interface{}{"type": "pointerUp", "button": 0})
+	params := touchPointerActions(actions, context)
+	_, err := s.SendBidiCommand("input.performActions", params)
+	return err
+}
+
+// TouchLongPress holds a touch press at (x, y) for durationMs before release.
+func TouchLongPress(s Session, context string, x, y, durationMs int) error {
+	params := touchPointerActions([]map[string]interface{}{
+		{"type": "pointerMove", "x": x, "y": y, "duration": 0},
+		{"type": "pointerDown", "button": 0},
+		{"type": "pause", "duration": durationMs},
+		{"type": "pointerUp", "button": 0},
+	}, context)
 	_, err := s.SendBidiCommand("input.performActions", params)
 	return err
 }

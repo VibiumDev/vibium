@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine test-capability-audit test-cleanup mtlshim double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-speech test-cleanup mtlshim vm-fast-launch-note double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -90,9 +90,20 @@ all: build
 # Build everything (Go + JS + Java)
 build: build-go build-js build-java
 
+# The files go:embed'ed into cmd/clicker that live elsewhere in the repo:
+# skills/ and config/ are the sources of truth, so the copies are gitignored
+# and exist only after this target runs. Anything that compiles the clicker
+# module (go build / go test / go vet) must run this first, or a fresh
+# checkout fails with "pattern AI_ENV_TEMPLATE: no matching files found"
+# (the Version Bump bump-firefox job hit exactly that).
+embeds:
+	cp skills/browser/SKILL.md clicker/cmd/clicker/SKILL.md
+	cp skills/check/SKILL.md clicker/cmd/clicker/CHECK_SKILL.md
+	cp config/ai.env clicker/cmd/clicker/AI_ENV_TEMPLATE
+	cp config/cloud-browser.env clicker/cmd/clicker/CLOUD_ENV_TEMPLATE
+
 # Build vibium binary
-build-go: deps
-	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
+build-go: deps embeds
 	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
 	@if [ -d node_modules/@vibium ]; then \
 		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
@@ -110,9 +121,8 @@ build-js: deps
 
 # Cross-compile vibium for all platforms (static binaries)
 # Output: clicker/bin/vibium-{os}-{arch}[.exe]
-build-go-all:
+build-go-all: embeds
 	@echo "Cross-compiling vibium for all platforms..."
-	cp skills/vibe-check/SKILL.md clicker/cmd/clicker/SKILL.md
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-amd64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-linux-arm64 ./cmd/clicker
 	cd clicker && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium-darwin-amd64 ./cmd/clicker
@@ -178,7 +188,7 @@ install-browser: build-go
 
 # Install Firefox (optional locally — the Firefox tests self-skip without it).
 # CI runs this so those tests actually execute. Channel comes from
-# VIBIUM_ENGINE_CHANNEL (beta until Firefox 154 reaches stable).
+# VIBIUM_ENGINE_CHANNEL; unset means release, which carries video since 154.
 install-firefox: build-go
 	./clicker/bin/vibium$(EXE) install --engine firefox
 
@@ -193,6 +203,9 @@ deps:
 	@if [ ! -d "node_modules" ]; then npm install; fi
 
 # Start the proxy server
+# Empty is not "disabled" (only 0/false/no/off are), so this undoes the
+# suite-wide opt-out below for the one target that runs the binary for real.
+serve: export VIBIUM_LOAD_AI_ENV :=
 serve: build-go
 	./clicker/bin/vibium$(EXE) serve
 
@@ -243,15 +256,18 @@ endif
 #
 # This is decided by probing THIS machine, not by detecting a VM: a guest with
 # working GPU passthrough must not be shimmed, because the shim hides the GPU
-# rather than speeding it up. The probe costs ~15s once, then is cached.
+# rather than speeding it up. The probe costs ~15s once, then is cached for the
+# machine, so every checkout and worktree on it gets the shim. Each sub-make
+# probes again, so a GPU that dies mid-run turns the shim on for later suites.
 # Override with VM_FAST_LAUNCH=1 or =0.
 # See docs/how-to-guides/slow-chrome-launch-in-macos-vm.md
 MTLSHIM := $(CURDIR)/clicker/bin/mtlshim.dylib
-MTLVERDICT := $(CURDIR)/clicker/bin/.mtl-verdict
+MTLVERDICT := $(HOME)/Library/Caches/vibium/mtl-verdict
+MTLVERDICT_LEGACY := $(CURDIR)/clicker/bin/.mtl-verdict
 
 ifeq ($(UNAME_S),Darwin)
 ifeq ($(origin VM_FAST_LAUNCH),undefined)
-VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT))
+VM_FAST_LAUNCH := $(shell $(CURDIR)/scripts/mtl-verdict.sh $(MTLVERDICT) $(MTLVERDICT_LEGACY))
 endif
 endif
 
@@ -262,22 +278,44 @@ export VIBIUM_VM_FAST_LAUNCH := $(MTLSHIM)
 endif
 endif
 
-mtlshim:
+mtlshim: $(MTLSHIM)
+
+$(MTLSHIM): scripts/mtlshim.m
 	@mkdir -p $(dir $(MTLSHIM))
 	clang -fno-objc-arc -dynamiclib -framework Metal -framework Foundation \
 		-o $(MTLSHIM) scripts/mtlshim.m
 
-test: build install-browser $(FAST_LAUNCH_DEP)
+# Every target that launches Chrome builds vibium, so the shim rides on build-go.
+build-go: $(FAST_LAUNCH_DEP)
+
+ifeq ($(UNAME_S),Darwin)
+test test-core test-checkrun test-tail: vm-fast-launch-note
+endif
+
+vm-fast-launch-note:
+ifeq ($(UNAME_S),Darwin)
+	@if [ -n "$(filter command line environment,$(origin VM_FAST_LAUNCH))" ]; then \
+		echo "VM fast launch: $(if $(filter 1,$(VM_FAST_LAUNCH)),on,off) (set by VM_FAST_LAUNCH)"; \
+	elif [ "$(VM_FAST_LAUNCH)" = "1" ]; then \
+		echo "VM fast launch: on (this machine has shown the dead-GPU stall; VM_FAST_LAUNCH=0 turns it off)"; \
+	else \
+		echo "VM fast launch: off (Metal answered quickly)"; \
+	fi
+endif
+
+# The suite must see the same AI configuration CI does: none. Without this a
+# developer who has run `vibium setup` has a ~/.config/vibium/ai.env, and the
+# binary fills every empty VIBIUM_AI_* the tests set from it, so their provider
+# and reasoning effort reach runs the fixtures configured differently.
+export VIBIUM_LOAD_AI_ENV := 0
+
+# The full suite. CI runs the three shards below on separate runners to keep
+# wall time down (#513); locally this is still everything.
+test: build install-browser
 	@START_TIME=$$(date +%s); \
-	"$(MAKE)" test-go && \
-	"$(MAKE)" test-cli test-cleanup && \
-	"$(MAKE)" test-js-process test-cleanup && \
-	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
-	"$(MAKE)" test-cleanup && \
-	"$(MAKE)" test-browser-modes test-cleanup && \
-	"$(MAKE)" test-firefox test-cleanup && \
-	"$(MAKE)" test-daemon test-cleanup && \
-	"$(MAKE)" test-js-sync; \
+	"$(MAKE)" test-core-suites && \
+	"$(MAKE)" test-tail-suites && \
+	"$(MAKE)" test-checkrun-suites; \
 	EXIT=$$?; \
 	"$(MAKE)" test-cleanup; \
 	END_TIME=$$(date +%s); \
@@ -292,6 +330,51 @@ test: build install-browser $(FAST_LAUNCH_DEP)
 		exit $$EXIT; \
 	fi
 
+# CI shard entry points (#513). Each carries the same build prerequisites as
+# `test`, so a shard runs standalone on a fresh runner.
+test-core: build install-browser
+	@"$(MAKE)" test-core-suites; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
+
+test-checkrun: build install-browser
+	@"$(MAKE)" test-checkrun-suites; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
+
+test-tail: build install-browser
+	@"$(MAKE)" test-tail-suites; \
+	EXIT=$$?; \
+	"$(MAKE)" test-cleanup; \
+	exit $$EXIT
+
+# The suite chains. Internal: `test`, `test-core`, `test-tail` and
+# `test-checkrun` wrap these with build deps and cleanup; the splits exist so
+# shards can run on their own runners. The tail suites are serial by nature
+# (headed windows, the shared daemon socket), so they gain nothing from the
+# core job's parallel phase and ride on the shorter checks runner instead,
+# which balances the two legs' wall time.
+test-core-suites:
+	@"$(MAKE)" check-api-drift && \
+	"$(MAKE)" test-go && \
+	"$(MAKE)" test-cli test-cleanup && \
+	"$(MAKE)" test-js-process test-cleanup && \
+	"$(MAKE)" -j $(SUITE_PARALLEL) test-js-async test-mcp test-python test-java && \
+	"$(MAKE)" test-cleanup
+
+test-tail-suites:
+	@"$(MAKE)" test-browser-modes test-cleanup && \
+	"$(MAKE)" test-firefox test-cleanup && \
+	"$(MAKE)" test-daemon test-cleanup && \
+	"$(MAKE)" test-js-sync
+
+test-checkrun-suites:
+	@"$(MAKE)" test-check && \
+	"$(MAKE)" test-run && \
+	"$(MAKE)" test-speech
+
 # Kill any browser/driver processes left over from tests.
 # The bracketed characters stop Linux pkill from SIGKILLing the recipe's
 # own shell, whose command line contains the pattern.
@@ -304,7 +387,7 @@ test-cleanup:
 	@pkill -9 -f 'sync-test-server.j[s]' 2>/dev/null || true
 
 # Run Go unit tests (no browser, no daemon — seconds, so run them first)
-test-go:
+test-go: embeds
 	@echo "--- Go Unit Tests ---"
 	cd clicker && go test ./...
 
@@ -312,10 +395,10 @@ test-go:
 # Process tests run separately with --test-concurrency=1 to avoid interference
 test-cli: build-go
 	@echo "--- CLI Tests (no daemon) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/is-installed.test.js tests/cli/packaging.test.js tests/cli/release-versioning.test.js tests/cli/wrapper.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/help-flags.test.js tests/cli/ready.test.js tests/cli/is-installed.test.js tests/cli/json-output.test.js tests/cli/json-contract.test.js tests/cli/packaging.test.js tests/cli/release-versioning.test.js tests/cli/wrapper.test.js tests/speech/speech.test.js
 	@"$(MAKE)" test-cli-shared ENGINE=$(ENGINE)
 	@echo "--- CLI Process Tests (sequential) ---"
-	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js
+	$(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/cli/process.test.js tests/cli/dead-browser.test.js tests/cli/start-json.test.js tests/speech/browser.test.js
 
 test-cli-shared: build-go
 	@echo "--- CLI Shared Tests ($(ENGINE)) ---"
@@ -398,12 +481,12 @@ test-js-engine: build-go
 # Run MCP server tests (sequential - browser sessions)
 test-mcp: build-go
 	@echo "--- MCP Server Tests ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/mcp/server.test.js tests/mcp/page-pinning.test.js tests/mcp/page-isolation.test.js
 
 # Run daemon tests (sequential - daemon lifecycle)
 test-daemon: build-go
 	@echo "--- Daemon Tests ---"
-	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/sessions.test.js
+	VIBIUM_ENGINE=$(ENGINE) $(TIMEOUT_CMD) node --test $(TEST_FLAGS) --test-concurrency=1 tests/daemon/lifecycle.test.js tests/daemon/concurrency.test.js tests/daemon/cli-commands.test.js tests/daemon/find-refs.test.js tests/daemon/connect.test.js tests/daemon/recording.test.js tests/daemon/codegen.test.js tests/daemon/sessions.test.js tests/daemon/check.test.js tests/daemon/check-archive.test.js
 
 # Run Python client tests
 # PY_PARALLEL: pytest-xdist worker count. Each worker spawns its own Chrome,
@@ -414,9 +497,31 @@ test-daemon: build-go
 PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 
 # Ensure the Python client venv exists with the client + test deps installed.
+PY_FLOOR := $(shell sed -n 's/^requires-python *= *">=\([0-9.]*\)".*/\1/p' clients/python/pyproject.toml)
+PY_FLOOR_CHECK := import sys; sys.exit(sys.version_info < tuple(int(n) for n in '$(PY_FLOOR)'.split('.')))
+
 python-venv:
 	@cd clients/python && \
-		if [ ! -d ".venv" ]; then $(PYTHON) -m venv .venv; fi && \
+		py=; for p in $(PYTHON) $$(IFS=:; for d in $$PATH; do ls "$$d" 2>/dev/null; done | grep -E '^python3\.[0-9]+$$' | sort -u -t. -k2,2nr); do \
+			if "$$p" -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then py=$$p; break; fi; \
+		done; \
+		if [ -d .venv ] && ! ( . $(VENV_ACTIVATE) && python -c "$(PY_FLOOR_CHECK)" ) 2>/dev/null; then \
+			echo "ERROR: clients/python/.venv uses $$( . $(VENV_ACTIVATE) && python --version 2>&1); the Python client needs $(PY_FLOOR)+." >&2; \
+			echo "  Rebuild it (removes packages you added by hand):" >&2; \
+			echo "    macOS/Linux:  $${py:-python3} -m venv --clear clients/python/.venv" >&2; \
+			echo "    Windows:      py -3 -m venv --clear clients\\python\\.venv" >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -d .venv ]; then \
+			if [ -z "$$py" ]; then \
+				echo "ERROR: the Python client needs Python $(PY_FLOOR)+, but $(PYTHON) is $$($(PYTHON) --version 2>&1)." >&2; \
+				echo "  macOS: brew install python" >&2; \
+				echo "  Linux: install a newer python3 from your package manager" >&2; \
+				echo "  Or name one: make test PYTHON=/path/to/python3" >&2; \
+				exit 1; \
+			fi; \
+			"$$py" -m venv .venv; \
+		fi && \
 		. $(VENV_ACTIVATE) && \
 		if ! python -c "import vibium, xdist" 2>/dev/null; then \
 			python -m pip install --quiet --upgrade pip && \
@@ -481,11 +586,11 @@ build-java: build-go
 # JAVA_PARALLEL: number of parallel test JVMs (each spawns its own Chrome).
 # Default 4; bump for faster CI on machines with more memory.
 JAVA_PARALLEL ?= 3
-test-java: build-go install-engine $(FAST_LAUNCH_DEP)
+test-java: build-go install-engine
 	@echo "--- Java Client Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PjavaParallel=$(JAVA_PARALLEL)
 
-test-java-engine: build-go install-engine $(FAST_LAUNCH_DEP)
+test-java-engine: build-go install-engine
 	@echo "--- Java Cross-Engine Tests ($(ENGINE), parallel x$(JAVA_PARALLEL)) ---"
 	cd clients/java && VIBIUM_ENGINE=$(ENGINE) VIBIUM_BIN_PATH=$(CURDIR)/clicker/bin/vibium$(EXE) $(TIMEOUT_CMD_ABS) ./gradlew test -PcapabilityOnly -PjavaParallel=$(JAVA_PARALLEL)
 
@@ -493,6 +598,22 @@ test-engine: test-cli-shared test-js-engine test-python-engine test-java-engine
 
 test-firefox-capabilities: build-go install-firefox
 	@"$(MAKE)" test-engine ENGINE=firefox
+
+# Browser-free cross-surface API drift check. docs/reference/api.md is the
+# spec: fails on a malformed doc or on a client column claiming a symbol the
+# client does not export. Undocumented extras are reported but do not fail.
+check-api-drift: python-venv build-js build-go
+	@echo "--- API Drift Check (spec + all surfaces) ---"
+	cd clicker && go run ./cmd/apidrift validate -spec ../docs/reference/api.md
+	@cd clients/python && . $(VENV_ACTIVATE) && python ../../scripts/apidrift_python.py | \
+		(cd ../../clicker && go run ./cmd/apidrift check -surface python -spec ../docs/reference/api.md -actual -)
+	@node scripts/apidrift_js.js | \
+		(cd clicker && go run ./cmd/apidrift check -surface js -spec ../docs/reference/api.md -actual -)
+	@cd clients/java && ./gradlew -q compileJava && cd ../.. && $(PYTHON) scripts/apidrift_java.py | \
+		(cd clicker && go run ./cmd/apidrift check -surface java -spec ../docs/reference/api.md -actual -)
+	@./clicker/bin/vibium$(EXE) commands | \
+		(cd clicker && go run ./cmd/apidrift check -surface cli -spec ../docs/reference/api.md -actual -)
+	@cd clicker && go run ./cmd/apidrift mcp-surface | go run ./cmd/apidrift check -surface mcp -spec ../docs/reference/api.md -actual -
 
 test-capability-audit: build-js python-venv
 	@echo "--- Browser-free Chrome Capability Audit ---"
@@ -699,3 +820,20 @@ help:
 	@echo "  make clean-all             - Clean everything"
 	@echo ""
 	@echo "  make help                  - Show this help"
+
+# Check acceptance across the existing pipe and MCP surfaces.
+test-check: build-go build-js build-java python-venv
+	@echo "--- Check Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/check/surfaces.test.js tests/daemon/check.test.js tests/daemon/check-lifecycle.test.js tests/daemon/check-archive.test.js
+
+# Deterministic native-provider contracts, live browser behavior, and SDK parity.
+# Real-provider runs are opt-in; no credentials or local model server required.
+test-run: build-go build-js build-java python-venv
+	@echo "--- Run Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/naming/*.test.js tests/run/cli.test.js tests/run/overrides.test.js tests/run/surfaces.test.js tests/run/live.test.js
+
+# Say and listen through each client library: on WAV files with no browser,
+# and through a page. No speech engine, key or sound card is needed.
+test-speech: build-go build-js build-java python-venv
+	@echo "--- Speech Client Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/speech/client-js.test.js tests/speech/surfaces.test.js

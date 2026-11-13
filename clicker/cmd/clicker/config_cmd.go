@@ -1,0 +1,173 @@
+package main
+
+import (
+	_ "embed"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/paths"
+)
+
+//go:embed AI_ENV_TEMPLATE
+var aiEnvTemplate string
+
+//go:embed CLOUD_ENV_TEMPLATE
+var cloudEnvTemplate string
+
+// tildePath renders a path the way the docs and tutorials write it. Paths
+// outside home (VIBIUM_CONFIG_DIR, XDG_CONFIG_HOME) print in full, because a
+// ~/ prefix would name a file that isn't there.
+func tildePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if rel, err := filepath.Rel(home, path); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return "~/" + filepath.ToSlash(rel)
+	}
+	return path
+}
+
+// configTemplate is one settings file vibium can lay down for the user.
+type configTemplate struct {
+	name    string
+	file    string
+	content *string
+	what    string
+}
+
+var configTemplates = []configTemplate{
+	{"ai", "ai.env", &aiEnvTemplate, "provider, model and API key for run and check"},
+	{"cloud", "cloud-browser.env", &cloudEnvTemplate, "credentials for cloud browser vendors"},
+}
+
+func newConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage Vibium settings files",
+	}
+	cmd.AddCommand(newConfigInitCmd())
+	return cmd
+}
+
+func newConfigInitCmd() *cobra.Command {
+	var force, stdout bool
+
+	cmd := &cobra.Command{
+		Use:   "init [ai|cloud|all]",
+		Short: "Write a starter settings file to ~/.config/vibium",
+		Long: `Write a commented settings file to the Vibium config directory.
+
+Every setting is present and documented in place, so the file is its own
+reference. Vibium loads ai.env for empty AI variables on each command.
+Nonempty process environment still wins. Set VIBIUM_LOAD_AI_ENV=0 to skip.`,
+		Example: `  vibium config init
+  # Wrote ~/.config/vibium/ai.env (0600); next vibium command loads empty AI vars from it
+
+  vibium config init cloud
+  # Wrote ~/.config/vibium/cloud-browser.env (0600)
+
+  vibium config init all --force
+  # Overwrites both, keeping a .bak of each
+
+  vibium config init ai --stdout
+  # Print the template instead of writing it`,
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"ai", "cloud", "all"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			which := "ai"
+			if len(args) == 1 {
+				which = args[0]
+			}
+			var chosen []configTemplate
+			for _, t := range configTemplates {
+				if which == "all" || which == t.name {
+					chosen = append(chosen, t)
+				}
+			}
+			if len(chosen) == 0 {
+				return fmt.Errorf("unknown settings file %q; choose ai, cloud or all", which)
+			}
+			if stdout {
+				for _, t := range chosen {
+					fmt.Fprint(cmd.OutOrStdout(), *t.content)
+				}
+				return nil
+			}
+			var written []string
+			for _, t := range chosen {
+				path, err := writeConfigTemplate(cmd, t, force)
+				if err != nil {
+					return err
+				}
+				written = append(written, path)
+			}
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: map[string]interface{}{
+					"written": written,
+					"mode":    "0600",
+				}})
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing file, keeping a .bak copy")
+	cmd.Flags().BoolVar(&stdout, "stdout", false, "Print the template instead of writing it")
+	return cmd
+}
+
+// writeConfigTemplate lays down one template at 0600. These files hold API
+// keys, so the mode is the point: a world-readable copy is how a key leaks to
+// anything else running as another user on the machine.
+func writeConfigTemplate(cmd *cobra.Command, t configTemplate, force bool) (string, error) {
+	dir, err := paths.GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("could not create %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, t.file)
+
+	if _, err := os.Stat(path); err == nil {
+		if !force {
+			// Never clobber real credentials on a bare `config init`.
+			return "", fmt.Errorf("%s already exists; edit it, or pass --force to replace it (a .bak is kept)", path)
+		}
+		if err := os.Rename(path, path+".bak"); err != nil {
+			return "", fmt.Errorf("could not back up %s: %w", path, err)
+		}
+		if !jsonOutput {
+			fmt.Fprintf(cmd.OutOrStdout(), "Kept the previous file as %s.bak\n", tildePath(path))
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("could not check %s: %w", path, err)
+	}
+
+	if err := os.WriteFile(path, []byte(*t.content), 0600); err != nil {
+		return "", fmt.Errorf("could not write %s: %w", path, err)
+	}
+	// WriteFile's mode respects umask and means nothing on Windows, where it
+	// only maps to the read-only attribute (#655). Restrict explicitly:
+	// chmod 0600 on Unix, an owner-only ACL on Windows.
+	if err := restrictToOwner(path); err != nil {
+		return "", fmt.Errorf("could not set permissions on %s: %w", path, err)
+	}
+
+	// Under --json the caller reports every file in one envelope, so the
+	// per-file lines stay quiet.
+	if jsonOutput {
+		return path, nil
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s (0600) — %s\n", tildePath(path), t.what)
+	if t.file == "ai.env" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Edit it, then run vibium. Empty AI variables are loaded from this file.\n")
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Edit it, then: source %s\n", tildePath(path))
+	}
+	return path, nil
+}

@@ -33,14 +33,26 @@ If you prefer to develop directly on your host machine, follow the steps below.
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - Node.js 18+
-- Python 3.9+ (for Python client development)
+- Python 3.11+ (for Python client development)
 - Java 21+ (required for the default `make` target and Java client development)
 - GitHub CLI (optional, for managing issues/PRs from terminal):
   - macOS: `brew install gh`
   - Linux: `sudo apt install gh` or `sudo dnf install gh`
   - Windows: `winget install GitHub.cli`
+
+### Python support policy
+
+The Python client supports every CPython version that still receives
+security fixes upstream. When a version reaches end of life (each October),
+the floor moves up in the next minor release: `requires-python` in
+`clients/python/pyproject.toml` and `packages/python/*/pyproject.toml`, the
+pinned `python_version`/`python-version` in the CI workflows, and the
+versions named in the docs all change together. The scheduled `eol-watch`
+workflow opens an issue when a floor is approaching end of life. Users on
+an older Python are not broken by a bump — pip resolves them to the last
+release that supported their version.
 
 ---
 
@@ -56,6 +68,20 @@ make test
 `make` installs npm dependencies and builds the vibium binary, JS client, and Java client. On a fresh checkout, it needs network access for `npm install` and for the Gradle wrapper to download Gradle.
 
 `make test` downloads Chrome for Testing (if needed) and runs the full test suite. If you are only working on the Go binary or JS client, use `make build-go` or `make build-js` to avoid the Java build.
+
+---
+
+## Install Skills from Your Checkout
+
+To try local skill changes before they are available on GitHub, run this from
+the repository root:
+
+```bash
+npx skills add .
+```
+
+Select all Vibium skills, then choose your agent and installation scope.
+Tell your agent to use `./clicker/bin/vibium` to test the binary you built.
 
 ---
 
@@ -146,7 +172,7 @@ const bro = browser.start()
 const vibe = bro.page()
 vibe.go('https://example.com')
 
-const el = vibe.find('h1')
+const el = vibe.find({ css: 'h1' })
 console.log(el.text())
 
 // Execute JavaScript
@@ -166,7 +192,7 @@ const bro = await browser.start()
 const vibe = await bro.page()
 await vibe.go('https://example.com')
 
-const el = await vibe.find('h1')
+const el = await vibe.find({ css: 'h1' })
 console.log(await el.text())
 
 // Execute JavaScript
@@ -217,7 +243,7 @@ bro = browser.start()
 vibe = bro.page()
 vibe.go("https://example.com")
 
-el = vibe.find("h1")
+el = vibe.find(css="h1")
 print(el.text())
 
 # Execute JavaScript
@@ -241,7 +267,7 @@ async def main():
     vibe = await bro.page()
     await vibe.go("https://example.com")
 
-    el = await vibe.find("h1")
+    el = await vibe.find(css="h1")
     print(await el.text())
 
     # Execute JavaScript
@@ -298,7 +324,7 @@ var bro = Vibium.start();
 var vibe = bro.page();
 vibe.go("https://example.com")
 
-var el = vibe.find("h1")
+var el = vibe.find(new SelectorOptions().css("h1"))
 el.text()
 
 // Execute JavaScript
@@ -320,6 +346,7 @@ import com.vibium.Vibium;
 import com.vibium.Browser;
 import com.vibium.Page;
 import com.vibium.Element;
+import com.vibium.types.SelectorOptions;
 
 public class Example {
     public static void main(String[] args) throws Exception {
@@ -327,7 +354,7 @@ public class Example {
         Page vibe = bro.page();
         vibe.go("https://example.com");
 
-        Element el = vibe.find("h1");
+        Element el = vibe.find(new SelectorOptions().css("h1"));
         System.out.println(el.text());
 
         byte[] shot = vibe.screenshot();
@@ -377,14 +404,14 @@ cd clicker/bin
 ./vibium go https://example.com
 
 # Interact with the current page (no URL needed)
-./vibium find "h1"
+./vibium find css "h1"
 ./vibium click "a"
 ./vibium type "input" "hello"
 ./vibium eval "document.title"
 ./vibium screenshot -o shot.png
 
 # You can also provide a URL to navigate first
-./vibium find https://example.com "a"
+./vibium find https://example.com "the More information link"
 ./vibium screenshot https://example.com -o shot.png
 ```
 
@@ -455,3 +482,10 @@ For low-level debugging tools and troubleshooting tips, see [docs/how-to-guides/
 - **External contributors**: fork the repo, push to your fork, then open a PR to `VibiumDev/vibium`
 
 See [docs/contributing/local-dev-setup-mac.md](docs/contributing/local-dev-setup-mac.md) for details on the fork-based workflow.
+
+### CI
+
+Every PR runs the full test suite on Linux and macOS, for both Chrome and
+Firefox. All of them must pass before a PR can merge, so a change that works
+on your machine can still fail CI on another OS. Running the suite locally on
+one platform (`make test`) is enough before pushing; CI covers the rest.

@@ -37,6 +37,19 @@ func (r *Router) handleVibiumElHighlight(session *BrowserSession, cmd bidiComman
 		r.sendError(session, cmd.ID, err)
 		return
 	}
+	if ep.Visual != nil {
+		s := NewAPISession(r, session, context)
+		info, err := VisualElementInfo(s, context, ep.Visual)
+		if err == nil {
+			err = HighlightBox(s, context, info.Box)
+		}
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{"highlighted": true})
+		return
+	}
 
 	script, args := buildElStateScript(ep, `(() => {
 		const prevOutline = el.style.outline;
@@ -48,7 +61,7 @@ func (r *Router) handleVibiumElHighlight(session *BrowserSession, cmd bidiComman
 	})()`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	if val != "ok" {
@@ -87,7 +100,7 @@ func (r *Router) handleVibiumElHTML(session *BrowserSession, cmd bidiCommand) {
 	script, args := buildElStateScript(ep, `el.innerHTML`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"html": val})
@@ -105,7 +118,7 @@ func (r *Router) handleVibiumElValue(session *BrowserSession, cmd bidiCommand) {
 	script, args := buildElStateScript(ep, `el.value || ''`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": val})
@@ -193,7 +206,7 @@ func (r *Router) handleVibiumElAttr(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 	if result.Error != "" {
-		r.sendError(session, cmd.ID, fmt.Errorf("attr: %s", result.Error))
+		r.sendError(session, cmd.ID, staleIndexHint(fmt.Errorf("attr: %s", result.Error), ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"value": result.Value})
@@ -205,6 +218,17 @@ func (r *Router) handleVibiumElBounds(session *BrowserSession, cmd bidiCommand) 
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
+		return
+	}
+	if ep.Visual != nil {
+		info, err := VisualElementInfo(NewAPISession(r, session, context), context, ep.Visual)
+		if err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
+		}
+		r.sendSuccess(session, cmd.ID, map[string]interface{}{
+			"x": info.Box.X, "y": info.Box.Y, "width": info.Box.Width, "height": info.Box.Height,
+		})
 		return
 	}
 
@@ -227,7 +251,7 @@ func (r *Router) handleVibiumElBounds(session *BrowserSession, cmd bidiCommand) 
 
 	val, err := parseScriptResult(resp)
 	if err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("bounds failed: %w", err))
+		r.sendError(session, cmd.ID, staleIndexHint(fmt.Errorf("bounds failed: %w", err), ep))
 		return
 	}
 
@@ -261,7 +285,7 @@ func (r *Router) handleVibiumElIsVisible(session *BrowserSession, cmd bidiComman
 
 	visible, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"visible": visible})
@@ -287,7 +311,7 @@ func (r *Router) handleVibiumElIsHidden(session *BrowserSession, cmd bidiCommand
 
 	hidden, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"hidden": hidden})
@@ -305,13 +329,13 @@ func (r *Router) handleVibiumElIsEnabled(session *BrowserSession, cmd bidiComman
 	script, args := buildElBoolScript(ep, `return !el.disabled;`)
 	enabled, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"enabled": enabled})
 }
 
-// handleVibiumElIsChecked handles vibium:element.isChecked — returns element.checked.
+// handleVibiumElIsChecked handles vibium:element.isSet — returns element.checked.
 func (r *Router) handleVibiumElIsChecked(session *BrowserSession, cmd bidiCommand) {
 	ep := ExtractElementParams(cmd.Params)
 	context, err := r.resolveContext(session, cmd.Params)
@@ -344,7 +368,7 @@ func (r *Router) handleVibiumElIsEditable(session *BrowserSession, cmd bidiComma
 	script, args := buildElBoolScript(ep, `return `+EditablePredicateJS+`;`)
 	editable, err := r.evalBoolScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"editable": editable})
@@ -381,11 +405,6 @@ func (r *Router) handleVibiumElScreenshot(session *BrowserSession, cmd bidiComma
 	resp, err := r.sendInternalCommand(session, "browsingContext.captureScreenshot", clipParams)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -813,7 +832,7 @@ func EvalBoolScript(s Session, context, script string, args []map[string]interfa
 	}
 
 	if len(val) > 6 && val[:6] == "error:" {
-		return false, fmt.Errorf(val[6:])
+		return false, errors.New(val[6:])
 	}
 
 	return val == "true", nil
@@ -832,31 +851,36 @@ func (r *Router) resolveElementNoWait(session *BrowserSession, context string, e
 // rendered-text variant; keeping both on innerText made them the same command.
 func GetText(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElStateScript(ep, `(el.textContent || '').trim()`)
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	return val, staleIndexHint(err, ep)
 }
 
 // GetInnerText returns the innerText of an element.
 func GetInnerText(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElStateScript(ep, `(el.innerText || '').trim()`)
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	return val, staleIndexHint(err, ep)
 }
 
 // GetInnerHTML returns the innerHTML of an element.
 func GetInnerHTML(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElStateScript(ep, `el.innerHTML`)
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	return val, staleIndexHint(err, ep)
 }
 
 // GetOuterHTML returns the outerHTML of an element.
 func GetOuterHTML(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElStateScript(ep, `el.outerHTML`)
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	return val, staleIndexHint(err, ep)
 }
 
 // GetValue returns the value property of a form element.
 func GetValue(s Session, context string, ep ElementParams) (string, error) {
 	script, args := buildElStateScript(ep, `el.value || ''`)
-	return EvalElementScript(s, context, script, args)
+	val, err := EvalElementScript(s, context, script, args)
+	return val, staleIndexHint(err, ep)
 }
 
 // GetAttribute returns the value of an HTML attribute, or nil when the
@@ -946,7 +970,7 @@ func GetCount(s Session, context, selector string) (int, error) {
 	// Return the count as a string: parseScriptResult unmarshals the BiDi result
 	// value into a Go string field, so a bare numeric result fails with "cannot
 	// unmarshal number ... into ... string" (issue #149).
-	expr := fmt.Sprintf(`() => String(document.querySelectorAll(%q).length)`, selector)
+	expr := fmt.Sprintf(`() => { %s return String(pierceQueryAll(document, %q).length); }`, PierceQueryJS(), selector)
 	val, err := EvalSimpleScript(s, context, expr)
 	if err != nil {
 		return 0, err
@@ -1093,11 +1117,6 @@ func (r *Router) handlePageEval(session *BrowserSession, cmd bidiCommand) {
 	})
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 
@@ -1278,10 +1297,6 @@ func (r *Router) handlePageExpose(session *BrowserSession, cmd bidiCommand) {
 	})
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
-		return
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		r.sendError(session, cmd.ID, bidiErr)
 		return
 	}
 

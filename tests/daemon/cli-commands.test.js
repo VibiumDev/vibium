@@ -25,6 +25,11 @@ function clickerJSON(args, opts = {}) {
   return JSON.parse(result);
 }
 
+// find --json answers with an array of refs; render it like the text form.
+function refs(r) {
+  return r.result.map((m) => `${m.ref} ${m.label}`).join('\n');
+}
+
 // Helper to stop daemon (ignore errors if not running)
 function stopDaemon() {
   try {
@@ -124,14 +129,14 @@ describe('Daemon CLI: Element state commands', () => {
 
     const started = Date.now();
     assert.throws(
-      () => clicker(`find "#nothing" --timeout 2s`),
+      () => clicker(`find css "#nothing" --timeout 2s`),
       /element not found/,
       'a CSS miss should error, not return "@e1 <nil>" with exit 0'
     );
     const elapsed = Date.now() - started;
     assert.ok(elapsed < 15000, `--timeout 2s should bound the wait, took ${elapsed}ms`);
 
-    assert.match(clicker('find "#h"'), /@e1/, 'a real element still resolves');
+    assert.match(clicker('find css "#h"'), /@e\d+/, 'a real element still resolves');
   });
 
   test('text returns textContent, not rendered text (#215)', () => {
@@ -190,15 +195,15 @@ describe('Daemon CLI: Accessibility and search commands', () => {
   test('find role finds element by role and returns @ref', () => {
     const result = clickerJSON('find role heading');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('@e1'), 'Should return @e1 ref');
-    assert.ok(result.result.includes('[h1]'), 'Should find heading element');
+    assert.match(refs(result), /@e\d+/, 'Should return a ref');
+    assert.ok(refs(result).includes('[h1]'), 'Should find heading element');
   });
 
   test('find role finds element by role and name', () => {
     const result = clickerJSON('find role link --name "More information"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('@e1'), 'Should return @e1 ref');
-    assert.ok(result.result.includes('[a]'), 'Should find link element');
+    assert.match(refs(result), /@e\d+/, 'Should return a ref');
+    assert.ok(refs(result).includes('[a]'), 'Should find link element');
   });
 
   test('find role button --name matches a submit input by its value (#204)', () => {
@@ -207,7 +212,7 @@ describe('Daemon CLI: Accessibility and search commands', () => {
     clicker(`go ${baseURL}/selectors`);
     const result = clickerJSON('find role button --name "Login"');
     assert.strictEqual(result.ok, true);
-    assert.ok(result.result.includes('[input'), `Should find the submit input, got: ${result.result}`);
+    assert.ok(refs(result).includes('[input'), `Should find the submit input, got: ${refs(result)}`);
   });
 });
 
@@ -269,16 +274,16 @@ describe('Daemon CLI: Interaction commands', () => {
     assert.strictEqual(valueResult.result, 'hello world');
   });
 
-  test('check and uncheck toggle checkbox', () => {
+  test('set and unset update checkbox state', () => {
     clicker(`go ${baseURL}/example`);
     clicker('eval "document.body.innerHTML = \'<input id=cb type=checkbox>\';"');
 
     // Check
-    const checkResult = clickerJSON('check "#cb"');
+    const checkResult = clickerJSON('set "#cb"');
     assert.strictEqual(checkResult.ok, true);
 
     // Uncheck
-    const uncheckResult = clickerJSON('uncheck "#cb"');
+    const uncheckResult = clickerJSON('unset "#cb"');
     assert.strictEqual(uncheckResult.ok, true);
   });
 });

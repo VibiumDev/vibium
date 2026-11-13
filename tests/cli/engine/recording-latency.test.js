@@ -17,6 +17,14 @@ const { VIBIUM } = require("../../helpers");
 // capture is no longer waiting out its timeout, with room for a slow CI box.
 const MAX_MS = 3000;
 
+// A healthy navigating click on the macOS CI runner takes 5.5-8.3s, past the
+// ~5.1s the bug produced, so no absolute threshold can separate a stalled
+// capture from an ordinarily slow machine there. The Linux legs keep the
+// guard.
+const DARWIN_SKIP =
+  process.platform === 'darwin' &&
+  'healthy macOS click latency overlaps the #289 bug signature';
+
 let serverProcess, baseURL, tracePath;
 
 function timed(args) {
@@ -26,6 +34,7 @@ function timed(args) {
 }
 
 before(async () => {
+  if (DARWIN_SKIP) return;
   serverProcess = spawn('node', [path.join(__dirname, '../../helpers/test-server.js')], {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -36,6 +45,7 @@ before(async () => {
 });
 
 after(() => {
+  if (DARWIN_SKIP) return;
   try {
     execSync(`${VIBIUM} record stop -o ${tracePath}`, { encoding: 'utf-8', timeout: 30000 });
   } catch {
@@ -46,7 +56,7 @@ after(() => {
 });
 
 describe('CLI: recording latency', () => {
-  test('a navigating click does not wait out the screenshot timeout (#289)', () => {
+  test('a navigating click does not wait out the screenshot timeout (#289)', { skip: DARWIN_SKIP }, () => {
     execSync(`${VIBIUM} go ${baseURL}/form-redirect`, { encoding: 'utf-8', timeout: 30000 });
     execSync(`${VIBIUM} record start --screenshots --name latency`, {
       encoding: 'utf-8',

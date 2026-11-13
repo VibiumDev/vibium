@@ -1,4 +1,5 @@
 import { SyncBridge } from './bridge';
+import type { SwipeDirection, SwipeOptions } from '../page';
 
 export class KeyboardSync {
   private bridge: SyncBridge;
@@ -67,5 +68,15 @@ export class TouchSync {
 
   tap(x: number, y: number): void {
     this.bridge.call('touch.tap', [this.pageId, x, y]);
+  }
+
+  swipe(direction: SwipeDirection, options?: SwipeOptions): void;
+  swipe(x1: number, y1: number, x2: number, y2: number, durationMs?: number): void;
+  swipe(...args: unknown[]): void {
+    this.bridge.call('touch.swipe', [this.pageId, ...args]);
+  }
+
+  longPress(x: number, y: number, durationMs?: number): void {
+    this.bridge.call('touch.longPress', [this.pageId, x, y, durationMs]);
   }
 }

@@ -21,6 +21,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 7 | Listen for new page events | *client-side event listener* | — | — | `browser.onPage(cb)` | `browser.on_page(cb)` | `browser.onPage(cb)` |
 | 8 | Listen for popup events | *client-side event listener* | — | — | `browser.onPopup(cb)` | `browser.on_popup(cb)` | `browser.onPopup(cb)` |
 | 9 | Remove all event listeners | *client-side* | — | — | `browser.removeAllListeners(ev?)` | `browser.remove_all_listeners(ev?)` | `browser.removeAllListeners(ev?)` |
+| 187 | Get the default context | *client-side* | — | — | — | — | `browser.context()` |
 
 ## Page
 
@@ -33,14 +34,14 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 14 | Get current URL | `vibium:page.url` | `vibium url` | `browser_get_url` | `page.url()` | `page.url()` | `page.url()` |
 | 15 | Get page title | `vibium:page.title` | `vibium title` | `browser_get_title` | `page.title()` | `page.title()` | `page.title()` |
 | 16 | Get page HTML | `vibium:page.content` | — | — | `page.content()` | `page.content()` | `page.content()` |
-| 17 | Find a single element | `vibium:page.find` | `vibium find <sel>` | `browser_find` | `page.find(sel, opts?)` | `page.find(sel, **opts)` | `page.find(sel, options?)` |
-| 18 | Find all matching elements | `vibium:page.findAll` | `vibium find --all <sel>` | `browser_find_all` | `page.findAll(sel, opts?)` | `page.find_all(sel, **opts)` | `page.findAll(sel, options?)` |
+| 17 | Find a single element by description (a bare string), css, tag, semantic locator, or reference image; strategy auto, cv, vlm, or tree | `vibium:page.find` | `vibium find <description>` | `browser_find` | `page.find(locator, opts?)` | `page.find(locator, **opts)` | `page.find(locator, options?)` |
+| 18 | Find all matching elements, same locator forms | `vibium:page.findAll` | `vibium find --all <description>` | `browser_find_all` | `page.findAll(locator, opts?)` | `page.find_all(locator, **opts)` | `page.findAll(locator, options?)` |
 | 19 | Take a page screenshot | `vibium:page.screenshot` | `vibium screenshot` | `browser_screenshot` | `page.screenshot(opts?)` | `page.screenshot(opts?)` | `page.screenshot(options?)` |
-| 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf()` | `page.pdf()` | `page.pdf()` |
+| 20 | Generate PDF | `vibium:page.pdf` | `vibium pdf` | `browser_pdf` | `page.pdf(opts?)` | `page.pdf(**opts)` | `page.pdf(options?)` |
 | 21 | Evaluate JavaScript | `vibium:page.eval` | `vibium eval <expr>` | `browser_evaluate` | `page.evaluate(expr)` | `page.evaluate(expr)` | `page.evaluate(expr)` |
 | 22 | Add a script tag | `vibium:page.addScript` | ⬜ | ⬜ | `page.addScript(src)` | `page.add_script(src)` | `page.addScript(src)` |
 | 23 | Add a style tag | `vibium:page.addStyle` | ⬜ | ⬜ | `page.addStyle(src)` | `page.add_style(src)` | `page.addStyle(src)` |
-| 24 | Expose a function to the page | `vibium:page.expose` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` | `page.expose(name, fn)` |
+| 24 | Expose a function to the page | `vibium:page.expose` / `vibium:page.exposeFunction` | — | — | `page.expose(name, fn)` | `page.expose(name, fn)` | `page.expose(name, fn)` |
 | 25 | Wait for a duration | `vibium:page.wait` | `vibium sleep <ms>` | `browser_sleep` | `page.wait(ms)` | `page.wait(ms)` | `page.sleep(ms)` |
 | 26 | Wait for a selector | `vibium:page.waitFor` | `vibium wait <sel>` | `browser_wait` | — | — | `page.waitFor(sel, options?)` |
 | 27 | Wait for JS function to return truthy | `vibium:page.waitForFunction` | `vibium wait fn <expr>` | `browser_wait_for_fn` | `page.waitForFunction(fn, opts?)` | `page.wait_for_function(fn, **opts)` | `page.waitForFunction(fn, options?)` |
@@ -71,14 +72,26 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 52 | Listen for downloads | *client-side event listener* | — | — | `page.onDownload(fn)` | `page.on_download(fn)` | `page.onDownload(fn)` |
 | 53 | Subscribe to WebSocket events | `vibium:page.onWebSocket` | — | — | `page.onWebSocket(fn)` | `page.on_web_socket(fn)` | `page.onWebSocket(fn)` |
 | 54 | Remove all event listeners | *client-side* | — | — | `page.removeAllListeners(ev?)` | `page.remove_all_listeners(ev?)` | `page.removeAllListeners(ev?)` |
-| 55 | Capture response (before action) | *client-side* | — | — | `page.capture.response(pat, fn?)` | `page.capture.response(pat, fn?)` | `page.capture().response(pat, action)` |
-| 56 | Capture request (before action) | *client-side* | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
-| 57 | Capture navigation (before action) | *client-side* | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
-| 58 | Capture event (before action) | *client-side* | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
-| 59 | Capture download (before action) | *client-side* | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |
-| 60 | Capture dialog (before action) | *client-side* | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
+| 55 | Capture response (before action) | `vibium:page.captureResponse` | — | — | `page.capture.response(pat, fn?)` | `page.capture.response(pat, fn?)` | `page.capture().response(pat, action)` |
+| 56 | Capture request (before action) | `vibium:page.captureRequest` | — | — | `page.capture.request(pat, fn?)` | `page.capture.request(pat, fn?)` | `page.capture().request(pat, action)` |
+| 57 | Capture navigation (before action) | `vibium:page.captureEvent` | — | — | `page.capture.navigation(fn?)` | `page.capture.navigation(fn?)` | `page.capture().navigation(action)` |
+| 58 | Capture event (before action) | `vibium:page.captureEvent` | — | — | `page.capture.event(name, fn?)` | `page.capture.event(name, fn?)` | `page.capture().event(name, action)` |
+| 59 | Capture download (before action) | `vibium:page.captureEvent` | — | — | `page.capture.download(fn?)` | `page.capture.download(fn?)` | `page.capture().download(action)` |
+| 60 | Capture dialog (before action) | `vibium:page.captureEvent` | — | — | `page.capture.dialog(fn?)` | `page.capture.dialog(fn?)` | `page.capture().dialog(action)` |
 | 61 | Get buffered console messages | *client-side* | — | — | `page.consoleMessages()` | `page.console_messages()` | `page.consoleMessages()` |
 | 62 | Get buffered page errors | *client-side* | — | — | `page.errors()` | `page.errors()` | `page.errors()` |
+| 170 | Owning browser context | *client-side* | — | — | `page.context` | `page.context` | `page.context()` |
+| 171 | Browsing context id | *client-side* | — | — | `page.id` | `page.id` | `page.id()` |
+| 172 | One-shot capture namespace | *client-side* | — | — | `page.capture` | `page.capture` | `page.capture()` |
+| 173 | Keyboard input for the page | *client-side* | — | — | `page.keyboard` | `page.keyboard` | `page.keyboard()` |
+| 174 | Mouse input for the page | *client-side* | — | — | `page.mouse` | `page.mouse` | `page.mouse()` |
+| 175 | Touch input for the page | *client-side* | — | — | `page.touch` | `page.touch` | `page.touch()` |
+| 176 | Clock control for the page | *client-side* | — | — | `page.clock` | `page.clock` | `page.clock()` |
+| 177 | Deprecated alias for the wait helpers | *client-side* | — | — | `page.waitUntil(fn, opts?)` | `page.wait_until` | — |
+| 178 | Enable console collect mode | *client-side* | — | — | *mode of onConsole('collect')* | *mode of on_console('collect')* | `page.collectConsole()` |
+| 179 | Enable error collect mode | *client-side* | — | — | *mode of onError('collect')* | *mode of on_error('collect')* | `page.collectErrors()` |
+| 180 | Intercept WebSockets (unsupported: throws) | — | — | — | `page.routeWebSocket(pattern, fn)` | — | — |
+| 181 | Alias for evaluate | *client-side* | — | — | — | `page.eval(expr)` | — |
 
 ## Element
 
@@ -90,8 +103,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 66 | Type text character by character | `vibium:element.type` | `vibium type <text>` | `browser_type` | `el.type(text, opts?)` | `el.type(text, timeout?)` | `el.type(text)` |
 | 67 | Press a key on focused element | `vibium:element.press` | `vibium press <key>` | `browser_press` | `el.press(key, opts?)` | `el.press(key, timeout?)` | `el.press(key)` |
 | 68 | Clear an input field | `vibium:element.clear` | — | — | `el.clear(opts?)` | `el.clear(timeout?)` | `el.clear()` |
-| 69 | Check a checkbox | `vibium:element.check` | `vibium check <sel>` | `browser_check` | `el.check(opts?)` | `el.check(timeout?)` | `el.check()` |
-| 70 | Uncheck a checkbox | `vibium:element.uncheck` | `vibium uncheck <sel>` | `browser_uncheck` | `el.uncheck(opts?)` | `el.uncheck(timeout?)` | `el.uncheck()` |
+| 69 | Check a checkbox | `vibium:element.set` | `vibium set <sel>` | `browser_set` | `el.set(value?, opts?)` | `el.set(value=True, timeout=...)` | `el.set(value?)` |
+| 70 | Uncheck a checkbox | `vibium:element.unset` | `vibium unset <sel>` | `browser_unset` | `el.unset(opts?)` | `el.unset(timeout?)` | `el.unset()` |
 | 71 | Select a dropdown option | `vibium:element.selectOption` | `vibium select <sel> <val>` | `browser_select` | `el.selectOption(val, opts?)` | `el.select_option(val, timeout?)` | `el.selectOption(val)` |
 | 72 | Hover over an element | `vibium:element.hover` | `vibium hover <sel>` | `browser_hover` | `el.hover(opts?)` | `el.hover(timeout?)` | `el.hover()` |
 | 73 | Focus an element | `vibium:element.focus` | `vibium focus <sel>` | `browser_focus` | `el.focus(opts?)` | `el.focus(timeout?)` | `el.focus()` |
@@ -107,10 +120,13 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 83 | Get input element value | `vibium:element.value` | `vibium value <sel>` | `browser_get_value` | `el.value()` | `el.value()` | `el.value()` |
 | 84 | Get element attribute | `vibium:element.attr` | `vibium attr <sel> <name>` | `browser_get_attribute` | `el.attr(name)` | `el.attr(name)` | `el.attr(name)` |
 | 85 | Get element bounding box | `vibium:element.bounds` | — | — | `el.bounds()` | `el.bounds()` | `el.bounds()` |
+| 182 | Bounding box (Playwright-compat alias for bounds) | *client-side* | — | — | `el.boundingBox()` | `el.bounding_box()` | `el.boundingBox()` |
+| 183 | Get attribute (alias for attr) | *client-side* | — | — | `el.getAttribute(name)` | `el.get_attribute(name)` | `el.getAttribute(name)` |
+| 184 | Find-time snapshot of tag, text, and box | *captured at find time* | — | — | `el.info` | `el.info` | `el.info()` |
 | 86 | Check if element is visible | `vibium:element.isVisible` | `vibium is visible <sel>` | `browser_is_visible` | `el.isVisible()` | `el.is_visible()` | `el.isVisible()` |
 | 87 | Check if element is hidden | `vibium:element.isHidden` | — | — | `el.isHidden()` | `el.is_hidden()` | `el.isHidden()` |
 | 88 | Check if element is enabled | `vibium:element.isEnabled` | `vibium is enabled <sel>` | `browser_is_enabled` | `el.isEnabled()` | `el.is_enabled()` | `el.isEnabled()` |
-| 89 | Check if element is checked | `vibium:element.isChecked` | `vibium is checked <sel>` | `browser_is_checked` | `el.isChecked()` | `el.is_checked()` | `el.isChecked()` |
+| 89 | Check if element is checked | `vibium:element.isSet` | `vibium is set <sel>` | `browser_is_set` | `el.isSet()` | `el.is_set()` | `el.isSet()` |
 | 90 | Check if element is editable | `vibium:element.isEditable` | ⬜ | ⬜ | `el.isEditable()` | `el.is_editable()` | `el.isEditable()` |
 | 91 | Get element ARIA role | `vibium:element.role` | — | — | `el.role()` | `el.role()` | `el.role()` |
 | 92 | Get element accessible label | `vibium:element.label` | — | — | `el.label()` | `el.label()` | `el.label()` |
@@ -132,6 +148,8 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 103 | Set storage state | `vibium:context.setStorage` | — | `browser_restore_storage` | `context.setStorage(state)` | `context.set_storage(state)` | `context.setStorage(state)` |
 | 104 | Clear all storage | `vibium:context.clearStorage` | — | — | `context.clearStorage()` | `context.clear_storage()` | `context.clearStorage()` |
 | 105 | Add an init script | `vibium:context.addInitScript` | — | — | `context.addInitScript(script)` | `context.add_init_script(script)` | `context.addInitScript(script)` |
+| 185 | User context id | *client-side* | — | — | `context.id` | `context.id` | `context.id()` |
+| 186 | Recording controls for the context | *client-side* | — | — | `context.recording` | `context.recording` | `context.recording()` |
 
 ## Keyboard
 
@@ -156,7 +174,9 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 115 | Tap at coordinates | `vibium:touch.tap` | — | — | `touch.tap(x, y)` | `touch.tap(x, y)` | `touch.tap(x, y)` |
+| 115 | Tap at coordinates | `vibium:touch.tap` | `vibium tap <x> <y>` | `browser_tap` | `touch.tap(x, y)` | `touch.tap(x, y)` | `touch.tap(x, y)` |
+| 221 | Swipe in a direction (up, down, left, right; from an edge or point; speed, hold) or between coordinates | `vibium:touch.swipe` | `vibium swipe <direction>` | `browser_swipe` | `touch.swipe(direction, opts?)` | `touch.swipe(direction, from_=, speed=, hold_ms=)` | ⬜ |
+| 222 | Long-press at coordinates | `vibium:touch.longPress` | `vibium long-press <x> <y>` | `browser_long_press` | `touch.longPress(x, y, durationMs?)` | `touch.long_press(x, y, duration_ms?)` | ⬜ |
 
 ## Clock
 
@@ -176,7 +196,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 124 | Start recording | `vibium:recording.start` | `vibium record start` | `browser_record_start` | `recording.start(opts?)` | `recording.start(opts?)` | `recording.start(options?)` |
-| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?)` | `recording.stop(path?)` |
+| 125 | Stop recording, return trace | `vibium:recording.stop` | `vibium record stop` | `browser_record_stop` | `recording.stop(opts?)` | `recording.stop(path?, upload?)` | `recording.stop(path?)` |
 | 126 | Start a recording chunk | `vibium:recording.startChunk` | `vibium record chunk start` | `browser_record_start_chunk` | `recording.startChunk(opts?)` | `recording.start_chunk(opts?)` | `recording.startChunk(options?)` |
 | 127 | Stop a recording chunk | `vibium:recording.stopChunk` | `vibium record chunk stop` | `browser_record_stop_chunk` | `recording.stopChunk(opts?)` | `recording.stop_chunk(path?)` | `recording.stopChunk(path?)` |
 | 128 | Start a logical group | `vibium:recording.startGroup` | `vibium record group start <name>` | `browser_record_start_group` | `recording.startGroup(name, opts?)` | `recording.start_group(name, location?)` | `recording.startGroup(name, location?)` |
@@ -184,11 +204,13 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 
 `recording.start` accepts a `video` option (`true`/`false`/`{width, height, frameRate}`) that adds a native browser video track to the recording zip (Firefox 154+, local browsers), and a `path` declaring where the zip lands at stop (default: timestamped `record-YYYYMMDD-HHMMSS.zip`; `null` for bytes-only). `recording.stop` returns `{path, steps, durationMs, videos | videoUnavailable}`, with the zip bytes included only for bytes-only recordings. See [Record Video](../how-to-guides/record-video.md).
 
+`recording.stop` also takes `upload`: `true` sends the zip to the Record Store of the station the browser is connected through, and a station URL names one. It needs the API key the connection was made with (`VIBIUM_CONNECT_API_KEY`), the zip still lands at its path either way, and the result gains `upload: {url, sha256, size, hold, device, event}` saying where the station put it and which hold it filed it under. The CLI form is `vibium record stop --upload` (or `--upload-to URL`), the MCP tool takes `upload: true`, and the SDKs take `upload` on `stop()`.
+
 ## Route
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 130 | Access intercepted request | — | — | — | `route.request` (property) | *passed via callback args* | `route.request()` |
+| 130 | Access intercepted request | — | — | — | `route.request` (property) | `route.request` (property) | `route.request()` |
 | 131 | Fulfill an intercepted request | `vibium:network.fulfill` | — | — | `route.fulfill(resp?)` | `route.fulfill(status?, headers?, ...)` | `route.fulfill(options?)` |
 | 132 | Continue an intercepted request | `vibium:network.continue` | — | — | `route.continue(overrides?)` | `route.continue_(overrides?)` | `route.doContinue(options?)` |
 | 133 | Abort an intercepted request | `vibium:network.abort` | — | — | `route.abort()` | `route.abort()` | `route.abort()` |
@@ -210,7 +232,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 139 | Save a download to path | `vibium:download.saveAs` | ⬜ | ⬜ | `download.saveAs(path)` | `download.save_as(path)` | `download.saveAs(path)` |
 | 140 | Get download URL | *from event data* | — | — | `download.url()` | `download.url()` | `download.url()` |
 | 141 | Get download filename | *from event data* | — | — | `download.suggestedFilename()` | `download.suggested_filename()` | `download.suggestedFilename()` |
-| 142 | Get download path | *from event data* | — | — | `download.path()` | `download.path()` | `download.path()` |
+| 142 | Get download path | `vibium:download.await` | — | — | `download.path()` | `download.path()` | `download.path()` |
 
 ## Request
 
@@ -258,19 +280,109 @@ MCP/CLI-only tools with no direct client API equivalent.
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
 | 162 | Map interactive page elements with @refs | — | `vibium map` | `browser_map` | — | — | — |
-| 163 | Diff page state vs last map | — | `vibium diff` | `browser_diff_map` | — | — | — |
+| 163 | Diff page state vs last map | — | `vibium diff map` | `browser_diff_map` | — | — | — |
 | 164 | Count elements matching selector | — | `vibium count <sel>` | `browser_count` | — | — | — |
 | 165 | Wait for text to appear on page | — | `vibium wait text <text>` | `browser_wait_for_text` | — | — | — |
 | 166 | Set the download directory | — | `vibium download dir <path>` | `browser_download_set_dir` | — | — | — |
+| 188 | Start the background daemon | — | `vibium daemon start` | — | — | — | — |
+| 189 | Query daemon status | — | `vibium daemon status` | — | — | — | — |
+| 190 | Stop the background daemon | — | `vibium daemon stop` | — | — | — | — |
+| 191 | Print the version | — | `vibium version` | — | — | — | — |
+| 192 | Print browser and cache paths | — | `vibium paths` | — | — | — | — |
+| 193 | Download the browser engine | — | `vibium install` | — | — | — | — |
+| 194 | Check whether the engine is installed | — | `vibium is-installed` | — | — | — | — |
+| 195 | Run the BiDi websocket server | — | `vibium serve` | — | — | — | — |
+| 196 | Run the ndjson stdio transport | — | `vibium pipe` | — | — | — | — |
+| 197 | Run the MCP server | — | `vibium mcp` | — | — | — | — |
+| 198 | Install the agent skill | — | `vibium add-skill` | — | — | — | — |
+| 220 | Write a starter settings file | — | `vibium config init` | — | — | — | — |
+| 229 | Set up AI settings, agent skills, and the browser interactively | — | `vibium setup` | — | — | — | — |
+| 230 | Generate a script that replays a recording | — | `vibium codegen -i <zip>` | — | — | — | — |
+| 231 | Generate an Ed25519 Web Bot Auth signing key | — | `vibium webbotauth keygen` | — | — | — | — |
+| 232 | Print the Web Bot Auth JWKS directory to publish | — | `vibium webbotauth directory` | — | — | — | — |
+| 199 | Restore saved storage state | — | `vibium storage restore <path>` | — | — | — | — |
+| 200 | Print all actionability checks | — | `vibium is actionable <sel>` | — | — | — | — |
+| 201 | Find by ARIA role | — | `vibium find role <val>` | — | — | — | — |
+| 202 | Find by visible text | — | `vibium find text <val>` | — | — | — | — |
+| 203 | Find by label | — | `vibium find label <val>` | — | — | — | — |
+| 204 | Find by placeholder | — | `vibium find placeholder <val>` | — | — | — | — |
+| 205 | Find by alt text | — | `vibium find alt <val>` | — | — | — | — |
+| 206 | Find by title attribute | — | `vibium find title <val>` | — | — | — | — |
+| 207 | Find by test id | — | `vibium find testid <val>` | — | — | — | — |
+| 208 | Find by XPath | — | `vibium find xpath <val>` | — | — | — | — |
+| 225 | Find by CSS selector, explicitly | — | `vibium find css <val>` | — | — | — | — |
+| 226 | Find by HTML tag | — | `vibium find tag <val>` | — | — | — | — |
+| 227 | Find by description, explicitly | — | `vibium find description <val>` | — | — | — | — |
+| 228 | Find where a reference image appears | — | `vibium find image <path>` | — | — | — | — |
+| 209 | Diagnostic: launch the browser directly | — | `vibium launch-test` | — | — | — | — |
+| 210 | Diagnostic: test a websocket endpoint | — | `vibium ws-test <url>` | — | — | — | — |
+| 211 | Diagnostic: test a BiDi endpoint | — | `vibium bidi-test <url>` | — | — | — | — |
 
-## AI-Native (Planned)
+## Planned AI extensions
 
 | # | Description | Wire Command | CLI | MCP | JS | Python | Java |
 |---|---|---|---|---|---|---|---|
-| 167 | Assert a visual claim | *TBD* | ⬜ | ⬜ | `page.check(claim)` | `page.check(claim)` | ⬜ |
-| 168 | Perform a natural language action | *TBD* | ⬜ | ⬜ | `page.do(action)` | `page.do(action)` | ⬜ |
-| 169 | NL action with data extraction | *TBD* | ⬜ | ⬜ | `page.do(action, {data})` | `page.do(action, data=...)` | ⬜ |
+| 169 | Structured data extraction from a natural-language goal | *TBD* | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 
----
+## Run and Check
 
-**Total: 169 commands**
+| # | Description | Wire Command | CLI | MCP | JS | Python | Java |
+|---|---|---|---|---|---|---|---|
+| 212 | Independently verify the active session or a saved archive | `vibium:check.run` | `vibium check <claim>` | `vibium_check` | `browser.check(claim, opts?)` | `browser.check(claim, record=...)` | `browser.check(claim, options?)` |
+| 213 | Independently verify a pinned page or a saved archive | `vibium:check.run` | — | — | `page.check(claim, opts?)` | `page.check(claim, record=...)` | `page.check(claim, options?)` |
+| 214 | Check a saved archive without launching a browser | `vibium:check.run` | — | — | — | — | `Vibium.check(claim, options)` |
+| 215 | Check browser installation and configured AI readiness | — | `vibium ready` | — | — | — | — |
+| 218 | Require AI configuration and provider tool support | — | `vibium ready ai` | — | — | — | — |
+| 219 | Check local browser executable files without launching | — | `vibium ready browser` | — | — | — | — |
+| 237 | Send one phrase through the say and listen providers, without a browser | — | `vibium ready speech` | — | — | — | — |
+| 216 | Accomplish a goal in the active browser session | `vibium:run.run` | `vibium run <goal>` | `vibium_run` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` |
+| 217 | Accomplish a goal on a pinned page | `vibium:run.run` | — | — | `page.run(goal, opts?)` | `page.run(goal, opts?)` | `page.run(goal, opts?)` |
+
+## Say and Listen
+
+| # | Description | Wire Command | CLI | MCP | JS | Python | Java |
+|---|---|---|---|---|---|---|---|
+| 233 | Speak text into the session, this machine's speakers, or a WAV file | `vibium:speech.say` | `vibium say <text>` | `vibium_say` | `browser.say(text, opts?)` | `browser.say(text, target=...)` | `browser.say(text, options?)` |
+| 235 | Speak text into a pinned page | `vibium:speech.say` | — | — | `page.say(text, opts?)` | `page.say(text, target=...)` | `page.say(text, options?)` |
+| 234 | Hear the session, this machine's microphone, or a WAV file, and return a transcript | `vibium:speech.listen` | `vibium listen` | `vibium_listen` | `browser.listen(opts?)` | `browser.listen(target=...)` | `browser.listen(options?)` |
+| 236 | Hear a pinned page and return a transcript | `vibium:speech.listen` | — | — | `page.listen(opts?)` | `page.listen(target=...)` | `page.listen(options?)` |
+| 238 | Speak with no browser, into this machine's speakers or a WAV file | `vibium:speech.say` | — | — | — | — | `Vibium.say(text, options?)` |
+| 239 | Listen with no browser, to this machine's microphone or a WAV file | `vibium:speech.listen` | — | — | — | — | `Vibium.listen(options?)` |
+
+Both work without a browser. With a session open the default target is the
+session; with none open it is this machine's speakers and microphone. In
+the JavaScript and Python clients the forms with no browser are
+`browser.say` and `browser.listen` on the module's `browser`, before any
+`browser.start()`. In Java they are `Vibium.say` and `Vibium.listen`. A
+failure is a `SpeechError` with a `code`, named `SpeechException` in
+Java. See
+[the say and listen spec](../specs/say-listen-spec.md).
+
+The JS and Python module-level `browser.check` launcher requires `record` and
+uses the existing pipe runtime without launching a browser. Browser instances
+and Page instances use the current live session unless `record` is supplied.
+Page instances pin their own context. The result contains `status` (`passed`,
+`failed`, or `inconclusive`), `claim`, `summary`, concise `evidence`, and on
+inconclusive MAY include a machine-readable `reason`. Operational errors
+raise exceptions instead of returning a verdict.
+
+CLI `-i`/`--input` maps to the runtime `record` field. CLI `-o`/`--output`
+saves a live recording, `--report` writes a JSON verdict, and `--json` controls
+stdout. See the [Check reference](check.md) for configuration and examples.
+
+Run is live-only and returns `completed` or `not_completed` with a goal,
+summary, and evidence; `not_completed` MAY include a machine-readable
+`reason`. Execution errors remain errors. Configure its provider
+with `VIBIUM_AI_*` and check it with `vibium ready ai`.
+See [Run](../how-to-guides/run.md).
+
+Run and Check accept per-call provider, model, base URL, and reasoning-effort
+options, including saved-input Check. See [model overrides](model-providers.md#override-settings-for-one-call)
+for option names and precedence. Recorded parent spans include public resolved
+settings in `params.modelConfig`; credentials and endpoint URLs are omitted.
+
+
+Connected JS/TS and Python Browser/Page objects are callable: `vibe(goal)` is
+an alias for `vibe.run(goal)` with identical options and results. JS sync returns
+a result directly; JS async and Python async return an awaitable. Java uses
+`run()`. See [Introducing Run and Check](../updates/2026-09-07-run-and-check.md).

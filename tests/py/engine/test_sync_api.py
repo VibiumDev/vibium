@@ -6,6 +6,7 @@ context, dialog handlers, route handlers, console/error collection,
 expect request/response, and full checkpoint.
 """
 
+import re
 import time
 
 import pytest
@@ -115,6 +116,23 @@ def test_pdf(bro, test_server):
     assert data[:2] == b"%P"
 
 
+def _media_box(pdf_bytes):
+    # The page dimensions land uncompressed in "/MediaBox [0 0 <w> <h>]"
+    m = re.search(rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", pdf_bytes)
+    assert m is not None, "PDF should contain a parseable /MediaBox"
+    return float(m.group(1)), float(m.group(2))
+
+
+@pytest.mark.capability("pdf")
+def test_pdf_landscape_option(bro, test_server):
+    vibe = bro.page()
+    vibe.go(test_server)
+    pw, ph = _media_box(vibe.pdf())
+    lw, lh = _media_box(vibe.pdf(landscape=True))
+    assert ph > pw, "portrait should be taller than wide"
+    assert lw > lh, "landscape should be wider than tall"
+
+
 # ===========================================================================
 # Evaluation (2)
 # ===========================================================================
@@ -136,7 +154,7 @@ def test_eval_computed_value(vibe):
 # ===========================================================================
 
 def test_find_css(vibe):
-    el = vibe.find("h1")
+    el = vibe.find(css="h1")
     assert isinstance(el, Element)
 
 
@@ -148,7 +166,7 @@ def test_find_semantic(vibe):
 def test_find_all(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    els = vibe.find_all(".link")
+    els = vibe.find_all(css=".link")
     assert isinstance(els, list)
     assert len(els) == 4
 
@@ -156,7 +174,7 @@ def test_find_all(bro, test_server):
 def test_find_auto_waits(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/dynamic-loading")
-    el = vibe.find("#loaded", timeout=5000)
+    el = vibe.find(css="#loaded", timeout=5000)
     assert isinstance(el, Element)
 
 
@@ -167,7 +185,7 @@ def test_find_auto_waits(bro, test_server):
 def test_len_index_slicing(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    els = vibe.find_all(".link")
+    els = vibe.find_all(css=".link")
     assert len(els) == 4
     first = els[0]
     assert first.info.text == "Link 1"
@@ -180,7 +198,7 @@ def test_len_index_slicing(bro, test_server):
 def test_iteration(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    els = vibe.find_all(".link")
+    els = vibe.find_all(css=".link")
     texts = [el.info.text for el in els]
     assert len(texts) == 4
     assert texts[0] == "Link 1"
@@ -193,7 +211,7 @@ def test_iteration(bro, test_server):
 def test_click_navigates(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server)
-    link = vibe.find('a[href="/subpage"]')
+    link = vibe.find(css='a[href="/subpage"]')
     link.click()
     vibe.wait_for_url("**/subpage")
     assert vibe.title() == "Subpage"
@@ -211,7 +229,7 @@ def test_wait_for_names_and_deprecated_alias(bro, test_server):
 def test_fill_and_value(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     inp.fill("hello world")
     assert inp.value() == "hello world"
 
@@ -219,26 +237,29 @@ def test_fill_and_value(bro, test_server):
 def test_type_appends(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     inp.fill("")
     inp.type("abc")
     assert inp.value() == "abc"
 
 
-def test_check_uncheck(bro, test_server):
+def test_set_unset(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/form")
-    cb = vibe.find("#agree")
-    cb.check()
-    assert cb.is_checked()
-    cb.uncheck()
-    assert not cb.is_checked()
+    cb = vibe.find(css="#agree")
+    cb.set()
+    cb.set(False)
+    assert not cb.is_set()
+    cb.set(True)
+    assert cb.is_set()
+    cb.unset()
+    assert not cb.is_set()
 
 
 def test_select_option(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/form")
-    sel = vibe.find("#color")
+    sel = vibe.find(css="#color")
     sel.select_option("blue")
     assert sel.value() == "blue"
 
@@ -246,14 +267,14 @@ def test_select_option(bro, test_server):
 def test_hover(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server)
-    el = vibe.find("h1")
+    el = vibe.find(css="h1")
     el.hover()  # should not throw
 
 
 def test_press(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     inp.fill("")
     inp.focus()
     inp.press("a")
@@ -265,50 +286,50 @@ def test_press(bro, test_server):
 # ===========================================================================
 
 def test_text(vibe):
-    el = vibe.find("#info")
+    el = vibe.find(css="#info")
     assert el.text() == "Some info text"
 
 
 def test_inner_text(vibe):
-    el = vibe.find("#info")
+    el = vibe.find(css="#info")
     assert "Some info text" in el.inner_text()
 
 
 def test_html(vibe):
-    el = vibe.find("#info")
+    el = vibe.find(css="#info")
     assert el.html() == "Some info text"
 
 
 def test_attr(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    link = vibe.find(".link")
+    link = vibe.find(css=".link")
     assert link.attr("class") == "link"
 
 
 def test_bounds(vibe):
-    el = vibe.find("h1")
+    el = vibe.find(css="h1")
     box = el.bounds()
     assert box.width > 0
     assert box.height > 0
 
 
 def test_is_visible(vibe):
-    el = vibe.find("h1")
+    el = vibe.find(css="h1")
     assert el.is_visible()
 
 
 def test_is_enabled(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/form")
-    btn = vibe.find("button")
+    btn = vibe.find(css="button")
     assert btn.is_enabled()
 
 
 def test_is_editable(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     assert inp.is_editable()
 
 
@@ -319,16 +340,16 @@ def test_is_editable(bro, test_server):
 def test_element_find_scoped(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    nested = vibe.find("#nested")
-    span = nested.find(".inner")
+    nested = vibe.find(css="#nested")
+    span = nested.find(css=".inner")
     assert "span" in span.info.text.lower() or span.info.tag == "span"
 
 
 def test_element_find_all_scoped(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/links")
-    nested = vibe.find("#nested")
-    spans = nested.find_all(".inner")
+    nested = vibe.find(css="#nested")
+    spans = nested.find_all(css=".inner")
     assert len(spans) == 2
 
 
@@ -339,7 +360,7 @@ def test_element_find_all_scoped(bro, test_server):
 def test_keyboard_type(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     inp.fill("")
     inp.focus()
     vibe.keyboard.type("typed")
@@ -349,7 +370,7 @@ def test_keyboard_type(bro, test_server):
 def test_keyboard_press(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     inp.fill("")
     inp.focus()
     vibe.keyboard.press("a")
@@ -359,7 +380,7 @@ def test_keyboard_press(bro, test_server):
 def test_mouse_click(bro, test_server):
     vibe = bro.page()
     vibe.go(test_server + "/inputs")
-    inp = vibe.find("#text-input")
+    inp = vibe.find(css="#text-input")
     box = inp.bounds()
     vibe.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     vibe.keyboard.type("mouse")
@@ -412,7 +433,7 @@ def test_set_window_window(bro, test_server):
 def test_set_content(bro, test_server):
     vibe = bro.page()
     vibe.set_content("<h1>Custom</h1>")
-    el = vibe.find("h1")
+    el = vibe.find(css="h1")
     assert el.text() == "Custom"
 
 
@@ -476,7 +497,7 @@ def test_route_fulfill(bro, test_server):
     vibe.route("**/api/data", handler)
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    result = vibe.find("#result").text()
+    result = vibe.find(css="#result").text()
     assert "mocked" in result
     vibe.unroute("**/api/data")
     vibe.close()
@@ -509,7 +530,7 @@ def test_route_abort(bro, test_server):
     vibe.route("**/api/data", "abort")
     vibe.evaluate("doFetch().catch(() => document.getElementById('result').textContent = 'aborted')")
     vibe.wait(500)
-    result = vibe.find("#result").text()
+    result = vibe.find(css="#result").text()
     assert "aborted" in result or result == ""  # abort may not populate result
     vibe.unroute("**/api/data")
     vibe.close()
@@ -522,7 +543,7 @@ def test_route_default_continue(bro, test_server):
     vibe.route("**/api/data", "continue")
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    result = vibe.find("#result").text()
+    result = vibe.find(css="#result").text()
     assert "real data" in result
     vibe.unroute("**/api/data")
     vibe.close()
@@ -535,7 +556,7 @@ def test_static_route(bro, test_server):
     vibe.route("**/api/data", {"status": 200, "body": '{"static":true}', "content_type": "application/json"})
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    result = vibe.find("#result").text()
+    result = vibe.find(css="#result").text()
     assert "static" in result
     vibe.unroute("**/api/data")
     vibe.close()
@@ -549,7 +570,7 @@ def test_unroute(bro, test_server):
     vibe.unroute("**/api/data")
     vibe.evaluate("doFetch()")
     vibe.wait(500)
-    result = vibe.find("#result").text()
+    result = vibe.find(css="#result").text()
     assert "real data" in result
     vibe.close()
 
@@ -719,7 +740,7 @@ def test_capture_navigation(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server + "/nav-test")
     with vibe.capture.navigation() as info:
-        vibe.find("#link").click()
+        vibe.find(css="#link").click()
     assert info.value is not None
     assert "/page2" in info.value
     vibe.close()
@@ -736,7 +757,7 @@ def test_capture_download(bro, test_server):
     # Firefox reports a repeated name deduplicated ("test(1).txt").
     vibe.go(test_server + "/download?name=sync-captured.txt")
     with vibe.capture.download() as info:
-        vibe.find("#download-link").click()
+        vibe.find(css="#download-link").click()
     assert info.value is not None
     assert "/download-file" in info.value["url"]
     assert info.value["suggested_filename"] == "sync-captured.txt"
@@ -751,7 +772,7 @@ def test_capture_download_save_as(bro, test_server):
     import shutil
     vibe = bro.new_page()
     vibe.go(test_server + "/download")
-    result = vibe.capture.download(lambda: vibe.find("#download-link").click())
+    result = vibe.capture.download(lambda: vibe.find(css="#download-link").click())
     assert result["path"] is not None
     tmp_dir = tempfile.mkdtemp(prefix="vibium-dl-")
     try:
@@ -779,6 +800,37 @@ def test_capture_dialog(bro, test_server):
     vibe.close()
 
 
+@pytest.mark.capability("dialogs")
+def test_capture_dialog_fn_blocking_alert(bro, test_server):
+    """A fn that blocks inside evaluate("alert(...)") must not deadlock (#146).
+
+    alert() halts the page until the dialog is handled, so the capture has to
+    dismiss the dialog on arrival for the evaluate call to ever return.
+    """
+    vibe = bro.new_page()
+    vibe.go(test_server)
+    result = vibe.capture.dialog(lambda: vibe.evaluate('alert("blocking fn")'))
+    assert result["type"] == "alert"
+    assert result["message"] == "blocking fn"
+    # The dialog was dismissed, so the page must answer again.
+    assert vibe.evaluate("1 + 1") == 2
+    vibe.close()
+
+
+@pytest.mark.capability("dialogs")
+def test_capture_dialog_cm_blocking_alert(bro, test_server):
+    """Context-manager form of the same deadlock (#146)."""
+    vibe = bro.new_page()
+    vibe.go(test_server)
+    with vibe.capture.dialog() as info:
+        vibe.evaluate('alert("blocking cm")')
+    assert info.value is not None
+    assert info.value["type"] == "alert"
+    assert info.value["message"] == "blocking cm"
+    assert vibe.evaluate("1 + 1") == 2
+    vibe.close()
+
+
 # ===========================================================================
 # Capture event (1)
 # ===========================================================================
@@ -788,7 +840,7 @@ def test_capture_event_navigation(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server + "/nav-test")
     with vibe.capture.event("navigation") as info:
-        vibe.find("#link").click()
+        vibe.find(css="#link").click()
     assert info.value is not None
     vibe.close()
 
@@ -803,18 +855,18 @@ def test_full_checkpoint(bro, test_server):
     vibe.go(test_server + "/form")
     assert vibe.title() == "Form"
 
-    name_input = vibe.find("#name")
+    name_input = vibe.find(css="#name")
     name_input.fill("Test User")
     assert name_input.value() == "Test User"
 
-    email_input = vibe.find("#email")
+    email_input = vibe.find(css="#email")
     email_input.fill("test@example.com")
 
-    cb = vibe.find("#agree")
-    cb.check()
-    assert cb.is_checked()
+    cb = vibe.find(css="#agree")
+    cb.set()
+    assert cb.is_set()
 
-    sel = vibe.find("#color")
+    sel = vibe.find(css="#color")
     sel.select_option("green")
     assert sel.value() == "green"
 

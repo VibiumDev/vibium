@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/daemon"
 	"github.com/vibium/clicker/internal/paths"
 )
@@ -16,12 +17,21 @@ func newStartCmd() *cobra.Command {
 		Use:   "start [url]",
 		Short: "Start a browser session",
 		Long: `Start a browser session. Without arguments, launches a local browser.
-With a URL argument, connects to a remote BiDi WebSocket endpoint.
+With a URL argument, connects to a remote browser.
+
+ws:// and wss:// URLs are BiDi WebSocket endpoints. http:// and https://
+URLs are classic WebDriver endpoints (Selenium Grid, cloud grids): vibium
+creates a session there with webSocketUrl:true and connects to the BiDi
+URL the endpoint returns.
 
 If no URL is given, checks VIBIUM_CONNECT_URL env var before falling
 back to a local browser launch.
 
-Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
+Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.
+Set VIBIUM_CONNECT_HEADERS to newline-separated "Key: value" lines for
+arbitrary headers; a key given here overrides the API key header.
+Set VIBIUM_CONNECT_CAPS to a JSON object of extra alwaysMatch
+capabilities for classic endpoints (vendor-prefixed keys like vendor:options).`,
 		Example: `  vibium start
   # Start with a local browser
 
@@ -37,7 +47,12 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
   export VIBIUM_CONNECT_URL=wss://cloud.example.com/session
   export VIBIUM_CONNECT_API_KEY=my-api-key
   vibium start
-  # Connect using env vars`,
+  # Connect using env vars
+
+  export VIBIUM_CONNECT_CAPS='{"vendor:options":{"someOption":"value"}}'
+  vibium start https://USER:KEY@grid.example.com/wd/hub
+  # Classic WebDriver endpoint: creates the session, then speaks BiDi
+  # Connected to https://grid.example.com/wd/hub (daemon pid 12345)`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Determine connect URL: arg > env > local
@@ -72,22 +87,23 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				return
 			}
 
-			// Remote connect — stop existing daemon and start fresh with --connect
+			// Remote connect — stop existing daemon and start fresh with --connect.
+			// Failures go through printError: these paths wrote straight to
+			// stderr, which is why --json never reached them (#451).
 			if err := shutdownDaemonAndWait(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error stopping existing daemon: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("stopping existing daemon: %w", err))
+				return
 			}
 
 			daemon.CleanStale()
 
 			exe, err := os.Executable()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error finding executable: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("finding executable: %w", err))
+				return
 			}
 
-			daemonArgs := []string{"daemon", "start", "--_internal", "--idle-timeout=30m",
-				fmt.Sprintf("--connect=%s", connectURL)}
+			daemonArgs := []string{"daemon", "start", "--_internal", "--idle-timeout=30m"}
 			if headless {
 				daemonArgs = append(daemonArgs, "--headless")
 			}
@@ -95,28 +111,25 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 				daemonArgs = append(daemonArgs, "--engine="+engineName)
 			}
 
-			_, envHeaders := connectFromEnv()
-			for key, vals := range envHeaders {
-				for _, v := range vals {
-					daemonArgs = append(daemonArgs, fmt.Sprintf("--connect-header=%s: %s", key, v))
-				}
-			}
-
 			child := exec.Command(exe, daemonArgs...)
+			// The URL goes via the environment, not argv: it can carry
+			// credentials in its userinfo. Headers and caps are already
+			// in the environment, which the child inherits.
+			child.Env = connectSpawnEnv(connectURL, nil, "")
 			child.Stdout = nil
 			child.Stderr = nil
 			child.Stdin = nil
 			setSysProcAttr(child)
 
 			if err := child.Start(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error starting daemon: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("starting daemon: %w", err))
+				return
 			}
 
 			socketPath, _ := paths.GetSocketPath()
 			if err := waitForSocket(socketPath, 5*time.Second); err != nil {
-				fmt.Fprintf(os.Stderr, "Daemon failed to start: %v\n", err)
-				os.Exit(1)
+				printError(fmt.Errorf("daemon failed to start: %w", err))
+				return
 			}
 
 			// Connect now instead of leaving it to the first command that
@@ -125,12 +138,19 @@ Set VIBIUM_CONNECT_API_KEY to send an Authorization: Bearer header.`,
 			// endpoint is no use to the next command either — take it down
 			// rather than leave it to auto-start the same failure.
 			if _, err := daemonCall("browser_start", map[string]interface{}{}); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to connect to %s: %v\n", connectURL, err)
+				// Take the daemon down before reporting: it cannot reach the
+				// endpoint either, so leaving it up only defers the failure.
 				shutdownDaemonAndWait()
-				os.Exit(1)
+				printError(fmt.Errorf("failed to connect to %s: %w", bidi.RedactURL(connectURL), err))
+				return
 			}
 
-			fmt.Printf("Connected to %s (daemon pid %d)\n", connectURL, child.Process.Pid)
+			msg := fmt.Sprintf("Connected to %s (daemon pid %d)", bidi.RedactURL(connectURL), child.Process.Pid)
+			if jsonOutput {
+				printJSON(jsonEnvelope{OK: true, Result: msg})
+				return
+			}
+			fmt.Println(msg)
 		},
 	}
 }

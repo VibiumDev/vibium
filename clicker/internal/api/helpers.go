@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,8 @@ func (r *Router) evalSimpleScript(session *BrowserSession, context, fn string) (
 
 // checkBidiError checks if a BiDi response is an error and returns it.
 // BiDi error responses have: { "type": "error", "error": "...", "message": "..." }
+// Called once, inside sendInternalCommandWithTimeout: every internal command
+// gets the check there, so call sites must not need their own (#509).
 func checkBidiError(resp json.RawMessage) error {
 	var errResp struct {
 		Type    string `json:"type"`
@@ -98,7 +101,8 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 		args := buildElSemanticArgs(ep)
 		script := `
 			(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 		` + semanticMatchesHelper() + `
 				const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -123,14 +127,15 @@ func buildRefFindScript(ep ElementParams) (string, []map[string]interface{}) {
 
 	script := `
 		(scope, selector, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 			let el;
 			if (hasIndex) {
-				const all = root.querySelectorAll(selector);
+				const all = pierceQueryAll(root, selector);
 				el = all[index];
 			} else {
-				el = root.querySelector(selector);
+				el = pierceQuery(root, selector);
 			}
 			return el || null;
 		}
@@ -155,6 +160,7 @@ type ElementParams struct {
 	Context     string
 	Timeout     time.Duration
 	Force       bool
+	Visual      *RefEntry // a coordinate-backed ref; Selector is ignored
 }
 
 // withDefaultTimeout returns ep with a default timeout applied when it is unset
@@ -200,6 +206,9 @@ func ExtractElementParams(params map[string]interface{}) ElementParams {
 	if force, ok := params["force"].(bool); ok {
 		ep.Force = force
 	}
+	if e, ok := params["visualRef"].(*RefEntry); ok {
+		ep.Visual = e
+	}
 
 	return ep
 }
@@ -223,14 +232,15 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 		}
 		script := `
 			(scope, selector, index, hasIndex) => {
-				const root = scope ? document.querySelector(scope) : document;
+				` + PierceQueryJS() + `
+				const root = scope ? pierceQuery(document, scope) : document;
 				if (!root) return null;
 				let el;
 				if (hasIndex) {
-					const all = root.querySelectorAll(selector);
+					const all = pierceQueryAll(root, selector);
 					el = all[index];
 				} else {
-					el = root.querySelector(selector);
+					el = pierceQuery(root, selector);
 				}
 				if (!el) return null;
 				if (el.scrollIntoViewIfNeeded) {
@@ -267,7 +277,8 @@ func buildActionFindScript(ep ElementParams) (string, []map[string]interface{}) 
 
 	script := `
 		(scope, selector, role, text, label, placeholder, alt, title, testid, xpath, index, hasIndex) => {
-			const root = scope ? document.querySelector(scope) : document;
+			` + PierceQueryJS() + `
+			const root = scope ? pierceQuery(document, scope) : document;
 			if (!root) return null;
 	` + semanticMatchesHelper() + `
 			const found = collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath);
@@ -301,8 +312,41 @@ func (r *Router) resolveElement(session *BrowserSession, context string, ep Elem
 // Exported standalone functions — usable from both proxy and MCP handlers.
 // ---------------------------------------------------------------------------
 
+// commandCanceled distinguishes cancellation from transient browser errors.
+func commandCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// evalNavigationRetryBudget bounds how long EvalSimpleScript keeps retrying
+// an eval whose realm a navigation tore down. The gap between the old realm
+// dying and the new document's realm existing is milliseconds; the budget
+// only has to outlast a slow document swap, not a page load.
+const evalNavigationRetryBudget = 2 * time.Second
+
+// realmDestroyedByNavigation reports whether a script command failed because
+// a navigation replaced the document under it. Chrome reports the torn-down
+// realm as "Execution context was destroyed"; Firefox aborts the in-flight
+// query ("destroyed before query") or reports the context discarded.
+func realmDestroyedByNavigation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context was destroyed") ||
+		strings.Contains(msg, "destroyed before query") ||
+		strings.Contains(msg, "browsing context discarded")
+}
+
 // EvalSimpleScript runs a no-argument script.callFunction via the Session and
 // returns the string result.
+//
+// A navigation destroys the document's realm the instant it commits, so a
+// command landing in that window fails — exactly one failure per navigation
+// under a tight poll (#335). The browsing context survives the navigation,
+// so the eval is retried against the document that replaces it, bounded by
+// evalNavigationRetryBudget. The capture path handles the same race with
+// captureWithNavigationRetry; script commands do get an answer (an error),
+// so retrying on that answer is enough here.
 func EvalSimpleScript(s Session, context, fn string) (string, error) {
 	params := map[string]interface{}{
 		"functionDeclaration": fn,
@@ -311,13 +355,34 @@ func EvalSimpleScript(s Session, context, fn string) (string, error) {
 		"awaitPromise":        false,
 		"resultOwnership":     "root",
 	}
-
-	resp, err := s.SendBidiCommand("script.callFunction", params)
-	if err != nil {
-		return "", err
+	send := func() (string, error) {
+		resp, err := s.SendBidiCommand("script.callFunction", params)
+		if err != nil {
+			return "", err
+		}
+		return parseScriptResult(resp)
 	}
 
-	return parseScriptResult(resp)
+	out, err := send()
+	deadline := time.Now().Add(evalNavigationRetryBudget)
+	for err != nil && !commandCanceled(err) && time.Now().Before(deadline) {
+		nav := s.NavTracker()
+		navigating := nav != nil && nav.IsNavigating(context)
+		if !navigating && !realmDestroyedByNavigation(err) {
+			break
+		}
+		// The event naming the navigation can trail the failed command by
+		// ~10ms (#291), so the tracker may not know about it yet: settle
+		// when it does, pause briefly when only the error message says a
+		// navigation happened.
+		if navigating {
+			nav.WaitForSettled(context, time.Until(deadline))
+		} else {
+			time.Sleep(25 * time.Millisecond)
+		}
+		out, err = send()
+	}
+	return out, err
 }
 
 // QueryViewport asks the page for its viewport size. ok is false when the
@@ -356,19 +421,66 @@ func CallScript(s Session, context, fn string, args []map[string]interface{}) (j
 	return s.SendBidiCommand("script.callFunction", params)
 }
 
+// checkInvalidSelector inspects a script.callFunction response for the
+// exception querySelectorAll or document.evaluate throws on a malformed
+// selector, returned as a *bidi.InvalidSelectorError: it can never match, so
+// the polling loops return it immediately instead of retrying until the
+// timeout and misreporting "element not found" — which is what
+// `find "@Our approach"` did for the discussion #104 user (#616). Any other
+// response returns nil so the caller's retry behavior is unchanged.
+func checkInvalidSelector(resp json.RawMessage) error {
+	var r struct {
+		Result struct {
+			Type             string `json:"type"`
+			ExceptionDetails struct {
+				Text string `json:"text"`
+			} `json:"exceptionDetails"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(resp, &r) != nil || r.Result.Type != "exception" {
+		return nil
+	}
+	if ise := bidi.AsInvalidSelector(r.Result.ExceptionDetails.Text); ise != nil {
+		return ise
+	}
+	return nil
+}
+
+// staleIndexHint explains a not-found error for an index-addressed element:
+// those come from findAll handles, so "not found" can mean the page changed
+// after findAll rather than a selector that never matched, and the two read
+// identically without the hint (#338).
+func staleIndexHint(err error, ep ElementParams) error {
+	if err == nil || !ep.HasIndex || !strings.Contains(err.Error(), "not found") {
+		return err
+	}
+	return fmt.Errorf("%w (element %d of a findAll result: the page may have changed since findAll; "+
+		"re-run findAll, or read the snapshot the findAll returned)", err, ep.Index)
+}
+
 // ResolveElement finds an element using the given params, polling until found or timeout.
 func ResolveElement(s Session, context string, ep ElementParams) (*ElementInfo, error) {
+	if ep.Visual != nil {
+		info, err := VisualElementInfo(s, context, ep.Visual)
+		if err == nil {
+			s.SetLastElementBox(&info.Box)
+		}
+		return info, err
+	}
 	ep = ep.withDefaultTimeout()
 	script, args := buildActionFindScript(ep)
 	info, err := WaitForElementWithScript(s, context, script, args, ep.Timeout)
 	if err == nil && info != nil {
 		s.SetLastElementBox(&info.Box)
 	}
-	return info, err
+	return info, staleIndexHint(err, ep)
 }
 
 // ResolveElementRef finds an element and returns its BiDi sharedId.
 func ResolveElementRef(s Session, context string, ep ElementParams) (string, error) {
+	if ep.Visual != nil {
+		return "", fmt.Errorf("%s: %w", ep.Visual.Ref, ErrVisualUnsupported)
+	}
 	ep = ep.withDefaultTimeout()
 	script, args := buildRefFindScript(ep)
 	deadline := time.Now().Add(ep.Timeout)
@@ -376,7 +488,13 @@ func ResolveElementRef(s Session, context string, ep ElementParams) (string, err
 
 	for {
 		resp, err := CallScript(s, context, script, args)
+		if commandCanceled(err) {
+			return "", err
+		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return "", invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
@@ -409,7 +527,13 @@ func WaitForElementWithScript(s Session, context, script string, args []map[stri
 
 	for {
 		resp, err := CallScript(s, context, script, args)
+		if commandCanceled(err) {
+			return nil, err
+		}
 		if err == nil {
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return nil, invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {

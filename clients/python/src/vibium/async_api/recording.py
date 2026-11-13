@@ -30,6 +30,8 @@ class RecordingResult:
     videos: List[Dict[str, Any]] = field(default_factory=list)
     video_unavailable: Optional[str] = None
     """Why no video was recorded (video omitted on an engine without support)."""
+    upload: Optional[Dict[str, Any]] = None
+    """Where the zip was uploaded, when stop() asked for it: url, sha256, size, and hold, device and event when the station knows them."""
 
 
 def _result_from_wire(result: Dict[str, Any]) -> RecordingResult:
@@ -41,6 +43,7 @@ def _result_from_wire(result: Dict[str, Any]) -> RecordingResult:
         duration_ms=result.get("durationMs"),
         videos=result.get("videos") or [],
         video_unavailable=result.get("videoUnavailable"),
+        upload=result.get("upload"),
     )
 
 
@@ -132,16 +135,21 @@ class Recording:
             params["path"] = os.path.abspath(path)
         await self._client.send("vibium:recording.start", params)
 
-    async def stop(self, path: Optional[str] = None) -> RecordingResult:
+    async def stop(self, path: Optional[str] = None, upload: Union[bool, str] = False) -> RecordingResult:
         """Stop recording and deliver the zip to the declared path.
 
         path overrides the path declared at start. The result carries where
         the zip landed and what it holds; the bytes are included only for
-        bytes-only recordings (path=None at start).
+        bytes-only recordings (path=None at start). upload=True also sends
+        the zip to the Record Store of the station the browser is connected
+        through (or a station URL names one); it needs the API key the
+        connection was made with, and the result's upload says where it went.
         """
         params: Dict[str, Any] = {"userContext": self._user_context_id}
         if path is not None:
             params["path"] = os.path.abspath(path)
+        if upload:
+            params["upload"] = upload
         result = await self._client.send("vibium:recording.stop", params)
         return _result_from_wire(result)
 

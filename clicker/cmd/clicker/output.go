@@ -25,8 +25,10 @@ func printResult(result *agent.ToolsCallResult) {
 	}
 
 	if jsonOutput {
-		text := extractText(result)
-		env := jsonEnvelope{OK: true, Result: text}
+		env := jsonEnvelope{OK: true, Result: extractText(result)}
+		if result.Structured != nil {
+			env.Result = result.Structured
+		}
 		printJSON(env)
 		return
 	}

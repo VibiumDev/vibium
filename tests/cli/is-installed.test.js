@@ -9,7 +9,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { VIBIUM } = require('../helpers');
+const { VIBIUM, pinnedChromeVersion } = require('../helpers');
 
 /**
  * Run `vibium is-installed` with VIBIUM_CACHE_DIR pointing to a custom dir.
@@ -19,7 +19,11 @@ function runIsInstalled(cacheDir) {
   try {
     execFileSync(VIBIUM, ['is-installed'], {
       timeout: 10000,
-      env: { ...process.env, VIBIUM_CACHE_DIR: cacheDir },
+      // Pin the channel: the fake cache seeds the default-channel layout,
+      // and the Beta Watch workflow exports VIBIUM_ENGINE_CHANNEL=beta
+      // job-wide, which sent resolution into a beta/ subdirectory nobody
+      // created. Same class as #479.
+      env: { ...process.env, VIBIUM_CACHE_DIR: cacheDir, VIBIUM_ENGINE_CHANNEL: '' },
     });
     return 0;
   } catch (err) {
@@ -32,7 +36,7 @@ function runIsInstalled(cacheDir) {
  */
 function createFakeCacheDir(opts = {}) {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-test-'));
-  const versionDir = path.join(cacheDir, 'chrome-for-testing', '999.0.0.0');
+  const versionDir = path.join(cacheDir, 'chrome-for-testing', pinnedChromeVersion());
 
   if (opts.chrome) {
     let chromePath;

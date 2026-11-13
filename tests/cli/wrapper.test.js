@@ -32,6 +32,45 @@ describe('CLI: npm wrapper error handling', () => {
   });
 });
 
+describe('CLI: npm wrapper Node version check (#17)', () => {
+  const { nodeVersionError, MIN_NODE_MAJOR } =
+    require('../../packages/vibium/bin/node-version-check');
+
+  test('an old Node version gets an error naming versions and the fix', () => {
+    const msg = nodeVersionError('16.20.2', '/usr/local/bin/node');
+    assert.ok(msg, 'Node 16 should be rejected');
+    assert.match(msg, /requires Node\.js \d+ or newer/, 'should name the floor');
+    assert.match(msg, /16\.20\.2/, 'should name the running version');
+    assert.match(msg, /\/usr\/local\/bin\/node/, 'should name which node ran, for multi-install setups');
+    assert.match(msg, /nvm use/, 'should say how to fix it');
+  });
+
+  test('supported versions pass', () => {
+    assert.strictEqual(nodeVersionError(`${MIN_NODE_MAJOR}.0.0`, ''), null);
+    assert.strictEqual(nodeVersionError('25.1.0', ''), null);
+    assert.strictEqual(nodeVersionError(process.versions.node, ''), null,
+      'the Node running this test suite must pass its own check');
+  });
+
+  test('an unparseable version does not block execution', () => {
+    assert.strictEqual(nodeVersionError('weird', ''), null);
+  });
+
+  test('the floor comes from the package engines field', () => {
+    const pkg = require('../../packages/vibium/package.json');
+    const engines = parseInt(/\d+/.exec(pkg.engines.node)[0], 10);
+    assert.strictEqual(MIN_NODE_MAJOR, engines, 'check and engines field must agree');
+  });
+
+  test('the wrapper still runs commands on the current Node', () => {
+    const result = spawnSync(process.execPath, [CLI_JS, '--version'], { encoding: 'utf-8' });
+    assert.strictEqual(result.status, 0, `--version should exit 0, stderr: ${result.stderr}`);
+    // argv0 is the invoking name ("cli" here, "vibium" via the npm symlink),
+    // so match the version format rather than the name.
+    assert.match(result.stdout, /v\d+\.\d+\.\d+/, 'should print the version through the shim');
+  });
+});
+
 describe('CLI: ws-test scheme hint', () => {
   test('names the ws:// form when given http:// (#196)', () => {
     try {

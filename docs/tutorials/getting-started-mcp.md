@@ -17,6 +17,9 @@ The AI will control a real browser to do it. Vibium exposes dozens of browser au
 
 ## Prerequisites
 
+For Claude Desktop’s Chat tab, follow the dedicated
+[Claude Desktop setup guide](../how-to-guides/using-vibium-with-claude-desktop.md).
+
 Install one of the supported AI coding assistants:
 
 - **Claude Code:** [claude.ai/download](https://claude.ai/download)

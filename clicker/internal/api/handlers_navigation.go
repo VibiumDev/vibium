@@ -224,13 +224,9 @@ func Navigate(s Session, context, url, wait string) error {
 		"wait":    wait,
 	}
 
-	resp, err := s.SendBidiCommand("browsingContext.navigate", params)
+	_, err := s.SendBidiCommand("browsingContext.navigate", params)
 	if err != nil {
 		return err
-	}
-
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
 	}
 
 	return nil
@@ -243,12 +239,9 @@ func GoBack(s Session, context string) error {
 		"delta":   -1,
 	}
 
-	resp, err := s.SendBidiCommand("browsingContext.traverseHistory", params)
+	_, err := s.SendBidiCommand("browsingContext.traverseHistory", params)
 	if err != nil {
 		return err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
 	}
 
 	// Wait for page load after traversal
@@ -264,12 +257,9 @@ func GoForward(s Session, context string) error {
 		"delta":   1,
 	}
 
-	resp, err := s.SendBidiCommand("browsingContext.traverseHistory", params)
+	_, err := s.SendBidiCommand("browsingContext.traverseHistory", params)
 	if err != nil {
 		return err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
 	}
 
 	// Wait for page load after traversal
@@ -289,12 +279,9 @@ func Reload(s Session, context, wait string) error {
 		"wait":    wait,
 	}
 
-	resp, err := s.SendBidiCommand("browsingContext.reload", params)
+	_, err := s.SendBidiCommand("browsingContext.reload", params)
 	if err != nil {
 		return err
-	}
-	if bidiErr := checkBidiError(resp); bidiErr != nil {
-		return bidiErr
 	}
 
 	return nil

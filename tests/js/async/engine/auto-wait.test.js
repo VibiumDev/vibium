@@ -28,11 +28,11 @@ describe('JS Auto-Wait', () => {
       await vibe.go(baseURL + '/dynamic_loading/1');
 
       // Click the start button to trigger dynamic loading
-      const startBtn = await vibe.find('#start button', { timeout: 5000 });
+      const startBtn = await vibe.find({ css: '#start button' }, { timeout: 5000 });
       await startBtn.click();
 
       // find() should wait for the dynamically loaded element
-      const result = await vibe.find('#finish h4', { timeout: 10000 });
+      const result = await vibe.find({ css: '#finish h4' }, { timeout: 10000 });
       assert.ok(result, 'Should find the dynamically loaded element');
       assert.strictEqual(result.info.text, 'Hello World!', 'Should have correct text');
     } finally {
@@ -46,11 +46,11 @@ describe('JS Auto-Wait', () => {
       await vibe.go(baseURL + '/add_remove_elements/');
 
       // Click the "Add Element" button
-      const addBtn = await vibe.find('button[onclick="addElement()"]', { timeout: 5000 });
+      const addBtn = await vibe.find({ css: 'button[onclick="addElement()"]' }, { timeout: 5000 });
       await addBtn.click({ timeout: 5000 });
 
       // Verify the delete button appeared
-      const deleteBtn = await vibe.find('.added-manually', { timeout: 5000 });
+      const deleteBtn = await vibe.find({ css: '.added-manually' }, { timeout: 5000 });
       assert.ok(deleteBtn, 'Delete button should have appeared after click');
     } finally {
       await vibe.close();
@@ -64,7 +64,7 @@ describe('JS Auto-Wait', () => {
 
       await assert.rejects(
         async () => {
-          await vibe.find('#does-not-exist', { timeout: 1000 });
+          await vibe.find({ css: '#does-not-exist' }, { timeout: 1000 });
         },
         /timeout/i,
         'Should throw timeout error'
@@ -80,7 +80,7 @@ describe('JS Auto-Wait', () => {
       await vibe.go(baseURL + '/');
 
       try {
-        await vibe.find('#nonexistent-element-xyz', { timeout: 1000 });
+        await vibe.find({ css: '#nonexistent-element-xyz' }, { timeout: 1000 });
         assert.fail('Should have thrown');
       } catch (err) {
         // Error should mention the selector or timeout

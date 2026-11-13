@@ -8,7 +8,8 @@ Browser automation for AI agents and humans.
 npm install vibium
 ```
 
-This automatically downloads Chrome for Testing on first install.
+Chrome for Testing downloads on first launch if it isn't installed. To fetch it
+ahead of time (CI images, offline machines): `npx vibium setup browser`.
 
 ## Quick Start
 
@@ -22,7 +23,7 @@ const bro = await browser.start()
 const vibe = await bro.page()
 await vibe.go('https://example.com')
 
-const link = await vibe.find('a')
+const link = await vibe.find({ css: 'a' })
 console.log(await link.text())
 await link.click()
 
@@ -42,7 +43,7 @@ const bro = browser.start()
 const vibe = bro.page()
 vibe.go('https://example.com')
 
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 console.log(link.text())
 link.click()
 
@@ -52,15 +53,38 @@ writeFileSync('screenshot.png', screenshot)
 bro.stop()
 ```
 
+## CLI
+
+The same package ships a `vibium` command-line tool. It is a native binary, so
+once installed it drives the browser from a shell or a non-Node harness (Make,
+Python, bash) with no Node runtime involved.
+
+```bash
+npx vibium go https://example.com   # or node_modules/.bin/vibium
+npx vibium map                      # list interactive elements as @refs
+npx vibium find css "a"             # find an element
+npx vibium click "a"
+npx vibium screenshot -o shot.png
+npx vibium --help                   # full command list
+```
+
+Give it a plain-language goal (needs AI configured), or use the explicit
+commands above:
+
+```bash
+npx vibium "open example.com and screenshot the pricing page"
+```
+
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `VIBIUM_SKIP_BROWSER_DOWNLOAD` | Set to `1` to skip Chrome download on install |
+| `VIBIUM_SKIP_BROWSER_DOWNLOAD` | Set to `1` to skip the automatic Chrome download |
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 18+ for the JavaScript API. The `vibium` CLI is a native binary and
+  needs no Node runtime to run.
 
 ## Links
 

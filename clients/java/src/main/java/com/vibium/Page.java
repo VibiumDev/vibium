@@ -5,9 +5,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
+import com.vibium.internal.Check;
+import com.vibium.internal.Run;
+import com.vibium.internal.Speech;
+import com.vibium.types.RunResult;
+import com.vibium.types.RunOptions;
+import com.vibium.types.CheckOptions;
+import com.vibium.types.CheckResult;
 import com.vibium.types.*;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,12 +27,96 @@ import java.util.function.Function;
  */
 public class Page {
 
+    /** Accomplish a goal through the existing runtime in this live session. */
+    public RunResult run(String goal) { return run(goal, new RunOptions()); }
+    public RunResult run(String goal, RunOptions options) { return Run.run(client, goal, options, contextId); }
+
+    /** Verify the existing session with a fresh verifier inference context. */
+    public CheckResult check(String claim) { return check(claim, new CheckOptions()); }
+    /** Inspect an archive when record is supplied; otherwise use this live session. */
+    public CheckResult check(String claim, CheckOptions options) {
+        return Check.run(client, claim, options, contextId);
+    }
+
+    /** Speak text into this page's microphone, or into the device. */
+    public SayResult say(String text) { return say(text, new SayOptions()); }
+    public SayResult say(String text, SayOptions options) { return Speech.say(client, text, options, contextId); }
+
+    /** Hear what this page, or the device, plays, and return its words. */
+    public ListenResult listen() { return listen(new ListenOptions()); }
+    public ListenResult listen(ListenOptions options) { return Speech.listen(client, options, contextId); }
+
+
     private static final Gson GSON = new Gson();
     private static final ExecutorService NETWORK_CALLBACKS = Executors.newCachedThreadPool(r -> {
         Thread thread = new Thread(r, "vibium-network-callback");
         thread.setDaemon(true);
         return thread;
     });
+    private static final ExecutorService HOST_FUNCTIONS = Executors.newCachedThreadPool(r -> {
+        Thread thread = new Thread(r, "vibium-exposed-function");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    // Exposed host functions are connection-scoped, not Page-instance-scoped:
+    // browser.page() hands out a fresh Page for the same context, and every
+    // instance sees every event. One registry and one dispatcher per client
+    // means one execution and one reply per call, whichever instance
+    // registered the function. Weak keys: a registry dies with its client.
+    private static final Map<BiDiClient, Map<String, Function<Object[], Object>>> EXPOSE_REGISTRIES =
+        Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static Map<String, Function<Object[], Object>> exposeRegistry(BiDiClient client) {
+        synchronized (EXPOSE_REGISTRIES) {
+            Map<String, Function<Object[], Object>> registry = EXPOSE_REGISTRIES.get(client);
+            if (registry == null) {
+                Map<String, Function<Object[], Object>> fns = new ConcurrentHashMap<>();
+                EXPOSE_REGISTRIES.put(client, fns);
+                client.onEvent(event -> {
+                    if (event.has("method") && "vibium:expose.call".equals(event.get("method").getAsString())) {
+                        handleExposeCall(client, fns, event.getAsJsonObject("params"));
+                    }
+                });
+                registry = fns;
+            }
+            return registry;
+        }
+    }
+
+    private static void handleExposeCall(BiDiClient client, Map<String, Function<Object[], Object>> fns, JsonObject params) {
+        String name = params.has("name") ? params.get("name").getAsString() : "";
+        JsonElement seq = params.get("seq");
+        String context = params.has("context") ? params.get("context").getAsString() : "";
+        String realm = params.has("realm") ? params.get("realm").getAsString() : "";
+
+        // Off the event thread: that executor is single-threaded, so a slow
+        // host function would stall every later event. Every outcome answers,
+        // because an unanswered call leaves the page's promise parked
+        // forever; the reply carries the calling realm back so the engine
+        // delivers into the document that made the call.
+        HOST_FUNCTIONS.execute(() -> {
+            JsonObject reply = new JsonObject();
+            reply.addProperty("context", context);
+            reply.addProperty("realm", realm);
+            reply.add("seq", seq);
+
+            Function<Object[], Object> fn = fns.get(name);
+            if (fn == null) {
+                reply.addProperty("error", name + " is not exposed");
+            } else {
+                try {
+                    JsonElement rawArgs = params.has("args") ? params.get("args") : new JsonArray();
+                    Object[] args = GSON.fromJson(rawArgs, Object[].class);
+                    Object result = fn.apply(args != null ? args : new Object[0]);
+                    reply.add("result", GSON.toJsonTree(result));
+                } catch (Exception e) {
+                    reply.addProperty("error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                }
+            }
+            client.sendAsync("vibium:expose.result", reply);
+        });
+    }
 
     private final BiDiClient client;
     private final String contextId;
@@ -41,6 +133,7 @@ public class Page {
     private final CopyOnWriteArrayList<Consumer<Request>> requestListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Response>> responseListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Dialog>> dialogListeners = new CopyOnWriteArrayList<>();
+    private boolean dialogPolicyManual = false;
     private final CopyOnWriteArrayList<Consumer<ConsoleMessage>> consoleListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<String>> errorListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<Download>> downloadListeners = new CopyOnWriteArrayList<>();
@@ -59,8 +152,6 @@ public class Page {
     private final Object dataCollectorLock = new Object();
     private String dataCollectorId;
 
-    // Active downloads keyed by navigation ID
-    private final Map<String, Download> activeDownloads = Collections.synchronizedMap(new HashMap<>());
 
     // Event handler reference for cleanup
     private final Consumer<JsonObject> eventHandler;
@@ -149,56 +240,97 @@ public class Page {
 
     // ── Finding Elements ────────────────────────────────────────
 
-    /** Find a single element by CSS selector. */
-    public Element find(String selector) {
-        return find(selector, (FindOptions) null);
+    /**
+     * Find a single element by natural-language description, e.g.
+     * "the Add to Cart button". For an exact locator use
+     * {@link #find(SelectorOptions)} with css, tag, role, text, or image.
+     */
+    public Element find(String description) {
+        return find(description, (FindOptions) null);
     }
 
-    /** Find a single element by CSS selector with options. */
-    public Element find(String selector, FindOptions options) {
-        JsonObject params = contextParams();
-        params.addProperty("selector", selector);
+    /** Find a single element by description with options. */
+    public Element find(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
         if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+            locator.timeout(options.timeout());
         }
-        JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, selector, 0);
+        return find(locator, true);
     }
 
-    /** Find a single element by semantic selector. */
+    /** Find a single element by locator: css, tag, semantic fields, a description, or a reference image. */
     public Element find(SelectorOptions options) {
+        return find(options, false);
+    }
+
+    // bare marks a description that came from a plain string, which the
+    // binary refuses when it reads like a selector.
+    private Element find(SelectorOptions options, boolean bare) {
         JsonObject params = contextParams();
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:page.find", params);
-        return elementFromResult(result, "", 0, locatorParams(options));
-    }
-
-    /** Find all matching elements by CSS selector. */
-    public List<Element> findAll(String selector) {
-        return findAll(selector, (FindOptions) null);
-    }
-
-    /** Find all matching elements by CSS selector with options. */
-    public List<Element> findAll(String selector, FindOptions options) {
-        JsonObject params = contextParams();
-        params.addProperty("selector", selector);
-        if (options != null && options.timeout() != null) {
-            params.addProperty("timeout", options.timeout());
+        if (options.resolvedHandle()) {
+            return elementFromResult(result, handleSelector(result), 0);
         }
-        JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, selector);
+        return elementFromResult(result, options.css() != null ? options.css() : "", 0, locatorParams(options));
     }
 
-    /** Find all matching elements by semantic selector. */
+    /**
+     * Find all matching elements by CSS selector. Waits up to the timeout
+     * for at least one match, then returns an empty list if there is none.
+     *
+     * Each element carries a snapshot of its tag, text, and bounding box
+     * taken at findAll time, readable via {@link Element#info()} with no
+     * further round trips: els.stream().map(e -> e.info().text()). Live
+     * reads like {@link Element#text()} re-resolve the element and fail if
+     * the page has changed since findAll.
+     */
+    public List<Element> findAll(String description) {
+        return findAll(description, (FindOptions) null);
+    }
+
+    /**
+     * Find all matching elements by CSS selector with options. Waits up to
+     * the timeout for at least one match, then returns an empty list if
+     * there is none. A timeout of 0 checks once without waiting.
+     */
+    public List<Element> findAll(String description, FindOptions options) {
+        SelectorOptions locator = new SelectorOptions().description(description);
+        if (options != null && options.timeout() != null) {
+            locator.timeout(options.timeout());
+        }
+        return findAll(locator, true);
+    }
+
+    /**
+     * Find all matching elements by semantic selector. Waits up to the
+     * timeout for at least one match, then returns an empty list if there
+     * is none.
+     */
     public List<Element> findAll(SelectorOptions options) {
+        return findAll(options, false);
+    }
+
+    private List<Element> findAll(SelectorOptions options, boolean bare) {
         JsonObject params = contextParams();
         for (Map.Entry<String, Object> entry : options.toParams().entrySet()) {
             params.add(entry.getKey(), GSON.toJsonTree(entry.getValue()));
         }
+        if (bare) params.addProperty("bare", true);
         JsonObject result = client.send("vibium:page.findAll", params);
-        return elementsFromResult(result, "", locatorParams(options));
+        if (options.resolvedHandle()) {
+            List<Element> elements = new ArrayList<>();
+            JsonArray arr = result.has("elements") ? result.getAsJsonArray("elements") : new JsonArray();
+            for (int i = 0; i < arr.size(); i++) {
+                JsonObject el = arr.get(i).getAsJsonObject();
+                elements.add(new Element(client, contextId, handleSelector(el), 0, parseElementInfo(el), null));
+            }
+            return elements;
+        }
+        return elementsFromResult(result, options.css() != null ? options.css() : "", locatorParams(options));
     }
 
     // ── Screenshots & PDF ───────────────────────────────────────
@@ -229,7 +361,36 @@ public class Page {
 
     /** Generate a PDF, returns PDF bytes (headless only). */
     public byte[] pdf() {
-        JsonObject result = client.send("vibium:page.pdf", contextParams());
+        return pdf(null);
+    }
+
+    /** Generate a PDF with print options, returns PDF bytes (headless only). */
+    public byte[] pdf(PdfOptions options) {
+        JsonObject params = contextParams();
+        if (options != null) {
+            if (options.landscape() != null) params.addProperty("landscape", options.landscape());
+            if (options.scale() != null) params.addProperty("scale", options.scale());
+            if (options.background() != null) params.addProperty("background", options.background());
+            if (options.marginTop() != null) params.addProperty("marginTop", options.marginTop());
+            if (options.marginBottom() != null) params.addProperty("marginBottom", options.marginBottom());
+            if (options.marginLeft() != null) params.addProperty("marginLeft", options.marginLeft());
+            if (options.marginRight() != null) params.addProperty("marginRight", options.marginRight());
+            if (options.pageWidth() != null) params.addProperty("pageWidth", options.pageWidth());
+            if (options.pageHeight() != null) params.addProperty("pageHeight", options.pageHeight());
+            if (options.shrinkToFit() != null) params.addProperty("shrinkToFit", options.shrinkToFit());
+            if (options.pageRanges() != null && !options.pageRanges().isEmpty()) {
+                JsonArray ranges = new JsonArray();
+                for (Object r : options.pageRanges()) {
+                    if (r instanceof Number) {
+                        ranges.add((Number) r);
+                    } else {
+                        ranges.add(String.valueOf(r));
+                    }
+                }
+                params.add("pageRanges", ranges);
+            }
+        }
+        JsonObject result = client.send("vibium:page.pdf", params);
         String data = result.get("data").getAsString();
         return Base64.getDecoder().decode(data);
     }
@@ -269,30 +430,33 @@ public class Page {
         return params;
     }
 
-    /** Expose a function to the page context. */
-    public void expose(String name, Function<Object[], Object> fn) {
+    /**
+     * Define window[name] in the page from JS function source, in the current
+     * document and every later one, matching the JS and Python clients:
+     * page.expose("double", "(n) => n * 2").
+     */
+    public void expose(String name, String fn) {
+        Map<String, Function<Object[], Object>> registry = EXPOSE_REGISTRIES.get(client);
+        if (registry != null) {
+            registry.remove(name);
+        }
         JsonObject params = contextParams();
         params.addProperty("name", name);
+        params.addProperty("fn", fn);
         client.send("vibium:page.expose", params);
+    }
 
-        // Listen for calls from the page
-        client.onEvent(event -> {
-            String method = event.has("method") ? event.get("method").getAsString() : "";
-            if ("vibium:page.exposedFunction".equals(method)) {
-                JsonObject p = event.getAsJsonObject("params");
-                if (p != null && name.equals(p.has("name") ? p.get("name").getAsString() : "")) {
-                    JsonArray args = p.has("args") ? p.getAsJsonArray("args") : new JsonArray();
-                    Object[] javaArgs = new Object[args.size()];
-                    for (int i = 0; i < args.size(); i++) {
-                        javaArgs[i] = jsonToJava(args.get(i));
-                    }
-                    try {
-                        Object result = fn.apply(javaArgs);
-                        // TODO: send result back if bidirectional exposed functions are supported
-                    } catch (Exception ignored) {}
-                }
-            }
-        });
+    /**
+     * Expose a host function on window. The page calls window[name](args),
+     * the callback runs in this program, and its return value resolves the
+     * page's promise. Arguments and results cross as JSON. Either form of
+     * expose survives navigation, and re-exposing a name replaces it.
+     */
+    public void expose(String name, Function<Object[], Object> callback) {
+        exposeRegistry(client).put(name, callback);
+        JsonObject params = contextParams();
+        params.addProperty("name", name);
+        client.send("vibium:page.exposeFunction", params);
     }
 
     // ── Waiting ─────────────────────────────────────────────────
@@ -526,31 +690,37 @@ public class Page {
 
     // ── Network Interception ────────────────────────────────────
 
-    /** Register a route handler for URL pattern matching. */
+    /**
+     * Register a route handler for a URL pattern. The binary compiles the
+     * pattern, owns the intercept lifecycle, and annotates blocked request
+     * events with the patterns that matched, so dispatch never interprets
+     * the glob client-side.
+     */
     public void route(String pattern, Consumer<Route> handler) {
         ensureDataCollector();
-        // Subscribe to network events if this is the first route
-        if (routes.isEmpty()) {
-            JsonObject params = contextParams();
-            client.send("vibium:page.route", params);
-        }
+        JsonObject params = contextParams();
+        params.addProperty("pattern", pattern);
+        client.send("vibium:page.route", params);
 
         routes.add(new RouteEntry(pattern, handler));
     }
 
     /** Remove a route handler. */
     public void unroute(String pattern) {
+        long removed = routes.stream().filter(r -> r.pattern.equals(pattern)).count();
         routes.removeIf(r -> r.pattern.equals(pattern));
 
-        if (routes.isEmpty()) {
+        // The binary refcounts pattern registrations and tears the
+        // intercept down when the last one goes.
+        for (long i = 0; i < removed; i++) {
             try {
                 JsonObject params = contextParams();
                 params.addProperty("pattern", pattern);
-                client.send("network.removeIntercept", params);
+                client.send("vibium:page.unroute", params);
             } catch (Exception ignored) {}
-            if (requestListeners.isEmpty() && responseListeners.isEmpty()) {
-                teardownDataCollector();
-            }
+        }
+        if (routes.isEmpty() && requestListeners.isEmpty() && responseListeners.isEmpty()) {
+            teardownDataCollector();
         }
     }
 
@@ -570,7 +740,33 @@ public class Page {
 
     /** Listen for dialogs. */
     public void onDialog(Consumer<Dialog> callback) {
-        dialogListeners.add(callback);
+        addDialogListener(callback);
+    }
+
+    /**
+     * Tell the engine whether dialogs are handled here. Without a listener the
+     * engine dismisses each dialog itself (#446); listeners flip it to manual
+     * so the dialog stays open for them. client.send blocks until the policy
+     * is acknowledged, so a dialog triggered by a later command cannot open
+     * under the old policy.
+     */
+    private synchronized void syncDialogPolicy() {
+        boolean manual = !dialogListeners.isEmpty();
+        if (manual == dialogPolicyManual) return;
+        dialogPolicyManual = manual;
+        JsonObject params = new JsonObject();
+        params.addProperty("context", contextId);
+        params.addProperty("policy", manual ? "manual" : "dismiss");
+        if (manual) {
+            client.send("vibium:dialog.setPolicy", params);
+        } else {
+            try {
+                client.send("vibium:dialog.setPolicy", params);
+            } catch (Exception ignored) {
+                // The reset is best-effort; a failure here means the
+                // connection is going away with the session.
+            }
+        }
     }
 
     /** Listen for console messages. */
@@ -637,6 +833,7 @@ public class Page {
             requestListeners.clear();
             responseListeners.clear();
             dialogListeners.clear();
+            syncDialogPolicy();
             consoleListeners.clear();
             errorListeners.clear();
             downloadListeners.clear();
@@ -648,7 +845,7 @@ public class Page {
         switch (event) {
             case "request": requestListeners.clear(); break;
             case "response": responseListeners.clear(); break;
-            case "dialog": dialogListeners.clear(); break;
+            case "dialog": dialogListeners.clear(); syncDialogPolicy(); break;
             case "console": consoleListeners.clear(); break;
             case "error": errorListeners.clear(); break;
             case "download": downloadListeners.clear(); break;
@@ -738,9 +935,22 @@ public class Page {
         return elements;
     }
 
+    /** The selector a found element is addressed by: its DOM selector, or its @ref for a visual match. */
+    static String handleSelector(JsonObject result) {
+        if (result.has("selector") && !result.get("selector").isJsonNull()) return result.get("selector").getAsString();
+        if (result.has("ref") && !result.get("ref").isJsonNull()) return result.get("ref").getAsString();
+        return "";
+    }
+
     private ElementInfo parseElementInfo(JsonObject obj) {
         String tag = obj.has("tag") ? obj.get("tag").getAsString() : "";
         String text = obj.has("text") ? obj.get("text").getAsString() : "";
+        String ref = obj.has("ref") && !obj.get("ref").isJsonNull() ? obj.get("ref").getAsString() : null;
+        String role = obj.has("role") && !obj.get("role").isJsonNull() ? obj.get("role").getAsString() : null;
+        String name = obj.has("name") && !obj.get("name").isJsonNull() ? obj.get("name").getAsString() : null;
+        String source = obj.has("source") && !obj.get("source").isJsonNull() ? obj.get("source").getAsString() : null;
+        String resolved = obj.has("selector") && !obj.get("selector").isJsonNull() ? obj.get("selector").getAsString() : null;
+
         BoundingBox box = null;
         if (obj.has("box") && obj.get("box").isJsonObject()) {
             JsonObject b = obj.getAsJsonObject("box");
@@ -751,7 +961,7 @@ public class Page {
                 b.get("height").getAsDouble()
             );
         }
-        return new ElementInfo(tag, text, box);
+        return new ElementInfo(tag, text, box, ref, role, name, source, resolved);
     }
 
     static Object jsonToJava(JsonElement el) {
@@ -820,9 +1030,6 @@ public class Page {
             case "browsingContext.downloadWillBegin":
                 handleDownloadStarted(params);
                 break;
-            case "browsingContext.downloadEnd":
-                handleDownloadCompleted(params);
-                break;
             case "vibium:ws.created":
                 handleWebSocketCreated(params);
                 break;
@@ -855,12 +1062,57 @@ public class Page {
         }
     }
 
+    /** Send a one-shot capture command; the binary matches and waits. */
+    java.util.concurrent.CompletableFuture<JsonObject> sendCapture(String method, String pattern, long timeoutMs) {
+        JsonObject params = contextParams();
+        params.addProperty("pattern", pattern);
+        params.addProperty("timeout", timeoutMs);
+        return client.sendAsync(method, params);
+    }
+
+    java.util.concurrent.CompletableFuture<JsonObject> sendCaptureEvent(String kind, long timeoutMs) {
+        JsonObject params = contextParams();
+        params.addProperty("kind", kind);
+        params.addProperty("timeout", timeoutMs);
+        return client.sendAsync("vibium:page.captureEvent", params);
+    }
+
+    Request requestFromEvent(JsonObject event) {
+        return new Request(client, event);
+    }
+
+    Dialog dialogFromEvent(JsonObject event) {
+        return new Dialog(client, event);
+    }
+
+    Download downloadFromEvent(JsonObject event) {
+        return new Download(client, event);
+    }
+
+    ConsoleMessage consoleFromEvent(JsonObject event) {
+        return new ConsoleMessage(event);
+    }
+
+    Response responseFromEvent(JsonObject event) {
+        return new Response(client, event);
+    }
+
     private void handleBlockedRequest(JsonObject params) {
         Request request = new Request(client, params, true);
         String requestId = request.requestId();
 
+        // The binary already matched the URL against every registered
+        // pattern (vibiumMatchedPatterns), so dispatch is a membership
+        // check, not a glob evaluation.
+        java.util.Set<String> matched = new java.util.HashSet<>();
+        if (params.has("vibiumMatchedPatterns")) {
+            for (JsonElement p : params.getAsJsonArray("vibiumMatchedPatterns")) {
+                matched.add(p.getAsString());
+            }
+        }
+
         for (RouteEntry entry : routes) {
-            if (matchPattern(entry.pattern, request.url())) {
+            if (matched.contains(entry.pattern)) {
                 Route route = new Route(client, contextId, requestId, request);
                 NETWORK_CALLBACKS.execute(() -> {
                     try {
@@ -892,12 +1144,9 @@ public class Page {
     }
 
     private void handleDialogEvent(JsonObject params) {
+        // With no listener registered the engine dismisses the dialog itself
+        // (#446), so there is nothing to do here but deliver.
         Dialog dialog = new Dialog(client, params);
-        if (dialogListeners.isEmpty()) {
-            // Auto-dismiss if no handler
-            try { dialog.dismiss(); } catch (Exception ignored) {}
-            return;
-        }
         for (Consumer<Dialog> listener : dialogListeners) {
             try { listener.accept(dialog); } catch (Exception ignored) {}
         }
@@ -920,24 +1169,12 @@ public class Page {
     }
 
     private void handleDownloadStarted(JsonObject params) {
+        // Completion is awaited in the engine by navigation id (#446), so
+        // there is no client-side pending map to feed on downloadEnd.
         if (downloadListeners.isEmpty()) return;
         Download download = new Download(client, params);
-        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
-        if (!navId.isEmpty()) {
-            activeDownloads.put(navId, download);
-        }
         for (Consumer<Download> listener : downloadListeners) {
             try { listener.accept(download); } catch (Exception ignored) {}
-        }
-    }
-
-    private void handleDownloadCompleted(JsonObject params) {
-        String navId = params.has("navigation") ? params.get("navigation").getAsString() : "";
-        Download download = activeDownloads.remove(navId);
-        if (download != null) {
-            String status = params.has("status") ? params.get("status").getAsString() : "complete";
-            String path = params.has("filepath") ? params.get("filepath").getAsString() : null;
-            download.complete(status, path);
         }
     }
 
@@ -985,39 +1222,19 @@ public class Page {
     void removeNavigationListener(Consumer<String> listener) { navigationListeners.remove(listener); }
     void addDownloadListener(Consumer<Download> listener) { downloadListeners.add(listener); }
     void removeDownloadListener(Consumer<Download> listener) { downloadListeners.remove(listener); }
-    void addDialogListener(Consumer<Dialog> listener) { dialogListeners.add(listener); }
-    void removeDialogListener(Consumer<Dialog> listener) { dialogListeners.remove(listener); }
+    void addDialogListener(Consumer<Dialog> listener) {
+        dialogListeners.add(listener);
+        syncDialogPolicy();
+    }
+
+    void removeDialogListener(Consumer<Dialog> listener) {
+        dialogListeners.remove(listener);
+        syncDialogPolicy();
+    }
     void addConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.add(listener); }
     void removeConsoleListener(Consumer<ConsoleMessage> listener) { consoleListeners.remove(listener); }
     void addErrorListener(Consumer<String> listener) { errorListeners.add(listener); }
     void removeErrorListener(Consumer<String> listener) { errorListeners.remove(listener); }
-
-    static boolean matchPattern(String pattern, String url) {
-        if (pattern == null || pattern.isEmpty()) return true;
-        if (pattern.equals("**") || pattern.equals("**/*")) return true;
-
-        // Convert glob to regex
-        StringBuilder regex = new StringBuilder();
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
-            if (c == '*' && i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
-                regex.append(".*");
-                i++; // skip second *
-                if (i + 1 < pattern.length() && pattern.charAt(i + 1) == '/') {
-                    i++; // skip /
-                }
-            } else if (c == '*') {
-                regex.append("[^/]*");
-            } else if (c == '?' || c == '.' || c == '(' || c == ')' || c == '[' || c == ']'
-                    || c == '{' || c == '}' || c == '^' || c == '$' || c == '|' || c == '\\' || c == '+') {
-                regex.append('\\').append(c);
-            } else {
-                regex.append(c);
-            }
-        }
-
-        return url.matches(".*" + regex.toString() + ".*");
-    }
 
     private static class RouteEntry {
         final String pattern;

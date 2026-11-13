@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,18 +48,29 @@ type InstallResult struct {
 // Install downloads and installs Chrome for Testing and chromedriver.
 // Returns paths to the installed binaries. Skips download if already installed.
 func Install() (*InstallResult, error) {
+	return InstallForChannel("")
+}
+
+// InstallForChannel installs a specific Chrome release channel. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default. The daemon resolves a
+// per-call channel that need not match the environment (#525), so every
+// lookup below takes the channel explicitly instead of reading the env.
+func InstallForChannel(channel string) (*InstallResult, error) {
 	// Check for skip environment variable
 	if os.Getenv("VIBIUM_SKIP_BROWSER_DOWNLOAD") == "1" {
 		return nil, fmt.Errorf("browser download skipped (VIBIUM_SKIP_BROWSER_DOWNLOAD=1)")
 	}
+	if channel == "" {
+		channel = paths.ChromeChannel()
+	}
 
 	// Check if already installed
-	if IsInstalled() {
-		chromePath, _ := paths.GetChromeExecutable()
-		chromedriverPath, _ := paths.GetChromedriverPath()
+	if IsInstalledForChannel(channel) {
+		chromePath, _ := paths.GetChromeExecutableForChannel(channel)
+		chromedriverPath, _ := paths.GetChromedriverPathForChannel(channel)
 		// Extract version from path (e.g., .../chrome-for-testing/143.0.7499.192/...)
-		version := extractVersionFromPath(chromePath)
-		fmt.Printf("Chrome for Testing v%s already installed.\n", version)
+		version := extractVersionFromPath(chromePath, channel)
+		progressf("Chrome for Testing v%s already installed.\n", version)
 		return &InstallResult{
 			ChromePath:       chromePath,
 			ChromedriverPath: chromedriverPath,
@@ -68,16 +80,19 @@ func Install() (*InstallResult, error) {
 
 	platform := paths.GetPlatformString()
 
-	// Fetch latest stable version info
-	versionInfo, err := fetchLatestStableVersion()
+	versionInfo, err := resolveChromeVersionInfo(channel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch version info: %w", err)
 	}
 
-	fmt.Printf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
+	if channel == "stable" {
+		progressf("Installing Chrome for Testing v%s...\n", versionInfo.Version)
+	} else {
+		progressf("Installing Chrome for Testing v%s (%s channel)...\n", versionInfo.Version, channel)
+	}
 
 	// Create version directory
-	cftDir, err := paths.GetChromeForTestingDir()
+	cftDir, err := paths.GetChromeChannelDirForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache dir: %w", err)
 	}
@@ -93,7 +108,7 @@ func Install() (*InstallResult, error) {
 		return nil, fmt.Errorf("no Chrome download available for platform %s", platform)
 	}
 
-	fmt.Printf("Downloading Chrome from %s...\n", chromeURL)
+	progressf("Downloading Chrome from %s...\n", chromeURL)
 	if err := downloadAndExtract(chromeURL, versionDir); err != nil {
 		return nil, fmt.Errorf("failed to install Chrome: %w", err)
 	}
@@ -104,18 +119,18 @@ func Install() (*InstallResult, error) {
 		return nil, fmt.Errorf("no chromedriver download available for platform %s", platform)
 	}
 
-	fmt.Printf("Downloading chromedriver from %s...\n", chromedriverURL)
+	progressf("Downloading chromedriver from %s...\n", chromedriverURL)
 	if err := downloadAndExtract(chromedriverURL, versionDir); err != nil {
 		return nil, fmt.Errorf("failed to install chromedriver: %w", err)
 	}
 
 	// Get paths to installed binaries
-	chromePath, err := paths.GetChromeExecutable()
+	chromePath, err := paths.GetChromeExecutableForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("Chrome installed but not found: %w", err)
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(channel)
 	if err != nil {
 		return nil, fmt.Errorf("chromedriver installed but not found: %w", err)
 	}
@@ -139,8 +154,49 @@ func Install() (*InstallResult, error) {
 	}, nil
 }
 
-// fetchLatestStableVersion fetches the latest stable Chrome for Testing version.
-func fetchLatestStableVersion() (*VersionInfo, error) {
+// chromeChannelKeys maps VIBIUM_ENGINE_CHANNEL values to the channel names
+// used in the Chrome for Testing JSON.
+var chromeChannelKeys = map[string]string{
+	"stable": "Stable",
+	"beta":   "Beta",
+	"dev":    "Dev",
+	"canary": "Canary",
+}
+
+// resolveChromeVersionInfo returns the version to install:
+// VIBIUM_ENGINE_VERSION when set, the baked known-good version for the
+// stable channel, otherwise the channel's current version. Unlike Firefox
+// there is no offline path even for a pinned version: Chrome for Testing
+// download URLs come from its versions JSON, not a constructible pattern.
+// But a pinned lookup can never resolve to an untested new release.
+func resolveChromeVersionInfo(channel string) (*VersionInfo, error) {
+	if v := chromeInstallVersion(channel); v != "" {
+		return fetchVersionInfoFor(v)
+	}
+	return fetchChannelVersion(channel)
+}
+
+// chromeInstallVersion returns the exact version to install, or "" when the
+// channel's current version should be fetched instead. Beta, dev, and
+// canary track their moving edge on purpose: beta-watch needs the current
+// beta, and pinning a canary would defeat it entirely.
+func chromeInstallVersion(channel string) string {
+	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
+		return v
+	}
+	if channel == "stable" {
+		return paths.PinnedChromeVersion
+	}
+	return ""
+}
+
+// fetchChannelVersion fetches the channel's current Chrome for Testing version.
+func fetchChannelVersion(channel string) (*VersionInfo, error) {
+	key, ok := chromeChannelKeys[channel]
+	if !ok {
+		return nil, fmt.Errorf("unknown Chrome channel %q (supported: stable, beta, dev, canary)", channel)
+	}
+
 	resp, err := http.Get(lastKnownGoodURL)
 	if err != nil {
 		return nil, err
@@ -156,12 +212,49 @@ func fetchLatestStableVersion() (*VersionInfo, error) {
 		return nil, err
 	}
 
-	stable, ok := data.Channels["Stable"]
+	info, ok := data.Channels[key]
 	if !ok {
-		return nil, fmt.Errorf("no Stable channel found")
+		return nil, fmt.Errorf("no %s channel found", key)
 	}
 
-	return &stable, nil
+	return &info, nil
+}
+
+// fetchVersionInfoFor returns download info for an exact version from the
+// known-good-versions list.
+func fetchVersionInfoFor(version string) (*VersionInfo, error) {
+	resp, err := http.Get(knownGoodVersionsURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Versions []VersionInfo `json:"versions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	info := findVersionInfo(data.Versions, version)
+	if info == nil {
+		return nil, fmt.Errorf("version %q not found in Chrome for Testing known good versions", version)
+	}
+	return info, nil
+}
+
+// findVersionInfo returns the entry matching version exactly, or nil.
+func findVersionInfo(versions []VersionInfo, version string) *VersionInfo {
+	for i := range versions {
+		if versions[i].Version == version {
+			return &versions[i]
+		}
+	}
+	return nil
 }
 
 // findDownloadURL finds the download URL for the given platform.
@@ -174,11 +267,40 @@ func findDownloadURL(downloads []Download, platform string) string {
 	return ""
 }
 
+// chromeDownloadHost is the only host Chrome for Testing serves its archives
+// from. The archive URL comes from a separately-fetched JSON document, and the
+// binary is extracted and executed, so pinning the host before the download
+// stops a poisoned versions JSON (or any other tampered url field) from
+// pointing the install at an attacker-controlled server. Chrome for Testing
+// publishes no checksums, so this host pin is the integrity control available
+// here; Firefox verifies SHA256SUMS instead (installer_firefox.go).
+const chromeDownloadHost = "storage.googleapis.com"
+
+// validateChromeDownloadURL rejects a download URL that is not an HTTPS URL on
+// the expected Chrome for Testing host.
+func validateChromeDownloadURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid download URL %q: %w", raw, err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing non-https download URL %q", raw)
+	}
+	if u.Host != chromeDownloadHost {
+		return fmt.Errorf("refusing Chrome download from unexpected host %q (want %s)", u.Host, chromeDownloadHost)
+	}
+	return nil
+}
+
 // downloadAndExtract downloads a zip file and extracts it to the destination.
 // Unlike Firefox (SHA256SUMS, verified in installer_firefox.go), Chrome for
 // Testing publishes no checksums — its downloads JSON carries only platform
-// and url — so there is nothing official to verify the archive against.
+// and url — so the host pin (validateChromeDownloadURL) is the integrity
+// control: it stops a tampered url from fetching and executing a foreign binary.
 func downloadAndExtract(url, destDir string) error {
+	if err := validateChromeDownloadURL(url); err != nil {
+		return err
+	}
 	// Download to temp file
 	resp, err := http.Get(url)
 	if err != nil {
@@ -197,7 +319,7 @@ func downloadAndExtract(url, destDir string) error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: os.Stdout}
+	pw := &progressWriter{dst: tmpFile, total: resp.ContentLength, out: progressOut()}
 	if _, err := io.Copy(pw, resp.Body); err != nil {
 		tmpFile.Close()
 		return err
@@ -211,8 +333,9 @@ func downloadAndExtract(url, destDir string) error {
 // progressWriter wraps a download destination and prints coarse progress
 // lines while bytes flow: one line per 10% step when the total is known, one
 // line per 25 MB when the server sends no Content-Length. Progress goes to
-// out (os.Stdout for the install command; pipe mode redirects that to stderr
-// so the protocol stream stays clean and clients see download liveness).
+// out (progressOut(): stdout for the install command, stderr under --json so
+// the envelope has the stream to itself, and stderr in pipe mode so the
+// protocol stream stays clean and clients still see download liveness).
 type progressWriter struct {
 	dst     io.Writer
 	out     io.Writer
@@ -298,7 +421,13 @@ func extractZip(zipPath, destDir string) error {
 
 // IsInstalled checks if Chrome for Testing and chromedriver are both installed.
 func IsInstalled() bool {
-	chromePath, err := paths.GetChromeExecutable()
+	return IsInstalledForChannel("")
+}
+
+// IsInstalledForChannel checks a specific Chrome release channel. An empty
+// channel means the VIBIUM_ENGINE_CHANNEL default.
+func IsInstalledForChannel(channel string) bool {
+	chromePath, err := paths.GetChromeExecutableForChannel(channel)
 	if err != nil {
 		return false
 	}
@@ -306,7 +435,7 @@ func IsInstalled() bool {
 		return false
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(channel)
 	if err != nil {
 		return false
 	}
@@ -316,10 +445,17 @@ func IsInstalled() bool {
 
 // extractVersionFromPath extracts the version number from a Chrome path.
 // e.g., ".../chrome-for-testing/143.0.7499.192/..." -> "143.0.7499.192"
-func extractVersionFromPath(path string) string {
+func extractVersionFromPath(path, channel string) string {
+	if channel == "" {
+		channel = paths.ChromeChannel()
+	}
 	parts := strings.Split(path, string(os.PathSeparator))
 	for i, part := range parts {
 		if part == "chrome-for-testing" && i+1 < len(parts) {
+			// Non-stable channels nest their version dirs one level deeper.
+			if channel != "stable" && parts[i+1] == channel && i+2 < len(parts) {
+				return parts[i+2]
+			}
 			return parts[i+1]
 		}
 	}

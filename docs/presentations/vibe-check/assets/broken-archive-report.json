@@ -1,0 +1,19 @@
+{
+  "status": "failed",
+  "claim": "Did the recorded cart contain exactly one battery pack?",
+  "summary": "No. The recorded cart page showed 0 items and stated that the cart was empty, so it did not contain exactly one battery pack.",
+  "evidence": [
+    {
+      "type": "observation",
+      "summary": "Action e44 clicked the cart link (#cart-link), with completion recorded at e49."
+    },
+    {
+      "type": "observation",
+      "summary": "After opening the cart, action e50 returned the cart URL http://127.0.0.1:51868/?view=cart at e52."
+    },
+    {
+      "type": "observation",
+      "summary": "Action e53 observed the visible cart text at e55: \u201c0 items,\u201d \u201cYour cart is empty,\u201d and \u201cLooks like you haven\u2019t added anything yet.\u201d"
+    }
+  ]
+}

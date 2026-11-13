@@ -51,7 +51,7 @@ func (r *Router) handleVibiumElRole(session *BrowserSession, cmd bidiCommand) {
 	})()`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"role": val})
@@ -96,7 +96,7 @@ func (r *Router) handleVibiumElLabel(session *BrowserSession, cmd bidiCommand) {
 	})()`)
 	val, err := r.evalElementScript(session, context, script, args)
 	if err != nil {
-		r.sendError(session, cmd.ID, err)
+		r.sendError(session, cmd.ID, staleIndexHint(err, ep))
 		return
 	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{"label": val})
@@ -216,8 +216,20 @@ func A11yTreeScript() string {
 			return fn ? fn(el) : 'generic';
 		}
 
-		function getName(el) {
-			if (typeof el.computedName === 'string') return el.computedName;
+		// Roles that take their accessible name from descendant text when no
+		// explicit label is present ("name from content" in the accname spec).
+		// Restricted to these roles so wrapper divs full of prose stay nameless.
+		const NAME_FROM_CONTENT = new Set([
+			'button', 'link', 'heading', 'option', 'menuitem', 'menuitemcheckbox',
+			'menuitemradio', 'tab', 'treeitem', 'cell', 'columnheader', 'rowheader',
+			'gridcell', 'checkbox', 'radio', 'switch', 'listitem', 'term',
+			'definition', 'caption', 'tooltip', 'legend'
+		]);
+
+		function getName(el, role) {
+			// An empty computedName means "not computed", not "no name" —
+			// returning it would skip every fallback below.
+			if (typeof el.computedName === 'string' && el.computedName !== '') return el.computedName;
 			const ariaLabel = el.getAttribute('aria-label');
 			if (ariaLabel) return ariaLabel;
 			const labelledBy = el.getAttribute('aria-labelledby');
@@ -238,6 +250,10 @@ func A11yTreeScript() string {
 			if (alt) return alt;
 			const title = el.getAttribute('title');
 			if (title) return title;
+			if (NAME_FROM_CONTENT.has(role)) {
+				const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+				if (text) return text;
+			}
 			return '';
 		}
 
@@ -261,7 +277,7 @@ func A11yTreeScript() string {
 
 		function buildNode(el) {
 			const role = getRole(el);
-			const name = getName(el);
+			const name = getName(el, role);
 
 			// Collect children first
 			const childNodes = [];

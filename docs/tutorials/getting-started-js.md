@@ -71,7 +71,9 @@ This creates a folder and a `package.json` file.
 npm install vibium
 ```
 
-This downloads Vibium and Chrome for Testing to a platform-specific cache. Might take a minute.
+The install downloads Chrome for Testing to a platform-specific cache, which
+might take a minute. If that step was skipped or failed, Chrome downloads the
+first time you launch a browser. To fetch it yourself: `npx vibium setup browser`.
 
 | Platform | Cache path |
 |----------|------------|
@@ -81,7 +83,7 @@ This downloads Vibium and Chrome for Testing to a platform-specific cache. Might
 
 **Skip browser download** (if you manage Chrome separately):
 ```bash
-VIBIUM_SKIP_BROWSER_DOWNLOAD=1 npm install vibium
+export VIBIUM_SKIP_BROWSER_DOWNLOAD=1
 ```
 
 ---
@@ -118,7 +120,7 @@ fs.writeFileSync('screenshot.png', png)
 console.log('Saved screenshot.png')
 
 // Find and click the link
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 console.log('Found link:', link.text())
 link.click()
 console.log('Clicked!')
@@ -154,7 +156,7 @@ Check your folder - there's now a `screenshot.png` file!
 | `bro.page()` | Gets the default page (tab) |
 | `vibe.go(url)` | Navigates to a URL |
 | `vibe.screenshot()` | Captures the page as PNG |
-| `vibe.find(selector)` | Finds an element by CSS selector |
+| `vibe.find({ css: 'a' })` | Finds an element by CSS selector |
 | `link.click()` | Clicks the element |
 | `bro.stop()` | Closes the browser |
 

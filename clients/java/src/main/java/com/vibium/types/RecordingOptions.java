@@ -37,9 +37,32 @@ public class RecordingOptions {
      * the engine can't deliver. false: off.
      */
     public RecordingOptions video(boolean video) { this.video = video; return this; }
-    /** Video dimensions in pixels (default: viewport). Implies video on. */
+    /**
+     * Video dimensions in pixels (default: viewport). Implies video on.
+     * Pass 0 for a dimension to leave it unset, letting the engine derive it
+     * from the viewport aspect ratio, matching {@link #videoWidth(int)} and
+     * {@link #videoHeight(int)}.
+     */
     public RecordingOptions videoSize(int width, int height) {
+        this.videoWidth = width > 0 ? width : null;
+        this.videoHeight = height > 0 ? height : null;
+        return this;
+    }
+
+    /**
+     * Video width in pixels; the engine derives the height from the viewport
+     * aspect ratio. Implies video on.
+     */
+    public RecordingOptions videoWidth(int width) {
         this.videoWidth = width;
+        return this;
+    }
+
+    /**
+     * Video height in pixels; the engine derives the width from the viewport
+     * aspect ratio. Implies video on.
+     */
+    public RecordingOptions videoHeight(int height) {
         this.videoHeight = height;
         return this;
     }

@@ -102,7 +102,7 @@ describe('JS Async API', () => {
   test('page.find() locates element', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
-    const heading = await vibe.find('h1.heading');
+    const heading = await vibe.find({ css: 'h1.heading' });
 
     assert.ok(heading, 'Should return an Element');
     assert.ok(heading.info, 'Element should have info');
@@ -113,17 +113,17 @@ describe('JS Async API', () => {
   test('element.click() works', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
-    const link = await vibe.find('a[href="/subpage"]');
+    const link = await vibe.find({ css: 'a[href="/subpage"]' });
     await link.click();
 
-    const heading = await vibe.find('h3');
+    const heading = await vibe.find({ css: 'h3' });
     assert.match(heading.info.text, /Add\/Remove Elements/i, 'Should have navigated to new page');
   });
 
   test('element.type() enters text', async () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/inputs`);
-    const input = await vibe.find('input');
+    const input = await vibe.find({ css: 'input' });
     await input.type('12345');
 
     const value = await vibe.evaluate("document.querySelector('input').value");
@@ -135,7 +135,7 @@ describe('JS Async API', () => {
     // browser ignored, so '123\n456' arrived as '123456'.
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/inputs`);
-    const area = await vibe.find('#multiline');
+    const area = await vibe.find({ css: '#multiline' });
     await area.type('123\n456');
 
     const value = await vibe.evaluate("document.querySelector('#multiline').value");
@@ -145,7 +145,7 @@ describe('JS Async API', () => {
   test('element.text() returns element text', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL);
-    const heading = await vibe.find('h1.heading');
+    const heading = await vibe.find({ css: 'h1.heading' });
     const text = await heading.text();
     assert.match(text, /Welcome to test-app/i, 'Should return heading text');
   });

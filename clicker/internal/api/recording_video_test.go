@@ -64,7 +64,7 @@ func TestVideoSupportErrorPassesThroughSpecificRefusals(t *testing.T) {
 
 func TestRequiredVideoOnRemoteConnectionFailsClearly(t *testing.T) {
 	client := &recordingTestClient{}
-	router := NewRouter("firefox", true, "ws://remote.example/session", nil)
+	router := NewRouter("firefox", true, "ws://remote.example/session", nil, nil)
 	router.handleRecordingStart(&BrowserSession{Client: client}, bidiCommand{
 		ID:     7,
 		Params: map[string]interface{}{"video": true},
@@ -242,7 +242,7 @@ func TestRemoteKeepRecordsAndReportsRemotePath(t *testing.T) {
 	rec.Start(opts, nil)
 
 	sess := &fakeVideoSession{}
-	if err := StartRecordingVideo(sess, rec, opts, true, nil); err != nil {
+	if err := StartRecordingVideo(sess, rec, opts, true, nil, nil); err != nil {
 		t.Fatalf("remote keep should start the screencast, got: %v", err)
 	}
 	if !sess.started {
@@ -281,7 +281,7 @@ func TestRemoteWithoutKeepStillRefuses(t *testing.T) {
 	rec.Start(opts, nil)
 
 	sess := &fakeVideoSession{}
-	err := StartRecordingVideo(sess, rec, opts, true, nil)
+	err := StartRecordingVideo(sess, rec, opts, true, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "remote browser connections") {
 		t.Fatalf("required video on remote must refuse, got: %v", err)
 	}
@@ -401,6 +401,14 @@ func TestSavedSentenceShapes(t *testing.T) {
 	})
 	if withVideo != "Saved record.zip (23 steps, 14s video)" {
 		t.Fatalf("sentence = %q", withVideo)
+	}
+
+	withSound := RecordingSavedSentence("record.zip", RecordingSummary{
+		Steps:  23,
+		Videos: []VideoSummary{{DurationMs: 14200, Audio: true}},
+	})
+	if withSound != "Saved record.zip (23 steps, 14s video with sound)" {
+		t.Fatalf("sentence = %q", withSound)
 	}
 
 	unavailable := RecordingSavedSentence("record.zip", RecordingSummary{

@@ -11,6 +11,28 @@ import (
 	"strings"
 )
 
+// GetConfigDir returns the directory holding Vibium's settings files
+// (ai.env, cloud-browser.env). Unlike the cache, this is ~/.config/vibium on
+// every platform: the tutorials, the README, the check skill, the readiness
+// hint and every guide name that exact path, so resolving anywhere else sends
+// users to a file the documentation never mentions.
+//
+// XDG_CONFIG_HOME is deliberately NOT consulted. It is the Linux convention,
+// but honouring it would silently relocate the file on any machine that sets
+// it — including CI runners, where it moved the directory outside a test's
+// overridden HOME. VIBIUM_CONFIG_DIR is the explicit override, matching
+// VIBIUM_CACHE_DIR.
+func GetConfigDir() (string, error) {
+	if dir := os.Getenv("VIBIUM_CONFIG_DIR"); dir != "" {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "vibium"), nil
+}
+
 // GetCacheDir returns the platform-specific cache directory for Vibium.
 // Override with VIBIUM_CACHE_DIR environment variable.
 // Linux: ~/.cache/vibium/
@@ -70,19 +92,113 @@ func GetChromeForTestingDir() (string, error) {
 	return filepath.Join(cacheDir, "chrome-for-testing"), nil
 }
 
-// resolveVersionDir returns the newest cached version directory containing BOTH
-// Chrome and chromedriver.
-//
-// They used to be resolved independently, each taking the first directory that
-// held its own binary, so a cache with Chrome under 146.x and chromedriver under
-// 147.x produced a mismatched pair that IsInstalled() certified as fine — the
-// failure surfaced later as chromedriver's "only supports Chrome version N"
-// (#265). Newest-first also replaces os.ReadDir's lexical order, under which
-// "99.0" sorts above "100.0".
-func resolveVersionDir() (string, error) {
+// EngineChannels is the canonical list of valid release channels per engine,
+// first entry the default. The CLI flag validation, the MCP browser_start
+// schema and the daemon's per-call validation all build from this table, so
+// the three surfaces cannot drift apart again (#525).
+var EngineChannels = map[string][]string{
+	"chrome":  {"stable", "beta", "dev", "canary"},
+	"firefox": {"release", "beta"},
+}
+
+// ValidChannel reports whether channel is valid for engine. An empty channel
+// means the engine's default and is always valid.
+func ValidChannel(engine, channel string) bool {
+	if channel == "" {
+		return true
+	}
+	for _, c := range EngineChannels[engine] {
+		if c == channel {
+			return true
+		}
+	}
+	return false
+}
+
+// ChromeChannel returns the Chrome release channel to install and run.
+// Defaults to "stable"; override with VIBIUM_ENGINE_CHANNEL (e.g. "beta").
+// The same variable steers the Firefox channel, so an engine-agnostic
+// "beta" selects each engine's beta.
+func ChromeChannel() string {
+	if c := os.Getenv("VIBIUM_ENGINE_CHANNEL"); c != "" {
+		return c
+	}
+	return "stable"
+}
+
+// GetChromeChannelDir returns the directory holding the version dirs of the
+// environment's channel.
+func GetChromeChannelDir() (string, error) {
+	return GetChromeChannelDirForChannel(ChromeChannel())
+}
+
+// GetChromeChannelDirForChannel returns the directory holding the channel's
+// version dirs. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
+// Stable keeps the historical chrome-for-testing root so existing caches
+// stay valid; other channels nest one level deeper, which also keeps a
+// beta's higher version number from shadowing stable under the newest-first
+// resolution below.
+func GetChromeChannelDirForChannel(channel string) (string, error) {
+	if channel == "" {
+		channel = ChromeChannel()
+	}
 	cftDir, err := GetChromeForTestingDir()
 	if err != nil {
 		return "", err
+	}
+	if channel != "stable" {
+		return filepath.Join(cftDir, channel), nil
+	}
+	return cftDir, nil
+}
+
+// resolveVersionDir returns the cached version directory containing BOTH
+// Chrome and chromedriver: the pinned version for the stable channel, the
+// newest cached version for the moving channels (beta, dev, canary).
+//
+// The two binaries used to be resolved independently, each taking the first
+// directory that held its own binary, so a cache with Chrome under 146.x and
+// chromedriver under 147.x produced a mismatched pair that IsInstalled()
+// certified as fine — the failure surfaced later as chromedriver's "only
+// supports Chrome version N" (#265). Newest-first also replaces os.ReadDir's
+// lexical order, under which "99.0" sorts above "100.0".
+//
+// A pin (VIBIUM_ENGINE_VERSION, or the baked PinnedChromeVersion on stable)
+// selects exactly that version or fails. Stable used to fall back to
+// newest-cached, which meant a pin bump never installed on a machine with
+// any older Chrome cached — IsInstalled() blessed the old directory and the
+// bump was skipped — and lowering the pin to roll back never took effect
+// (#579). Failing here is what makes the ensure-install path download the
+// pinned version.
+func resolveVersionDir(channel string) (string, error) {
+	if channel == "" {
+		channel = ChromeChannel()
+	}
+	cftDir, err := GetChromeChannelDirForChannel(channel)
+	if err != nil {
+		return "", err
+	}
+
+	pin := os.Getenv("VIBIUM_ENGINE_VERSION")
+	if pin == "" && channel == "stable" {
+		pin = PinnedChromeVersion
+	}
+	if pin != "" {
+		dir := filepath.Join(cftDir, pin)
+		if _, err := os.Stat(getChromePathInVersion(dir)); err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			return "", err
+		}
+		// A cached pin of the wrong architecture can never launch; delete
+		// it so ensure-install extracts the right build into a clean
+		// directory instead of over the old files (#699).
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("cached Chrome for Testing %s is built for another architecture: %w", pin, os.ErrNotExist)
+		}
+		return dir, nil
 	}
 
 	entries, err := os.ReadDir(cftDir)
@@ -100,6 +216,12 @@ func resolveVersionDir() (string, error) {
 			continue
 		}
 		if _, err := os.Stat(getChromedriverPathInVersion(dir)); err != nil {
+			continue
+		}
+		// A cached dir whose binaries are the wrong architecture can never
+		// launch; delete it rather than resolve it (#699).
+		if !binaryArchMatches(getChromePathInVersion(dir)) || !binaryArchMatches(getChromedriverPathInVersion(dir)) {
+			os.RemoveAll(dir)
 			continue
 		}
 		complete = append(complete, entry.Name())
@@ -139,7 +261,13 @@ func compareVersions(a, b string) int {
 // GetChromeExecutable returns the path to Chrome for Testing executable.
 // Only checks Vibium cache - does not fall back to system Chrome.
 func GetChromeExecutable() (string, error) {
-	dir, err := resolveVersionDir()
+	return GetChromeExecutableForChannel("")
+}
+
+// GetChromeExecutableForChannel resolves the executable of a specific
+// channel. An empty channel means the VIBIUM_ENGINE_CHANNEL default.
+func GetChromeExecutableForChannel(channel string) (string, error) {
+	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +278,13 @@ func GetChromeExecutable() (string, error) {
 // from the same version directory as GetChromeExecutable, so the two always
 // match.
 func GetChromedriverPath() (string, error) {
-	dir, err := resolveVersionDir()
+	return GetChromedriverPathForChannel("")
+}
+
+// GetChromedriverPathForChannel resolves the chromedriver of a specific
+// channel, from the same version directory as the executable.
+func GetChromedriverPathForChannel(channel string) (string, error) {
+	dir, err := resolveVersionDir(channel)
 	if err != nil {
 		return "", err
 	}
@@ -225,21 +359,41 @@ func GetFirefoxExecutableForChannel(channel string) (string, error) {
 	return FirefoxPathInVersion(dir), nil
 }
 
-// resolveFirefoxVersionDir returns the newest cached Firefox version
-// directory containing the executable, mirroring resolveVersionDir.
-// VIBIUM_ENGINE_VERSION pins the choice: the pinned version must also be
-// what launches, or newest-cached would silently run a different Firefox
-// than the pin installed.
+// resolveFirefoxVersionDir returns the cached Firefox version directory
+// containing the executable, mirroring resolveVersionDir: the pinned
+// version for the release channel, the newest cached version for beta.
+//
+// A pin (VIBIUM_ENGINE_VERSION, or the baked PinnedFirefoxVersion on
+// release) selects exactly that version or fails. Release used to fall
+// back to newest-cached, which meant a Firefox pin bump never installed on
+// a machine with any Firefox cached, and lowering the pin to roll back
+// never took effect (#584, the Firefox side of #579). Failing here is what
+// makes the ensure-install path download the pinned version.
 func resolveFirefoxVersionDir(channel string) (string, error) {
+	if channel == "" {
+		channel = FirefoxChannel()
+	}
 	ffDir, err := GetFirefoxDirForChannel(channel)
 	if err != nil {
 		return "", err
 	}
 
-	if v := os.Getenv("VIBIUM_ENGINE_VERSION"); v != "" {
-		dir := filepath.Join(ffDir, v)
+	pin := os.Getenv("VIBIUM_ENGINE_VERSION")
+	if pin == "" && channel == "release" {
+		pin = PinnedFirefoxVersion
+	}
+	if pin != "" {
+		dir := filepath.Join(ffDir, pin)
 		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
 			return "", err
+		}
+		// A cached pin of the wrong architecture can never launch; delete
+		// it so ensure-install extracts the right build into a clean
+		// directory instead of over the old files (#704, the Firefox side
+		// of #699).
+		if !binaryArchMatches(FirefoxPathInVersion(dir)) {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("cached Firefox %s is built for another architecture: %w", pin, os.ErrNotExist)
 		}
 		return dir, nil
 	}
@@ -254,7 +408,14 @@ func resolveFirefoxVersionDir(channel string) (string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(FirefoxPathInVersion(filepath.Join(ffDir, entry.Name()))); err != nil {
+		dir := filepath.Join(ffDir, entry.Name())
+		if _, err := os.Stat(FirefoxPathInVersion(dir)); err != nil {
+			continue
+		}
+		// A cached dir whose binary is the wrong architecture can never
+		// launch; delete it rather than resolve it (#704).
+		if !binaryArchMatches(FirefoxPathInVersion(dir)) {
+			os.RemoveAll(dir)
 			continue
 		}
 		complete = append(complete, entry.Name())
@@ -285,15 +446,26 @@ func FirefoxPathInVersion(versionDir string) string {
 
 // getPlatformString returns the platform string used by Chrome for Testing.
 func getPlatformString() string {
-	switch runtime.GOOS {
+	return platformStringFor(runtime.GOOS, runtime.GOARCH)
+}
+
+// platformStringFor maps a Go GOOS/GOARCH to the Chrome for Testing platform
+// token. Chrome for Testing publishes linux-arm64 from 153.0.8001.0 on, so
+// aarch64 Linux downloads its own build like any other platform rather than
+// an x86 one that cannot exec (#638, #675).
+func platformStringFor(goos, goarch string) string {
+	switch goos {
 	case "darwin":
-		if runtime.GOARCH == "arm64" {
+		if goarch == "arm64" {
 			return "mac-arm64"
 		}
 		return "mac-x64"
 	case "windows":
 		return "win64"
 	default: // linux
+		if goarch == "arm64" {
+			return "linux-arm64"
+		}
 		return "linux64"
 	}
 }
@@ -303,10 +475,35 @@ func GetPlatformString() string {
 	return getPlatformString()
 }
 
-// GetDaemonDir returns the directory for daemon files (socket, PID).
-// This reuses the cache directory since daemon files are ephemeral.
+// GetDaemonDir returns the directory for daemon runtime files (socket, PID):
+// VIBIUM_RUNTIME_DIR, else $XDG_RUNTIME_DIR/vibium, else a private per-user
+// directory under the OS temp dir. Not the cache dir: cache paths are often
+// long and a Unix socket path caps at ~104 bytes. Windows has no socket, so
+// its PID file stays with the cache.
 func GetDaemonDir() (string, error) {
-	return GetCacheDir()
+	if runtime.GOOS == "windows" {
+		return GetCacheDir()
+	}
+	if dir := os.Getenv("VIBIUM_RUNTIME_DIR"); dir != "" {
+		return mkRuntimeDir(dir)
+	}
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		return mkRuntimeDir(filepath.Join(xdg, "vibium"))
+	}
+	// os.TempDir is per-user on macOS; on Linux /tmp is shared, so the uid
+	// suffix plus the owner check in mkRuntimeDir keeps the socket private.
+	return mkRuntimeDir(filepath.Join(os.TempDir(), fmt.Sprintf("vibium-%d", os.Getuid())))
+}
+
+// mkRuntimeDir creates dir owner-only and refuses one another user controls.
+func mkRuntimeDir(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := checkRuntimeDir(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // SessionName returns the daemon session name from the VIBIUM_SESSION
@@ -354,7 +551,7 @@ func maxSocketPathLen() int {
 }
 
 // GetSocketPath returns the platform-specific socket path for the daemon.
-// macOS/Linux: ~/Library/Caches/vibium/vibium[-<session>].sock or ~/.cache/vibium/vibium[-<session>].sock
+// macOS/Linux: <runtime dir>/vibium[-<session>].sock (see GetDaemonDir)
 // Windows: \\.\pipe\vibium[-<session>] (named pipe)
 func GetSocketPath() (string, error) {
 	suffix, err := sessionSuffix()
@@ -372,7 +569,7 @@ func GetSocketPath() (string, error) {
 	// Binding a socket beyond sun_path's capacity fails deep inside daemon
 	// startup; reject it here with an actionable message instead.
 	if len(path) > maxSocketPathLen() {
-		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or point VIBIUM_CACHE_DIR at a shorter path", path, len(path), maxSocketPathLen())
+		return "", fmt.Errorf("socket path %q is %d bytes, over the %d-byte OS limit: use a shorter session name or set VIBIUM_RUNTIME_DIR to a shorter path", path, len(path), maxSocketPathLen())
 	}
 	return path, nil
 }

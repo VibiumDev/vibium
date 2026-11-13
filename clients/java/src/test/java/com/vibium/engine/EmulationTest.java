@@ -60,7 +60,7 @@ class EmulationTest {
     @Test
     void testSetContent() {
         page.setContent("<html><body><h1>Custom</h1></body></html>");
-        assertEquals("Custom", page.find("h1").text());
+        assertEquals("Custom", page.find(new SelectorOptions().css("h1")).text());
     }
 
     @Test

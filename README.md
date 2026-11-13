@@ -4,7 +4,7 @@
 
 **The verification layer for coding agents.**
 
-Vibium gives AI agents the tools they need to check their work. Install the `vibium` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
+Vibium gives AI agents the tools they need to check their work. Install the `browser` skill and your agent can navigate pages, fill forms, click buttons, and take screenshots — all through simple CLI commands. Also available as an MCP server and as JS/TS, Python, and Java client libraries.
 
 **New here?** Get started in [JavaScript](docs/tutorials/getting-started-js.md), [Python](docs/tutorials/getting-started-python.md), or [Java](docs/tutorials/getting-started-java.md) — zero to hello world in 5 minutes.
 
@@ -22,16 +22,49 @@ Vibium gives AI agents the tools they need to check their work. Install the `vib
 
 ```bash
 npm install -g vibium
-npx skills add https://github.com/VibiumDev/vibium --skill vibe-check
+vibium setup
 ```
 
-The first command installs Vibium and the `vibium` binary, and downloads Chrome. The second installs the skill to `{project}/.agents/skills/vibium`.
+Agents can run `vibium setup --non-interactive`. Optional: install skills with
+`npx skills add https://github.com/VibiumDev/vibium`.
 
-> `skills` is the [open agent skills CLI](https://github.com/vercel-labs/skills) — a package manager for AI agent skills. No global install needed; `npx` runs it directly.
+Select all Vibium skills in the installer, then choose your agent and installation
+scope. `vibium setup` installs Chrome when it is missing.
 
-### CLI Quick Reference
+- **browser** — explore pages, automate actions, record sessions, and carry out browser tasks from plain-language instructions.
+- **check** — independently assess whether a claim holds in the browser or a recording.
+
+Invoke `/browser` or `/check` in agents with slash skills, or `$browser` and
+`$check` in Codex. Setup guides: [Codex](docs/how-to-guides/using-vibium-with-codex.md),
+[Claude Code](docs/how-to-guides/using-vibium-with-claude-code.md), and
+[Claude Desktop Chat via MCP](docs/how-to-guides/using-vibium-with-claude-desktop.md).
+[Set up Vibium](docs/how-to-guides/setup.md) is the happy path.
+Run [`vibium ready`](docs/reference/ready.md) to check setup.
+
+For a walkthrough, follow [Your coding agent’s first Check](docs/tutorials/check-with-a-coding-agent.md).
+Run and Check currently require the development build and AI configuration:
+`vibium setup` writes `~/.config/vibium/ai.env` (or `vibium config init` for the
+template). See [model providers](docs/reference/model-providers.md).
+
+See [Introducing Run and Check](docs/updates/2026-09-07-run-and-check.md) for examples and limitations.
+
+## CLI Quick Reference
 
 ```bash
+# Give a browser task (requires AI setup)
+vibium "open https://var.parts and add one battery pack to the cart" --keep-open
+
+# Or use the explicit run command
+vibium run "open https://var.parts and add one battery pack to the cart" --keep-open
+# Check the cart
+vibium check "the cart contains exactly one battery pack"
+
+# Check and save a recording
+vibium check "the cart contains exactly one battery pack" -o cart-check.zip
+
+# Close the browser
+vibium stop
+
 # Map & interact (the core workflow)
 vibium go https://var.parts           # navigate to URL
 vibium map                            # map interactive elements → @e1, @e2, ...
@@ -39,6 +72,9 @@ vibium click @e1                      # click using ref
 vibium diff map                       # see what changed
 
 # Find elements (semantic — no CSS needed)
+vibium find "the Sign In button"      # find by description → @e1 (page names first, vision model if configured)
+vibium find css "button.primary"      # find by exact CSS
+vibium find image icon.png            # find where a picture appears
 vibium find text "Sign In"            # find by visible text
 vibium find label "Email"             # find by form label
 vibium find placeholder "Search"      # find by placeholder
@@ -63,11 +99,11 @@ vibium record stop                    # stop and save to record.zip
 # Forms & input
 vibium fill @e2 "hello@example.com"   # fill input using ref
 vibium select @e3 "US"               # pick dropdown option
-vibium check @e4                      # check a checkbox
+vibium set @e4                        # check a checkbox
 vibium press Enter                    # press a key
 ```
 
-Full command list: [SKILL.md](skills/vibe-check/SKILL.md)
+Full command list: [SKILL.md](skills/browser/SKILL.md)
 
 **Alternative: MCP server** (for structured tool use instead of CLI):
 
@@ -117,7 +153,7 @@ await vibe.go('https://example.com')
 const png = await vibe.screenshot()
 await fs.writeFile('screenshot.png', png)
 
-const link = await vibe.find('a')
+const link = await vibe.find({ css: 'a' })
 await link.click()
 await bro.stop()
 ```
@@ -134,7 +170,7 @@ vibe.go('https://example.com')
 const png = vibe.screenshot()
 fs.writeFileSync('screenshot.png', png)
 
-const link = vibe.find('a')
+const link = vibe.find({ css: 'a' })
 link.click()
 bro.stop()
 ```
@@ -163,7 +199,7 @@ async def main():
     with open("screenshot.png", "wb") as f:
         f.write(png)
 
-    link = await vibe.find("a")
+    link = await vibe.find(css="a")
     await link.click()
     await bro.stop()
 
@@ -182,7 +218,7 @@ png = vibe.screenshot()
 with open("screenshot.png", "wb") as f:
     f.write(png)
 
-link = vibe.find("a")
+link = vibe.find(css="a")
 link.click()
 bro.stop()
 ```
@@ -197,7 +233,7 @@ vibe.go("https://example.com");
 var png = vibe.screenshot();
 Files.write(Path.of("screenshot.png"), png);
 
-var link = vibe.find("a");
+var link = vibe.find(new SelectorOptions().css("a"));
 link.click();
 bro.stop();
 ```
@@ -247,6 +283,7 @@ bro.stop();
 | Platform | Architecture | Status |
 |----------|--------------|--------|
 | Linux | x64 | ✅ Supported |
+| Linux | arm64 | ✅ Supported |
 | macOS | x64 (Intel) | ✅ Supported |
 | macOS | arm64 (Apple Silicon) | ✅ Supported |
 | Windows | x64 | ✅ Supported |
@@ -265,12 +302,7 @@ target builds the Go binary, JS client, and Java client.
 
 ## Roadmap
 
-V1 focuses on the core loop: browser control via CLI, MCP, and client libraries.
-
-See [ROADMAP.md](ROADMAP.md) for planned features:
-- Cortex (memory/navigation layer)
-- Retina (recording extension)
-- AI-powered locators
+See [ROADMAP.md](ROADMAP.md) for current development work and longer-term ideas.
 
 ---
 

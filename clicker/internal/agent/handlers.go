@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,11 @@ import (
 
 // Handlers manages browser session state and executes tool calls.
 type Handlers struct {
+	modelRunning bool                   // daemon mutex protects the complete verification and its child calls
+	speech       *api.Speech            // say and listen; see speechUnit
+	speechEnv    map[string]string      // the CLI caller's speech settings, for one call
+	speechCallID string                 // the recorded step a say or listen belongs to
+	speechResult map[string]interface{} // what that step's after event carries
 	// sessionMu guards launchResult, client, and conn. The MCP shutdown
 	// goroutine calls Close while the serve loop may be launching or
 	// quitting the browser on these same fields.
@@ -32,17 +38,42 @@ type Handlers struct {
 	screenshotDir  string
 	engine         string // "chrome" (default) or "firefox"
 	firefoxChannel string // daemon/session default; captured at construction
+	chromeChannel  string // daemon/session default; captured at construction
 	headless       bool
-	connectURL     string            // remote BiDi WebSocket URL (empty = local browser)
-	connectHeaders http.Header       // headers for remote WebSocket connection
-	ownsRemote     bool              // remote session was created here, so Close() ends it
-	refMap         map[string]string // @e1 -> CSS selector
-	lastMap        string            // last map output (for diff)
+	userDataDir    string                 // persistent profile dir for local launches (empty = temp profile)
+	connectURL     string                 // remote BiDi WebSocket URL (empty = local browser)
+	connectHeaders http.Header            // headers for remote WebSocket connection
+	ownsRemote     bool                   // remote session was created here, so Close() ends it
+	refs           api.RefTables          // context -> @eN table
+	refWarned      bool                   // a disabled stale-ref check was already logged at Warn
+	lastMaps       map[string]string      // context -> last map output (for diff)
+	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	// classicSession is set when connectURL was a classic WebDriver HTTP
+	// endpoint and this process created the session there. Grids release
+	// the slot on DELETE, so Close() must delete it.
+	classicSession *bidi.ClassicSession
 	recorder       *api.Recorder
 	recordDropBase uint64 // client.DroppedEvents() at record start
 	downloadDir    string
 	lastElementBox *api.BoxInfo // stashed by AgentSession.SetLastElementBox via callback
 	activeContext  string       // last page context switched to or created
+	// activeFrameParent is the page context that activeContext's frame
+	// belongs to, or "" when activeContext is a page rather than a frame.
+	// It lets navigation leave a frame it was never asked to stay in (#510).
+	activeFrameParent string
+	// pageOverride pins the current call to one browsing context: callers
+	// multiplexed over a single connection (concurrent MCP subagents) pass a
+	// page id so their commands stop landing on whatever page is globally
+	// current (#383). Set and cleared by Call; both transports serialize
+	// Call (the daemon under its router mutex, MCP by its stdio loop), so a
+	// per-call field is safe here, like lastElementBox above.
+	pageOverride string
+
+	// ownedUserContexts holds the user contexts created for isolated pages
+	// (#383), so closing the last page of one also removes the context and
+	// its storage partition. Only mutated inside serialized Call paths, like
+	// pageOverride above.
+	ownedUserContexts map[string]bool
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
@@ -57,31 +88,91 @@ type Handlers struct {
 	// launched with, same caveat as launchedHeadless.
 	launchedEngine string
 
-	// launchedChannel distinguishes separately installed Firefox channels.
-	// It is empty for Chrome and remote sessions.
+	// launchedChannel distinguishes separately installed release channels of
+	// either engine. It is empty for remote sessions.
 	launchedChannel string
+
+	// launchedUserDataDir is the persistent profile the running browser was
+	// launched with, "" for a temp profile. Same caveat as launchedHeadless.
+	launchedUserDataDir string
+
+	// launchNotify, when set, is called once at the moment a tool call
+	// commits to launching or connecting a browser, so the caller can warn
+	// its client that the response will take up to the launch bounds. The
+	// daemon sets it per request under the same mutex that serializes
+	// handler calls; it must not be mutated while a call is in flight.
+	launchNotify func()
+
+	// installNotify, when set, is called when a launch finds the engine
+	// missing and starts downloading it. A download is not bounded by the
+	// launch budget, so callers need to distinguish it from a slow launch.
+	// Set and cleared alongside launchNotify.
+	installNotify func()
+}
+
+// SetLaunchNotify installs (or clears, with nil) the launch-start callback.
+func (h *Handlers) SetLaunchNotify(fn func()) {
+	h.launchNotify = fn
+}
+
+// SetInstallNotify installs (or clears, with nil) the install-start callback.
+func (h *Handlers) SetInstallNotify(fn func()) {
+	h.installNotify = fn
 }
 
 // NewHandlers creates a new Handlers instance.
 // screenshotDir specifies where screenshots are saved. If empty, file saving is disabled.
 // engine selects the browser ("chrome" or "firefox").
 // headless controls whether the browser is launched in headless mode.
-func NewHandlers(screenshotDir string, engine string, headless bool, connectURL string, connectHeaders http.Header) *Handlers {
+func NewHandlers(screenshotDir string, engine string, headless bool, userDataDir string, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Handlers {
 	return &Handlers{
 		screenshotDir:  screenshotDir,
 		engine:         engine,
 		firefoxChannel: paths.FirefoxChannel(),
+		chromeChannel:  paths.ChromeChannel(),
 		headless:       headless,
+		userDataDir:    userDataDir,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
+		connectCaps:    connectCaps,
 	}
+}
+
+// leaveActiveFrame returns the ambient context to the page a frame belongs
+// to, if the active context is currently a frame. Navigation calls this so a
+// frame entered by browser_frame does not trap every later command inside it
+// (#510). A no-op when the active context is already a page.
+func (h *Handlers) leaveActiveFrame() {
+	if h.activeFrameParent != "" {
+		h.activeContext = h.activeFrameParent
+		h.activeFrameParent = ""
+	}
+}
+
+// clearFrameIfContextClosed drops the frame state when the closed context is
+// the frame's page (the frame dies with it) — keeping either would leave
+// later commands pointed at a dead frame (#510).
+func (h *Handlers) clearFrameIfContextClosed(closed string) {
+	if h.activeFrameParent == closed {
+		h.activeContext = ""
+		h.activeFrameParent = ""
+	}
+}
+
+// currentContext is the browsing context this call targets: the pinned page
+// when the caller passed one, the ambient current page otherwise.
+func (h *Handlers) currentContext() string {
+	if h.pageOverride != "" {
+		return h.pageOverride
+	}
+	return h.activeContext
 }
 
 // newSession creates an AgentSession that writes element box info back to
 // h.lastElementBox so Call() can include it in RecordActionEnd.
 func (h *Handlers) newSession() *api.AgentSession {
 	s := api.NewAgentSession(h.client)
-	s.Context = h.activeContext
+	s.Context = h.currentContext()
 	s.Prompts = h.prompts
 	s.Navigations = h.navigations
 	s.OnBoxSet = func(box *api.BoxInfo) {
@@ -95,7 +186,24 @@ func (h *Handlers) newSession() *api.AgentSession {
 // to produce before/after events (matching the API path), and captures a
 // screenshot after each non-recording action completes.
 func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallResult, error) {
+	if name == "vibium_run" {
+		return h.runMCP(args)
+	}
+	if name == "vibium_check" {
+		return h.checkMCP(args)
+	}
 	log.Debug("tool call", "name", name, "args", args)
+
+	// A page argument pins this call to one browsing context. Validate it
+	// against the live tree so a stale id fails loudly here instead of the
+	// call silently acting on whatever page is current (#383).
+	if page, ok := args["page"].(string); ok && page != "" {
+		if err := h.checkPageOpen(page); err != nil {
+			return nil, err
+		}
+		h.pageOverride = page
+		defer func() { h.pageOverride = "" }()
+	}
 
 	// Inject a synthetic find trace event before selector-based actions
 	// so CLI recordings match the JS client's find→action pairs.
@@ -106,17 +214,41 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 		}
 	}
 
+	// Checked before dispatch so a stale failure is recorded like any other result.
+	refPage := h.refKey()
+	refTable := h.refs.For(refPage)
+	var refErr error
+	for _, arg := range []string{"selector", "source", "target"} {
+		if ref, ok := args[arg].(string); ok && api.IsRef(ref) {
+			if refErr = h.checkRef(refPage, refTable, ref, absenceQuery(name, args)); refErr != nil {
+				break
+			}
+		}
+	}
+
+	// A @eN ref from find or map becomes its selector, or stays a ref with
+	// its box attached when the match has no DOM element.
+	if err := api.ResolveRefParams(refTable, name, args); err != nil {
+		return nil, err
+	}
+
 	var callId string
-	if h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		callId = h.recorder.NextCallId()
 		pageId := h.getContext()
 		// Resolve @e1 refs to real selectors so the trace shows meaningful selectors
 		recordArgs := h.resolveRefsInArgs(args)
+		api.CaptureRecordingSecrets(h.newSession(), h.recorder, recordArgs)
 		h.recorder.RecordAction(callId, mcpToolToMethod(name), recordArgs, "", pageId)
 		h.lastElementBox = nil
 	}
 
-	result, err := h.dispatch(name, args)
+	h.speechCallID, h.speechResult = callId, nil
+	var result *ToolsCallResult
+	err := refErr
+	if err == nil {
+		result, err = h.dispatch(name, args)
+	}
 
 	endTime := time.Now()
 
@@ -125,12 +257,22 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 	h.lastElementBox = nil
 
 	// Per-action screenshot: capture after successful non-recording commands
-	if err == nil && h.recorder != nil && h.recorder.IsRecording() && !isRecordingCommand(name) {
+	if err == nil && h.recorder != nil && h.recorder.IsRecording() && (!isRecordingCommand(name) || (h.modelRunning && name == "browser_screenshot")) {
 		api.CaptureRecordingScreenshot(h.newSession(), h.recorder, endTime)
 	}
 
 	if callId != "" {
+		api.CaptureRecordingSecrets(h.newSession(), h.recorder, nil)
 		h.recorder.RecordActionEnd(callId, "", endTime, box)
+		if h.modelRunning {
+			h.recorder.RecordCallOutcome(callId, recordedToolResult(result), err)
+		} else if name == "vibium_say" || name == "vibium_listen" {
+			var outcome interface{}
+			if h.speechResult != nil {
+				outcome = h.speechResult
+			}
+			h.recorder.RecordCallOutcome(callId, outcome, err)
+		}
 	}
 
 	return result, err
@@ -139,6 +281,14 @@ func (h *Handlers) Call(name string, args map[string]interface{}) (*ToolsCallRes
 // dispatch routes a tool call to the appropriate handler method.
 func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCallResult, error) {
 	switch name {
+	case "vibium_say":
+		return h.sayMCP(args)
+	case "vibium_listen":
+		return h.listenMCP(args)
+	case "browser_console":
+		return h.browserObservations("console")
+	case "browser_network":
+		return h.browserObservations("network")
 	case "browser_start":
 		return h.browserLaunch(args)
 	case "browser_navigate":
@@ -217,9 +367,9 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserGetAttribute(args)
 	case "browser_is_visible":
 		return h.browserIsVisible(args)
-	case "browser_check":
+	case "browser_set":
 		return h.browserCheck(args)
-	case "browser_uncheck":
+	case "browser_unset":
 		return h.browserUncheck(args)
 	case "browser_scroll_into_view":
 		return h.browserScrollIntoView(args)
@@ -245,7 +395,7 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserCount(args)
 	case "browser_is_enabled":
 		return h.browserIsEnabled(args)
-	case "browser_is_checked":
+	case "browser_is_set":
 		return h.browserIsChecked(args)
 	case "browser_wait_for_text":
 		return h.browserWaitForText(args)
@@ -269,6 +419,12 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserMouseUp(args)
 	case "browser_mouse_click":
 		return h.browserMouseClick(args)
+	case "browser_tap":
+		return h.browserTap(args)
+	case "browser_swipe":
+		return h.browserSwipe(args)
+	case "browser_long_press":
+		return h.browserLongPress(args)
 	case "browser_drag":
 		return h.browserDrag(args)
 	case "browser_set_viewport":
@@ -334,11 +490,11 @@ func needsFindStep(name string) bool {
 	switch name {
 	case "browser_click", "browser_dblclick", "browser_fill", "browser_type",
 		"browser_press", "browser_hover", "browser_select",
-		"browser_check", "browser_uncheck", "browser_focus",
+		"browser_set", "browser_unset", "browser_focus",
 		"browser_scroll_into_view", "browser_drag",
 		"browser_get_text", "browser_get_html", "browser_get_value",
 		"browser_get_attribute", "browser_is_visible",
-		"browser_is_enabled", "browser_is_checked",
+		"browser_is_enabled", "browser_is_set",
 		"browser_upload", "browser_highlight":
 		return true
 	}
@@ -381,8 +537,30 @@ func (h *Handlers) recordFindStep(selector string) {
 	h.recorder.RecordActionEnd(callId, "", endTime, box)
 }
 
-// getContext returns the first browsing context from the browser tree, or "".
+// checkPageOpen verifies a caller-supplied page id names a live top-level
+// browsing context.
+func (h *Handlers) checkPageOpen(page string) error {
+	if h.client == nil {
+		return fmt.Errorf("page %q: browser is not running", page)
+	}
+	tree, err := h.client.GetTree()
+	if err != nil {
+		return fmt.Errorf("page %q: %w", page, err)
+	}
+	for _, c := range tree.Contexts {
+		if c.Context == page {
+			return nil
+		}
+	}
+	return fmt.Errorf("page %q not found; it may have been closed (browser_list_pages shows open pages)", page)
+}
+
+// getContext returns the pinned page when the caller passed one, else the
+// first browsing context from the browser tree, or "".
 func (h *Handlers) getContext() string {
+	if h.pageOverride != "" {
+		return h.pageOverride
+	}
 	if h.client == nil {
 		return ""
 	}
@@ -391,6 +569,124 @@ func (h *Handlers) getContext() string {
 		return ""
 	}
 	return tree.Contexts[0].Context
+}
+
+// refKey is the browsing context whose element refs and map snapshot this
+// call reads and writes. Refs are scoped per page so concurrent callers
+// pinned to different pages cannot resolve each other's selectors (#383).
+// An ambient call with no tracked page resolves to the real current
+// context, so refs minted before any explicit page switch are still found
+// after switching back to that page.
+func (h *Handlers) refKey() string {
+	if ctx := h.currentContext(); ctx != "" {
+		return ctx
+	}
+	if h.client == nil {
+		return ""
+	}
+	tree, err := h.client.GetTree()
+	if err != nil || len(tree.Contexts) == 0 {
+		return ""
+	}
+	return tree.Contexts[0].Context
+}
+
+// refSandbox shares the page's DOM but not its globals, so the page can't see
+// or rewrite the ref store. A new document starts without a store.
+const refSandbox = "vibium-refs"
+
+// refCheckTimeout bounds ref registration and checks. An open dialog blocks
+// script calls on Chrome, and the prompt tracker doesn't always know of it.
+const refCheckTimeout = 2 * time.Second
+
+// promptOpen reports a prompt the tracker knows is open. It blocks script calls.
+func (h *Handlers) promptOpen(key string) bool {
+	if h.prompts == nil {
+		return false
+	}
+	_, open := h.prompts.OpenPrompt(key)
+	return open
+}
+
+// registerRefs stores each entry's element so checkRef can tell whether the
+// ref still reaches its own. A WeakRef could be collected while its node lives.
+func (h *Handlers) registerRefs(key string, entries []*api.RefEntry) {
+	selectors := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.Visual() {
+			selectors[e.Ref] = e.Selector
+		}
+	}
+	if len(selectors) == 0 || h.client == nil || h.promptOpen(key) {
+		return
+	}
+	encoded, _ := json.Marshal(selectors)
+	script := `(selectors) => {
+		` + api.PierceQueryJS() + `
+		const store = globalThis.vibiumRefs ??= {};
+		for (const [ref, s] of Object.entries(JSON.parse(selectors))) store[ref] = pierceQuery(document, s);
+	}`
+	if _, err := h.client.CallFunctionIn(key, refSandbox, script, []interface{}{string(encoded)}, refCheckTimeout); err != nil {
+		if !h.refWarned {
+			h.refWarned = true
+			log.Warn("stale-ref checks disabled: refs not registered", "error", err)
+		} else {
+			log.Debug("refs not registered; they will not be checked", "error", err)
+		}
+		return
+	}
+	for _, e := range entries {
+		e.Checked = !e.Visual()
+	}
+}
+
+// checkRef fails a ref whose selector no longer reaches its own element. An
+// unregistered ref, or a check with no answer, is left unchecked; a dead
+// browser fails the check this way, so ensureBrowser still reports it (#219).
+func (h *Handlers) checkRef(key string, table *api.RefTable, ref string, absence bool) error {
+	e, ok := table.Lookup(ref)
+	if !ok || !e.Checked || h.client == nil || h.promptOpen(key) {
+		return nil
+	}
+	script := `(ref, current) => {
+		` + api.PierceQueryJS() + `
+		const store = globalThis.vibiumRefs;
+		const known = !!store && ref in store;
+		if (known && !store[ref]) return 'unregistered';
+		const el = known && store[ref];
+		const here = pierceQuery(document, current);
+		if (el && el.isConnected) return here === el ? 'ok' : 'moved';
+		return here ? 'gone' : 'vacant';
+	}`
+	result, err := h.client.CallFunctionIn(key, refSandbox, script, []interface{}{ref, e.Selector}, refCheckTimeout)
+	if err != nil {
+		log.Debug("ref not checked", "ref", ref, "error", err)
+		return nil
+	}
+	switch state, _ := result.(string); state {
+	case "moved":
+		return &api.StaleRefError{Ref: ref, Reason: "its element is still on the page, but its selector has reached another element or none"}
+	case "gone":
+		return &api.StaleRefError{Ref: ref, Reason: "the page changed"}
+	case "vacant":
+		// Nothing sits where the element was, so "is it gone?" may answer.
+		if !absence {
+			return &api.StaleRefError{Ref: ref, Reason: "the page changed"}
+		}
+	}
+	return nil
+}
+
+// absenceQuery reports a tool that asks whether an element is absent.
+func absenceQuery(tool string, args map[string]interface{}) bool {
+	switch tool {
+	case "browser_is_visible", "browser_count":
+		return true
+	case "browser_wait":
+		state, _ := args["state"].(string)
+		return state == "hidden"
+	}
+	return false
 }
 
 // queryViewport queries the browser for the current viewport size.
@@ -436,10 +732,10 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.hover"
 	case "browser_select":
 		return "vibium:element.selectOption"
-	case "browser_check":
-		return "vibium:element.check"
-	case "browser_uncheck":
-		return "vibium:element.uncheck"
+	case "browser_set":
+		return "vibium:element.set"
+	case "browser_unset":
+		return "vibium:element.unset"
 	case "browser_focus":
 		return "vibium:element.focus"
 	case "browser_scroll_into_view":
@@ -458,6 +754,12 @@ func mcpToolToMethod(name string) string {
 		return "vibium:mouse.up"
 	case "browser_mouse_click":
 		return "vibium:mouse.click"
+	case "browser_tap":
+		return "vibium:touch.tap"
+	case "browser_swipe":
+		return "vibium:touch.swipe"
+	case "browser_long_press":
+		return "vibium:touch.longPress"
 	case "browser_scroll":
 		return "vibium:page.scroll"
 
@@ -482,8 +784,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:element.isVisible"
 	case "browser_is_enabled":
 		return "vibium:element.isEnabled"
-	case "browser_is_checked":
-		return "vibium:element.isChecked"
+	case "browser_is_set":
+		return "vibium:element.isSet"
 	case "browser_count":
 		return "vibium:page.findAll"
 	case "browser_evaluate":
@@ -599,6 +901,11 @@ func mcpToolToMethod(name string) string {
 	case "page_clock_set_timezone":
 		return "vibium:clock.setTimezone"
 
+	case "vibium_say":
+		return "vibium:speech.say"
+	case "vibium_listen":
+		return "vibium:speech.listen"
+
 	default:
 		return name
 	}
@@ -610,11 +917,17 @@ func mcpToolToMethod(name string) string {
 func (h *Handlers) Close() {
 	h.sessionMu.Lock()
 	conn, client, launchResult := h.conn, h.client, h.launchResult
-	ownsRemote := h.ownsRemote
+	ownsRemote, classic := h.ownsRemote, h.classicSession
 	h.conn, h.client, h.launchResult = nil, nil, nil
 	h.ownsRemote = false
+	h.ownedUserContexts = nil
+	h.activeContext = ""
+	h.activeFrameParent = ""
+	h.refs.Reset()
+	h.lastMaps = nil
 	recorder := h.recorder
 	h.recorder = nil
+	h.classicSession = nil
 	h.sessionMu.Unlock()
 
 	// An active recording auto-finalizes to its declared path, as if
@@ -635,6 +948,27 @@ func (h *Handlers) Close() {
 		}
 	}
 
+	// A persistent profile (#715) needs the browser to exit on its own or
+	// unflushed profile writes are lost: process-level teardown is a hard
+	// kill. Ask it to close while the connection is up; launchResult.Close
+	// waits for the exit before killing anything. Same engine split as the
+	// router's closePersistentBrowser: Chrome must shut itself down via CDP
+	// (chromedriver hard-kills on every path of its own, and no reply comes
+	// back — the mapper dies with the browser), Firefox via BiDi natively.
+	if launchResult != nil && launchResult.Persistent && client != nil {
+		if launchResult.Engine == "firefox" {
+			client.SendCommandWithTimeout("browser.close", map[string]interface{}{}, 5*time.Second)
+		} else {
+			_, cerr := client.SendCommandWithTimeout("goog:cdp.sendCommand", map[string]interface{}{
+				"method": "Browser.close",
+				"params": map[string]interface{}{},
+			}, 2*time.Second)
+			if cerr != nil && !strings.Contains(cerr.Error(), "timeout") {
+				client.SendCommandWithTimeout("browser.close", map[string]interface{}{}, 5*time.Second)
+			}
+		}
+	}
+
 	// Remote mode: end the BiDi session so chromedriver closes Chrome. Only
 	// when this process created it — an attached session belongs to whoever
 	// handed us the URL, and ending it would close their browser.
@@ -643,6 +977,11 @@ func (h *Handlers) Close() {
 	}
 	if conn != nil {
 		conn.Close()
+	}
+	// A session this process created on a classic endpoint is also ours to
+	// end; DELETE is what releases the slot on grids and cloud providers.
+	if classic != nil {
+		classic.Delete()
 	}
 	if launchResult != nil {
 		launchResult.Close()
@@ -677,10 +1016,19 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 				"%s is already running; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
 				h.launchedEngine, want)
 		}
-		if want, ok := args["channel"].(string); ok && want != "" && h.launchedEngine == "firefox" && want != h.launchedChannel {
+		if want, ok := args["channel"].(string); ok && want != "" && h.launchedChannel != "" && want != h.launchedChannel {
 			return nil, fmt.Errorf(
-				"Firefox %s is already running; requested %s. Run `vibium stop` first, or use another --session",
-				h.launchedChannel, want)
+				"%s %s is already running; requested %s. Run `vibium stop` first, or use another --session",
+				engineTitle(h.launchedEngine), h.launchedChannel, want)
+		}
+		if want, ok := args["userDataDir"].(string); ok && want != "" && want != h.launchedUserDataDir {
+			running := "a temporary profile"
+			if h.launchedUserDataDir != "" {
+				running = "user data dir " + h.launchedUserDataDir
+			}
+			return nil, fmt.Errorf(
+				"browser is already running with %s; requested %s. Run `vibium stop` first, or drop the flag to use the running browser",
+				running, want)
 		}
 		return &ToolsCallResult{
 			Content: []Content{{
@@ -690,16 +1038,30 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		}, nil
 	}
 
+	// Past the no-op checks a launch (or remote connect) really starts, and
+	// the caller may be about to wait longer than an ordinary command.
+	if h.launchNotify != nil {
+		h.launchNotify()
+	}
+
 	// Remote browser connect mode
 	if h.connectURL != "" {
-		conn, client, session, err := bidi.ConnectRemote(h.connectURL, h.connectHeaders)
+		// http(s) URLs are classic WebDriver endpoints: create a session
+		// there first and connect to the BiDi URL it hands back.
+		wsURL, classic, err := bidi.ResolveEndpoint(h.connectURL, h.connectHeaders, h.connectCaps)
 		if err != nil {
+			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
+		}
+		conn, client, session, err := bidi.ConnectRemote(wsURL, h.connectHeaders)
+		if err != nil {
+			classic.Delete()
 			return nil, fmt.Errorf("failed to connect to remote browser: %w", err)
 		}
 		h.sessionMu.Lock()
 		h.conn = conn
 		h.client = client
 		h.ownsRemote = session.Created
+		h.classicSession = classic
 		h.sessionMu.Unlock()
 		h.startPromptTracking()
 
@@ -710,7 +1072,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 		return &ToolsCallResult{
 			Content: []Content{{
 				Type: "text",
-				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, h.connectURL, session.ID),
+				Text: fmt.Sprintf("%s remote browser at %s (session %s)", verb, bidi.RedactURL(h.connectURL), session.ID),
 			}},
 		}, nil
 	}
@@ -727,20 +1089,44 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	if useEngine == "" {
 		useEngine = "chrome"
 	}
-	useChannel := ""
+	// The default channel is the daemon's, captured at construction; a
+	// per-call channel overrides it for either engine. Chrome used to read
+	// this argument only in the Firefox branch, silently launching stable
+	// no matter what the caller asked for (#525).
+	useChannel := h.chromeChannel
 	if useEngine == "firefox" {
 		useChannel = h.firefoxChannel
-		if val, ok := args["channel"].(string); ok && val != "" {
-			if val != "release" && val != "beta" {
-				return nil, fmt.Errorf("unknown Firefox channel %q (supported: release, beta)", val)
-			}
-			useChannel = val
+	}
+	if val, ok := args["channel"].(string); ok && val != "" {
+		if !paths.ValidChannel(useEngine, val) {
+			return nil, fmt.Errorf("unknown %s channel %q (supported: %s)",
+				engineTitle(useEngine), val, strings.Join(paths.EngineChannels[useEngine], ", "))
+		}
+		useChannel = val
+	}
+	useUserDataDir := h.userDataDir
+	if val, ok := args["userDataDir"].(string); ok && val != "" {
+		useUserDataDir = val
+	}
+
+	// Install the engine if this machine has never had one. The client
+	// libraries get this from `vibium pipe` (#312), but the CLI and MCP reach
+	// the browser through here instead and used to fail with "Chrome not
+	// found" / "Firefox not found" telling the user to go run an install
+	// command by hand. VIBIUM_SKIP_BROWSER_DOWNLOAD restores that error.
+	if !browser.SkipBrowserDownload() && !browser.EngineInstalledForChannel(useEngine, useChannel) {
+		if h.installNotify != nil {
+			h.installNotify()
+		}
+		if err := browser.EnsureInstalledForChannel(useEngine, useChannel); err != nil {
+			return nil, fmt.Errorf("failed to install %s: %w", useEngine, err)
 		}
 	}
 
 	// Launch browser
 	launchResult, err := browser.Launch(browser.LaunchOptions{
-		Engine: useEngine, FirefoxChannel: useChannel, Headless: useHeadless,
+		Engine: useEngine, Channel: useChannel, Headless: useHeadless,
+		UserDataDir: useUserDataDir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
@@ -765,6 +1151,7 @@ func (h *Handlers) browserLaunch(args map[string]interface{}) (*ToolsCallResult,
 	h.launchedHeadless = useHeadless
 	h.launchedEngine = useEngine
 	h.launchedChannel = useChannel
+	h.launchedUserDataDir = useUserDataDir
 	h.sessionMu.Unlock()
 	h.startPromptTracking()
 
@@ -782,6 +1169,16 @@ func modeName(headless bool) string {
 		return "headless"
 	}
 	return "headed"
+}
+
+// engineTitle renders an engine name for error messages.
+func engineTitle(engine string) string {
+	switch engine {
+	case "firefox":
+		return "Firefox"
+	default:
+		return "Chrome"
+	}
 }
 
 // startPromptTracking subscribes to user-prompt events and keeps h.prompts in
@@ -810,10 +1207,20 @@ func (h *Handlers) startPromptTracking() {
 		"browsingContext.load",
 	})
 	client.SetEventHandler(h.handleBidiEvent)
+
+	// Every page of a browser session gets a virtual microphone and an
+	// audio tap, so say and listen work without setup.
+	h.speechUnit().Install(func() error {
+		subscribeEvents(client, []string{"script.message"})
+		return nil
+	})
 }
 
 // handleBidiEvent is the single BiDi event handler for the agent session.
 func (h *Handlers) handleBidiEvent(msg string) {
+	if h.speech.Event(msg) {
+		return
+	}
 	h.sessionMu.Lock()
 	tracker := h.prompts
 	navs := h.navigations
@@ -839,6 +1246,15 @@ func (h *Handlers) browserNavigate(args map[string]interface{}) (*ToolsCallResul
 		return nil, fmt.Errorf("url is required")
 	}
 
+	// Navigating leaves a frame. Without this the frame context set by
+	// browser_frame is still current, so `go` replaces the iframe's document
+	// and every later command stays trapped inside it (#510). A pinned call
+	// targets its own page and leaves the ambient frame state alone.
+	if h.activeFrameParent != "" && h.pageOverride == "" {
+		h.activeContext = h.activeFrameParent
+		h.activeFrameParent = ""
+	}
+
 	s := h.newSession()
 	ctx, err := s.GetContextID()
 	if err != nil {
@@ -847,6 +1263,7 @@ func (h *Handlers) browserNavigate(args map[string]interface{}) (*ToolsCallResul
 	if err := api.Navigate(s, ctx, url, "complete"); err != nil {
 		return nil, fmt.Errorf("failed to navigate: %w", err)
 	}
+	h.refs.Drop(h.refKey())
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -891,12 +1308,6 @@ func (h *Handlers) browserType(args map[string]interface{}) (*ToolsCallResult, e
 		return nil, err
 	}
 
-	selector, ok := args["selector"].(string)
-	if !ok || selector == "" {
-		return nil, fmt.Errorf("selector is required")
-	}
-	selector = h.resolveSelector(selector)
-
 	text, ok := args["text"].(string)
 	if !ok {
 		return nil, fmt.Errorf("text is required")
@@ -907,6 +1318,20 @@ func (h *Handlers) browserType(args map[string]interface{}) (*ToolsCallResult, e
 	if err != nil {
 		return nil, err
 	}
+	// No selector: the text goes to whatever has focus, as browser_press does.
+	selector, _ := args["selector"].(string)
+	if selector == "" {
+		if err := api.TypeText(s, ctx, text); err != nil {
+			return nil, fmt.Errorf("failed to type: %w", err)
+		}
+		return &ToolsCallResult{
+			Content: []Content{{
+				Type: "text",
+				Text: "Typed into the focused element",
+			}},
+		}, nil
+	}
+	selector = h.resolveSelector(selector)
 	if err := api.TypeInto(s, ctx, elementParamsWithTimeout(selector, args), text); err != nil {
 		return nil, fmt.Errorf("failed to type: %w", err)
 	}
@@ -934,12 +1359,16 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("failed to map for annotation: %w", err)
 		}
 
-		// Build ordered list of selectors from refMap (@e1, @e2, ...)
-		selectors := make([]string, 0, len(h.refMap))
-		for i := 1; i <= len(h.refMap); i++ {
-			ref := fmt.Sprintf("@e%d", i)
-			if sel, ok := h.refMap[ref]; ok {
-				selectors = append(selectors, sel)
+		// Label each DOM-backed ref with its number; a visual ref has no
+		// element to pin a label to.
+		type annotation struct {
+			N        string `json:"n"`
+			Selector string `json:"selector"`
+		}
+		var selectors []annotation
+		for _, e := range h.refs.For(h.refKey()).Entries() {
+			if !e.Visual() {
+				selectors = append(selectors, annotation{N: strings.TrimPrefix(e.Ref, "@e"), Selector: e.Selector})
 			}
 		}
 
@@ -952,23 +1381,24 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			return nil, fmt.Errorf("failed to encode annotation selectors: %w", err)
 		}
 		annotateScript := `(selectorsJSON) => {
+			` + api.PierceQueryJS() + `
 			const selectors = JSON.parse(selectorsJSON);
 			let count = 0;
 			for (let i = 0; i < selectors.length; i++) {
-				const el = document.querySelector(selectors[i]);
+				const el = pierceQuery(document, selectors[i].selector);
 				if (!el) continue;
 				const rect = el.getBoundingClientRect();
 				if (rect.width === 0 || rect.height === 0) continue;
 				const label = document.createElement('div');
 				label.className = '__vibium_annotation';
-				label.textContent = i + 1;
+				label.textContent = selectors[i].n;
 				label.style.cssText = 'position:fixed;z-index:2147483647;background:red;color:white;font:bold 11px sans-serif;padding:1px 4px;border-radius:8px;pointer-events:none;line-height:16px;min-width:16px;text-align:center;left:' + (rect.left - 2) + 'px;top:' + (rect.top - 2) + 'px;';
 				document.body.appendChild(label);
 				count++;
 			}
 			return JSON.stringify({count: count});
 		}`
-		if _, err := h.client.CallFunction(h.activeContext, annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
+		if _, err := h.client.CallFunction(h.currentContext(), annotateScript, []interface{}{string(selectorsJSON)}); err != nil {
 			return nil, fmt.Errorf("failed to annotate: %w", err)
 		}
 	}
@@ -978,6 +1408,25 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 	if err != nil {
 		return nil, err
 	}
+
+	// A pinned page (#383) is usually not the foreground tab, and headless
+	// Chrome composites no frame for a background one: captureScreenshot then
+	// blocks until the BiDi timeout instead of returning. Raise the target for
+	// the capture and put the previous tab back. This surface reaches it and
+	// the router-backed clients do not because browser_new_page activates the
+	// page it creates (browserNewPage) while vibium:browser.newPage leaves the
+	// foreground alone. Firefox 155 refuses activate as privileged, so a
+	// failure here is not fatal — the capture is still worth attempting.
+	if ctx != "" && h.activeContext != "" && ctx != h.activeContext {
+		if err := api.SwitchPage(s, ctx); err == nil {
+			defer func() {
+				if err := api.SwitchPage(s, h.activeContext); err != nil {
+					log.Warn("failed to restore the active page after a pinned screenshot", "context", h.activeContext, "error", err)
+				}
+			}()
+		}
+	}
+
 	base64Data, err := api.Screenshot(s, ctx, fullPage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture screenshot: %w", err)
@@ -989,7 +1438,7 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 			document.querySelectorAll('.__vibium_annotation').forEach(el => el.remove());
 			return 'cleaned';
 		}`
-		h.client.CallFunction(h.activeContext, cleanupScript, nil)
+		h.client.CallFunction(h.currentContext(), cleanupScript, nil)
 	}
 
 	// If filename provided, save to file (only if screenshotDir is configured)
@@ -1035,328 +1484,60 @@ func (h *Handlers) browserScreenshot(args map[string]interface{}) (*ToolsCallRes
 	}, nil
 }
 
-// browserFind finds an element and returns its info.
-// Supports CSS selector or semantic locators (text, label, placeholder, testid, xpath, alt, title).
+// browserFind resolves one locator through the shared finder and registers
+// the match in this page's ref table.
 func (h *Handlers) browserFind(args map[string]interface{}) (*ToolsCallResult, error) {
+	return h.find(args, false)
+}
+
+func (h *Handlers) find(args map[string]interface{}, all bool) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
 	}
-
-	// Check for semantic locators
-	role, _ := args["role"].(string)
-	text, _ := args["text"].(string)
-	label, _ := args["label"].(string)
-	placeholder, _ := args["placeholder"].(string)
-	testid, _ := args["testid"].(string)
-	xpath, _ := args["xpath"].(string)
-	alt, _ := args["alt"].(string)
-	title, _ := args["title"].(string)
-
-	hasSemantic := role != "" || text != "" || label != "" || placeholder != "" || testid != "" || xpath != "" || alt != "" || title != ""
-
-	// Shared by both branches: the CSS path polls too, so --timeout is not
-	// silently inert on the most common form of find (#206).
-	timeout := api.DefaultTimeout
-	if t, ok := argFloat(args, "timeout"); ok {
-		timeout = time.Duration(t) * time.Millisecond
-	}
-
-	if hasSemantic {
-		script := findBySemanticScript()
-		result, err := pollCallFunction(h, script, []interface{}{role, text, label, placeholder, testid, xpath, alt, title}, timeout)
-		if err != nil {
-			desc := ""
-			for _, pair := range []struct{ k, v string }{
-				{"role", role}, {"text", text}, {"label", label}, {"placeholder", placeholder},
-				{"testid", testid}, {"xpath", xpath}, {"alt", alt}, {"title", title},
-			} {
-				if pair.v != "" {
-					if desc != "" {
-						desc += ", "
-					}
-					desc += pair.k + "=" + pair.v
-				}
-			}
-			return nil, fmt.Errorf("element not found: %s (timeout %s)", desc, timeout)
-		}
-
-		// Parse JSON result
-		var found struct {
-			Selector string `json:"selector"`
-			Label    string `json:"label"`
-		}
-		if err := json.Unmarshal([]byte(fmt.Sprintf("%v", result)), &found); err != nil {
-			return nil, fmt.Errorf("failed to parse find result: %w", err)
-		}
-
-		// Store ref in refMap
-		h.refMap = make(map[string]string)
-		h.refMap["@e1"] = found.Selector
-
-		return &ToolsCallResult{
-			Content: []Content{{
-				Type: "text",
-				Text: fmt.Sprintf("@e1 %s", found.Label),
-			}},
-		}, nil
-	}
-
-	// CSS selector mode
-	selector, ok := args["selector"].(string)
-	if !ok || selector == "" {
-		return nil, fmt.Errorf("selector or semantic locator (role, text, label, placeholder, testid, xpath, alt, title) is required")
-	}
-	selector = h.resolveSelector(selector)
-
-	// Run getLabel in browser to get consistent label format (with scroll-into-view)
-	labelScript := `(selector) => {
-		` + GetLabelJS() + `
-		` + api.PierceQueryJS() + `
-		const el = pierceQuery(document, selector);
-		if (!el) return null;
-		if (el.scrollIntoViewIfNeeded) {
-			el.scrollIntoViewIfNeeded(true);
-		} else {
-			el.scrollIntoView({ block: 'center', inline: 'nearest' });
-		}
-		return getLabel(el);
-	}`
-	// Poll like the semantic branch does, so --timeout means something here and
-	// a CSS find waits for an element that has not rendered yet (#206). The
-	// single non-polling call also returned nil for a miss and still minted a
-	// @e1 ref, so `find` reported "@e1 <nil>" with exit 0.
-	labelResult, err := pollCallFunction(h, labelScript, []interface{}{selector}, timeout)
+	loc, err := api.ParseLocator(args)
 	if err != nil {
-		return nil, fmt.Errorf("element not found: %s (timeout %s)", selector, timeout)
+		return nil, err
 	}
-
-	// Store ref in refMap
-	h.refMap = make(map[string]string)
-	h.refMap["@e1"] = selector
-
-	labelStr := fmt.Sprintf("%v", labelResult)
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	res, err := api.FindElements(s, ctx, loc, all)
+	if err != nil {
+		return nil, err
+	}
+	key := h.refKey()
+	table := h.refs.For(key)
+	entries := make([]*api.RefEntry, 0, len(res.Matches))
+	for _, m := range res.Matches {
+		entries = append(entries, table.Register(m.Entry(res)))
+	}
+	h.registerRefs(key, entries)
+	structured := make([]map[string]interface{}, 0, len(entries))
+	for _, e := range entries {
+		if loc.Details {
+			if e.Details == nil {
+				e.Details = map[string]interface{}{}
+			}
+			for k, v := range res.Diagnostics() {
+				e.Details[k] = v
+			}
+		}
+		structured = append(structured, api.RefJSON(e, loc.Details))
+	}
+	text := api.FormatRefs(entries)
+	if text == "" {
+		text = "No elements found"
+	}
+	if loc.Details {
+		d, _ := json.Marshal(res.Diagnostics())
+		text += "\n" + string(d)
+	}
 	return &ToolsCallResult{
-		Content: []Content{{
-			Type: "text",
-			Text: fmt.Sprintf("@e1 %s", labelStr),
-		}},
+		Content:    []Content{{Type: "text", Text: text}},
+		Structured: structured,
 	}, nil
-}
-
-// findBySemanticScript returns the JS function for finding elements by semantic criteria.
-// Returns JSON: {"selector":"...","label":"...","tag":"...","text":"...","box":{...}}
-func findBySemanticScript() string {
-	return `(role, text, label, placeholder, testid, xpath, alt, title) => {
-		` + GetSelectorJS() + `
-		` + GetLabelJS() + `
-
-		const IMPLICIT_ROLES = {
-			A: (el) => el.hasAttribute('href') ? 'link' : '',
-			AREA: (el) => el.hasAttribute('href') ? 'link' : '',
-			ARTICLE: () => 'article',
-			ASIDE: () => 'complementary',
-			BUTTON: () => 'button',
-			DETAILS: () => 'group',
-			DIALOG: () => 'dialog',
-			FOOTER: () => 'contentinfo',
-			FORM: () => 'form',
-			H1: () => 'heading', H2: () => 'heading', H3: () => 'heading',
-			H4: () => 'heading', H5: () => 'heading', H6: () => 'heading',
-			HEADER: () => 'banner',
-			HR: () => 'separator',
-			IMG: (el) => el.getAttribute('alt') ? 'img' : 'presentation',
-			INPUT: (el) => {
-				const t = (el.getAttribute('type') || 'text').toLowerCase();
-				const map = {button:'button',checkbox:'checkbox',image:'button',
-					number:'spinbutton',radio:'radio',range:'slider',
-					reset:'button',search:'searchbox',submit:'button',text:'textbox',
-					email:'textbox',tel:'textbox',url:'textbox',password:'textbox'};
-				return map[t] || 'textbox';
-			},
-			LI: () => 'listitem',
-			MAIN: () => 'main',
-			MENU: () => 'list',
-			NAV: () => 'navigation',
-			OL: () => 'list',
-			OPTION: () => 'option',
-			OUTPUT: () => 'status',
-			PROGRESS: () => 'progressbar',
-			SECTION: () => 'region',
-			SELECT: (el) => el.hasAttribute('multiple') ? 'listbox' : 'combobox',
-			SUMMARY: () => 'button',
-			TABLE: () => 'table',
-			TBODY: () => 'rowgroup', THEAD: () => 'rowgroup', TFOOT: () => 'rowgroup',
-			TD: () => 'cell',
-			TEXTAREA: () => 'textbox',
-			TH: () => 'columnheader',
-			TR: () => 'row',
-			UL: () => 'list',
-		};
-
-		function getImplicitRole(el) {
-			const explicit = el.getAttribute('role');
-			if (explicit) return explicit.toLowerCase();
-			const fn = IMPLICIT_ROLES[el.tagName];
-			return fn ? fn(el).toLowerCase() : '';
-		}
-
-		function getName(el) {
-			const ariaLabel = el.getAttribute('aria-label');
-			if (ariaLabel) return ariaLabel;
-			const labelledBy = el.getAttribute('aria-labelledby');
-			if (labelledBy) {
-				const parts = labelledBy.split(/\s+/).map(id => {
-					const ref = document.getElementById(id);
-					return ref ? (ref.textContent || '').trim() : '';
-				}).filter(Boolean);
-				if (parts.length) return parts.join(' ');
-			}
-			if (el.id) {
-				const assocLabel = document.querySelector('label[for="' + el.id + '"]');
-				if (assocLabel) return (assocLabel.textContent || '').trim();
-			}
-			if (el.tagName === 'INPUT') {
-				const it = (el.getAttribute('type') || '').toLowerCase();
-				if ((it === 'submit' || it === 'reset' || it === 'button' || it === 'image') && el.value) {
-					return el.value;
-				}
-			}
-			const ph = el.getAttribute('placeholder');
-			if (ph) return ph;
-			const altAttr = el.getAttribute('alt');
-			if (altAttr) return altAttr;
-			const titleAttr = el.getAttribute('title');
-			if (titleAttr) return titleAttr;
-			return (el.textContent || '').trim();
-		}
-
-		let el = null;
-
-		if (role) {
-			// Role-based matching: walk all elements, filter by role + other criteria
-			const roleLower = role.toLowerCase();
-			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-			const found = [];
-			let node;
-			while (node = walker.nextNode()) {
-				if (getImplicitRole(node) !== roleLower) continue;
-				// Apply additional filters
-				if (text && !(node.textContent || '').trim().includes(text)) continue;
-				if (label) {
-					const elName = getName(node);
-					if (!elName.includes(label)) continue;
-				}
-				if (placeholder) {
-					const ph = node.getAttribute('placeholder');
-					if (!ph || !ph.includes(placeholder)) continue;
-				}
-				if (testid) {
-					const tid = node.getAttribute('data-testid');
-					if (tid !== testid) continue;
-				}
-				if (alt) {
-					const a = node.getAttribute('alt');
-					if (!a || !a.includes(alt)) continue;
-				}
-				if (title) {
-					const t = node.getAttribute('title');
-					if (!t || !t.includes(title)) continue;
-				}
-				found.push(node);
-			}
-			if (found.length === 0) return null;
-			// Pick best: prefer shortest text match when a name-ish filter is
-			// used. --name populates label, so gating on text alone would
-			// return tree-order first (usually an ancestor) instead.
-			el = found[0];
-			if ((text || label) && found.length > 1) {
-				let bestLen = (el.textContent || '').length;
-				for (let i = 1; i < found.length; i++) {
-					const len = (found[i].textContent || '').length;
-					if (len < bestLen) { el = found[i]; bestLen = len; }
-				}
-			}
-		} else if (xpath) {
-			const xresult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-			el = xresult.singleNodeValue;
-		} else if (testid) {
-			el = document.querySelector('[data-testid="' + testid.replace(/"/g, '\\"') + '"]');
-		} else if (placeholder) {
-			el = document.querySelector('[placeholder="' + placeholder.replace(/"/g, '\\"') + '"]');
-		} else if (alt) {
-			el = document.querySelector('[alt="' + alt.replace(/"/g, '\\"') + '"]');
-		} else if (title) {
-			el = document.querySelector('[title="' + title.replace(/"/g, '\\"') + '"]');
-		} else if (label) {
-			// Try <label> with for= attribute pointing to an input
-			const labels = document.querySelectorAll('label');
-			for (const lbl of labels) {
-				if (lbl.textContent.trim().includes(label)) {
-					if (lbl.htmlFor) {
-						el = document.getElementById(lbl.htmlFor);
-					} else {
-						el = lbl.querySelector('input, textarea, select');
-					}
-					if (el) break;
-				}
-			}
-			// Fallback: aria-label
-			if (!el) {
-				el = document.querySelector('[aria-label="' + label.replace(/"/g, '\\"') + '"]');
-			}
-			// Fallback: aria-labelledby
-			if (!el) {
-				const all = document.querySelectorAll('[aria-labelledby]');
-				for (const candidate of all) {
-					const labelId = candidate.getAttribute('aria-labelledby');
-					const labelEl = document.getElementById(labelId);
-					if (labelEl && labelEl.textContent.trim().includes(label)) {
-						el = candidate;
-						break;
-					}
-				}
-			}
-		} else if (text) {
-			// Find leaf elements containing the text
-			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
-				acceptNode: (node) => {
-					if (node.offsetWidth === 0 && node.offsetHeight === 0) return NodeFilter.FILTER_REJECT;
-					const style = window.getComputedStyle(node);
-					if (style.display === 'none' || style.visibility === 'hidden') return NodeFilter.FILTER_REJECT;
-					return NodeFilter.FILTER_ACCEPT;
-				}
-			});
-			let best = null;
-			let bestLen = Infinity;
-			let node;
-			while (node = walker.nextNode()) {
-				const content = node.textContent.trim();
-				if (content.includes(text) && content.length < bestLen) {
-					// Prefer the most specific (smallest text) match
-					best = node;
-					bestLen = content.length;
-				}
-			}
-			el = best;
-		}
-
-		if (!el) return null;
-
-		if (el.scrollIntoViewIfNeeded) {
-			el.scrollIntoViewIfNeeded(true);
-		} else {
-			el.scrollIntoView({ block: 'center', inline: 'nearest' });
-		}
-
-		const rect = el.getBoundingClientRect();
-		return JSON.stringify({
-			selector: getSelector(el),
-			label: getLabel(el),
-			tag: el.tagName.toLowerCase(),
-			text: (el.textContent || '').trim().substring(0, 100),
-			box: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
-		});
-	}`
 }
 
 // browserEvaluate executes JavaScript code in the browser.
@@ -1370,7 +1551,7 @@ func (h *Handlers) browserEvaluate(args map[string]interface{}) (*ToolsCallResul
 		return nil, fmt.Errorf("expression is required")
 	}
 
-	result, err := h.client.Evaluate(h.activeContext, expression)
+	result, err := h.client.Evaluate(h.currentContext(), expression)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate: %w", err)
 	}
@@ -1410,12 +1591,33 @@ func (h *Handlers) browserQuit(args map[string]interface{}) (*ToolsCallResult, e
 		}, nil
 	}
 
+	// Decide the message from what this process actually owns, captured before
+	// Close clears it. We only close what we created: a local launch, a remote
+	// session we created (ownsRemote), or a classic session we created. A
+	// session attached by URL belongs to the caller and is deliberately left
+	// running — so "Browser session closed" would claim the opposite of what
+	// happened, with no way to tell from the CLI that cleanup is still the
+	// caller's (#647).
+	h.sessionMu.Lock()
+	owned := h.launchResult != nil || h.ownsRemote || h.classicSession != nil
+	connectURL := h.connectURL
+	h.sessionMu.Unlock()
+
 	h.Close()
+
+	text := "Browser session closed"
+	if !owned {
+		if connectURL != "" {
+			text = fmt.Sprintf("Detached from the remote browser at %s (left running; vibium did not create it)", bidi.RedactURL(connectURL))
+		} else {
+			text = "Detached from the attached session (left running; vibium did not create it)"
+		}
+	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: "Browser session closed",
+			Text: text,
 		}},
 	}, nil
 }
@@ -1427,21 +1629,47 @@ func (h *Handlers) browserNewPage(args map[string]interface{}) (*ToolsCallResult
 	}
 
 	url, _ := args["url"].(string)
+	isolated, _ := args["isolated"].(bool)
 
 	s := h.newSession()
-	contextID, err := api.NewPage(s, url)
+	userContext := ""
+	if isolated {
+		uc, err := api.NewUserContext(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create isolated context: %w", err)
+		}
+		userContext = uc
+	}
+	contextID, err := api.NewPageInContext(s, url, userContext)
 	if err != nil {
+		if userContext != "" {
+			if rmErr := api.RemoveUserContext(s, userContext); rmErr != nil {
+				log.Warn("failed to remove isolated context after page creation failed", "userContext", userContext, "error", rmErr)
+			}
+		}
 		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+	if userContext != "" {
+		if h.ownedUserContexts == nil {
+			h.ownedUserContexts = make(map[string]bool)
+		}
+		h.ownedUserContexts[userContext] = true
 	}
 	// Activate and track the new page so subsequent commands target it
 	if err := api.SwitchPage(s, contextID); err != nil {
 		return nil, fmt.Errorf("failed to activate new page: %w", err)
 	}
 	h.activeContext = contextID
+	h.activeFrameParent = ""
 
-	msg := "New page opened"
+	// The id lets a caller pin later calls to this page (#383).
+	kind := "page"
+	if isolated {
+		kind = "isolated page"
+	}
+	msg := fmt.Sprintf("New %s opened (page: %s)", kind, contextID)
 	if url != "" {
-		msg = fmt.Sprintf("New page opened and navigated to %s", url)
+		msg = fmt.Sprintf("New %s opened and navigated to %s (page: %s)", kind, url, contextID)
 	}
 
 	return &ToolsCallResult{
@@ -1466,7 +1694,11 @@ func (h *Handlers) browserListPages(args map[string]interface{}) (*ToolsCallResu
 
 	var text string
 	for i, page := range pages {
-		text += fmt.Sprintf("[%d] %s\n", i, page.URL)
+		isolated := ""
+		if h.ownedUserContexts[page.UserContext] {
+			isolated = " [isolated]"
+		}
+		text += fmt.Sprintf("[%d] %s (page: %s)%s\n", i, page.URL, page.Context, isolated)
 	}
 	if text == "" {
 		text = "No pages open"
@@ -1520,6 +1752,7 @@ func (h *Handlers) browserSwitchPage(args map[string]interface{}) (*ToolsCallRes
 		return nil, err
 	}
 	h.activeContext = contextID
+	h.activeFrameParent = ""
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -1529,7 +1762,7 @@ func (h *Handlers) browserSwitchPage(args map[string]interface{}) (*ToolsCallRes
 	}, nil
 }
 
-// browserClosePage closes a page by index (default: current page).
+// browserClosePage closes a page by id or index (default: current page).
 func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
@@ -1545,38 +1778,78 @@ func (h *Handlers) browserClosePage(args map[string]interface{}) (*ToolsCallResu
 		return nil, fmt.Errorf("no pages open")
 	}
 
-	idx := -1
-	if i, ok := argFloat(args, "index"); ok {
-		idx = int(i)
-	} else if h.activeContext != "" {
-		// No index given — default to the active page
-		for i, page := range pages {
-			if page.Context == h.activeContext {
-				idx = i
-				break
+	var closedContext, label string
+	if page, ok := args["page"].(string); ok && page != "" {
+		// Already validated as live by Call, like any page argument.
+		closedContext = page
+		label = page
+	} else {
+		idx := -1
+		if i, ok := argFloat(args, "index"); ok {
+			idx = int(i)
+		} else if h.activeContext != "" {
+			// No index given — default to the active page
+			for i, page := range pages {
+				if page.Context == h.activeContext {
+					idx = i
+					break
+				}
 			}
 		}
-	}
-	if idx < 0 {
-		idx = 0 // fall back to first page
+		if idx < 0 {
+			idx = 0 // fall back to first page
+		}
+
+		if idx >= len(pages) {
+			return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
+		}
+
+		closedContext = pages[idx].Context
+		label = strconv.Itoa(idx)
 	}
 
-	if idx < 0 || idx >= len(pages) {
-		return nil, fmt.Errorf("page index %d out of range (0-%d)", idx, len(pages)-1)
-	}
-
-	closedContext := pages[idx].Context
 	if err := api.ClosePage(s, closedContext); err != nil {
 		return nil, err
 	}
 	if h.activeContext == closedContext {
 		h.activeContext = ""
+		h.activeFrameParent = ""
+	}
+	// Closing the page a frame lives in kills the frame with it.
+	h.clearFrameIfContextClosed(closedContext)
+
+	// Closing the last page of an isolated context removes the context too,
+	// so its storage partition does not outlive its pages.
+	note := ""
+	closedUserContext := ""
+	for _, page := range pages {
+		if page.Context == closedContext {
+			closedUserContext = page.UserContext
+			break
+		}
+	}
+	if h.ownedUserContexts[closedUserContext] {
+		lastInContext := true
+		for _, page := range pages {
+			if page.UserContext == closedUserContext && page.Context != closedContext {
+				lastInContext = false
+				break
+			}
+		}
+		if lastInContext {
+			if err := api.RemoveUserContext(s, closedUserContext); err != nil {
+				log.Warn("failed to remove isolated context", "userContext", closedUserContext, "error", err)
+			} else {
+				delete(h.ownedUserContexts, closedUserContext)
+				note = " and its isolated context"
+			}
+		}
 	}
 
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: fmt.Sprintf("Closed page %d", idx),
+			Text: fmt.Sprintf("Closed page %s%s", label, note),
 		}},
 	}, nil
 }
@@ -1652,8 +1925,11 @@ func (h *Handlers) browserSelect(args map[string]interface{}) (*ToolsCallResult,
 	}
 	selector = h.resolveSelector(selector)
 
+	// An empty string is a valid option value (the common "None"/placeholder
+	// <option value="">), so only a missing value key is an error (#730,
+	// same class as the fill "" fix #187).
 	value, ok := args["value"].(string)
-	if !ok || value == "" {
+	if !ok {
 		return nil, fmt.Errorf("value is required")
 	}
 
@@ -1696,20 +1972,6 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		return nil, err
 	}
 
-	// Determine scroll target coordinates
-	x, y := 0, 0
-	if selector, ok := args["selector"].(string); ok && selector != "" {
-		selector = h.resolveSelector(selector)
-		info, err := api.ResolveElement(s, ctx, api.ElementParams{Selector: selector})
-		if err != nil {
-			return nil, err
-		}
-		x = int(info.Box.X + info.Box.Width/2)
-		y = int(info.Box.Y + info.Box.Height/2)
-	} else {
-		x, y = 400, 300 // Viewport center fallback
-	}
-
 	// Map direction to deltas (120 pixels per scroll "notch")
 	deltaX, deltaY := 0, 0
 	pixels := amount * 120
@@ -1726,8 +1988,29 @@ func (h *Handlers) browserScroll(args map[string]interface{}) (*ToolsCallResult,
 		return nil, fmt.Errorf("invalid direction: %q (use up, down, left, right)", direction)
 	}
 
-	if err := api.ScrollWheel(s, ctx, x, y, deltaX, deltaY); err != nil {
-		return nil, fmt.Errorf("failed to scroll: %w", err)
+	// A selector aims the wheel at that element's center; a bare directional
+	// scroll moves the active document, which DirectionalScroll does with the
+	// mechanism that reaches it even inside a frame or right after a
+	// navigation (#511).
+	if selector, ok := args["selector"].(string); ok && selector != "" {
+		selector = h.resolveSelector(selector)
+		info, err := api.ResolveElement(s, ctx, api.ElementParams{Selector: selector})
+		if err != nil {
+			return nil, err
+		}
+		x := int(info.Box.X + info.Box.Width/2)
+		y := int(info.Box.Y + info.Box.Height/2)
+		if err := api.ScrollWheel(s, ctx, x, y, deltaX, deltaY); err != nil {
+			return nil, fmt.Errorf("failed to scroll: %w", err)
+		}
+	} else {
+		x, y, err := api.ViewportCenter(s, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find viewport center: %w", err)
+		}
+		if err := api.DirectionalScroll(s, ctx, x, y, deltaX, deltaY); err != nil {
+			return nil, fmt.Errorf("failed to scroll: %w", err)
+		}
 	}
 
 	return &ToolsCallResult{
@@ -1804,70 +2087,9 @@ func (h *Handlers) browserGetHTML(args map[string]interface{}) (*ToolsCallResult
 	}, nil
 }
 
-// browserFindAll finds all elements matching a CSS selector.
+// browserFindAll resolves a locator to every match.
 func (h *Handlers) browserFindAll(args map[string]interface{}) (*ToolsCallResult, error) {
-	if err := h.ensureBrowser(); err != nil {
-		return nil, err
-	}
-
-	selector, ok := args["selector"].(string)
-	if !ok || selector == "" {
-		return nil, fmt.Errorf("selector is required")
-	}
-	selector = h.resolveSelector(selector)
-
-	limit := 10
-	if l, ok := argFloat(args, "limit"); ok {
-		limit = int(l)
-	}
-
-	// Use JS to find elements and generate selectors + labels
-	findAllScript := `(selector, limit) => {
-		` + GetSelectorJS() + `
-		` + GetLabelJS() + `
-		` + api.PierceQueryJS() + `
-		const els = pierceQueryAll(document, selector);
-		const results = [];
-		const n = Math.min(els.length, limit);
-		for (let i = 0; i < n; i++) {
-			const el = els[i];
-			results.push({ selector: getSelector(el), label: getLabel(el) });
-		}
-		return JSON.stringify(results);
-	}`
-	result, err := h.client.CallFunction(h.activeContext, findAllScript, []interface{}{selector, limit})
-	if err != nil {
-		return nil, fmt.Errorf("failed to find elements: %w", err)
-	}
-
-	var elements []struct {
-		Selector string `json:"selector"`
-		Label    string `json:"label"`
-	}
-	if err := json.Unmarshal([]byte(fmt.Sprintf("%v", result)), &elements); err != nil {
-		return nil, fmt.Errorf("failed to parse find-all results: %w", err)
-	}
-
-	// Build ref map and output
-	h.refMap = make(map[string]string)
-	var lines []string
-	for i, el := range elements {
-		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
-		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
-	}
-
-	text := strings.Join(lines, "\n")
-	if text == "" {
-		text = "No elements found"
-	}
-
-	return &ToolsCallResult{
-		Content: []Content{{
-			Type: "text",
-			Text: text,
-		}},
-	}, nil
+	return h.find(args, true)
 }
 
 // browserWait waits for an element to reach a specified state.
@@ -2226,13 +2448,43 @@ func (h *Handlers) pageClockSetTimezone(args map[string]interface{}) (*ToolsCall
 	}, nil
 }
 
+// invalidSelectorError returns a *bidi.InvalidSelectorError if err is the
+// exception the browser throws for a malformed CSS selector or XPath, so a
+// find handler can tell it apart from a genuine miss and report the syntax
+// error rather than "element not found" (#616). Nil otherwise.
+func invalidSelectorError(err error) error {
+	var se *bidi.ScriptException
+	if !errors.As(err, &se) {
+		return nil
+	}
+	if ise := bidi.AsInvalidSelector(se.Text); ise != nil {
+		return ise
+	}
+	return nil
+}
+
+// isInvalidSelector reports whether err is a *bidi.InvalidSelectorError.
+func isInvalidSelector(err error) bool {
+	var ie *bidi.InvalidSelectorError
+	return errors.As(err, &ie)
+}
+
 // pollCallFunction polls a JS function until it returns a non-null/non-empty result.
 func pollCallFunction(h *Handlers, script string, args []interface{}, timeout time.Duration) (interface{}, error) {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
 
 	for {
-		result, err := h.client.CallFunction(h.activeContext, script, args)
+		result, err := h.client.CallFunction(h.currentContext(), script, args)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		// A selector the browser rejects as malformed can never match, so no
+		// amount of polling will help: fail now with the syntax error instead
+		// of retrying into a misleading "timeout"/"element not found" (#616).
+		if invErr := invalidSelectorError(err); invErr != nil {
+			return nil, invErr
+		}
 		if err == nil && result != nil {
 			s := fmt.Sprintf("%v", result)
 			if s != "" && s != "null" && s != "<nil>" {
@@ -2340,6 +2592,7 @@ func (h *Handlers) browserBack(args map[string]interface{}) (*ToolsCallResult, e
 	if err := api.GoBack(s, ctx); err != nil {
 		return nil, fmt.Errorf("failed to go back: %w", err)
 	}
+	h.refs.Drop(h.refKey())
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -2363,6 +2616,7 @@ func (h *Handlers) browserForward(args map[string]interface{}) (*ToolsCallResult
 	if err := api.GoForward(s, ctx); err != nil {
 		return nil, fmt.Errorf("failed to go forward: %w", err)
 	}
+	h.refs.Drop(h.refKey())
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -2386,6 +2640,7 @@ func (h *Handlers) browserReload(args map[string]interface{}) (*ToolsCallResult,
 	if err := api.Reload(s, ctx, "complete"); err != nil {
 		return nil, fmt.Errorf("failed to reload: %w", err)
 	}
+	h.refs.Drop(h.refKey())
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -2506,6 +2761,16 @@ func (h *Handlers) browserIsVisible(args map[string]interface{}) (*ToolsCallResu
 
 // browserCheck checks a checkbox or radio button (idempotent).
 func (h *Handlers) browserCheck(args map[string]interface{}) (*ToolsCallResult, error) {
+	if value, exists := args["value"]; exists {
+		selected, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("set value must be a boolean")
+		}
+		if !selected {
+			return h.browserUncheck(args)
+		}
+	}
+
 	if err := h.ensureBrowser(); err != nil {
 		return nil, err
 	}
@@ -2688,6 +2953,9 @@ func elementParamsWithTimeout(selector string, args map[string]interface{}) api.
 	if t, ok := argFloat(args, "timeout"); ok {
 		ep.Timeout = time.Duration(t) * time.Millisecond
 	}
+	if e, ok := args["visualRef"].(*api.RefEntry); ok {
+		ep.Visual = e
+	}
 	return ep
 }
 
@@ -2753,9 +3021,11 @@ func (h *Handlers) discardSession() {
 	h.client = nil
 	h.conn = nil
 	h.prompts = nil
-	h.refMap = nil
-	h.lastMap = ""
+	h.refs.Reset()
+	h.lastMaps = nil
 	h.activeContext = ""
+	h.activeFrameParent = ""
+	h.ownedUserContexts = nil
 }
 
 // resolveRefsInArgs returns a copy of args with any @ref selector resolved
@@ -2777,115 +3047,21 @@ func (h *Handlers) resolveRefsInArgs(args map[string]interface{}) map[string]int
 	return cp
 }
 
-// resolveSelector resolves @ref selectors to CSS selectors from the refMap.
+// resolveSelector resolves @ref selectors to CSS selectors from this
+// page's ref table, so a pinned caller cannot pick up selectors another
+// caller's map minted on a different page (#383).
 func (h *Handlers) resolveSelector(selector string) string {
-	if strings.HasPrefix(selector, "@e") {
-		if resolved, ok := h.refMap[selector]; ok {
-			return resolved
+	if api.IsRef(selector) {
+		if e, ok := h.refs.For(h.refKey()).Lookup(selector); ok && !e.Visual() {
+			return e.Selector
 		}
 	}
 	return selector
 }
 
-// GetSelectorJS returns the JS getSelector(el) function body that generates unique CSS selectors.
-func GetSelectorJS() string {
-	return `function getSelector(el) {
-			if (el.id) return '#' + CSS.escape(el.id);
-			const parts = [];
-			let cur = el;
-			while (cur && cur !== document.body && cur !== document.documentElement) {
-				let seg = cur.tagName.toLowerCase();
-				if (cur.id) {
-					parts.unshift('#' + CSS.escape(cur.id));
-					break;
-				}
-				const parent = cur.parentElement;
-				if (parent) {
-					const siblings = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
-					if (siblings.length > 1) {
-						const idx = siblings.indexOf(cur) + 1;
-						seg += ':nth-of-type(' + idx + ')';
-					}
-				}
-				parts.unshift(seg);
-				cur = parent;
-			}
-			if (parts.length === 0) return el.tagName.toLowerCase();
-			if (!parts[0].startsWith('#')) parts.unshift('body');
-			return parts.join(' > ');
-		}`
-}
-
-// GetLabelJS returns the JS getLabel(el) function body that generates descriptive labels.
-func GetLabelJS() string {
-	return `function getLabel(el) {
-			const tag = el.tagName.toLowerCase();
-			const type = el.getAttribute('type');
-			let desc = '[' + tag;
-			if (type) desc += ' type="' + type + '"';
-			desc += ']';
-
-			const ariaLabel = el.getAttribute('aria-label');
-			if (ariaLabel) return desc + ' "' + ariaLabel.substring(0, 60) + '"';
-
-			const placeholder = el.getAttribute('placeholder');
-			if (placeholder) return desc + ' placeholder="' + placeholder.substring(0, 60) + '"';
-
-			const title = el.getAttribute('title');
-			if (title) return desc + ' title="' + title.substring(0, 60) + '"';
-
-			const text = (el.textContent || '').trim().substring(0, 60);
-			if (text) return desc + ' "' + text + '"';
-
-			const name = el.getAttribute('name');
-			if (name) return desc + ' name="' + name + '"';
-
-			const src = el.getAttribute('src');
-			if (src) return desc + ' src="' + src.substring(0, 60) + '"';
-
-			return desc;
-		}`
-}
-
-// mapScript returns the JS function that maps interactive elements with refs.
-// When a selector is provided, only elements within the matching subtree are returned.
-func mapScript() string {
-	return `(scopeSelector) => {
-		` + GetSelectorJS() + `
-		` + GetLabelJS() + `
-		` + api.PierceQueryJS() + `
-
-		const interactive = 'a[href], button, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="tab"], [role="menuitem"], [role="switch"], [onclick], [tabindex]:not([tabindex="-1"]), summary, details';
-
-		const root = scopeSelector ? pierceQuery(document, scopeSelector) : document;
-		if (!root) return JSON.stringify([]);
-		// Walk shadow roots too: querySelectorAll stops at the boundary, so
-		// web-component UIs listed as empty (#203).
-		const els = [];
-		{
-			const roots = __shadowRootsUnder(root);
-			for (let r = 0; r < roots.length; r++) {
-				const found = roots[r].querySelectorAll(interactive);
-				for (let f = 0; f < found.length; f++) els.push(found[f]);
-			}
-		}
-		const results = [];
-		const seen = new Set();
-
-		for (const el of els) {
-			const style = window.getComputedStyle(el);
-			if (style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0) continue;
-
-			const sel = getSelector(el);
-			if (seen.has(sel)) continue;
-			seen.add(sel);
-
-			results.push({ selector: sel, label: getLabel(el) });
-		}
-
-		return JSON.stringify(results);
-	}`
-}
+func GetSelectorJS() string { return api.GetSelectorJS() }
+func GetLabelJS() string    { return api.GetLabelJS() }
+func mapScript() string     { return api.MapScript() }
 
 // browserMap maps interactive elements with @refs.
 func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, error) {
@@ -2897,7 +3073,7 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	if sel, ok := args["selector"].(string); ok && sel != "" {
 		scopeSelector = sel
 	}
-	result, err := h.client.CallFunction(h.activeContext, mapScript(), []interface{}{scopeSelector})
+	result, err := h.client.CallFunction(h.currentContext(), mapScript(), []interface{}{scopeSelector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to map elements: %w", err)
 	}
@@ -2912,20 +3088,25 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 		return nil, fmt.Errorf("failed to parse map results: %w", err)
 	}
 
-	// Build ref map and output
-	h.refMap = make(map[string]string)
+	key := h.refKey()
+	table := h.refs.For(key)
 	var lines []string
-	for i, el := range elements {
-		ref := fmt.Sprintf("@e%d", i+1)
-		h.refMap[ref] = el.Selector
-		lines = append(lines, fmt.Sprintf("%s %s", ref, el.Label))
+	var entries []*api.RefEntry
+	for _, el := range elements {
+		e := table.Register(api.RefEntry{Selector: el.Selector, Label: el.Label, Source: api.SourceDOM, Method: "map"})
+		entries = append(entries, e)
+		lines = append(lines, api.FormatRef(e))
 	}
+	h.registerRefs(key, entries)
 
 	output := strings.Join(lines, "\n")
 	if output == "" {
 		output = "No interactive elements found"
 	}
-	h.lastMap = output
+	if h.lastMaps == nil {
+		h.lastMaps = make(map[string]string)
+	}
+	h.lastMaps[key] = output
 
 	return &ToolsCallResult{
 		Content: []Content{{
@@ -2935,19 +3116,20 @@ func (h *Handlers) browserMap(args map[string]interface{}) (*ToolsCallResult, er
 	}, nil
 }
 
-// browserDiffMap compares current page state vs last map.
+// browserDiffMap compares current page state vs this page's last map.
 func (h *Handlers) browserDiffMap(args map[string]interface{}) (*ToolsCallResult, error) {
-	if h.lastMap == "" {
+	key := h.refKey()
+	if h.lastMaps[key] == "" {
 		return nil, fmt.Errorf("no previous map to diff against — run browser_map first")
 	}
 
 	// Get current map
-	prevMap := h.lastMap
+	prevMap := h.lastMaps[key]
 	_, err := h.browserMap(args)
 	if err != nil {
 		return nil, err
 	}
-	currentMap := h.lastMap
+	currentMap := h.lastMaps[key]
 
 	// Simple line-based diff
 	prevLines := strings.Split(prevMap, "\n")
@@ -2998,7 +3180,9 @@ func (h *Handlers) browserPDF(args map[string]interface{}) (*ToolsCallResult, er
 	if err != nil {
 		return nil, err
 	}
-	base64Data, err := api.PrintToPDF(s, ctx)
+	// args carries the print options under the same keys the wire command
+	// uses; extra keys like filename are ignored by the translation.
+	base64Data, err := api.PrintToPDF(s, ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to print PDF: %w", err)
 	}
@@ -3044,9 +3228,25 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 		return nil, fmt.Errorf("selector is required")
 	}
 	selector = h.resolveSelector(selector)
+	if e, ok := args["visualRef"].(*api.RefEntry); ok {
+		s := h.newSession()
+		ctx, err := s.GetContextID()
+		if err != nil {
+			return nil, err
+		}
+		info, err := api.VisualElementInfo(s, ctx, e)
+		if err == nil {
+			err = api.HighlightBox(s, ctx, info.Box)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to highlight: %w", err)
+		}
+		return &ToolsCallResult{Content: []Content{{Type: "text", Text: fmt.Sprintf("Highlighted %s (2 seconds)", selector)}}}, nil
+	}
 
 	script := `(selector) => {
-		const el = document.querySelector(selector);
+		` + api.PierceQueryJS() + `
+		const el = pierceQuery(document, selector);
 		if (!el) return 'not_found';
 		const prev = el.style.cssText;
 		el.style.outline = '3px solid red';
@@ -3056,7 +3256,7 @@ func (h *Handlers) browserHighlight(args map[string]interface{}) (*ToolsCallResu
 		return 'highlighted';
 	}`
 
-	result, err := h.client.CallFunction(h.activeContext, script, []interface{}{selector})
+	result, err := h.client.CallFunction(h.currentContext(), script, []interface{}{selector})
 	if err != nil {
 		return nil, fmt.Errorf("failed to highlight: %w", err)
 	}
@@ -3582,6 +3782,107 @@ func (h *Handlers) browserMouseClick(args map[string]interface{}) (*ToolsCallRes
 	}, nil
 }
 
+// browserTap taps a touch pointer at (x, y).
+func (h *Handlers) browserTap(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	x, hasX := argFloat(args, "x")
+	y, hasY := argFloat(args, "y")
+	if selector, _ := args["selector"].(string); selector != "" {
+		s := h.newSession()
+		ctx, err := s.GetContextID()
+		if err != nil {
+			return nil, err
+		}
+		if err := api.Tap(s, ctx, elementParamsWithTimeout(h.resolveSelector(selector), args)); err != nil {
+			return nil, fmt.Errorf("failed to tap: %w", err)
+		}
+		return &ToolsCallResult{Content: []Content{{Type: "text", Text: "Tapped element: " + selector}}}, nil
+	}
+	if !hasX || !hasY {
+		return nil, fmt.Errorf("x and y, or a selector, are required")
+	}
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.TouchTap(s, ctx, int(x), int(y)); err != nil {
+		return nil, fmt.Errorf("failed to tap: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Tapped at (%d, %d)", int(x), int(y)),
+		}},
+	}, nil
+}
+
+// browserSwipe drags a touch pointer, finger held down for the move.
+func (h *Handlers) browserSwipe(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	opts, err := api.ParseSwipeOptions(args)
+	if err != nil {
+		return nil, err
+	}
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	p, err := api.Swipe(s, ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to swipe: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", p.X1, p.Y1, p.X2, p.Y2),
+		}},
+	}, nil
+}
+
+// browserLongPress holds a touch press at (x, y) for duration ms (default 500).
+func (h *Handlers) browserLongPress(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	x, hasX := argFloat(args, "x")
+	y, hasY := argFloat(args, "y")
+	if !hasX || !hasY {
+		return nil, fmt.Errorf("x and y are required")
+	}
+	duration := 500
+	if d, ok := argFloat(args, "duration"); ok && d > 0 {
+		duration = int(d)
+	}
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.TouchLongPress(s, ctx, int(x), int(y), duration); err != nil {
+		return nil, fmt.Errorf("failed to long-press: %w", err)
+	}
+
+	return &ToolsCallResult{
+		Content: []Content{{
+			Type: "text",
+			Text: fmt.Sprintf("Long-pressed at (%d, %d) for %dms", int(x), int(y), duration),
+		}},
+	}, nil
+}
+
 // browserDrag drags from one element to another.
 func (h *Handlers) browserDrag(args map[string]interface{}) (*ToolsCallResult, error) {
 	if err := h.ensureBrowser(); err != nil {
@@ -3922,6 +4223,12 @@ func (h *Handlers) browserFrame(args map[string]interface{}) (*ToolsCallResult, 
 
 	// The daemon is the only thing that survives between CLI invocations, so
 	// without this the frame is forgotten before the next command runs.
+	// Remember the page it belongs to as well, so a later navigation can
+	// leave the frame instead of navigating inside it (#510). On nested
+	// frame calls ctx is itself a frame, so keep the first recorded page.
+	if h.activeFrameParent == "" {
+		h.activeFrameParent = ctx
+	}
 	h.activeContext = frame.Context
 
 	result, _ := json.Marshal(frame)
@@ -3971,7 +4278,7 @@ func (h *Handlers) browserUpload(args map[string]interface{}) (*ToolsCallResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := api.Upload(s, ctx, elementParamsWithTimeout(selector, args), files); err != nil {
+	if err := api.Upload(s, ctx, elementParamsWithTimeout(selector, args), files, h.connectURL != ""); err != nil {
 		return nil, fmt.Errorf("failed to set files: %w", err)
 	}
 
@@ -4057,19 +4364,23 @@ func (h *Handlers) browserRecordStart(args map[string]interface{}) (*ToolsCallRe
 		opts.Path = abs
 	}
 
-	// Required video on a remote connection can never deliver into the
-	// zip; fail before touching the browser — unless the caller opted
-	// into leaving the file on the remote host.
+	// A station or a Roadie streams the device's screen, and that stream
+	// is the video. Required video on any other remote connection can
+	// never deliver into the zip; fail before touching the browser —
+	// unless the caller opted into leaving the file on the remote host.
 	remote := h.connectURL != ""
-	if remote && opts.Video.Mode == api.VideoRequired && !opts.Video.RemoteKeep {
-		return nil, errors.New(api.RemoteVideoMessage)
+	stream, err := api.OpenStreamVideo(opts, h.connectURL, h.connectHeaders)
+	if err != nil {
+		return nil, err
 	}
 
 	recorder := api.NewRecorder()
 	viewport := h.queryViewport()
 	recorder.Start(opts, viewport)
+	api.CaptureRecordingSecrets(h.newSession(), recorder, nil)
 
-	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport); err != nil {
+	if err := api.StartRecordingVideo(h.newSession(), recorder, opts, remote, viewport, stream); err != nil {
+		stream.Abort()
 		return nil, err
 	}
 	h.recorder = recorder
@@ -4123,8 +4434,16 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 		h.recorder.NoteDroppedEvents(h.client.DroppedEvents() - h.recordDropBase)
 	}
 
+	// An upload that cannot happen is refused before anything stops, so
+	// the recording keeps going and the caller can stop it another way.
+	upload, err := api.ResolveUpload(args["upload"], h.connectURL, h.connectHeaders)
+	if err != nil {
+		return nil, err
+	}
+
 	// Stop screenshot goroutine before stopping the recorder
 	h.recorder.StopScreenshots()
+	h.speech.StopAudioRecording()
 
 	// Finalize the video first so Stop() can move the engine's file into
 	// the zip. A dead screencast is recorded in the manifest, not an error.
@@ -4153,10 +4472,19 @@ func (h *Handlers) browserRecordStop(args map[string]interface{}) (*ToolsCallRes
 
 	h.recorder = nil
 
+	text := api.RecordingSavedSentence(path, summary)
+	if upload != nil {
+		up, err := api.UploadRecording(context.Background(), *upload, zipData, api.UploadName(path, ""))
+		if err != nil {
+			return nil, fmt.Errorf("%w (the recording was saved to %s)", err, path)
+		}
+		text += "\n" + api.UploadSentence(up)
+	}
+
 	return &ToolsCallResult{
 		Content: []Content{{
 			Type: "text",
-			Text: api.RecordingSavedSentence(path, summary),
+			Text: text,
 		}},
 	}, nil
 }
@@ -4280,7 +4608,7 @@ func (h *Handlers) browserStorageState(args map[string]interface{}) (*ToolsCallR
 		})()
 	})`
 
-	storageResult, err := h.client.Evaluate(h.activeContext, script)
+	storageResult, err := h.client.Evaluate(h.currentContext(), script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage: %w", err)
 	}
@@ -4367,7 +4695,7 @@ func (h *Handlers) browserRestoreStorage(args map[string]interface{}) (*ToolsCal
 			}
 			return 'ok';
 		})()`, string(storageJSON))
-		if _, err := h.client.Evaluate(h.activeContext, script); err != nil {
+		if _, err := h.client.Evaluate(h.currentContext(), script); err != nil {
 			return nil, fmt.Errorf("failed to restore storage: %w", err)
 		}
 	}

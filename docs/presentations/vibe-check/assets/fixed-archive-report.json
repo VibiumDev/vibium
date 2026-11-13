@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "claim": "Did the recorded cart contain exactly one battery pack?",
+  "summary": "Yes. The recorded cart showed exactly one Vibium Battery Pack with quantity 1.",
+  "evidence": [
+    {
+      "type": "observation",
+      "summary": "Action e53 returned the cart-view URL: http://127.0.0.1:51868/?fixed=1&view=cart."
+    },
+    {
+      "type": "observation",
+      "summary": "Action e56 (result e58) recorded visible cart text: \u201cCart 1,\u201d \u201c1 item,\u201d \u201cVibium Battery Pack,\u201d and \u201cQuantity: 1.\u201d"
+    },
+    {
+      "type": "observation",
+      "summary": "Action e59 (result e61) identified the page as \u201cYour cart \u00b7 VAR Parts demo\u201d and recorded one battery-pack image and product heading in the cart main area."
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 export { browser, firefox, chrome, Browser, StartOptions } from './browser';
-export { Page, Keyboard, Mouse, Touch, ScreenshotOptions, A11yNode, FindOptions } from './page';
+export { Page, Keyboard, Mouse, Touch, SwipeDirection, SwipeOptions, ScreenshotOptions, A11yNode, FindOptions } from './page';
 export { Clock, ClockInstallOptions } from './clock';
 export { BrowserContext, Cookie, SetCookieParam, StorageState, OriginState } from './context';
-export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary } from './recording';
-export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FluentElement, fluent } from './element';
+export { Recording, RecordingStartOptions, RecordingStopOptions, RecordingVideoOptions, RecordingResult, RecordingVideoSummary, RecordingUpload } from './recording';
+export { Element, BoundingBox, ElementInfo, ActionOptions, SelectorOptions, FindStrategy, FluentElement, fluent } from './element';
 export { Route } from './route';
 export { Request, Response } from './network';
 export { Dialog } from './dialog';
@@ -29,5 +29,15 @@ export {
   ConnectionError,
   TimeoutError,
   ElementNotFoundError,
+  BiDiError,
   BrowserCrashedError,
+  SpeechError,
 } from './utils/errors';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from './check';
+
+export { RunOptions, RunResult } from './run';
+
+export { SpeechOptions, SayOptions, SayResult, ListenOptions, ListenResult } from './speech';
+
+export { ModelOptions } from './model-options';

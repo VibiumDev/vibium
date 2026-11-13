@@ -9,7 +9,7 @@ pytestmark = pytest.mark.capability("core")
 
 async def test_keyboard_type(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.type("typed via keyboard")
@@ -18,7 +18,7 @@ async def test_keyboard_type(async_page, test_server):
 
 async def test_keyboard_press(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.press("a")
@@ -27,7 +27,7 @@ async def test_keyboard_press(async_page, test_server):
 
 async def test_keyboard_down_up(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.down("Shift")
@@ -40,7 +40,7 @@ async def test_keyboard_down_up(async_page, test_server):
 
 async def test_mouse_click(async_page, test_server):
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     box = await inp.bounds()
     await async_page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     await async_page.keyboard.type("mouse click")
@@ -132,7 +132,7 @@ async def test_expose(async_page, test_server):
 async def test_checkpoint(async_page, test_server):
     """End-to-end: keyboard, mouse, eval, screenshot."""
     await async_page.go(test_server + "/inputs")
-    inp = await async_page.find("#text-input")
+    inp = await async_page.find(css="#text-input")
     await inp.fill("")
     await inp.focus()
     await async_page.keyboard.type("checkpoint")
@@ -152,9 +152,11 @@ async def test_eval_is_alias_for_evaluate(async_page, test_server):
 async def test_large_message_does_not_crash_reader(async_page, test_server):
     # Regression #110: a single pipe message larger than asyncio's 64 KiB default
     # StreamReader limit (e.g. a base64 screenshot) raised LimitOverrunError and
-    # killed the receiver loop. A ~5 MB result must round-trip intact.
+    # killed the receiver loop. The payload only needs to clear 64 KiB; 1 MB
+    # keeps 16x margin while staying inside the 60s command timeout on a slow
+    # CI runner (5 MB blew it on macOS).
     await async_page.go(test_server)
-    n = 5_000_000
+    n = 1_000_000
     big = await async_page.evaluate(f"'x'.repeat({n})")
     assert isinstance(big, str) and len(big) == n
     # the receiver loop must still be alive for follow-up commands

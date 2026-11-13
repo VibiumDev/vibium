@@ -24,6 +24,17 @@ import (
 // launch ~16s) so a wedged chromedriver can't hang it indefinitely.
 const sessionCreateTimeout = 30 * time.Second
 
+// chromedriverReadyTimeout bounds the wait for chromedriver's /status endpoint
+// after spawning it.
+const chromedriverReadyTimeout = 10 * time.Second
+
+// LaunchBudget is the wall clock a launch may legitimately spend inside its
+// own bounds: chromedriverReadyTimeout, then session creation capped at
+// sessionCreateTimeout on either route, plus slack for process spawn and the
+// WebSocket handshake. Deadlines that wait on a launch (the daemon client's
+// read deadline) derive from this instead of guessing (#407).
+const LaunchBudget = chromedriverReadyTimeout + sessionCreateTimeout + 5*time.Second
+
 // prefixWriter wraps an io.Writer and prepends a prefix to each line.
 type prefixWriter struct {
 	w      io.Writer
@@ -56,11 +67,16 @@ func (pw *prefixWriter) Write(p []byte) (n int, err error) {
 
 // LaunchOptions contains options for launching the browser.
 type LaunchOptions struct {
-	Engine         string // "chrome" (default) or "firefox"
-	FirefoxChannel string // "release" (default) or "beta"
-	Headless       bool
-	Port           int  // Chromedriver port, 0 = auto-select
-	Verbose        bool // Show browser/driver output
+	Engine   string // "chrome" (default) or "firefox"
+	Channel  string // engine release channel; "" means the VIBIUM_ENGINE_CHANNEL default
+	Headless bool
+	Port     int      // Chromedriver port, 0 = auto-select
+	Verbose  bool     // Show browser/driver output
+	Args     []string // extra engine command-line flags, appended last (#640)
+	// UserDataDir, when set, is a persistent profile directory to launch the
+	// browser with instead of a throwaway temp profile (#715). It is created
+	// if missing and never deleted.
+	UserDataDir string
 }
 
 // LaunchResult contains the result of launching the browser via chromedriver.
@@ -70,7 +86,14 @@ type LaunchResult struct {
 	SessionID    string
 	BrowserCmd   *exec.Cmd
 	Port         int
-	UserDataDir  string // Chrome temp profile dir — cleaned up on Close()
+	UserDataDir  string // profile dir — cleaned up on Close() unless Persistent
+	// Persistent marks UserDataDir as user-supplied (#715). Close MUST NOT
+	// remove it, and shuts the browser down gracefully first so the profile
+	// (cookies, localStorage) is flushed to disk.
+	Persistent bool
+	// Engine is "firefox" or "chrome"/"" so Close can apply the Firefox-only
+	// Windows profile sweep (#622) without reaching for the global engine flag.
+	Engine string
 }
 
 // sessionRequest is the payload for creating a new session.
@@ -123,15 +146,41 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		return nil, err
 	}
 
-	chromedriverPath, err := paths.GetChromedriverPath()
+	// A persistent profile travels as a --user-data-dir engine flag so
+	// chromedriver uses it instead of creating a temp dir. Prepended, so an
+	// explicit caller-supplied flag (#640) still wins. Aggressive DOM-storage
+	// flushing trades a little write batching for localStorage that survives
+	// a crash or kill between Chrome's rate-limited commits — on a profile
+	// meant to outlive the session, durability wins.
+	extraArgs := opts.Args
+	persistentDir := ""
+	if opts.UserDataDir != "" {
+		dir, err := prepareUserDataDir(opts.UserDataDir)
+		if err != nil {
+			return nil, err
+		}
+		persistentDir = dir
+		extraArgs = append([]string{
+			"--user-data-dir=" + dir,
+			"--enable-aggressive-domstorage-flushing",
+		}, extraArgs...)
+	}
+
+	chromedriverPath, err := paths.GetChromedriverPathForChannel(opts.Channel)
 	if err != nil {
-		return nil, fmt.Errorf("chromedriver not found")
+		return nil, fmt.Errorf("chromedriver not found; run 'vibium install' to download Chrome for Testing and chromedriver")
 	}
 	log.Debug("found chromedriver", "path", chromedriverPath)
 
-	chromePath, err := paths.GetChromeExecutable()
+	// Browsers left behind by a killed vibium accumulate until launches
+	// starve (#382); nothing else will ever reap them.
+	if cacheDir, err := paths.GetChromeForTestingDir(); err == nil {
+		process.ReapOrphans(cacheDir)
+	}
+
+	chromePath, err := paths.GetChromeExecutableForChannel(opts.Channel)
 	if err != nil {
-		return nil, fmt.Errorf("Chrome not found")
+		return nil, fmt.Errorf("Chrome not found; run 'vibium install' to download Chrome for Testing and chromedriver")
 	}
 	log.Debug("found chrome", "path", chromePath)
 
@@ -171,8 +220,8 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 
 	// Wait for chromedriver to be ready
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
-	if err := waitForChromedriver(baseURL, 10*time.Second); err != nil {
-		cmd.Process.Kill()
+	if err := waitForChromedriver(baseURL, chromedriverReadyTimeout); err != nil {
+		cleanupFailedLaunch(cmd)
 		return nil, fmt.Errorf("chromedriver failed to start: %w", err)
 	}
 
@@ -184,13 +233,16 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	wsURL := fmt.Sprintf("ws://localhost:%d/session", port)
 	conn, connErr := bidi.Connect(wsURL)
 	if connErr == nil {
-		caps := buildCapabilities(chromePath, opts.Headless)
+		caps := buildCapabilities(chromePath, opts.Headless, extraArgs)
 		// Handshake without NewClient: a Client's reader would own this
 		// connection forever, and the consumer of LaunchResult.BidiConn
 		// (agent or api router) must be able to take over reads itself.
 		result, sessionErr := bidi.SessionNewOnConn(conn, caps)
 		if sessionErr == nil {
 			userDataDir, _ := result.Capabilities["userDataDir"].(string)
+			if persistentDir != "" {
+				userDataDir = persistentDir
+			}
 			log.Info("browser launched via BiDi session.new", "sessionId", result.SessionID)
 			return &LaunchResult{
 				BidiConn:    conn,
@@ -198,6 +250,7 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 				BrowserCmd:  cmd,
 				Port:        port,
 				UserDataDir: userDataDir,
+				Persistent:  persistentDir != "",
 			}, nil
 		}
 		log.Debug("BiDi session.new failed, falling back to HTTP", "error", sessionErr)
@@ -207,10 +260,13 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 	}
 
 	// Fallback: HTTP POST /session (original path)
-	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose)
+	sessionID, httpWsURL, userDataDir, err := createSession(baseURL, chromePath, opts.Headless, opts.Verbose, extraArgs)
 	if err != nil {
-		cmd.Process.Kill()
+		cleanupFailedLaunch(cmd)
 		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+	if persistentDir != "" {
+		userDataDir = persistentDir
 	}
 	log.Info("browser launched via HTTP", "sessionId", sessionID, "wsUrl", httpWsURL)
 
@@ -220,7 +276,21 @@ func Launch(opts LaunchOptions) (*LaunchResult, error) {
 		BrowserCmd:   cmd,
 		Port:         port,
 		UserDataDir:  userDataDir,
+		Persistent:   persistentDir != "",
 	}, nil
+}
+
+// prepareUserDataDir resolves a user-supplied profile directory to an
+// absolute path and creates it if missing.
+func prepareUserDataDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve user data dir: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return "", fmt.Errorf("create user data dir: %w", err)
+	}
+	return abs, nil
 }
 
 // findAvailablePort finds an available TCP port.
@@ -235,9 +305,14 @@ func findAvailablePort() (int, error) {
 
 // waitForChromedriver waits for chromedriver to be ready.
 func waitForChromedriver(baseURL string, timeout time.Duration) error {
+	// Each probe gets its own bound: the default client has no timeout, so a
+	// chromedriver that accepts the connection but never answers would block
+	// a single Get forever and defeat the deadline below, which is only
+	// checked between iterations (#725).
+	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(baseURL + "/status")
+		resp, err := client.Get(baseURL + "/status")
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -249,8 +324,10 @@ func waitForChromedriver(baseURL string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for chromedriver")
 }
 
-// chromeArgs returns the standard Chrome launch arguments.
-func chromeArgs(headless bool) []string {
+// chromeArgs returns the standard Chrome launch arguments, with any
+// caller-supplied extras (StartOptions.args / --browser-arg, #640) appended
+// last so they win over the defaults.
+func chromeArgs(headless bool, extra []string) []string {
 	args := []string{
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -284,10 +361,13 @@ func chromeArgs(headless bool) []string {
 	if headless {
 		args = append(args, "--headless=new")
 	}
-	// Append any custom flags from VIBIUM_CHROME_ARGS (space-separated) so users
-	// can pass --no-sandbox etc. in root/CI/container environments where Chrome
-	// refuses to start otherwise. Empty tokens (from extra whitespace) are skipped.
+	// Append any custom flags from VIBIUM_CHROME_ARGS (space-separated, with
+	// quoting for values that contain spaces) so users can pass --no-sandbox
+	// etc. in root/CI/container environments where Chrome refuses to start
+	// otherwise. Empty tokens (from extra whitespace) are skipped.
 	args = append(args, customChromeArgs()...)
+	// Caller-supplied flags last, so an explicit arg overrides a default.
+	args = append(args, extra...)
 	return args
 }
 
@@ -302,14 +382,53 @@ func vmFastLaunchShim() string {
 }
 
 // customChromeArgs reads extra Chrome flags from the VIBIUM_CHROME_ARGS
-// environment variable, splitting on whitespace and dropping empty tokens.
-// Returns nil when the variable is unset or contains only whitespace.
+// environment variable. Returns nil when the variable is unset or contains
+// only whitespace.
 func customChromeArgs() []string {
-	return strings.Fields(os.Getenv("VIBIUM_CHROME_ARGS"))
+	return splitFlagString(os.Getenv("VIBIUM_CHROME_ARGS"))
+}
+
+// splitFlagString splits a space-separated flag string, honoring single and
+// double quotes so a value may contain spaces: --profile-directory="Profile 1"
+// is one token with the quotes removed. strings.Fields cut such values at the
+// space, so the quoted part reached Chrome as a separate flag (#306). An
+// unterminated quote runs to the end of the string.
+func splitFlagString(s string) []string {
+	var args []string
+	var cur strings.Builder
+	inToken := false
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			} else {
+				cur.WriteByte(c)
+			}
+		case c == '\'' || c == '"':
+			quote = c
+			inToken = true
+		case c == ' ' || c == '\t' || c == '\n':
+			if inToken {
+				args = append(args, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+		default:
+			cur.WriteByte(c)
+			inToken = true
+		}
+	}
+	if inToken {
+		args = append(args, cur.String())
+	}
+	return args
 }
 
 // buildCapabilities returns the capabilities map for BiDi session.new.
-func buildCapabilities(chromePath string, headless bool) map[string]interface{} {
+func buildCapabilities(chromePath string, headless bool, extraArgs []string) map[string]interface{} {
 	return map[string]interface{}{
 		"alwaysMatch": map[string]interface{}{
 			"browserName":  "chrome",
@@ -319,7 +438,7 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 			},
 			"goog:chromeOptions": map[string]interface{}{
 				"binary":          chromePath,
-				"args":            chromeArgs(headless),
+				"args":            chromeArgs(headless, extraArgs),
 				"excludeSwitches": []string{"enable-automation", "enable-logging"},
 				"prefs": map[string]interface{}{
 					"credentials_enable_service":                           false,
@@ -333,9 +452,9 @@ func buildCapabilities(chromePath string, headless bool) map[string]interface{} 
 }
 
 // createSession creates a new WebDriver session with BiDi enabled via HTTP.
-func createSession(baseURL, chromePath string, headless, verbose bool) (string, string, string, error) {
+func createSession(baseURL, chromePath string, headless, verbose bool, extraArgs []string) (string, string, string, error) {
 	reqBody := map[string]interface{}{
-		"capabilities": buildCapabilities(chromePath, headless),
+		"capabilities": buildCapabilities(chromePath, headless, extraArgs),
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -392,6 +511,10 @@ func createSession(baseURL, chromePath string, headless, verbose bool) (string, 
 	return sessResp.Value.SessionID, wsURL, userDataDir, nil
 }
 
+// persistentStopTimeout bounds the graceful-shutdown wait for a browser on a
+// persistent profile before the force kill below proceeds.
+const persistentStopTimeout = 5 * time.Second
+
 // Close terminates a chromedriver session and process.
 func (r *LaunchResult) Close() error {
 	log.Debug("closing browser", "sessionId", r.SessionID)
@@ -400,13 +523,43 @@ func (r *LaunchResult) Close() error {
 	if r.BrowserCmd != nil && r.BrowserCmd.Process != nil {
 		pid := r.BrowserCmd.Process.Pid
 
-		// Kill the entire process tree (chromedriver + Chrome + all helpers)
-		killProcessTree(pid)
-
-		// Wait for chromedriver to exit
-		r.BrowserCmd.Wait()
+		if r.Persistent {
+			// A force kill loses profile writes the browser has not flushed
+			// yet (Chrome batches cookie and localStorage commits). The
+			// session teardown already sent the browser its close command, so
+			// wait for the exit before killing what remains. The root must be
+			// reaped while the group is watched — its zombie would keep the
+			// group occupied forever — and Wait may only run once per Cmd,
+			// hence the goroutine.
+			reaped := make(chan struct{})
+			go func() {
+				r.BrowserCmd.Wait()
+				close(reaped)
+			}()
+			waitProcessGroupIdle(pid, persistentStopTimeout)
+			killProcessTree(pid)
+			<-reaped
+		} else {
+			// Kill the entire process tree (chromedriver + Chrome + all
+			// helpers) first: reaping the root before the kill would erase
+			// the pgid the group kill needs when the root is already dead.
+			killProcessTree(pid)
+			r.BrowserCmd.Wait()
+		}
 
 		process.Untrack(r.BrowserCmd)
+	}
+
+	// Firefox on Windows is not reached by the kill above: the firefox.exe we
+	// launch is a launcher-process stub that starts the real browser as a
+	// separate, re-parented process and exits, so taskkill /T on our PID finds
+	// an empty tree and the browser (plus its ~10 content/GPU processes)
+	// survives, piling up across runs (#622). The Unix orphan sweep uses
+	// pgrep/ps and never runs on Windows. Kill by the unique per-session
+	// profile dir instead, which does not depend on process parentage and
+	// cannot touch the user's own Firefox windows (a different profile).
+	if r.Engine == "firefox" && r.UserDataDir != "" {
+		killBrowserProfileProcesses(r.UserDataDir)
 	}
 
 	// Clean up the Chrome temp profile directory for THIS session only.
@@ -416,12 +569,50 @@ func (r *LaunchResult) Close() error {
 	// processes' still-active user-data-dirs — Chrome then loses the ability
 	// to create new files inside its profile and the BiDi connection hangs.
 	// Run an orphan sweep explicitly (e.g. `make double-tap`) instead.
-	if r.UserDataDir != "" {
+	// A persistent profile is the user's, never ours to delete (#715).
+	if r.UserDataDir != "" && !r.Persistent {
 		log.Debug("removing Chrome user data dir", "path", r.UserDataDir)
 		os.RemoveAll(r.UserDataDir)
 	}
 
 	return nil
+}
+
+// firefoxProfileKillScript returns the PowerShell that terminates every
+// firefox.exe whose command line references this session's profile directory.
+// The match is scoped to the profile so it can never kill the user's own
+// Firefox (which runs a different profile), and it does not depend on process
+// parentage, which the Windows launcher process breaks (#622). The basename
+// (vibium-firefox-profile-NNNN) is used rather than the full path: it is
+// unique per session and contains only characters safe to embed in the
+// -like pattern, so there is nothing to escape. Stop-Process only initiates
+// termination, so the script waits for the processes to exit: Close removes
+// the profile dir right after the sweep, and a still-dying firefox.exe
+// holding a handle would make that removal fail.
+func firefoxProfileKillScript(profileDir string) string {
+	base := filepath.Base(profileDir)
+	return fmt.Sprintf(
+		`$procs = @(Get-CimInstance Win32_Process -Filter "Name='firefox.exe'" | `+
+			`Where-Object { $_.CommandLine -like '*%s*' }); `+
+			`$procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; `+
+			`$procs | ForEach-Object { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction SilentlyContinue }`,
+		base,
+	)
+}
+
+// cleanupFailedLaunch tears down chromedriver after a launch fails partway,
+// the same way Close() does on a healthy shutdown. A bare Process.Kill() (what
+// these error paths used to do) kills only chromedriver's own pid, so a Chrome
+// tree chromedriver had already spawned is orphaned; it also skips Wait(),
+// leaving a zombie, and skips Untrack(), leaking an entry in the process
+// manager for the life of a long-running daemon or serve (#699 neighborhood).
+func cleanupFailedLaunch(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	killProcessTree(cmd.Process.Pid)
+	cmd.Wait()
+	process.Untrack(cmd)
 }
 
 // killProcessTree kills a process and all its descendants using process group kill.
@@ -521,15 +712,25 @@ func killOrphanedProcessesFromDir(dir string) {
 // the same glob, and deleting them out from under a live Chrome breaks its
 // BiDi connection.
 //
-// The minAge filter only deletes directories whose mtime is older than the
-// given duration — anything fresher could belong to a currently-running
-// sibling process. Pass time.Minute or longer for parallel-safe cleanup.
+// Two guards keep it off live directories. A dir referenced by any running
+// process's command line is spared: mtime alone cannot tell a leaked dir
+// from a healthy long-lived sibling's, since Chrome never touches its temp
+// dirs after creation, so any browser older than minAge looks stale (#706).
+// The minAge filter covers the remaining window between a dir's creation
+// and its browser appearing in the process table. When the process listing
+// fails nothing is deleted: leaking a directory is recoverable, wedging a
+// live browser is not.
 func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 	tmpDir := os.TempDir()
 	patterns := []string{
 		filepath.Join(tmpDir, "com.google.chrome.for.testing.*"),
 		filepath.Join(tmpDir, "org.chromium.Chromium.scoped_dir.*"),
 		filepath.Join(tmpDir, "vibium-firefox-profile-*"),
+	}
+	args, ok := liveProcessArgs()
+	if !ok {
+		log.Debug("orphan temp dir sweep skipped: process listing failed")
+		return
 	}
 	cutoff := time.Now().Add(-minAge)
 	var count int
@@ -540,6 +741,9 @@ func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 			if err != nil || info.ModTime().After(cutoff) {
 				continue
 			}
+			if tempDirInUse(args, m) {
+				continue
+			}
 			if os.RemoveAll(m) == nil {
 				count++
 			}
@@ -548,6 +752,40 @@ func CleanupOrphanedBrowserTempDirs(minAge time.Duration) {
 	if count > 0 {
 		log.Debug("cleaned up orphaned Chrome temp dirs", "count", count, "minAge", minAge)
 	}
+}
+
+// liveProcessArgs returns every running process's command line in one blob,
+// or ok=false when the listing fails. One read serves a whole sweep.
+func liveProcessArgs() (string, bool) {
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("powershell", "-NoProfile", "-Command",
+			"Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }").Output()
+		if err != nil {
+			return "", false
+		}
+		return string(out), true
+	}
+	out, err := exec.Command("ps", "axww", "-o", "args=").Output()
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
+}
+
+// tempDirInUse reports whether any live process references dir on its command
+// line. Chrome, chromedriver and crashpad carry their temp dirs in argv
+// (--user-data-dir, scoped profile paths, --database), so a referenced dir
+// belongs to a live browser no matter how old its mtime is. The resolved path
+// is checked too: macOS reaches os.TempDir() through the /var -> /private/var
+// symlink and argv can carry either spelling.
+func tempDirInUse(args, dir string) bool {
+	if strings.Contains(args, dir) {
+		return true
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+		return strings.Contains(args, resolved)
+	}
+	return false
 }
 
 // driverErrorMessage pulls the human-readable part out of a WebDriver error

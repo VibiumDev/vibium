@@ -23,3 +23,34 @@ Everything else here is internal, outside those four: **specs/**
 **updates/** (release notes and progress posts), **trackers/**
 (living status pages), and **contributing/** (maintainer and contributor
 runbooks).
+
+## Vibium Check and Run
+
+| Reader's goal | Document |
+|---------------|----------|
+| Run a live check yourself | [Part 1: Check a live website](tutorials/first-check.md) |
+| Set up Vibium for Codex | [Use Vibium with Codex](how-to-guides/using-vibium-with-codex.md) |
+| Set up Vibium for Claude Code | [Use Vibium with Claude Code](how-to-guides/using-vibium-with-claude-code.md) |
+| Configure browser, AI, and skills | [Set up Vibium](how-to-guides/setup.md) |
+| Connect Claude Desktop Chat to Vibium | [Use Vibium with Claude Desktop](how-to-guides/using-vibium-with-claude-desktop.md) |
+| Write and run a check with a coding agent | [Part 2: Check with your coding agent](tutorials/check-with-a-coding-agent.md) |
+| Check evidence from a saved run | [Part 3: Check a recording or trace](tutorials/check-from-a-recording.md) |
+| Explore the new features | [Introducing Run and Check](updates/2026-09-07-run-and-check.md) |
+| Accomplish a live browser goal | [Run](how-to-guides/run.md) |
+| Configure models for either operation | [Model providers](reference/model-providers.md) |
+| Diagnose browser and AI setup | [Readiness diagnostics](reference/ready.md) |
+| Run a check and save evidence | [Check a live browser or saved recording](how-to-guides/check.md) |
+| Look up options, configuration, and language APIs | [Check reference](reference/check.md) |
+| Understand Run, Check, and their browser architecture | [How Run and Check work](explanation/run-check-webdriver-bidi-architecture.md) |
+
+## Recording
+
+| Reader's goal | Document |
+|---------------|----------|
+| Find an element by description or picture | [Finding things by sight](tutorials/finding-things-by-sight.md) |
+| Migrate `find` from CSS to descriptions | [Vibium Find: Natural Language by Default](how-to-guides/find-by-description-and-image.md) |
+| Understand how find resolves, and its matcher | [How find by intent works](explanation/find-by-intent.md) |
+| Record a browser session | [Recording browser sessions](tutorials/recording.md) |
+| Generate a script from a recording | [Record, then codegen](tutorials/recording.md#generate-a-script-from-a-recording) |
+| Look up codegen flags and the action mapping | [Codegen reference](reference/codegen.md) |
+| Look up the recording zip format | [Recording file format](reference/recording-format.md) |

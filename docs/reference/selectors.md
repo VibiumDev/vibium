@@ -2,6 +2,8 @@
 
 How vibium turns a selector into an element. Three kinds: CSS, pierce combinators for shadow DOM, and semantic locators.
 
+`find` is the exception among selector-taking commands: its bare string is a natural-language description, and CSS is explicit (`vibium find css ...`, `find({ css })`, `find(css=...)`). It also takes a reference image. See [Vibium Find: Natural Language by Default](../how-to-guides/find-by-description-and-image.md). `click`, `fill`, `count`, and the rest take the selectors below as before.
+
 For which commands accept a selector, see [API Reference](api.md).
 
 ---
@@ -11,13 +13,21 @@ For which commands accept a selector, see [API Reference](api.md).
 Any CSS selector the browser accepts.
 
 ```bash
-vibium find "button.primary"
-vibium find "#login input[type=password]"
+vibium find css "button.primary"
+vibium find css "#login input[type=password]"
 vibium click "nav a:nth-child(2)"
 ```
 
 ```js
-await vibe.find('button.primary');
+await vibe.find({ css: 'button.primary' });
+```
+
+```python
+vibe.find(css="button.primary")
+```
+
+```java
+vibe.find(new SelectorOptions().css("button.primary"));
 ```
 
 CSS selectors do not cross shadow boundaries. Use a pierce combinator for that.
@@ -35,16 +45,28 @@ Shadow roots are invisible to `querySelector`, so a component's internals need a
 
 ```bash
 # <my-card> has a shadow root containing <p>shadow text</p>
-vibium find "my-card >> p"
+vibium find css "my-card >> p"
 
 # <my-card> contains <nested-el>, which has its own shadow root
-vibium find "my-card >>> #deep"
+vibium find css "my-card >>> #deep"
 ```
 
 ```js
-const p   = await vibe.find('my-card >> p');
-const btn = await vibe.find('outer-host >>> button');
-const all = await vibe.findAll('my-card >> li');
+const p   = await vibe.find({ css: 'my-card >> p' });
+const btn = await vibe.find({ css: 'outer-host >>> button' });
+const all = await vibe.findAll({ css: 'my-card >> li' });
+```
+
+```python
+p = vibe.find(css="my-card >> p")
+btn = vibe.find(css="outer-host >>> button")
+items = vibe.find_all(css="my-card >> li")
+```
+
+```java
+Element p = vibe.find(new SelectorOptions().css("my-card >> p"));
+Element btn = vibe.find(new SelectorOptions().css("outer-host >>> button"));
+List<Element> all = vibe.findAll(new SelectorOptions().css("my-card >> li"));
 ```
 
 The syntax matches Playwright (`>>`) and Selenium 4 (`>>>`).
@@ -107,17 +129,27 @@ await vibe.find({ role: 'button', label: 'Log in' });
 await vibe.find({ testid: 'submit-btn' });
 ```
 
+```python
+vibe.find(role="button", label="Log in")
+vibe.find(testid="submit-btn")
+```
+
+```java
+vibe.find(new SelectorOptions().role("button").label("Log in"));
+vibe.find(new SelectorOptions().testid("submit-btn"));
+```
+
 Locators combine — `{ role: 'button', text: 'Save' }` requires both. When several elements match, the one with the shortest text wins, so an exact match beats a container that happens to include it.
 
 ---
 
 ## Scope
 
-`--scope` (CLI) and `scope` (clients) restrict a search to a subtree. It accepts pierce combinators too.
+`scope` (clients) restricts a search to a subtree. It accepts pierce combinators too. On the CLI, `map --selector` scopes the map. CLI `find` has no scope option.
 
 ```bash
-vibium find "a" --scope "#sidebar"
-vibium map --scope "my-card >> .content"
+vibium map --selector "#sidebar"
+vibium map --selector "my-card >> .content"
 ```
 
 Element objects scope automatically — `element.find(...)` searches within that element.

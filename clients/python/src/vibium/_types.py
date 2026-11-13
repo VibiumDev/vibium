@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, TypedDict, Union
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 
 @dataclass
@@ -46,6 +46,17 @@ class ElementInfo:
     tag: str
     text: str
     box: BoundingBox
+    ref: Optional[str] = None
+    """The @eN ref find registered; the CLI and MCP address the same element by it."""
+    role: Optional[str] = None
+    name: Optional[str] = None
+    """Accessible name."""
+    source: Optional[str] = None
+    """What backs the match: dom, tree, image, or vlm."""
+    selector: Optional[str] = None
+    """The DOM selector of a DOM-backed match. None for a visual region."""
+    details: Optional[Dict[str, Any]] = None
+    """Diagnostics, when the find asked for details."""
 
 
 class Cookie(TypedDict, total=False):

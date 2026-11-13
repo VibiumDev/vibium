@@ -1,0 +1,72 @@
+package ai
+
+import "testing"
+
+// Validation and help read the same provider and effort lists (#581).
+func TestProviderAndEffortChecks(t *testing.T) {
+	problem := func(c Config, variable string) string {
+		for _, check := range c.Checks() {
+			if check.Variable == variable {
+				return check.Error
+			}
+		}
+		t.Fatalf("no %s check", variable)
+		return ""
+	}
+	if got, want := problem(Config{Provider: "nope"}, "VIBIUM_AI_PROVIDER"), "set VIBIUM_AI_PROVIDER to openai, xai, anthropic, google, openai-compatible, or local"; got != want {
+		t.Errorf("provider problem %q, want %q", got, want)
+	}
+	for _, p := range Providers {
+		if got := problem(Config{Provider: p.Name}, "VIBIUM_AI_PROVIDER"); got != "" {
+			t.Errorf("%s rejected: %s", p.Name, got)
+		}
+		for _, effort := range ReasoningEfforts {
+			rejected := problem(Config{Provider: p.Name, ReasoningEffort: effort}, "VIBIUM_AI_REASONING_EFFORT") != ""
+			if rejected == p.ReasoningEffort {
+				t.Errorf("%s with effort %s: rejected=%v", p.Name, effort, rejected)
+			}
+		}
+	}
+	if problem(Config{Provider: "openai", ReasoningEffort: "extreme"}, "VIBIUM_AI_REASONING_EFFORT") == "" {
+		t.Error("unknown effort accepted")
+	}
+	if problem(Config{Provider: "anthropic"}, "VIBIUM_AI_REASONING_EFFORT") != "" {
+		t.Error("empty effort rejected for anthropic")
+	}
+}
+
+func TestOrList(t *testing.T) {
+	for _, tc := range []struct {
+		in   []string
+		want string
+	}{{nil, ""}, {[]string{"a"}, "a"}, {[]string{"a", "b"}, "a or b"}, {[]string{"a", "b", "c"}, "a, b, or c"}} {
+		if got := OrList(tc.in); got != tc.want {
+			t.Errorf("OrList(%v) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestVerdictDisplayWords(t *testing.T) {
+	for status, verdict := range map[string]string{"passed": "PASS", "failed": "FAIL", "inconclusive": "REVIEW"} {
+		if v := (Result{Status: status}).Verdict(); v != verdict {
+			t.Fatalf("%s displayed as %s", status, v)
+		}
+	}
+}
+
+func TestResultReasonValidation(t *testing.T) {
+	for _, reason := range CheckReasons {
+		r := Result{Status: "inconclusive", Summary: "cannot decide", Reason: reason, Evidence: []Evidence{}}
+		if err := r.Validate(); err != nil {
+			t.Fatalf("%s rejected: %v", reason, err)
+		}
+	}
+	for _, r := range []Result{
+		{Status: "passed", Summary: "ok", Reason: "safety_stop", Evidence: []Evidence{{Type: "observation", Summary: "seen"}}},
+		{Status: "inconclusive", Summary: "cannot decide", Reason: "because", Evidence: []Evidence{}},
+	} {
+		if err := r.Validate(); err == nil {
+			t.Fatalf("accepted %+v", r)
+		}
+	}
+}

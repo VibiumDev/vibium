@@ -12,6 +12,9 @@ type ElementInfo struct {
 	Tag  string  `json:"tag"`
 	Text string  `json:"text"`
 	Box  BoxInfo `json:"box"`
+	// Point is the in-view center computed by the actionability script.
+	// Zero when the element was resolved without actionability checks.
+	Point PointInfo `json:"point"`
 }
 
 type BoxInfo struct {
@@ -21,77 +24,116 @@ type BoxInfo struct {
 	Height float64 `json:"height"`
 }
 
-// handleVibiumFind handles the vibium:element.find / vibium:page.find command with wait-for-selector.
-// Accepts CSS selector (string) or semantic selector params (role, text, label, etc.).
+// PointInfo is a viewport coordinate pair.
+type PointInfo struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// handleVibiumFind handles vibium:element.find and vibium:page.find. A bare
+// description, a reference image, or css and structured locators all resolve
+// through FindElements; the match is registered in the context's ref table.
 func (r *Router) handleVibiumFind(session *BrowserSession, cmd bidiCommand) {
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-	timeout := DefaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
-
-	script, args := BuildFindScript(cmd.Params, false)
-
-	info, err := r.waitForElementWithScript(session, context, script, args, timeout)
+	loc, err := ParseLocator(cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{
-		"tag":  info.Tag,
-		"text": info.Text,
-		"box": map[string]interface{}{
-			"x":      info.Box.X,
-			"y":      info.Box.Y,
-			"width":  info.Box.Width,
-			"height": info.Box.Height,
-		},
-	})
+	res, err := FindElements(NewAPISession(r, session, context), context, loc, false)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	entry := session.refs.For(context).Register(res.Matches[0].Entry(res))
+	session.SetLastElementBox(&entry.Box)
+	r.sendSuccess(session, cmd.ID, foundResult(entry, res, loc.Details))
 }
 
-// handleVibiumFindAll handles the vibium:element.findAll / vibium:page.findAll command.
-// Returns all matching elements with their info.
+// handleVibiumFindAll handles vibium:element.findAll and vibium:page.findAll.
 func (r *Router) handleVibiumFindAll(session *BrowserSession, cmd bidiCommand) {
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
-	timeoutMs, _ := cmd.Params["timeout"].(float64)
-	timeout := DefaultTimeout
-	if timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-	}
-
-	hasText, _ := cmd.Params["hasText"].(string)
-	has, _ := cmd.Params["has"].(string)
-
-	script, args := BuildFindScript(cmd.Params, true)
-
-	// Add filter args
-	args = append(args,
-		map[string]interface{}{"type": "string", "value": hasText},
-		map[string]interface{}{"type": "string", "value": has},
-	)
-
-	elements, err := r.waitForElements(session, context, script, args, hasText, has, timeout)
+	loc, err := ParseLocator(cmd.Params)
 	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
-
+	// A collection query has no fixed size, so the wire limit only applies
+	// when the client asks for one.
+	if _, ok := cmd.Params["limit"]; !ok {
+		loc.Limit = 0
+	}
+	res, err := FindElements(NewAPISession(r, session, context), context, loc, true)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	table := session.refs.For(context)
+	elements := make([]map[string]interface{}, 0, len(res.Matches))
+	for i, m := range res.Matches {
+		entry := table.Register(m.Entry(res))
+		el := foundResult(entry, res, loc.Details)
+		el["index"] = i
+		elements = append(elements, el)
+	}
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{
 		"elements": elements,
 		"count":    len(elements),
+		"method":   res.Method,
+		"vlm":      res.VLM,
 	})
+}
+
+// foundResult is the wire shape of one match: the original tag, text, and
+// box, plus the ref, provenance, and the selector the client should use to
+// address a DOM-backed match again.
+func foundResult(e *RefEntry, res FindResult, details bool) map[string]interface{} {
+	out := map[string]interface{}{
+		"tag":  e.Tag,
+		"text": e.Text,
+		"box": map[string]interface{}{
+			"x":      e.Box.X,
+			"y":      e.Box.Y,
+			"width":  e.Box.Width,
+			"height": e.Box.Height,
+		},
+		"ref":    e.Ref,
+		"role":   e.Role,
+		"name":   e.Name,
+		"label":  e.Label,
+		"source": e.Source,
+		"method": res.Method,
+		"vlm":    res.VLM,
+	}
+	if e.Selector != "" {
+		out["selector"] = e.Selector
+	}
+	if details {
+		d := res.Diagnostics()
+		for k, v := range e.Details {
+			d[k] = v
+		}
+		out["details"] = d
+	}
+	return out
+}
+
+// findTimeout reads the caller's find timeout. An explicit 0 means one
+// immediate check with no waiting; only an absent timeout gets the default.
+// The old `> 0` guard silently replaced a caller's 0 with 30 seconds (#411).
+func findTimeout(params map[string]interface{}) time.Duration {
+	if ms, ok := params["timeout"].(float64); ok {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return DefaultTimeout
 }
 
 // BuildFindScript builds the JS function and arguments for element finding.
@@ -293,6 +335,11 @@ func semanticMatchesHelper() string {
 			}
 
 			function collectMatches(root, selector, role, text, label, placeholder, alt, title, testid, xpath) {
+				// el.matches cannot take a pierce selector; resolve it first.
+				if (selector && selector.indexOf('>>') !== -1 && !xpath) {
+					return pierceQueryAll(root, selector).filter((el) =>
+						matches(el, '', role, text, label, placeholder, alt, title, testid));
+				}
 				const found = [];
 				if (xpath) {
 					const xr = document.evaluate(xpath, root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -379,12 +426,13 @@ func (r *Router) waitForElementWithScript(session *BrowserSession, context, scri
 	return WaitForElementWithScript(NewAPISession(r, session, context), context, script, args, timeout)
 }
 
-// waitForElements polls until at least one matching element is found, then returns all.
+// waitForElements polls until at least one matching element is found, then
+// returns all. At the deadline it returns an empty slice, not an error: a
+// collection query whose answer is "none" is a valid result, and the singular
+// find is the call that treats absence as failure (#411).
 func (r *Router) waitForElements(session *BrowserSession, context, script string, args []map[string]interface{}, hasText, has string, timeout time.Duration) ([]map[string]interface{}, error) {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
-
-	desc := describeSelector(args)
 
 	for {
 		params := map[string]interface{}{
@@ -397,6 +445,11 @@ func (r *Router) waitForElements(session *BrowserSession, context, script string
 
 		resp, err := r.sendInternalCommand(session, "script.callFunction", params)
 		if err == nil {
+			// A malformed selector can never match, so fail now instead of
+			// polling it into an empty result for the whole timeout (#616).
+			if invErr := checkInvalidSelector(resp); invErr != nil {
+				return nil, invErr
+			}
 			var result struct {
 				Result struct {
 					Result struct {
@@ -416,7 +469,7 @@ func (r *Router) waitForElements(session *BrowserSession, context, script string
 		}
 
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timeout after %s waiting for '%s': no elements found", timeout, desc)
+			return []map[string]interface{}{}, nil
 		}
 
 		time.Sleep(interval)

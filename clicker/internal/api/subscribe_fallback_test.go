@@ -79,7 +79,7 @@ func TestSubscribeFallsBackWhenBatchIsRejected(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	router := NewRouter("firefox", true, "ws"+strings.TrimPrefix(ts.URL, "http"), nil)
+	router := NewRouter("firefox", true, "ws"+strings.TrimPrefix(ts.URL, "http"), nil, nil)
 	client := &recordingClient{}
 	t.Cleanup(router.CloseAll)
 

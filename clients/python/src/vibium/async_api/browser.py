@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from ..check import CheckResult, send_check
+from ..run import RunResult, send_run
+from ..speech import ListenResult, SayResult, listen_params, say_params, send_listen, send_say, shared_listen, shared_say
+
+import json
 import os
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -42,6 +47,25 @@ class Browser:
             page = Page(self._client, params["context"], params.get("userContext", "default"))
             for cb in callbacks:
                 cb(page)
+
+    async def __call__(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        return await self.run(goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+
+    async def run(self, goal: str, *, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> RunResult:
+        """Accomplish a goal in the live browser using the configured runtime."""
+        return await send_run(self._client, goal, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+
+    async def check(self, claim: str, *, record: Optional[str] = None, base_url: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+        """Independently verify live behavior, or inspect a read-only archive."""
+        return await send_check(self._client, claim, record, base_url=base_url, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+
+    async def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak text into the current page's microphone, or into the device."""
+        return await send_say(self._client, say_params(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir))
+
+    async def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Hear what the current page, or the device, plays, and return its words."""
+        return await send_listen(self._client, listen_params(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe))
 
     async def page(self) -> Page:
         """Get the default page (first browsing context)."""
@@ -92,6 +116,32 @@ class Browser:
 class _BrowserLauncher:
     """Module-level browser launcher object."""
 
+    async def check(self, claim: str, *, record: str, executable_path: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, ai_base_url: Optional[str] = None, reasoning_effort: Optional[str] = None) -> CheckResult:
+        """Inspect an archive without installing or starting a browser."""
+        from ..binary import VibiumProcess
+        from ..client import BiDiClient
+        if not record:
+            raise ValueError("Standalone verification requires record")
+        process = await VibiumProcess.start(no_browser=True, executable_path=executable_path)
+        client = None
+        try:
+            client = await BiDiClient.connect(process)
+            return await send_check(client, claim, record, provider=provider, model=model, ai_base_url=ai_base_url, reasoning_effort=reasoning_effort)
+        finally:
+            try:
+                if client:
+                    await client.close()
+            finally:
+                await process.stop()
+
+    async def say(self, text: str, *, file: Optional[str] = None, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, voice: Optional[str] = None, language: Optional[str] = None, speed: Optional[float] = None, cache: bool = True, cache_dir: Optional[str] = None) -> SayResult:
+        """Speak with no browser: into this machine's speakers, or a .wav file."""
+        return await shared_say(say_params(text, file=file, target=target, provider=provider, model=model, voice=voice, language=language, speed=speed, cache=cache, cache_dir=cache_dir))
+
+    async def listen(self, *, target: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None, language: Optional[str] = None, silence: Optional[int] = None, timeout: Optional[int] = None, duration: Optional[int] = None, allow_silence: bool = False, path: Optional[str] = None, transcribe: bool = True) -> ListenResult:
+        """Listen with no browser: to this machine's microphone, or a .wav file."""
+        return await shared_listen(listen_params(target=target, provider=provider, model=model, language=language, silence=silence, timeout=timeout, duration=duration, allow_silence=allow_silence, path=path, transcribe=transcribe))
+
     async def start(
         self,
         url: Optional[str] = None,
@@ -99,20 +149,29 @@ class _BrowserLauncher:
         engine: Optional[str] = None,
         channel: Optional[str] = None,
         headless: bool = False,
+        user_data_dir: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        caps: Optional[Dict[str, Any]] = None,
         executable_path: Optional[str] = None,
     ) -> Browser:
         """Start a browser session.
 
         Args:
-            url: Remote BiDi WebSocket URL. If not provided, checks
+            url: Remote BiDi WebSocket URL, or an http(s) classic WebDriver
+                endpoint (Selenium Grid, cloud grid). If not provided, checks
                 VIBIUM_CONNECT_URL env var, then falls back to local launch.
             engine: Browser engine to launch: "chrome" (default) or "firefox"
                 (local launch only).
             channel: Release channel of the engine to install and run, e.g.
                 "beta". Currently honored by Firefox only (local launch only).
             headless: Run browser in headless mode (local launch only).
+            user_data_dir: Persistent browser profile directory, created if
+                missing and reused across sessions (cookies, logins survive).
+                Default is a temporary profile wiped on close (local launch
+                only).
             headers: HTTP headers for remote connection (e.g. auth tokens).
+            caps: Extra alwaysMatch capabilities for classic WebDriver
+                endpoints (vendor-prefixed keys like vendor:options).
             executable_path: Path to vibium binary (default: auto-detect).
         """
         from ..binary import VibiumProcess
@@ -125,9 +184,13 @@ class _BrowserLauncher:
             if api_key:
                 env_headers["Authorization"] = f"Bearer {api_key}"
             merged = {**env_headers, **(headers or {})}
+            # Raw JSON string either way — the binary validates it and owns
+            # the error message, so no parsing here.
+            caps_json = json.dumps(caps) if caps else os.environ.get("VIBIUM_CONNECT_CAPS")
             process = await VibiumProcess.start(
                 connect_url=connect_url,
                 connect_headers=merged or None,
+                connect_caps=caps_json or None,
                 executable_path=executable_path,
             )
         else:
@@ -135,6 +198,7 @@ class _BrowserLauncher:
                 headless=headless,
                 engine=engine,
                 channel=channel,
+                user_data_dir=user_data_dir,
                 executable_path=executable_path,
             )
         client = await BiDiClient.connect(process)
@@ -157,6 +221,7 @@ class _EngineLauncher:
         *,
         channel: Optional[str] = None,
         headless: bool = False,
+        user_data_dir: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         executable_path: Optional[str] = None,
     ) -> Browser:
@@ -165,6 +230,7 @@ class _EngineLauncher:
             engine=self._engine,
             channel=channel,
             headless=headless,
+            user_data_dir=user_data_dir,
             headers=headers,
             executable_path=executable_path,
         )

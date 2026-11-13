@@ -1,9 +1,12 @@
 import { Worker, MessageChannel, receiveMessageOnPort, MessagePort } from 'worker_threads';
 import * as path from 'path';
+import { SpeechError } from '../utils/errors';
 
 interface CommandResult {
   result?: unknown;
   error?: string;
+  /** Set when the error is a SpeechError. */
+  speechCode?: string;
 }
 
 interface CallbackRequest {
@@ -150,7 +153,7 @@ export class SyncBridge {
     this.callbackPortMain.postMessage({ decision });
   }
 
-  call<T = unknown>(method: string, args: unknown[] = []): T {
+  call<T = unknown>(method: string, args: unknown[] = [], commandTimeoutMs = 60_000): T {
     // Handle any callbacks that fired between bridge calls
     this.processPendingCallbacks();
 
@@ -168,7 +171,6 @@ export class SyncBridge {
 
     // Block until worker signals — loop to handle mid-command callbacks
     // Use a 1000ms Atomics.wait timeout and track total elapsed time (60s max)
-    const commandTimeoutMs = 60_000;
     const waitSliceMs = 1000;
     const startTime = Date.now();
 
@@ -198,7 +200,7 @@ export class SyncBridge {
 
         const response = message.message as CommandResult;
         if (response.error) {
-          throw new Error(response.error);
+          throw response.speechCode ? new SpeechError(response.speechCode, response.error) : new Error(response.error);
         }
         return response.result as T;
       }
@@ -251,6 +253,11 @@ export class SyncBridge {
       // If anything fails, force terminate
       this.terminate();
     }
+  }
+
+  /** Let Node exit while the worker is idle. The exit handler still quits it. */
+  unref(): void {
+    this.worker.unref();
   }
 
   terminate(): void {

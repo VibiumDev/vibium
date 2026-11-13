@@ -304,7 +304,7 @@ TimeoutError: Element not found: button.submit
 | **WebDriver BiDi** | The protocol: JSON over WebSocket |
 | **Browser** | Executes commands, returns results |
 | **Vibium** | Connection management, actionability, auto-waiting, errors |
-| **Your code** | `vibe.find('a').click()` |
+| **Your code** | `vibe.find({ css: 'a' }).click()` |
 
 The raw protocol is simple. Everything else is saving you from writing it by hand.
 

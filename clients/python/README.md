@@ -29,7 +29,7 @@ with open("screenshot.png", "wb") as f:
     f.write(png)
 
 # Find and click a link
-link = vibe.find("a")
+link = vibe.find(css="a")
 print(link.text())
 link.click()
 
@@ -47,7 +47,7 @@ async def main():
     vibe = await bro.page()
     await vibe.go("https://example.com")
 
-    link = await vibe.find("a")
+    link = await vibe.find(css="a")
     await link.click()
 
     await bro.stop()
@@ -64,7 +64,7 @@ vibium version   # Show version
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.11+
 
 ## Links
 
@@ -74,3 +74,11 @@ vibium version   # Show version
 ## License
 
 Apache-2.0
+
+## Independent verification
+
+`Page.check` and `Browser.check` provide a fresh verifier context using the
+existing browser session. Supply `record` to inspect an immutable archive, or
+use the module-level `browser.check` launcher for archive inspection
+without launching a browser. See the [Check reference](../../docs/reference/check.md#python)
+for configuration, examples, recording, and verdict semantics.

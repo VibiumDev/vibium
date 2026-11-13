@@ -8,8 +8,8 @@ Web components hide their internals in a shadow root. `document.querySelector` s
 ```
 
 ```bash
-vibium find "my-card p"
-# Error: element not found: my-card p
+vibium find css "my-card p"
+# Error: timeout after 30s waiting for 'css=my-card p': element not found
 ```
 
 Use a pierce combinator instead. Full syntax in the [selector reference](../reference/selectors.md).
@@ -21,12 +21,12 @@ Use a pierce combinator instead. Full syntax in the [selector reference](../refe
 `>>` crosses one shadow boundary:
 
 ```bash
-vibium find "my-card >> p"
+vibium find css "my-card >> p"
 # → @e1 [p] "shadow text"
 ```
 
 ```js
-const p = await vibe.find('my-card >> p');
+const p = await vibe.find({ css: 'my-card >> p' });
 ```
 
 Everything works on the result, not just `find`:
@@ -44,13 +44,13 @@ Component libraries nest hosts inside hosts. `>>>` searches any depth below the 
 
 ```bash
 # <my-card> contains <nested-el>, which has its own shadow root
-vibium find "my-card >>> #deep"
+vibium find css "my-card >>> #deep"
 ```
 
 Chain them when you want to be explicit about the path:
 
 ```bash
-vibium find "app-shell >> side-nav >> button"
+vibium find css "app-shell >> side-nav >> button"
 ```
 
 Mix them when only part of the path is known — `outer >>> mid >> button` searches deeply for `mid`, then takes exactly one hop into it.
@@ -97,7 +97,7 @@ vibium eval "document.querySelector('my-card').shadowRoot.innerHTML"
 <my-card><span>slotted</span></my-card>
 ```
 ```bash
-vibium find "my-card span"       # works — not in the shadow root
+vibium find css "my-card span"       # works — not in the shadow root
 ```
 
 ---

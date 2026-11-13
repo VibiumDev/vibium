@@ -7,3 +7,12 @@ export { BrowserContextSync } from './context';
 export { RecordingSync } from './recording';
 export { RouteSync } from './route';
 export { DialogSync } from './dialog';
+
+export { CheckOptions, RecordedCheckOptions, CheckResult } from '../check';
+
+export { RunOptions, RunResult } from '../run';
+
+export { SpeechOptions, SayOptions, SayResult, ListenOptions, ListenResult } from '../speech';
+export { SpeechError } from '../utils/errors';
+
+export { ModelOptions } from '../model-options';

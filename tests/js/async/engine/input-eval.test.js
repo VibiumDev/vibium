@@ -30,7 +30,7 @@ describe('Keyboard: page-level input', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Click the input to focus it
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
 
     // Type via page.keyboard
@@ -44,7 +44,7 @@ describe('Keyboard: page-level input', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('hello');
 
@@ -59,7 +59,7 @@ describe('Keyboard: page-level input', () => {
     const vibe = await bro.page();
     await vibe.go(`${baseURL}/login`);
 
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('hello');
 
@@ -80,7 +80,7 @@ describe('Mouse: page-level input', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Find the username input bounds and click it via mouse
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     const bounds = await input.bounds();
     const cx = bounds.x + bounds.width / 2;
     const cy = bounds.y + bounds.height / 2;
@@ -97,7 +97,7 @@ describe('Mouse: page-level input', () => {
     await vibe.go(`${baseURL}/hovers`);
 
     // Get first figure position
-    const figure = await vibe.find('.figure');
+    const figure = await vibe.find({ css: '.figure' });
     const bounds = await figure.bounds();
     const cx = bounds.x + bounds.width / 2;
     const cy = bounds.y + bounds.height / 2;
@@ -125,14 +125,45 @@ describe('Mouse: page-level input', () => {
 
   test('mouse.wheel() scrolls the page', async () => {
     const vibe = await bro.page();
-    await vibe.go('data:text/html,<body style="margin:0"><div style="height:5000px;background:linear-gradient(red,blue)">Tall</div></body>');
+    await vibe.setContent('<body style="margin:0"><div style="height:5000px;background:linear-gradient(red,blue)">Tall</div></body>');
 
-    // Scroll down
+    // Scroll down. The wheel event scrolls asynchronously and a loaded CI
+    // runner can take over 300ms to composite, so poll instead of sampling
+    // once.
     await vibe.mouse.wheel(0, 500);
-    await vibe.wait(300);
-
-    const scrollY = await vibe.evaluate('window.scrollY;');
+    let scrollY = 0;
+    for (let i = 0; i < 20 && !(scrollY > 0); i++) {
+      await vibe.wait(250);
+      scrollY = await vibe.evaluate('window.scrollY;');
+    }
     assert.ok(scrollY > 0, `Page should have scrolled down, scrollY: ${scrollY}`);
+  });
+
+  test('mouse.wheel() scrolls at the last mouse position, not (0,0) (#726)', async () => {
+    // Own page so the shared page's mouse state stays untouched; close it on
+    // the way out or the extra renderer starves the screenshot captures below
+    // on the 4-core CI runner (three merge-queue timeouts before the close).
+    const vibe = await bro.newPage();
+    try {
+      await vibe.setContent(`<body style="margin:0;height:3000px"><script>
+        window.__wheel = null;
+        document.addEventListener('wheel', (e) => { window.__wheel = { x: e.clientX, y: e.clientY }; }, { passive: true });
+      </script></body>`);
+
+      await vibe.mouse.move(250, 180);
+      await vibe.mouse.wheel(0, 100);
+
+      let pos = null;
+      for (let i = 0; i < 20 && !pos; i++) {
+        pos = await vibe.evaluate('window.__wheel');
+        if (!pos) await vibe.wait(100);
+      }
+      assert.ok(pos, 'a wheel event should have fired');
+      assert.strictEqual(pos.x, 250, 'wheel should land at the last mouse x');
+      assert.strictEqual(pos.y, 180, 'wheel should land at the last mouse y');
+    } finally {
+      await vibe.close();
+    }
   });
 });
 
@@ -189,6 +220,51 @@ describe('Screenshots: options', () => {
     const header = buf.subarray(0, 5).toString('ascii');
     assert.ok(header.startsWith('%PDF'), `PDF should start with %PDF, got: ${header}`);
   });
+
+  // The page dimensions land uncompressed in the PDF's /MediaBox entry:
+  // "/MediaBox [0 0 <width> <height>]" in PDF points.
+  function mediaBox(buf) {
+    const match = buf.toString('latin1').match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    assert.ok(match, 'PDF should contain a parseable /MediaBox');
+    return { width: parseFloat(match[1]), height: parseFloat(match[2]) };
+  }
+
+  test.requires('pdf')('pdf({ landscape: true }) swaps the page orientation (#72)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    const portrait = mediaBox(await vibe.pdf());
+    const landscape = mediaBox(await vibe.pdf({ landscape: true }));
+
+    assert.ok(portrait.height > portrait.width, `portrait should be taller than wide, got ${JSON.stringify(portrait)}`);
+    assert.ok(landscape.width > landscape.height, `landscape should be wider than tall, got ${JSON.stringify(landscape)}`);
+  });
+
+  test.requires('pdf')('pdf({ pageWidth, pageHeight }) sets the page size (#72)', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    // 10cm x 15cm; MediaBox is in points (1 cm = 28.35pt)
+    const box = mediaBox(await vibe.pdf({ pageWidth: 10, pageHeight: 15 }));
+    assert.ok(Math.abs(box.width - 10 * 28.35) < 2, `width should be ~283pt, got ${box.width}`);
+    assert.ok(Math.abs(box.height - 15 * 28.35) < 2, `height should be ~425pt, got ${box.height}`);
+  });
+
+  test.requires('pdf')('pdf({ pageRanges }) limits the printed pages (#72)', async () => {
+    const vibe = await bro.page();
+    // Three forced pages so ranges have something to cut
+    await vibe.setContent(
+      '<div style="page-break-after:always">one</div>' +
+      '<div style="page-break-after:always">two</div>' +
+      '<div>three</div>'
+    );
+
+    const all = await vibe.pdf();
+    const first = await vibe.pdf({ pageRanges: [1] });
+    const countPages = (buf) => (buf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+    assert.strictEqual(countPages(all), 3, 'unrestricted print should have 3 pages');
+    assert.strictEqual(countPages(first), 1, 'pageRanges [1] should print 1 page');
+  });
 });
 
 // --- Evaluation ---
@@ -216,6 +292,18 @@ describe('Evaluation: page-level', () => {
 
     const result = await vibe.evaluate('undefined');
     assert.strictEqual(result, null);
+  });
+
+  // The arrow-function form is what the docs and Quick Start show; it used to
+  // resolve to null silently because the function was dropped by JSON.stringify
+  // and the expression arrived empty (#639).
+  test('eval() runs a function, not just a string', async () => {
+    const vibe = await bro.page();
+    await vibe.go(`${baseURL}/example`);
+
+    assert.strictEqual(await vibe.evaluate(() => 1 + 1), 2);
+    assert.strictEqual(await vibe.evaluate(() => document.title), 'Example Domain');
+    assert.strictEqual(await vibe.evaluate(() => typeof document.body), 'object');
   });
 
   test('addScript() injects inline JS', async () => {
@@ -295,12 +383,12 @@ describe('Input & Eval Checkpoint', () => {
     await vibe.go(`${baseURL}/login`);
 
     // Use keyboard.type via page.keyboard
-    const input = await vibe.find('#username');
+    const input = await vibe.find({ css: '#username' });
     await input.click();
     await vibe.keyboard.type('tomsmith');
 
     // Use mouse.click to click password field
-    const pwInput = await vibe.find('#password');
+    const pwInput = await vibe.find({ css: '#password' });
     const pwBounds = await pwInput.bounds();
     await vibe.mouse.click(
       pwBounds.x + pwBounds.width / 2,
@@ -320,7 +408,7 @@ describe('Input & Eval Checkpoint', () => {
     assert.ok(shot.length > 100, 'Screenshot should have content');
 
     // Submit the form
-    const btn = await vibe.find('button[type="submit"]');
+    const btn = await vibe.find({ css: 'button[type="submit"]' });
     await btn.click();
     await vibe.waitForURL('**/secure');
 

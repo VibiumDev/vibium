@@ -1,0 +1,114 @@
+package main
+
+import (
+	"context"
+	"slices"
+	"strings"
+
+	"github.com/vibium/clicker/internal/ai"
+)
+
+func checkVerifierSetup(ctx context.Context, config ai.Config, probe func(context.Context, ai.Config) error) setupResult {
+	prefix := config.Prefix()
+	result := setupResult{Ready: true, Notes: []string{"AI readiness does not test browser access, screenshot support, or application behavior."}}
+	fixes := map[string]string{
+		prefix + "PROVIDER":         "Export " + prefix + "PROVIDER as openai, xai, anthropic, google, openai-compatible, or local.",
+		prefix + "MODEL":            "Set a tool-capable model with --model or export " + prefix + "MODEL. When changing provider, supply --model explicitly.",
+		config.CredentialVariable(): "Set " + config.CredentialVariable() + " in ~/.config/vibium/ai.env (loaded automatically) or export it; keep its value out of chat and logs.",
+		"Grok login":                "Run grok login to renew the Grok CLI session, or export XAI_API_KEY.",
+		prefix + "BASE_URL":         "Export " + prefix + "BASE_URL as the server's API base URL, such as http://localhost:1234/v1.",
+		prefix + "REASONING_EFFORT": "Unset " + prefix + "REASONING_EFFORT for Anthropic/Google, or choose an effort supported by your OpenAI-compatible model.",
+	}
+	checks := config.Checks()
+	providerValid := false
+	for _, check := range checks {
+		if check.Variable == prefix+"PROVIDER" {
+			providerValid = check.Error == ""
+		}
+	}
+	// Present prerequisites before settings that depend on them. Keep shared
+	// validation unchanged for Run and Check.
+	order := map[string]int{prefix + "PROVIDER": 0, prefix + "MODEL": 1, config.CredentialVariable(): 2, "Grok login": 2, prefix + "BASE_URL": 3, prefix + "REASONING_EFFORT": 4}
+	slices.SortStableFunc(checks, func(a, b ai.ConfigCheck) int { return order[a.Variable] - order[b.Variable] })
+	for _, check := range checks {
+		item := setupCheck{Name: check.Variable, Status: "passed", Message: "Configuration valid (value not displayed)."}
+		if check.Variable == config.CredentialVariable() && config.APIKey == "" {
+			item.Message = "Not set; optional for openai-compatible and local."
+		}
+		if check.Variable == prefix+"REASONING_EFFORT" && config.ReasoningEffort == "" {
+			item.Message = "Not set; no reasoning-effort override."
+		}
+		if check.Variable == prefix+"BASE_URL" && config.BaseURL == "" {
+			item.Message = "No custom endpoint; using the provider default when available."
+		}
+		if !providerValid {
+			switch check.Variable {
+			case config.CredentialVariable():
+				item.Name, item.Status, item.Message = "credentials", "skipped", "Select a supported provider before checking its API key requirements."
+			case prefix + "BASE_URL", prefix + "REASONING_EFFORT":
+				item.Status, item.Message = "skipped", "Select a supported provider before checking this setting."
+			}
+		}
+		if check.Error != "" {
+			item.Status, item.Message, item.Fix = "failed", check.Error, fixes[check.Variable]
+			result.Ready = false
+		}
+		result.Checks = append(result.Checks, item)
+	}
+	provider := setupCheck{Name: "provider", Status: "skipped", Message: "Fix configuration before testing the provider."}
+	if result.Ready {
+		provider.Status, provider.Message = "passed", "Authentication, model access, tool call, and structured response succeeded."
+		if err := probe(ctx, config); err != nil {
+			result.Ready = false
+			provider.Status, provider.Message, provider.Fix = "failed", err.Error(), providerSetupFixForConfig(err, config)
+		}
+	}
+	result.Checks = append(result.Checks, provider)
+	return result
+}
+
+func providerSetupFix(err error) string {
+	switch text := err.Error(); {
+	case strings.Contains(text, "HTTP 401"), strings.Contains(text, "HTTP 403"):
+		return "Check the API key and its permissions for the configured endpoint and model."
+	case strings.Contains(text, "model_not_found"), strings.Contains(text, "HTTP 404"):
+		return "Check VIBIUM_AI_MODEL, model access, and the API base URL."
+	case strings.Contains(text, "HTTP 429"):
+		return "Check API quota, billing, and rate limits before retrying."
+	case strings.Contains(text, "reasoning_effort"):
+		return "Choose a reasoning effort the configured model supports for function tools (VIBIUM_AI_REASONING_EFFORT); gpt-5 models need none, others may need it unset."
+	case strings.Contains(text, "connectivity"), strings.Contains(text, "timeout"):
+		return "Check endpoint connectivity and retry when the provider is available."
+	default:
+		return "Check that the endpoint and model support Chat Completions function tools, max_completion_tokens, and your reasoning-effort setting."
+	}
+}
+
+func providerSetupFixForConfig(err error, config ai.Config) string {
+	if config.Provider == "openai" && strings.Contains(err.Error(), "reasoning_effort") {
+		if problem := ai.OpenAIChatToolsProblem(config.Model); problem != "" {
+			return problem
+		}
+		if effort := ai.OpenAIEffortDefault(config.Model); effort != "" && config.ReasoningEffort != effort {
+			return "Set " + config.Prefix() + "REASONING_EFFORT=" + effort + "; " + config.Model + " needs it for Chat Completions function tools."
+		}
+	}
+	fix := strings.ReplaceAll(providerSetupFix(err), "VIBIUM_AI_", config.Prefix())
+	// Name the model the user actually configured; a hint that always names
+	// the wizard default reads as wrong advice for every other model (#621).
+	if config.Model != "" {
+		fix = strings.ReplaceAll(fix, "the configured model", config.Model)
+	}
+	if config.Provider == "xai" && (strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403")) {
+		if config.CredentialSource == ai.CredentialGrokSession {
+			return "Run grok login to renew the Grok CLI session, or export XAI_API_KEY."
+		}
+		return "Check XAI_API_KEY and its permissions, or sign in with grok login."
+	}
+	if config.Provider == "anthropic" || config.Provider == "google" {
+		if strings.Contains(fix, "Chat Completions") {
+			return "Check that the endpoint and model support native tool calling and image input. Leave " + config.Prefix() + "REASONING_EFFORT unset."
+		}
+	}
+	return fix
+}

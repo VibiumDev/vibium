@@ -43,7 +43,7 @@ async function main() {
   await vibe.go('http://localhost:3000');
 
   const download = await vibe.capture.download(async () => {
-    await vibe.find('#dl-link').click();
+    await vibe.find({ css: '#dl-link' }).click();
   });
 
   console.log(download.suggestedFilename()); // hello.txt
@@ -66,7 +66,7 @@ const vibe = bro.page();
 vibe.go('http://localhost:3000');
 
 const result = vibe.capture.download(() => {
-  vibe.find('#dl-link').click();
+  vibe.find({ css: '#dl-link' }).click();
 });
 
 console.log(result.suggestedFilename); // hello.txt
@@ -93,7 +93,7 @@ const vibe = await bro.page();
 await vibe.go(baseURL);
 
 const download = await vibe.capture.download(async () => {
-  await vibe.find('#dl-link').click();
+  await vibe.find({ css: '#dl-link' }).click();
 });
 
 assert.ok(download.url().includes('/file'));
@@ -125,7 +125,7 @@ const vibe = bro.page();
 vibe.go(baseURL);
 
 const result = vibe.capture.download(() => {
-  vibe.find('#dl-link').click();
+  vibe.find({ css: '#dl-link' }).click();
 });
 
 assert.ok(result.url.includes('/file'));
@@ -160,7 +160,7 @@ await vibe.go(baseURL);
 const downloads = [];
 vibe.onDownload((dl) => downloads.push(dl));
 
-await vibe.find('#dl-link').click();
+await vibe.find({ css: '#dl-link' }).click();
 await vibe.wait(1000);
 
 assert.ok(downloads.length >= 1);
@@ -183,7 +183,7 @@ vibe.go(baseURL);
 const downloads = [];
 vibe.onDownload((dl) => downloads.push(dl));
 
-vibe.find('#dl-link').click();
+vibe.find({ css: '#dl-link' }).click();
 vibe.wait(2000);
 
 assert.ok(downloads.length >= 1);
@@ -240,7 +240,7 @@ bro = browser.start()
 vibe = bro.page()
 vibe.go("http://localhost:3000")
 
-result = vibe.capture.download(lambda: vibe.find("#dl-link").click())
+result = vibe.capture.download(lambda: vibe.find(css="#dl-link").click())
 
 print(result["suggested_filename"])  # hello.txt
 result.save_as("/tmp/hello.txt")
@@ -261,7 +261,7 @@ async def main():
     await vibe.go("http://localhost:3000")
 
     async with vibe.capture.download() as cap:
-        el = await vibe.find("#dl-link")
+        el = await vibe.find(css="#dl-link")
         await el.click()
 
     download = cap.value
@@ -292,7 +292,7 @@ bro = browser.start(headless=True)
 vibe = bro.page()
 vibe.go(base_url)
 
-result = vibe.capture.download(lambda: vibe.find("#dl-link").click())
+result = vibe.capture.download(lambda: vibe.find(css="#dl-link").click())
 
 assert "/file" in result["url"]
 assert result["suggested_filename"] == "hello.txt"
@@ -324,7 +324,7 @@ vibe = await bro.page()
 await vibe.go(base_url)
 
 async with vibe.capture.download() as cap:
-    el = await vibe.find("#dl-link")
+    el = await vibe.find(css="#dl-link")
     await el.click()
 
 download = cap.value
@@ -360,7 +360,7 @@ vibe.go(base_url)
 downloads = []
 vibe.on_download(lambda dl: downloads.append(dl))
 
-vibe.find("#dl-link").click()
+vibe.find(css="#dl-link").click()
 
 # The download event arrives asynchronously; poll briefly for it.
 deadline = time.time() + 15
@@ -389,7 +389,7 @@ await vibe.go(base_url)
 downloads = []
 vibe.on_download(lambda dl: downloads.append(dl))
 
-el = await vibe.find("#dl-link")
+el = await vibe.find(css="#dl-link")
 await el.click()
 await asyncio.sleep(1)
 
@@ -400,6 +400,103 @@ await bro.stop()
 ```
 
 </details>
+
+## Java
+
+## Quick Example
+
+First, save this server as `Server.java` and start it:
+
+```java
+// Server.java
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+
+public class Server {
+    public static void main(String[] args) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 3000), 0);
+        server.createContext("/", exchange -> {
+            byte[] body;
+            if (exchange.getRequestURI().getPath().equals("/file")) {
+                exchange.getResponseHeaders().add("Content-Type", "text/plain");
+                exchange.getResponseHeaders().add("Content-Disposition", "attachment; filename=\"hello.txt\"");
+                body = "hello world".getBytes(StandardCharsets.UTF_8);
+            } else {
+                exchange.getResponseHeaders().add("Content-Type", "text/html");
+                body = "<a href=\"/file\" id=\"dl-link\">Download hello.txt</a>".getBytes(StandardCharsets.UTF_8);
+            }
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        System.out.println("http://localhost:3000");
+    }
+}
+```
+
+```
+java Server.java
+```
+
+Then in another terminal, run the download program:
+
+```java
+import com.vibium.Download;
+import com.vibium.Vibium;
+import com.vibium.types.SelectorOptions;
+
+public class DownloadExample {
+    public static void main(String[] args) {
+        var bro = Vibium.start();
+        var vibe = bro.page();
+        vibe.go("http://localhost:3000");
+
+        Download download = vibe.capture().download(
+            () -> vibe.find(new SelectorOptions().css("#dl-link")).click());
+
+        System.out.println(download.suggestedFilename()); // hello.txt
+        download.saveAs("/tmp/hello.txt");
+
+        bro.stop();
+    }
+}
+```
+
+## capture().download
+
+`capture().download()` sets up a listener, runs your action, and returns the download:
+
+```java
+Download download = vibe.capture().download(
+    () -> vibe.find(new SelectorOptions().css("#dl-link")).click());
+
+download.url();                // ends with /file
+download.suggestedFilename();  // "hello.txt"
+download.saveAs("/tmp/hello.txt");
+download.path();               // the browser's temp file, once the download completes
+```
+
+## onDownload
+
+`onDownload()` registers a callback that fires for every download on the page:
+
+```java
+List<Download> downloads = new CopyOnWriteArrayList<>();
+vibe.onDownload(downloads::add);
+
+vibe.find(new SelectorOptions().css("#dl-link")).click();
+
+// The download event arrives asynchronously; poll briefly for it.
+for (int i = 0; i < 50 && downloads.isEmpty(); i++) {
+    Thread.sleep(100);
+}
+
+downloads.get(0).suggestedFilename();  // "hello.txt"
+```
+
+---
 
 ## See also
 

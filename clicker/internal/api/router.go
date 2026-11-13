@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,20 +13,35 @@ import (
 
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/speech"
+	"github.com/vibium/clicker/internal/webbotauth"
 )
 
 // DefaultTimeout is the default timeout for element resolution and actionability checks.
 const DefaultTimeout = 30 * time.Second
 
+// A healthy client drains its pipe in microseconds; a Send this slow means
+// events are queuing behind a reader that has stalled. Well above scheduler
+// jitter on a loaded CI runner so the log stays quiet in healthy runs.
+const slowClientSend = time.Second
+
 // BrowserSession represents a browser session connected to a client.
 type BrowserSession struct {
+	modelMu      sync.RWMutex
+	modelContext context.Context         // guarded by mu; scoped to a serialized Check run
+	modelReplies map[int]chan modelReply // internal Go calls, not another transport
+
 	LaunchResult *browser.LaunchResult
 	BidiConn     *bidi.Connection
 	Client       ClientTransport
 	ownsRemote   bool // remote session was created here, so closeSession ends it
-	mu           sync.Mutex
-	closed       bool
-	stopChan     chan struct{}
+	// classicSession is set when the connect URL was a classic WebDriver HTTP
+	// endpoint and this router created the session there. Grids release the
+	// slot on DELETE, so closeSession must delete it.
+	classicSession *bidi.ClassicSession
+	mu             sync.Mutex
+	closed         bool
+	stopChan       chan struct{}
 
 	// Internal command tracking for vibium: extension commands
 	internalCmds map[int]chan json.RawMessage
@@ -35,8 +51,14 @@ type BrowserSession struct {
 	// (vibium pipe --connect starts its internal ids at 1000000, so a nested
 	// router's commands were being swallowed here — #158).
 	abandonedInternal map[int]struct{} // id -> response channel
-	internalCmdsMu    sync.Mutex
-	nextInternalID    int
+	// Forwarded client commands are renumbered from nextInternalID before
+	// they reach the browser, so a client id can never collide with an
+	// in-flight internal command in the browser's single id namespace — a
+	// nested vibium client numbers its commands from the same base (#723).
+	// browser-side id -> the client's original id, restored on the response.
+	forwardedIDs   map[int]int
+	internalCmdsMu sync.Mutex
+	nextInternalID int
 
 	// WebSocket monitoring state
 	wsPreloadScriptID string // "" if not installed
@@ -51,12 +73,34 @@ type BrowserSession struct {
 	// Clock support
 	clockPreloadScriptID string // "" if not installed
 
+	// Say and listen, and what each recorded speech step's after event
+	// carries, by call id.
+	speech         *Speech
+	speechOutcomes map[string]speechOutcome
+
 	activeContext string // last context foregrounded for pointer input; "" = unknown
+
+	// First-exchange instrumentation (#397): a session whose first command
+	// is never answered looks identical in the logs to one that never
+	// received a command at all. One line when the first command arrives and
+	// one when the first response leaves name the wedged side.
+	connectedAt   time.Time
+	firstCommand  int32 // atomic; 1 = first client command logged
+	firstResponse int32 // atomic; 1 = first response to the client logged
 
 	// prompts records which contexts have an open user prompt, so a command
 	// Chrome will not answer fails immediately instead of timing out.
-	prompts     *PromptTracker
-	navigations *NavigationTracker
+	prompts *PromptTracker
+	// dialogManual holds the contexts vibium:dialog.setPolicy has marked
+	// "manual" because a client page has its own dialog handlers. A prompt in
+	// any other context is dismissed by the router as it opens, so no client
+	// implements that default itself (#446). Entries for destroyed contexts
+	// are inert: context ids are never reused.
+	dialogManual map[string]struct{}
+	routes       *routeRegistry
+	captures     *captureRegistry
+	navigations  *NavigationTracker
+	downloads    *downloadRegistry
 
 	// Serializes recording start/stop across their async handlers (the
 	// video screencast negotiation spans several browser commands).
@@ -66,6 +110,7 @@ type BrowserSession struct {
 	recorder           *Recorder
 	lastContext        string     // last browsing context resolved by a command
 	lastURL            string     // last known page URL, updated from load/navigation events
+	refs               RefTables  // @eN tables, one per browsing context
 	lastElementBox     *BoxInfo   // last resolved element box, for recording
 	screenshotInFlight int32      // atomic; 1 = screenshot capture in progress
 	handlerScreenshot  int32      // atomic; 1 = handler already captured filmstrip screenshot
@@ -97,6 +142,9 @@ func (s *BrowserSession) SetLastElementBox(box *BoxInfo) {
 
 // BiDi command structure for parsing incoming messages
 type bidiCommand struct {
+	modelDone   chan struct{}
+	modelCallID *string
+
 	ID     int                    `json:"id"`
 	Method string                 `json:"method"`
 	Params map[string]interface{} `json:"params"`
@@ -118,16 +166,63 @@ type Router struct {
 	headless       bool
 	connectURL     string
 	connectHeaders http.Header
+	connectCaps    map[string]interface{} // extra alwaysMatch capabilities for classic endpoints
+	browserArgs    []string               // extra engine flags for a locally launched browser (#640)
+	userDataDir    string                 // persistent profile dir for a locally launched browser (#715)
+	// signer, when set, signs every outgoing request with Web Bot Auth so a
+	// site in Cloudflare's Verified Bots program can recognize the agent (#28).
+	// nil disables signing and leaves the request path untouched.
+	signer *webbotauth.Signer
+
+	// sessionless serves say and listen to a client with no session, from
+	// one Speech kept for the router's life.
+	sessionless bool
+	speechMu    sync.Mutex
+	speech      *Speech
 }
 
-// NewRouter creates a new router.
-func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header) *Router {
+// SetBrowserArgs sets extra engine command-line flags applied to a locally
+// launched browser. Call once before any client connects. No effect in
+// connect mode, where the browser is someone else's.
+func (r *Router) SetBrowserArgs(args []string) { r.browserArgs = args }
+
+// SetUserDataDir sets a persistent profile directory for a locally launched
+// browser (#715). Same contract as SetBrowserArgs.
+func (r *Router) SetUserDataDir(dir string) { r.userDataDir = dir }
+
+// NewRouter creates a new router. Web Bot Auth signing turns on here, from the
+// environment, so every entry path that builds a router (pipe, daemon, serve,
+// mcp) enables it the same way with no per-path plumbing (#28).
+func NewRouter(engine string, headless bool, connectURL string, connectHeaders http.Header, connectCaps map[string]interface{}) *Router {
 	return &Router{
 		engine:         engine,
 		headless:       headless,
 		connectURL:     connectURL,
 		connectHeaders: connectHeaders,
+		connectCaps:    connectCaps,
+		signer:         webBotAuthSignerFromEnv(),
 	}
+}
+
+// SetWebBotAuthSigner overrides the signer (tests set a known key).
+func (r *Router) SetWebBotAuthSigner(s *webbotauth.Signer) { r.signer = s }
+
+// webBotAuthSignerFromEnv builds a signer when VIBIUM_WEB_BOT_AUTH_KEY is set,
+// or nil when it is not. A key that is set but unreadable is reported loudly
+// and signing stays off: the browser still works, but the operator sees why
+// their requests are going unsigned rather than the binary refusing to start.
+func webBotAuthSignerFromEnv() *webbotauth.Signer {
+	keyPath := os.Getenv("VIBIUM_WEB_BOT_AUTH_KEY")
+	if keyPath == "" {
+		return nil
+	}
+	signer, err := webbotauth.LoadSigner(keyPath, os.Getenv("VIBIUM_WEB_BOT_AUTH_DIRECTORY"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[router] web-bot-auth disabled: %v\n", err)
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "[router] web-bot-auth signing enabled (keyid %s)\n", signer.KeyID())
+	return signer
 }
 
 // OnClientConnect is called when a new client connects.
@@ -136,24 +231,33 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	var launchResult *browser.LaunchResult
 	var bidiConn *bidi.Connection
 	var ownsRemoteSession bool
+	var classicSession *bidi.ClassicSession
 	var err error
 
 	if r.connectURL != "" {
 		// Remote mode: connect to an existing BiDi endpoint and create a session
-		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), r.connectURL)
+		fmt.Fprintf(os.Stderr, "[router] Connecting to remote browser for client %d: %s\n", client.ID(), bidi.RedactURL(r.connectURL))
 
-		// Handshake without a bidi.Client: this router reads the connection
-		// itself in routeBrowserToClient, so no client reader may own it.
-		bidiConn, err = bidi.ConnectWithHeaders(r.connectURL, r.connectHeaders)
+		// http(s) URLs are classic WebDriver endpoints: create a session
+		// there first and connect to the BiDi URL it hands back.
+		var wsURL string
+		wsURL, classicSession, err = bidi.ResolveEndpoint(r.connectURL, r.connectHeaders, r.connectCaps)
+
+		if err == nil {
+			// Handshake without a bidi.Client: this router reads the connection
+			// itself in routeBrowserToClient, so no client reader may own it.
+			bidiConn, err = bidi.ConnectWithHeaders(wsURL, r.connectHeaders)
+		}
 		if err == nil {
 			var session *bidi.RemoteSession
-			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, r.connectURL, map[string]interface{}{}); err != nil {
+			if session, err = bidi.AttachOrNewSessionOnConn(bidiConn, wsURL, map[string]interface{}{}); err != nil {
 				bidiConn.Close()
 			} else {
 				ownsRemoteSession = session.Created
 			}
 		}
 		if err != nil {
+			classicSession.Delete()
 			fmt.Fprintf(os.Stderr, "[router] Failed to connect to remote browser for client %d: %v\n", client.ID(), err)
 			client.Send(fmt.Sprintf(`{"error":{"code":-32000,"message":"Failed to connect to remote browser: %s"}}`, err.Error()))
 			client.Close()
@@ -166,8 +270,10 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		fmt.Fprintf(os.Stderr, "[router] Launching browser for client %d...\n", client.ID())
 
 		launchResult, err = browser.Launch(browser.LaunchOptions{
-			Engine:   r.engine,
-			Headless: r.headless,
+			Engine:      r.engine,
+			Headless:    r.headless,
+			Args:        r.browserArgs,
+			UserDataDir: r.userDataDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to launch browser for client %d: %v\n", client.ID(), err)
@@ -201,13 +307,22 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		BidiConn:          bidiConn,
 		Client:            client,
 		ownsRemote:        ownsRemoteSession,
+		connectedAt:       time.Now(),
+		classicSession:    classicSession,
 		stopChan:          make(chan struct{}),
 		internalCmds:      make(map[int]chan json.RawMessage),
 		abandonedInternal: make(map[int]struct{}),
+		forwardedIDs:      make(map[int]int),
 		nextInternalID:    1000000, // Start at high number to avoid collision with client IDs
 		prompts:           NewPromptTracker(),
+		dialogManual:      make(map[string]struct{}),
+		routes:            newRouteRegistry(),
+		captures:          newCaptureRegistry(),
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
+		downloads:         newDownloadRegistry(),
+		speech:            NewSpeech(),
+		speechOutcomes:    make(map[string]speechOutcome),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -224,13 +339,10 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// it does not implement (navigationAborted), which used to silence every
 	// event on the Firefox path (#348).
 	bidi.SubscribeEvents(func(events []string) error {
-		resp, err := r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
+		_, err := r.sendInternalCommand(session, "session.subscribe", map[string]interface{}{
 			"events": events,
 		})
-		if err != nil {
-			return err
-		}
-		return checkBidiError(resp)
+		return err
 	}, []string{
 		"browsingContext.contextCreated",
 		"network.beforeRequestSent",
@@ -262,6 +374,39 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// delays connect by that much at most; on timeout downloads degrade the
 	// same way as any other failure here.
 	r.setupDownloads(session)
+
+	// Synchronous for the same reason: a page loaded by the first command
+	// already has its virtual microphone.
+	r.attachSpeech(session)
+
+	// With signing on, install the global request intercept now, before any
+	// client command navigates, so the first request is already signed (#28).
+	if r.signer != nil {
+		r.installSignatureIntercept(session)
+	}
+}
+
+// closePersistentBrowser asks the browser itself to exit so a persistent
+// profile is flushed before any process-level teardown (#715). Firefox
+// implements BiDi natively, so browser.close is its clean shutdown. Chrome
+// gets CDP Browser.close through chromedriver's goog:cdp extension instead:
+// chromedriver's own teardown (BiDi browser.close included) hard-kills the
+// browser, and only Chrome's own shutdown writes the profile out. No reply is
+// expected on that path — the mapper dies with the browser — so the timeout
+// is the normal exit. An immediate error means an engine without the
+// extension; fall back to the spec command rather than closing nothing.
+func (r *Router) closePersistentBrowser(session *BrowserSession) {
+	if session.LaunchResult.Engine == "firefox" {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
+		return
+	}
+	_, err := r.sendInternalCommandWithTimeout(session, "goog:cdp.sendCommand", map[string]interface{}{
+		"method": "Browser.close",
+		"params": map[string]interface{}{},
+	}, 2*time.Second)
+	if err != nil && !strings.Contains(err.Error(), "timeout waiting for response") {
+		r.sendInternalCommandWithTimeout(session, "browser.close", map[string]interface{}{}, 5*time.Second)
+	}
 }
 
 // vibiumHandler is the signature for vibium: extension command handlers.
@@ -276,7 +421,7 @@ type vibiumHandler func(*BrowserSession, bidiCommand)
 func handlerCapturesBefore(method string) bool {
 	switch method {
 	case "vibium:element.click", "vibium:element.dblclick", "vibium:element.hover", "vibium:element.tap",
-		"vibium:element.check", "vibium:element.uncheck", "vibium:element.dragTo",
+		"vibium:element.set", "vibium:element.unset", "vibium:element.dragTo",
 		"vibium:element.fill", "vibium:element.type", "vibium:element.press", "vibium:element.clear",
 		"vibium:element.selectOption":
 		return true
@@ -297,12 +442,32 @@ func unblocksAnotherCommand(method string) bool {
 	switch method {
 	case "vibium:dialog.accept", "vibium:dialog.dismiss":
 		return true
+	// Captures block until traffic another command produces arrives.
+	case "vibium:page.captureRequest", "vibium:page.captureResponse":
+		return true
+	// A download await blocks until the browser finishes writing the file.
+	case "vibium:download.await":
+		return true
+	// The command it unblocks is an evaluate stuck awaiting the exposed
+	// function this result settles.
+	case "vibium:expose.result":
+		return true
+	// A listen waits for sound another command makes the page play, and a
+	// say runs for as long as its clip.
+	case speechSayMethod, speechListenMethod:
+		return true
 	}
 	return false
 }
 
 func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibiumHandler) {
 	go func() {
+		if cmd.modelDone != nil {
+			defer close(cmd.modelDone)
+		} else if !unblocksAnotherCommand(cmd.Method) {
+			session.modelMu.RLock()
+			defer session.modelMu.RUnlock()
+		}
 		session.mu.Lock()
 		recorder := session.recorder
 		session.mu.Unlock()
@@ -314,15 +479,25 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 		// handlerScreenshot, screenshotInFlight) is read only while recording.
 		// Taking it unconditionally serialized all 104 dispatched methods on
 		// every session, recording or not.
-		if recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
+		if cmd.modelDone == nil && recorder != nil && recorder.IsRecording() && !unblocksAnotherCommand(cmd.Method) {
 			session.dispatchMu.Lock()
 			defer session.dispatchMu.Unlock()
+		}
+
+		// A client may address an element by the @eN ref a find returned.
+		if err := ResolveRefParams(session.refs.For(commandContextParam(cmd.Params)), cmd.Method, cmd.Params); err != nil {
+			r.sendError(session, cmd.ID, err)
+			return
 		}
 
 		var callId string
 
 		if recorder != nil && recorder.IsRecording() {
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, cmd.Params)
 			callId = recorder.NextCallId()
+			if cmd.modelCallID != nil {
+				*cmd.modelCallID = callId
+			}
 			opts := recorder.Options()
 
 			// Interaction handlers (click, fill, etc.) capture the before-snapshot
@@ -340,6 +515,10 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 			session.mu.Unlock()
 
 			recorder.RecordAction(callId, cmd.Method, cmd.Params, beforeSnapshot, pageId)
+			// After the step is recorded, so its params stay the caller's own.
+			if isSpeechMethod(cmd.Method) {
+				cmd.Params["_recordCallId"] = callId
+			}
 		}
 
 		handler(session, cmd)
@@ -374,7 +553,11 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 				atomic.StoreInt32(&session.screenshotInFlight, 0)
 			}
 
+			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, nil)
 			recorder.RecordActionEnd(callId, afterSnapshot, endTime, box)
+			if o, ok := session.takeSpeechOutcome(callId); ok {
+				recorder.RecordCallOutcome(callId, o.result, o.err)
+			}
 		}
 	}()
 }
@@ -382,7 +565,13 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 // OnClientMessage is called when a message is received from a client.
 // It handles custom vibium: extension commands or forwards to the browser.
 func (r *Router) OnClientMessage(client ClientTransport, msg string) {
+	if r.handleRecordedCheck(client, msg) {
+		return
+	}
 	sessionVal, ok := r.sessions.Load(client.ID())
+	if !ok && r.handleSessionlessSpeech(client, msg) {
+		return
+	}
 	if !ok {
 		// Answer instead of dropping: a command that races session teardown
 		// (browser died, session already deleted) otherwise leaves the
@@ -422,8 +611,28 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	}
 
+	// A #397 incident starts as "the client hung": this line proves the
+	// command reached the router, and its missing counterpart (the first
+	// response line) then points at the browser side.
+	if atomic.CompareAndSwapInt32(&session.firstCommand, 0, 1) {
+		fmt.Fprintf(os.Stderr, "[router] first command from client %d: %s (%.1fs after connect)\n",
+			client.ID(), cmd.Method, time.Since(session.connectedAt).Seconds())
+	}
+
 	// Handle vibium: extension commands (per WebDriver BiDi spec for extensions)
 	switch cmd.Method {
+	case "vibium:run.run":
+		go r.handleRun(session, cmd)
+		return
+	case "vibium:check.run":
+		go r.handleCheck(session, cmd)
+		return
+	case speechSayMethod, speechListenMethod:
+		if cmd.Params == nil {
+			cmd.Params = map[string]interface{}{}
+		}
+		r.dispatch(session, cmd, r.handleSpeech)
+		return
 	// Element interaction commands
 	case "vibium:element.click":
 		r.dispatch(session, cmd, r.handleVibiumClick)
@@ -443,10 +652,10 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.clear":
 		r.dispatch(session, cmd, r.handleVibiumClear)
 		return
-	case "vibium:element.check":
+	case "vibium:element.set":
 		r.dispatch(session, cmd, r.handleVibiumCheck)
 		return
-	case "vibium:element.uncheck":
+	case "vibium:element.unset":
 		r.dispatch(session, cmd, r.handleVibiumUncheck)
 		return
 	case "vibium:element.selectOption":
@@ -510,7 +719,7 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:element.isEnabled":
 		r.dispatch(session, cmd, r.handleVibiumElIsEnabled)
 		return
-	case "vibium:element.isChecked":
+	case "vibium:element.isSet":
 		r.dispatch(session, cmd, r.handleVibiumElIsChecked)
 		return
 	case "vibium:element.isEditable":
@@ -557,6 +766,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:touch.tap":
 		r.dispatch(session, cmd, r.handleTouchTap)
 		return
+	case "vibium:touch.swipe":
+		r.dispatch(session, cmd, r.handleTouchSwipe)
+		return
+	case "vibium:touch.longPress":
+		r.dispatch(session, cmd, r.handleTouchLongPress)
+		return
 
 	// Page-level capture commands
 	case "vibium:page.screenshot":
@@ -578,6 +793,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	case "vibium:page.expose":
 		r.dispatch(session, cmd, r.handlePageExpose)
+		return
+	case "vibium:page.exposeFunction":
+		r.dispatch(session, cmd, r.handlePageExposeFunction)
+		return
+	case "vibium:expose.result":
+		r.dispatch(session, cmd, r.handleExposeResult)
 		return
 
 	// Page-level waiting commands
@@ -722,6 +943,24 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.unroute":
 		r.dispatch(session, cmd, r.handlePageUnroute)
 		return
+	// Network captures register inline, in client message order, so the
+	// capture exists before the client's next command can trigger its
+	// traffic; only the wait runs on the dispatch goroutine.
+	case "vibium:page.captureRequest":
+		if wait := r.registerNetworkCapture(session, cmd, "network.beforeRequestSent", "request"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
+		return
+	case "vibium:page.captureResponse":
+		if wait := r.registerNetworkCapture(session, cmd, "network.responseCompleted", "response"); wait != nil {
+			r.dispatch(session, cmd, wait)
+		}
+		return
+	case "vibium:page.captureEvent":
+		// Inline, not dispatched: registration must land before the client's
+		// next command, which may be the trigger for the captured event.
+		r.handlePageCaptureEvent(session, cmd)
+		return
 	case "vibium:network.continue":
 		go r.handleNetworkContinue(session, cmd)
 		return
@@ -742,6 +981,14 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:dialog.dismiss":
 		r.dispatch(session, cmd, r.handleDialogDismiss)
 		return
+	case "vibium:dialog.setPolicy":
+		// Inline, not dispatched: ordering relative to the client's next
+		// command is the guarantee this policy exists to provide. A client
+		// registers a handler, flips the policy, then sends the command that
+		// triggers the dialog; handled in message order, the dialog can never
+		// open under the old policy.
+		r.handleDialogSetPolicy(session, cmd)
+		return
 
 	// WebSocket monitoring
 	case "vibium:page.onWebSocket":
@@ -749,6 +996,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 
 	// Download & file commands
+	case "vibium:download.await":
+		r.dispatch(session, cmd, r.handleDownloadAwait)
+		return
 	case "vibium:download.saveAs":
 		r.dispatch(session, cmd, r.handleDownloadSaveAs)
 		return
@@ -803,10 +1053,57 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	}
 
-	// Forward standard BiDi commands to browser
+	// Forward standard BiDi commands to browser, renumbered so the client's
+	// id cannot collide with an internal command's (#723). The response gets
+	// the client's id back in routeBrowserToClient.
+	if cmd.ID > 0 {
+		if remapped, ok := session.remapForwardedCommand(msg, cmd.ID); ok {
+			msg = remapped
+		}
+	}
 	if err := session.BidiConn.Send(msg); err != nil {
 		fmt.Fprintf(os.Stderr, "[router] Failed to send to browser for client %d: %v\n", client.ID(), err)
 	}
+}
+
+// remapForwardedCommand rewrites a client command's id to a fresh id from the
+// internal counter and records the mapping for the response. A message that
+// cannot be rewritten is forwarded as-is, the pre-#723 behavior.
+func (s *BrowserSession) remapForwardedCommand(msg string, clientID int) (string, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return "", false
+	}
+	s.internalCmdsMu.Lock()
+	browserID := s.nextInternalID
+	s.nextInternalID++
+	s.forwardedIDs[browserID] = clientID
+	s.internalCmdsMu.Unlock()
+	fields["id"], _ = json.Marshal(browserID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		s.internalCmdsMu.Lock()
+		delete(s.forwardedIDs, browserID)
+		s.internalCmdsMu.Unlock()
+		return "", false
+	}
+	return string(out), true
+}
+
+// restoreClientID puts the client's original id back on a response to a
+// forwarded command. On a marshal failure the browser-side id stays: the
+// client gets a response it cannot match, but the reader loop stays correct.
+func restoreClientID(msg string, clientID int) string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(msg), &fields); err != nil {
+		return msg
+	}
+	fields["id"], _ = json.Marshal(clientID)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return msg
+	}
+	return string(out)
 }
 
 // getContext retrieves the active browsing context. It checks lastContext first
@@ -840,8 +1137,21 @@ func (r *Router) getContext(session *BrowserSession) (string, error) {
 	return result.Result.Contexts[0].Context, nil
 }
 
+// noteFirstResponse logs the first response this session sends its client,
+// whoever produced it — a vibium: handler or a forwarded browser reply (#397).
+func (s *BrowserSession) noteFirstResponse() {
+	if atomic.CompareAndSwapInt32(&s.firstResponse, 0, 1) {
+		fmt.Fprintf(os.Stderr, "[router] first response to client %d (%.1fs after connect)\n",
+			s.Client.ID(), time.Since(s.connectedAt).Seconds())
+	}
+}
+
 // sendSuccess sends a successful response to the client.
 func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}) {
+	if session.replyToModel(id, result, nil) {
+		return
+	}
+	session.noteFirstResponse()
 	resp := bidiResponse{ID: id, Type: "success", Result: result}
 	data, _ := json.Marshal(resp)
 	session.Client.Send(string(data))
@@ -849,11 +1159,15 @@ func (r *Router) sendSuccess(session *BrowserSession, id int, result interface{}
 
 // sendError sends an error response to the client (follows WebDriver BiDi spec).
 func (r *Router) sendError(session *BrowserSession, id int, err error) {
+	if session.replyToModel(id, nil, err) {
+		return
+	}
+	session.noteFirstResponse()
 	resp := bidiResponse{
 		ID:      id,
 		Type:    "error",
 		Error:   errorCode(err),
-		Message: err.Error(),
+		Message: errorMessage(err),
 	}
 	data, _ := json.Marshal(resp)
 	session.Client.Send(string(data))
@@ -864,6 +1178,11 @@ func (r *Router) sendError(session *BrowserSession, id int, err error) {
 // "error". Previously every error was hardcoded as "timeout", so validation and
 // not-found failures surfaced as misleading TimeoutErrors (#64).
 func errorCode(err error) string {
+	// A say or listen failure keeps its own code, which clients raise as a
+	// SpeechError.
+	if code := speech.Code(err); code != "" {
+		return code
+	}
 	if strings.Contains(strings.ToLower(err.Error()), "timeout") {
 		return "timeout"
 	}
@@ -918,6 +1237,16 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		if err := json.Unmarshal([]byte(msg), &resp); err == nil && resp.ID > 0 {
 			session.internalCmdsMu.Lock()
 			ch, isInternal := session.internalCmds[resp.ID]
+			if isInternal {
+				// Delete before sending, like bidi.Client: with the entry
+				// gone a second response with this id cannot match it, so
+				// the cap-1 send can never block this loop (#723).
+				delete(session.internalCmds, resp.ID)
+			}
+			clientID, isForwarded := session.forwardedIDs[resp.ID]
+			if isForwarded {
+				delete(session.forwardedIDs, resp.ID)
+			}
 			session.internalCmdsMu.Unlock()
 
 			if isInternal {
@@ -937,13 +1266,21 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			if abandoned {
 				continue
 			}
+
+			if isForwarded {
+				msg = restoreClientID(msg, clientID)
+			}
+
+			// A browser reply about to be forwarded answers a client command.
+			session.noteFirstResponse()
 		}
 
 		// Track page URL from load/navigation events (zero extra BiDi round-trips)
 		var bidiEvent struct {
 			Method string `json:"method"`
 			Params struct {
-				URL string `json:"url"`
+				URL       string `json:"url"`
+				IsBlocked bool   `json:"isBlocked"`
 			} `json:"params"`
 		}
 		if json.Unmarshal([]byte(msg), &bidiEvent) == nil {
@@ -957,6 +1294,28 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
 		session.navigations.Observe([]byte(msg))
+		// Chrome 156 nulls navigation on link-click downloads (#604);
+		// backfill it with the download id so shipped clients still get a
+		// usable await handle off the event they are about to receive.
+		msg = normalizeDownloadEvent(msg)
+		// Track downloads before the forward: a client can only learn its
+		// await handle from the willBegin event, so by the time it can send
+		// download.await the registry has the entry.
+		session.downloads.Observe(msg)
+
+		// A prompt no client handler has claimed is dismissed here, so every
+		// client shares one default instead of implementing it (#446). A
+		// pending dialog capture claims the prompt the same way a handler
+		// does: the capturer decides how it closes.
+		if ctx := session.autoDismissContext(msg); ctx != "" && !session.captures.wantsPrompt(ctx) {
+			go r.dismissUnhandledPrompt(session, ctx)
+		}
+
+		// Audio goes to the running capture, not to the recording's BiDi
+		// log or the client.
+		if session.speech.Event(msg) {
+			continue
+		}
 
 		// Record event for recording (non-blocking)
 		session.mu.Lock()
@@ -971,10 +1330,45 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 			continue
 		}
 
-		// Forward message to client
+		// Expose channel messages become vibium:expose.call events (#298).
+		if r.isExposeChannelEvent(session, msg) {
+			continue
+		}
+
+		// Blocked request events carry the matched route patterns, computed
+		// here so clients share one glob dialect (#446).
+		msg = session.routes.annotateBlockedRequest(msg)
+		session.captures.offer(msg)
+
+		// Web Bot Auth: when signing is on, the router owns the request
+		// intercept, so it signs and continues each blocked request itself
+		// rather than forwarding the block to the client (page.route is
+		// refused in this mode, so no client handler is waiting for it).
+		// Captures above still observed the event; only the forward is
+		// replaced. Runs on its own goroutine so continueRequest can round
+		// trip without stalling this read loop (#28).
+		if r.signer != nil && bidiEvent.Method == "network.beforeRequestSent" && bidiEvent.Params.IsBlocked {
+			go r.signAndContinue(session, msg)
+			continue
+		}
+
+		// Forward message to client. A Send that blocks means the client has
+		// stopped reading its pipe: every event after this one queues behind
+		// it and reaches the client late, which shows up as flaky waiters and
+		// listeners firing after removal (#397). Log the stall so an incident
+		// names the wedged side instead of leaving only a hung test.
+		sendStart := time.Now()
 		if err := session.Client.Send(msg); err != nil {
 			fmt.Fprintf(os.Stderr, "[router] Failed to send to client %d: %v\n", session.Client.ID(), err)
 			return
+		}
+		if elapsed := time.Since(sendStart); elapsed >= slowClientSend {
+			method := bidiEvent.Method
+			if method == "" {
+				method = "response"
+			}
+			fmt.Fprintf(os.Stderr, "[router] slow delivery to client %d: %s blocked %.1fs (client not reading?)\n",
+				session.Client.ID(), method, elapsed.Seconds())
 		}
 	}
 }
@@ -1018,11 +1412,21 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	session.mu.Lock()
+	operationContext := session.modelContext
+	session.mu.Unlock()
+	if operationContext != nil {
+		if err := operationContext.Err(); err != nil {
+			return nil, err
+		}
+	}
 	// An open user prompt means Chrome will never answer this command, so
 	// report it now rather than after the timeout.
 	if err := checkPromptBlocked(session.prompts, method, params); err != nil {
 		return nil, err
 	}
+	promptOpened, stopWatch := session.prompts.watch(method, params)
+	defer stopWatch()
 
 	// Chrome blocks ~5s dispatching pointer input to a backgrounded tab (#248),
 	// so foreground the target first — but only on a change of context. An
@@ -1079,15 +1483,39 @@ func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method 
 		return nil, err
 	}
 
-	// Wait for response (with timeout)
+	// Wait for response (with timeout). Check scopes cancellation to this session.
+	session.mu.Lock()
+	modelCtx := session.modelContext
+	session.mu.Unlock()
+	if modelCtx == nil {
+		modelCtx = context.Background()
+	}
 	select {
+	case <-modelCtx.Done():
+		session.internalCmdsMu.Lock()
+		session.abandonedInternal[id] = struct{}{}
+		session.internalCmdsMu.Unlock()
+		return nil, modelCtx.Err()
 	case resp := <-ch:
+		// An engine-level rejection arrives as a normal response whose
+		// payload is an error envelope, invisible to callers that only
+		// check err (#509). Return it as a Go error so every call site
+		// gets the check by default, matching bidi.Client, the other
+		// Session transport.
+		if bidiErr := checkBidiError(resp); bidiErr != nil {
+			return nil, bidiErr
+		}
 		return resp, nil
 	case <-time.After(timeout):
 		session.internalCmdsMu.Lock()
 		session.abandonedInternal[id] = struct{}{}
 		session.internalCmdsMu.Unlock()
 		return nil, fmt.Errorf("timeout waiting for response to %s", method)
+	case <-promptOpened:
+		session.internalCmdsMu.Lock()
+		session.abandonedInternal[id] = struct{}{}
+		session.internalCmdsMu.Unlock()
+		return nil, session.prompts.blockedError(params)
 	case <-session.stopChan:
 		return nil, fmt.Errorf("session closed")
 	}
@@ -1101,8 +1529,8 @@ func (r *Router) probeBrowser(session *BrowserSession) bool {
 	if session.BidiConn == nil {
 		return false
 	}
-	resp, err := r.sendInternalCommandWithTimeout(session, "browsingContext.getTree", map[string]interface{}{}, 2*time.Second)
-	return err == nil && checkBidiError(resp) == nil
+	_, err := r.sendInternalCommandWithTimeout(session, "browsingContext.getTree", map[string]interface{}{}, 2*time.Second)
+	return err == nil
 }
 
 // closeSession closes a browser session and cleans up resources.
@@ -1156,6 +1584,15 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		}
 	}
 
+	// A persistent profile (#715) needs the browser to exit on its own or
+	// the profile writes it has not flushed (cookies, localStorage) are
+	// lost: every process-level teardown chromedriver runs is a hard kill.
+	// Ask the browser to close itself while the connection still routes;
+	// LaunchResult.Close then waits for the exit before killing anything.
+	if alive && session.LaunchResult != nil && session.LaunchResult.Persistent {
+		r.closePersistentBrowser(session)
+	}
+
 	// Signal the routing goroutine to stop
 	if alive {
 		close(session.stopChan)
@@ -1175,19 +1612,29 @@ func (r *Router) closeSession(session *BrowserSession, browserDead bool) {
 		r.sendInternalCommandWithTimeout(session, "session.end", map[string]interface{}{}, 5*time.Second)
 	}
 
+	// Close the browser before the BiDi connection: chromedriver reacts to
+	// its BiDi socket closing by force-killing Chrome, which loses profile
+	// writes a persistent session (#715) needs flushed. Close quits the
+	// session gracefully first; the dead socket below is then harmless.
+	// LaunchResult is nil for remote sessions, whose browser is not ours.
+	if session.LaunchResult != nil {
+		session.LaunchResult.Close()
+	}
+
 	// Close BiDi connection
 	if session.BidiConn != nil {
 		session.BidiConn.Close()
 	}
 
+	// A session we created on a classic endpoint is also ours to end;
+	// DELETE is what releases the slot on grids and cloud providers.
+	if session.classicSession != nil {
+		session.classicSession.Delete()
+	}
+
 	// Clean up download temp dir
 	if session.downloadDir != "" {
 		os.RemoveAll(session.downloadDir)
-	}
-
-	// Close browser
-	if session.LaunchResult != nil {
-		session.LaunchResult.Close()
 	}
 
 	fmt.Fprintf(os.Stderr, "[router] Browser session closed for client %d\n", session.Client.ID())
@@ -1201,4 +1648,9 @@ func (r *Router) CloseAll() {
 		r.sessions.Delete(key)
 		return true
 	})
+}
+
+func commandContextParam(params map[string]interface{}) string {
+	value, _ := params["context"].(string)
+	return value
 }

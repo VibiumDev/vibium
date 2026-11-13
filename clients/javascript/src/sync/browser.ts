@@ -1,3 +1,7 @@
+import { callable } from '../callable';
+import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
+import { CheckOptions, RecordedCheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, SAY_TIMEOUT_MS, BRIDGE_SLACK_MS, listenTimeoutMs } from '../speech';
 import { SyncBridge } from './bridge';
 import { PageSync } from './page';
 import { BrowserContextSync } from './context';
@@ -11,7 +15,28 @@ export interface StartOptions {
   channel?: string;
   headless?: boolean;
   headers?: Record<string, string>;
+  /** Extra alwaysMatch capabilities for classic WebDriver endpoints
+   *  (cloud grids take their config this way, via vendor-prefixed capability keys). */
+  caps?: Record<string, unknown>;
+  /**
+   * Extra command-line flags for the launched browser, e.g.
+   * ['--use-fake-device-for-media-stream', '--lang=fr']. Each is passed to the
+   * engine as-is and wins over Vibium's defaults. Ignored in connect mode,
+   * where the browser is already running elsewhere.
+   */
+  args?: string[];
+  /**
+   * Persistent browser profile directory, created if missing and reused
+   * across sessions (cookies, logins survive). Omit for the default: a
+   * temporary profile wiped on close. Ignored in connect mode.
+   */
+  userDataDir?: string;
 }
+
+// The first module-level say or listen also starts the engine.
+const ENGINE_START_MS = 70_000;
+
+export interface BrowserSync { (goal: string, options?: RunOptions): RunResult; }
 
 export class BrowserSync {
   /** @internal */
@@ -22,10 +47,27 @@ export class BrowserSync {
 
   constructor(bridge: SyncBridge) {
     this._bridge = bridge;
+    return callable(this);
   }
 
   [customInspect](): string {
     return 'Browser { connected: true }';
+  }
+
+  run(goal: string, options: RunOptions = {}): RunResult {
+    return this._bridge.call('browser.run', [goal, options], RUN_TIMEOUT_MS);
+  }
+
+  check(claim: string, options: CheckOptions = {}): CheckResult {
+    return this._bridge.call('browser.check', [claim, options], CHECK_TIMEOUT_MS);
+  }
+
+  say(text: string, options: SayOptions = {}): SayResult {
+    return this._bridge.call('browser.say', [text, options], SAY_TIMEOUT_MS + BRIDGE_SLACK_MS);
+  }
+
+  listen(options: ListenOptions = {}): ListenResult {
+    return this._bridge.call('browser.listen', [options], listenTimeoutMs(options) + BRIDGE_SLACK_MS);
   }
 
   page(): PageSync {
@@ -103,7 +145,31 @@ export class BrowserSync {
   }
 }
 
+// One worker serves every module-level say and listen, and holds their
+// engine, so a say and the listen after it share a capture window.
+let speechBridge: SyncBridge | null = null;
+
+function speechCall<T>(method: string, args: unknown[], timeoutMs: number): T {
+  if (!speechBridge) {
+    speechBridge = SyncBridge.create();
+    speechBridge.unref();
+  }
+  return speechBridge.call<T>(method, args, timeoutMs + ENGINE_START_MS);
+}
+
 export const browser = {
+  say(text: string, options: SayOptions = {}): SayResult {
+    return speechCall('speech.say', [text, options], SAY_TIMEOUT_MS);
+  },
+  listen(options: ListenOptions = {}): ListenResult {
+    return speechCall('speech.listen', [options], listenTimeoutMs(options));
+  },
+  check(claim: string, options: RecordedCheckOptions): CheckResult {
+    if (!options?.record) throw new Error('Standalone verification requires record');
+    const bridge = SyncBridge.create();
+    try { return bridge.call('check.record', [claim, options], CHECK_TIMEOUT_MS); }
+    finally { bridge.terminate(); }
+  },
   start(urlOrOptions?: string | StartOptions, options: StartOptions = {}): BrowserSync {
     let url: string | undefined;
     if (typeof urlOrOptions === 'object') {

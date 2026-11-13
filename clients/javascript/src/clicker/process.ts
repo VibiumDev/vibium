@@ -19,12 +19,20 @@ const INSTALLING_MARKER = '[pipe] installing browser';
 const STDERR_TAIL_LIMIT = 8192;
 
 export interface VibiumProcessOptions {
+  /** @internal Serve archive operations without a browser. */
+  noBrowser?: boolean;
   engine?: 'chrome' | 'firefox';
   channel?: string;
   headless?: boolean;
   executablePath?: string;
   connectURL?: string;
   connectHeaders?: Record<string, string>;
+  /** JSON object of extra alwaysMatch capabilities for classic WebDriver endpoints. */
+  connectCaps?: string;
+  /** Extra engine command-line flags for a locally launched browser (#640). */
+  browserArgs?: string[];
+  /** Persistent profile directory for a locally launched browser (#715). */
+  userDataDir?: string;
 }
 
 export class VibiumProcess {
@@ -46,10 +54,21 @@ export class VibiumProcess {
   /** Lines received before the vibium:lifecycle.ready signal (buffered events). */
   get preReadyLines(): string[] { return this._preReadyLines; }
 
+  get exited(): boolean { return this._process.exitCode !== null || this._process.signalCode !== null; }
+
+  /** Let Node exit while this process runs. A command in flight still holds Node open, by its timer. */
+  unref(): void {
+    this._process.unref();
+    for (const stream of [this._process.stdin, this._process.stdout, this._process.stderr]) {
+      (stream as unknown as { unref?: () => void } | null)?.unref?.();
+    }
+  }
+
   static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
     const binaryPath = options.executablePath || getVibiumBinPath();
 
     const args = ['pipe'];
+    if (options.noBrowser) args.push('--no-browser');
     if (options.engine) {
       args.push('--engine', options.engine);
     }
@@ -66,6 +85,17 @@ export class VibiumProcess {
       for (const [key, value] of Object.entries(options.connectHeaders)) {
         args.push('--connect-header', `${key}: ${value}`);
       }
+    }
+    if (options.connectCaps) {
+      args.push('--connect-caps', options.connectCaps);
+    }
+    if (options.browserArgs) {
+      for (const flag of options.browserArgs) {
+        args.push('--browser-arg', flag);
+      }
+    }
+    if (options.userDataDir) {
+      args.push('--user-data-dir', options.userDataDir);
     }
 
     // Startup is slow (~16s cold) and gets slower when many browsers launch at
@@ -228,6 +258,8 @@ export class VibiumProcess {
       process.removeListener('SIGTERM', this._cleanupListeners);
       this._cleanupListeners = null;
     }
+
+    if (this._process.exitCode !== null || this._process.signalCode !== null) return;
 
     return new Promise((resolve) => {
       let resolved = false;

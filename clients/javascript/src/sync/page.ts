@@ -1,6 +1,11 @@
+import { callable } from '../callable';
+import { RunOptions, RunResult, RUN_TIMEOUT_MS } from '../run';
+import { CheckOptions, CheckResult, CHECK_TIMEOUT_MS } from '../check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, SAY_TIMEOUT_MS, BRIDGE_SLACK_MS, listenTimeoutMs } from '../speech';
 import * as fs from 'fs';
 import * as nodePath from 'path';
 import { SyncBridge } from './bridge';
+import { toEvalExpression } from '../utils/eval-expression';
 import { ElementSync } from './element';
 import { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 import { ClockSync } from './clock';
@@ -8,7 +13,8 @@ import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
 import { DialogSync, DialogData } from './dialog';
 import { ElementInfo, SelectorOptions } from '../element';
-import { A11yNode, ScreenshotOptions, FindOptions } from '../page';
+import { bridgeLocator } from './locator';
+import { A11yNode, ScreenshotOptions, PdfOptions, FindOptions } from '../page';
 
 const customInspect = Symbol.for('nodejs.util.inspect.custom');
 
@@ -88,6 +94,8 @@ export class WebSocketInfoSync {
   }
 }
 
+export interface PageSync { (goal: string, options?: RunOptions): RunResult; }
+
 export class PageSync {
   /** @internal */
   readonly _bridge: SyncBridge;
@@ -132,6 +140,7 @@ export class PageSync {
         },
       }
     );
+    return callable(this);
   }
 
   [customInspect](): string {
@@ -154,6 +163,22 @@ export class PageSync {
   }
 
   // --- Navigation ---
+
+  run(goal: string, options: RunOptions = {}): RunResult {
+    return this._bridge.call('page.run', [this._pageId, goal, options], RUN_TIMEOUT_MS);
+  }
+
+  check(claim: string, options: CheckOptions = {}): CheckResult {
+    return this._bridge.call('page.check', [this._pageId, claim, options], CHECK_TIMEOUT_MS);
+  }
+
+  say(text: string, options: SayOptions = {}): SayResult {
+    return this._bridge.call('page.say', [this._pageId, text, options], SAY_TIMEOUT_MS + BRIDGE_SLACK_MS);
+  }
+
+  listen(options: ListenOptions = {}): ListenResult {
+    return this._bridge.call('page.listen', [this._pageId, options], listenTimeoutMs(options) + BRIDGE_SLACK_MS);
+  }
 
   go(url: string): void {
     this._bridge.call('page.go', [this._pageId, url]);
@@ -191,12 +216,12 @@ export class PageSync {
   // --- Finding ---
 
   find(selector: string | SelectorOptions, options?: FindOptions): ElementSync {
-    const result = this._bridge.call<{ elementId: number; info: ElementInfo }>('page.find', [this._pageId, selector, options]);
+    const result = this._bridge.call<{ elementId: number; info: ElementInfo }>('page.find', [this._pageId, bridgeLocator(selector), options]);
     return new ElementSync(this._bridge, result.elementId, result.info);
   }
 
   findAll(selector: string | SelectorOptions, options?: FindOptions): ElementSync[] {
-    const result = this._bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('page.findAll', [this._pageId, selector, options]);
+    const result = this._bridge.call<{ elements: { elementId: number; info: ElementInfo }[] }>('page.findAll', [this._pageId, bridgeLocator(selector), options]);
     return result.elements.map(e => new ElementSync(this._bridge, e.elementId, e.info));
   }
 
@@ -292,15 +317,18 @@ export class PageSync {
     return Buffer.from(result.data, 'base64');
   }
 
-  pdf(): Buffer {
-    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId]);
+  pdf(options?: PdfOptions): Buffer {
+    const result = this._bridge.call<{ data: string }>('page.pdf', [this._pageId, options]);
     return Buffer.from(result.data, 'base64');
   }
 
   // --- Evaluation ---
 
-  evaluate<T = unknown>(expression: string): T {
-    const result = this._bridge.call<{ value: T }>('page.eval', [this._pageId, expression]);
+  evaluate<T = unknown>(expression: string | (() => T | Promise<T>)): T {
+    // Convert here, before the worker boundary: a function cannot survive the
+    // structured-clone postMessage to the worker, so it must become a string
+    // on this side (#639).
+    const result = this._bridge.call<{ value: T }>('page.eval', [this._pageId, toEvalExpression(expression)]);
     return result.value;
   }
 
@@ -312,7 +340,22 @@ export class PageSync {
     this._bridge.call('page.addStyle', [this._pageId, source]);
   }
 
-  expose(name: string, fn: string): void {
+  expose(name: string, fn: string | ((...args: unknown[]) => unknown)): void {
+    if (typeof fn === 'function') {
+      const handlerId = `expose_${this._pageId}_${name}`;
+      // The bridge swallows handler exceptions, so the outcome travels in an
+      // envelope the worker unwraps: a thrown host error must reject the
+      // page's promise, not resolve it with null.
+      this._bridge.registerHandler(handlerId, (args: unknown) => {
+        try {
+          return { ok: true, value: fn(...(args as unknown[])) };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      });
+      this._bridge.call('page.exposeWithCallback', [this._pageId, name, handlerId]);
+      return;
+    }
     this._bridge.call('page.expose', [this._pageId, name, fn]);
   }
 
