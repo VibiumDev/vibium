@@ -454,6 +454,19 @@ The CLI commands call these tools through the daemon, as other commands do.
 The client timeout for `listen` MUST exceed `timeout + duration` plus
 transcription time. Clients use `timeout + duration + 60000` ms.
 
+- A `context` param names the page a `session` target acts on. Without
+  it the target is the current page.
+- A failure answers with its code from [Errors](#errors) in `error` and
+  the message, without the code, in `message`. A param the method does
+  not know fails with the plain `error`.
+- The audio a session sends for a capture stays in the engine. A client
+  sees no event for it.
+- `vibium pipe --no-browser` serves both methods with no session open,
+  for `local` and file targets. One engine there keeps the capture
+  window from a `say` to the next `listen`.
+- Neither method waits behind another command, also while recording. A
+  client can start a `listen` and then click what makes the page speak.
+
 ## Behavior
 
 ### say

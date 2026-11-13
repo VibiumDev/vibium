@@ -108,6 +108,9 @@ func (r *Router) handleRecordingStop(session *BrowserSession, cmd bidiCommand) {
 		return
 	}
 
+	// The session's audio track ends before the zip is built.
+	session.speech.StopAudioRecording()
+
 	// Finalize the video first so Stop() can move the engine's file into the
 	// zip. A dead screencast is recorded in the manifest, not an error here.
 	StopRecordingVideo(NewAPISession(r, session, ""), recorder)

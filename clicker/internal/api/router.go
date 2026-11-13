@@ -13,6 +13,7 @@ import (
 
 	"github.com/vibium/clicker/internal/bidi"
 	"github.com/vibium/clicker/internal/browser"
+	"github.com/vibium/clicker/internal/speech"
 	"github.com/vibium/clicker/internal/webbotauth"
 )
 
@@ -71,6 +72,11 @@ type BrowserSession struct {
 
 	// Clock support
 	clockPreloadScriptID string // "" if not installed
+
+	// Say and listen, and what each recorded speech step's after event
+	// carries, by call id.
+	speech         *Speech
+	speechOutcomes map[string]speechOutcome
 
 	activeContext string // last context foregrounded for pointer input; "" = unknown
 
@@ -167,6 +173,12 @@ type Router struct {
 	// site in Cloudflare's Verified Bots program can recognize the agent (#28).
 	// nil disables signing and leaves the request path untouched.
 	signer *webbotauth.Signer
+
+	// sessionless serves say and listen to a client with no session, from
+	// one Speech kept for the router's life.
+	sessionless bool
+	speechMu    sync.Mutex
+	speech      *Speech
 }
 
 // SetBrowserArgs sets extra engine command-line flags applied to a locally
@@ -309,6 +321,8 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
 		downloads:         newDownloadRegistry(),
+		speech:            NewSpeech(),
+		speechOutcomes:    make(map[string]speechOutcome),
 	}
 
 	r.sessions.Store(client.ID(), session)
@@ -360,6 +374,10 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 	// delays connect by that much at most; on timeout downloads degrade the
 	// same way as any other failure here.
 	r.setupDownloads(session)
+
+	// Synchronous for the same reason: a page loaded by the first command
+	// already has its virtual microphone.
+	r.attachSpeech(session)
 
 	// With signing on, install the global request intercept now, before any
 	// client command navigates, so the first request is already signed (#28).
@@ -434,6 +452,10 @@ func unblocksAnotherCommand(method string) bool {
 	// function this result settles.
 	case "vibium:expose.result":
 		return true
+	// A listen waits for sound another command makes the page play, and a
+	// say runs for as long as its clip.
+	case speechSayMethod, speechListenMethod:
+		return true
 	}
 	return false
 }
@@ -493,6 +515,10 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 			session.mu.Unlock()
 
 			recorder.RecordAction(callId, cmd.Method, cmd.Params, beforeSnapshot, pageId)
+			// After the step is recorded, so its params stay the caller's own.
+			if isSpeechMethod(cmd.Method) {
+				cmd.Params["_recordCallId"] = callId
+			}
 		}
 
 		handler(session, cmd)
@@ -529,6 +555,9 @@ func (r *Router) dispatch(session *BrowserSession, cmd bidiCommand, handler vibi
 
 			CaptureRecordingSecrets(NewAPISession(r, session, commandContextParam(cmd.Params)), recorder, nil)
 			recorder.RecordActionEnd(callId, afterSnapshot, endTime, box)
+			if o, ok := session.takeSpeechOutcome(callId); ok {
+				recorder.RecordCallOutcome(callId, o.result, o.err)
+			}
 		}
 	}()
 }
@@ -540,6 +569,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	}
 	sessionVal, ok := r.sessions.Load(client.ID())
+	if !ok && r.handleSessionlessSpeech(client, msg) {
+		return
+	}
 	if !ok {
 		// Answer instead of dropping: a command that races session teardown
 		// (browser died, session already deleted) otherwise leaves the
@@ -594,6 +626,12 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 	case "vibium:check.run":
 		go r.handleCheck(session, cmd)
+		return
+	case speechSayMethod, speechListenMethod:
+		if cmd.Params == nil {
+			cmd.Params = map[string]interface{}{}
+		}
+		r.dispatch(session, cmd, r.handleSpeech)
 		return
 	// Element interaction commands
 	case "vibium:element.click":
@@ -1129,7 +1167,7 @@ func (r *Router) sendError(session *BrowserSession, id int, err error) {
 		ID:      id,
 		Type:    "error",
 		Error:   errorCode(err),
-		Message: err.Error(),
+		Message: errorMessage(err),
 	}
 	data, _ := json.Marshal(resp)
 	session.Client.Send(string(data))
@@ -1140,6 +1178,11 @@ func (r *Router) sendError(session *BrowserSession, id int, err error) {
 // "error". Previously every error was hardcoded as "timeout", so validation and
 // not-found failures surfaced as misleading TimeoutErrors (#64).
 func errorCode(err error) string {
+	// A say or listen failure keeps its own code, which clients raise as a
+	// SpeechError.
+	if code := speech.Code(err); code != "" {
+		return code
+	}
 	if strings.Contains(strings.ToLower(err.Error()), "timeout") {
 		return "timeout"
 	}
@@ -1266,6 +1309,12 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// does: the capturer decides how it closes.
 		if ctx := session.autoDismissContext(msg); ctx != "" && !session.captures.wantsPrompt(ctx) {
 			go r.dismissUnhandledPrompt(session, ctx)
+		}
+
+		// Audio goes to the running capture, not to the recording's BiDi
+		// log or the client.
+		if session.speech.Event(msg) {
+			continue
 		}
 
 		// Record event for recording (non-blocking)
