@@ -414,10 +414,21 @@ public ListenResult listen(ListenOptions options);
 
 page.say("What time is it?", SayOptions.builder().voice("en_US-ljspeech-medium").build());
 ListenResult reply = page.listen(ListenOptions.builder().timeout(5000).build());
+
+try {
+    Vibium.say("Come here, Watson.", SayOptions.builder().target("question.wav").build());
+    ListenResult heard = Vibium.listen(ListenOptions.builder().target("reply.wav").build());
+    System.out.println(heard.text() + " " + heard.latencyMs());
+} catch (SpeechException e) {
+    if (!e.code().equals("no_speech")) throw e;
+}
 ```
 
 `SayOptions`, `ListenOptions`, `SayResult` and `ListenResult` live in
-`com.vibium.types`. The options follow the existing builder style.
+`com.vibium.types`. The options follow the existing builder style, and
+take the same names as the JavaScript options. A result's fields are
+read through methods of the same names, such as `durationMs()`. A time
+the engine left out, such as `latencyMs()`, is `null`.
 `Vibium.say` and `Vibium.listen` are the no-browser forms.
 
 ### Errors in the SDKs
@@ -435,6 +446,9 @@ it from the one `browser` came from.
 
 In Python, `SpeechError` is a `VibiumError` with `code` and `message`.
 Printed, it reads `code: message`.
+
+In Java the class is `com.vibium.errors.SpeechException`, a
+`VibiumException` with `code()`. Its stack trace shows the code.
 
 ## MCP tools
 

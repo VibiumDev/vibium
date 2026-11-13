@@ -39,6 +39,24 @@ public final class Vibium {
     }
 
 
+    /** Speak with no browser: into this machine's speakers, or a .wav file. */
+    public static com.vibium.types.SayResult say(String text) {
+        return say(text, new com.vibium.types.SayOptions());
+    }
+
+    public static com.vibium.types.SayResult say(String text, com.vibium.types.SayOptions options) {
+        return com.vibium.internal.Speech.say(text, options);
+    }
+
+    /** Listen with no browser: to this machine's microphone, or a .wav file. */
+    public static com.vibium.types.ListenResult listen() {
+        return listen(new com.vibium.types.ListenOptions());
+    }
+
+    public static com.vibium.types.ListenResult listen(com.vibium.types.ListenOptions options) {
+        return com.vibium.internal.Speech.listen(options);
+    }
+
     /**
      * Start a visible browser.
      */

@@ -24,11 +24,16 @@ const CLOCK = `new Promise((r) => { const p = window.probe, t0 = p.currentTime; 
 const root = path.resolve(__dirname, '../..');
 const PYTHON = path.join(root, process.platform === 'win32' ? 'clients/python/.venv/Scripts/python.exe' : 'clients/python/.venv/bin/python');
 
+const JAVA = ['-cp', path.join(root, 'clients/java/build/libs/*') + path.delimiter + path.join(root, 'clients/java/build/dependencies/*'), path.join(__dirname, 'SpeechSDK.java')];
+
+// Each client: its name, the program and arguments that run its scenario,
+// whether that is its sync API, and what it calls a speech failure.
 const CLIENTS = [
-  ['JavaScript async', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '0'],
-  ['JavaScript sync', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '1'],
-  ['Python async', PYTHON, [path.join(__dirname, 'sdk-python.py')], '0'],
-  ['Python sync', PYTHON, [path.join(__dirname, 'sdk-python.py')], '1'],
+  ['JavaScript async', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '0', 'SpeechError'],
+  ['JavaScript sync', process.execPath, [path.join(__dirname, 'sdk-js.cjs')], '1', 'SpeechError'],
+  ['Python async', PYTHON, [path.join(__dirname, 'sdk-python.py')], '0', 'SpeechError'],
+  ['Python sync', PYTHON, [path.join(__dirname, 'sdk-python.py')], '1', 'SpeechError'],
+  ['Java', 'java', JAVA, '0', 'SpeechException'],
 ];
 
 // A client names its fields in its own language's style. The test reads
@@ -57,7 +62,7 @@ const skip = process.platform === 'win32' ? 'the fake engines are shell scripts'
 test('the clients say and listen with no browser', { skip, timeout: 300000 }, async (t) => {
   const work = tempDir('vibium-speech-sdk-');
   try {
-    for (const [label, binary, args, sync] of CLIENTS) {
+    for (const [label, binary, args, sync, speechError] of CLIENTS) {
       await t.test(label, async () => {
         const dir = path.join(work, label.replaceAll(' ', '-'));
         fs.mkdirSync(dir);
@@ -107,12 +112,12 @@ test('the clients say and listen with no browser', { skip, timeout: 300000 }, as
         assert.equal(out.unheard.path, path.join(dir, 'copy.wav'));
         assert.ok(fs.statSync(path.join(dir, 'copy.wav')).size > 30000);
 
-        assert.equal(out.quiet.type, 'SpeechError');
+        assert.equal(out.quiet.type, speechError);
         assert.equal(out.quiet.code, 'no_speech');
         assert.match(out.quiet.message, /^listened to .* and heard no speech/, 'the message carries no code');
         assert.equal(out.allowed.speech, false);
         assert.equal(out.allowed.text, '');
-        assert.equal(out.noSession.type, 'SpeechError');
+        assert.equal(out.noSession.type, speechError);
         assert.equal(out.noSession.code, 'invalid_target');
 
         assert.equal(fs.readFileSync(path.join(dir, 'starts'), 'utf-8').trim().split('\n').length, 1,
@@ -129,7 +134,7 @@ test('the clients say and listen through a page', { timeout: 600000 }, async (t)
   const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(PAGE); });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    for (const [label, binary, args, sync] of CLIENTS) {
+    for (const [label, binary, args, sync, speechError] of CLIENTS) {
       await t.test(label, async (t) => {
         const dir = path.join(work, label.replaceAll(' ', '-'));
         fs.mkdirSync(dir);
@@ -151,7 +156,7 @@ test('the clients say and listen through a page', { timeout: 600000 }, async (t)
           return;
         }
 
-        assert.equal(out.early.type, 'SpeechError');
+        assert.equal(out.early.type, speechError);
         assert.equal(out.early.code, 'no_audio');
         assert.match(out.early.message, /^no page has the microphone open/);
 

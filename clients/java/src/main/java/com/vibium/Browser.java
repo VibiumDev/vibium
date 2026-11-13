@@ -7,6 +7,11 @@ import com.google.gson.JsonObject;
 import com.vibium.internal.BiDiClient;
 import com.vibium.internal.Check;
 import com.vibium.internal.Run;
+import com.vibium.internal.Speech;
+import com.vibium.types.ListenOptions;
+import com.vibium.types.ListenResult;
+import com.vibium.types.SayOptions;
+import com.vibium.types.SayResult;
 import com.vibium.types.RunResult;
 import com.vibium.types.RunOptions;
 import com.vibium.types.CheckOptions;
@@ -33,6 +38,14 @@ public class Browser {
     public CheckResult check(String claim, CheckOptions options) {
         return Check.run(client, claim, options, null);
     }
+
+    /** Speak text into the current page's microphone, or into the device. */
+    public SayResult say(String text) { return say(text, new SayOptions()); }
+    public SayResult say(String text, SayOptions options) { return Speech.say(client, text, options, null); }
+
+    /** Hear what the current page, or the device, plays, and return its words. */
+    public ListenResult listen() { return listen(new ListenOptions()); }
+    public ListenResult listen(ListenOptions options) { return Speech.listen(client, options, null); }
 
 
     private final BiDiClient client;
