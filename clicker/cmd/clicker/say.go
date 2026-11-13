@@ -193,6 +193,10 @@ func newListenCmd() *cobra.Command {
   vibium listen --target reply.wav --silence 0
   # Transcribes the whole file.
 
+  VIBIUM_SHERPA_URL=ws://127.0.0.1:6006 vibium listen
+  # come here watson
+  # Transcribes through a sherpa-onnx server you started, which keeps its model loaded.
+
   vibium listen --silence 0 --duration 5000 -o five-seconds.wav
   # Captures exactly five seconds and saves them.
 

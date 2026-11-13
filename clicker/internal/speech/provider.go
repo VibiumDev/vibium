@@ -83,7 +83,7 @@ func Code(err error) string {
 // values of these to the daemon, so each call uses the caller's settings.
 var EnvNames = []string{
 	"VIBIUM_SAY_PROVIDER", "VIBIUM_SAY_MODEL", "VIBIUM_SAY_VOICE", "VIBIUM_SAY_COMMAND", "VIBIUM_PIPER_URL",
-	"VIBIUM_LISTEN_PROVIDER", "VIBIUM_LISTEN_MODEL", "VIBIUM_LISTEN_COMMAND",
+	"VIBIUM_LISTEN_PROVIDER", "VIBIUM_LISTEN_MODEL", "VIBIUM_LISTEN_COMMAND", "VIBIUM_SHERPA_URL",
 	"OPENAI_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY",
 }
 
@@ -168,6 +168,11 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 	if name == "" && direction == "say" && piperURL != "" {
 		name = "piper-server"
 	}
+	// So is a sherpa-onnx server, for listen.
+	sherpaURL := e.get("VIBIUM_SHERPA_URL")
+	if name == "" && direction == "listen" && sherpaURL != "" {
+		name = "sherpa-server"
+	}
 	for _, level := range []string{levelSystem, levelLocal} {
 		for _, p := range presets {
 			if name != "" || p.level != level || p.direction != direction || (p.os != "" && p.os != e.OS) {
@@ -223,6 +228,12 @@ func (e Env) resolve(direction, provider, model, voice string) (Choice, error) {
 			return Choice{}, errf("not_configured", "piper-server cannot %s", direction)
 		}
 		return Choice{Provider: NewPiperServer(piperURL), Model: model, Voice: voice}, nil
+	}
+	if name == "sherpa-server" {
+		if direction != "listen" {
+			return Choice{}, errf("not_configured", "sherpa-server cannot %s", direction)
+		}
+		return Choice{Provider: NewSherpaServer(sherpaURL), Model: model}, nil
 	}
 	if name == "command" {
 		if command == "" {
