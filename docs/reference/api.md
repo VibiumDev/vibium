@@ -334,6 +334,7 @@ MCP/CLI-only tools with no direct client API equivalent.
 | 215 | Check browser installation and configured AI readiness | — | `vibium ready` | — | — | — | — |
 | 218 | Require AI configuration and provider tool support | — | `vibium ready ai` | — | — | — | — |
 | 219 | Check local browser executable files without launching | — | `vibium ready browser` | — | — | — | — |
+| 237 | Send one phrase through the say and listen providers, without a browser | — | `vibium ready speech` | — | — | — | — |
 | 216 | Accomplish a goal in the active browser session | `vibium:run.run` | `vibium run <goal>` | `vibium_run` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` | `browser.run(goal, opts?)` |
 | 217 | Accomplish a goal on a pinned page | `vibium:run.run` | — | — | `page.run(goal, opts?)` | `page.run(goal, opts?)` | `page.run(goal, opts?)` |
 

@@ -272,6 +272,14 @@ func TestSayAndListenAreRecordedWithTheirAudio(t *testing.T) {
 	if _, err := h.Call("vibium_say", map[string]interface{}{"file": clip}); err != nil {
 		t.Fatal(err)
 	}
+	// The track is written by a goroutine of its own, and stopping cuts it
+	// where that goroutine has got to. The fake device sends five seconds
+	// at once, so wait for the part the checks below count on.
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if s := h.recorder.AudioSummary(); s != nil && s.Seconds >= 4 {
+			break
+		}
+	}
 	h.stopAudioRecording()
 	raw, err := h.recorder.Stop()
 	if err != nil {

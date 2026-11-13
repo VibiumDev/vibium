@@ -14,6 +14,7 @@ import (
 	"github.com/vibium/clicker/internal/ai"
 	"github.com/vibium/clicker/internal/envfile"
 	"github.com/vibium/clicker/internal/paths"
+	"github.com/vibium/clicker/internal/speech"
 )
 
 type setupCheck struct {
@@ -47,7 +48,7 @@ func newReadyCmd() *cobra.Command {
 	root := &cobra.Command{
 		Annotations: map[string]string{"standalone": "true"},
 		Use:         "ready", Short: "Check browser installation and AI setup",
-		Long:    "Check the selected local browser executable files, then test AI when configured. No browser or driver is launched.\nDoes not install browsers or change existing sessions. Missing AI is optional here; ready ai requires it.\nAI checks make up to two model requests (API charges may apply). Empty AI variables are loaded from ~/.config/vibium/ai.env unless VIBIUM_LOAD_AI_ENV=0.\nAI settings are written by vibium setup ai and live in ~/.config/vibium/ai.env; the report names the file it used.",
+		Long:    "Check the selected local browser executable files, then test AI when configured. No browser or driver is launched.\nDoes not install browsers or change existing sessions. Missing AI is optional here; ready ai requires it. Say and listen are tested by ready speech only.\nAI checks make up to two model requests (API charges may apply). Empty AI variables are loaded from ~/.config/vibium/ai.env unless VIBIUM_LOAD_AI_ENV=0.\nAI settings are written by vibium setup ai and live in ~/.config/vibium/ai.env; the report names the file it used.",
 		Example: "  vibium ready\n  # Checks browser installation and configured AI; reports fixes or READY.\n  vibium ready --json\n  # Structured readiness results; exit 0 when requested checks pass, otherwise 1.",
 		Args:    cobra.NoArgs,
 	}
@@ -64,15 +65,29 @@ func newReadyCmd() *cobra.Command {
 		Example: "  vibium ready browser\n  # Checks the default/selected installation; other discovered installations are informational.\n  vibium ready browser firefox --channel beta\n  # Checks Firefox beta installation without launching it or changing defaults.\n  vibium ready browser chrome --json\n  # Structured installation results; browser connection is reported as skipped.",
 		Args:    cobra.MaximumNArgs(1), ValidArgs: []string{"chrome", "firefox"},
 	}
-	root.AddCommand(aiCmd, browserCmd)
+	speechCmd := &cobra.Command{
+		Use: "speech", Short: "Test the say and listen providers with one phrase, without a browser",
+		Long:    "Resolve the say and listen providers as the say and listen commands do, have the say provider render one phrase into a WAV file, and have the listen provider transcribe that file.\nNothing is played or captured: speakers, microphone, browser and device are not tested. A hosted provider is asked for one render and up to two transcripts (API charges may apply).\nEmpty speech variables are loaded from ~/.config/vibium/ai.env unless VIBIUM_LOAD_AI_ENV=0.",
+		Example: "  vibium ready speech\n  # [PASSED] say: piper-server en_US-bryce-medium rendered 2.6 s of speech in 4.1 s.\n  # [PASSED] listen: sherpa-server heard \"the quick brown fox jumps over the lazy dog\" in 2.9 s.\n  # READY: Say and listen passed: a phrase went through both providers.\n  vibium ready speech --json\n  # The same checks as JSON; exit 0 when both pass, otherwise 1.",
+		Args:    cobra.NoArgs,
+	}
+	root.AddCommand(aiCmd, browserCmd, speechCmd)
 	addModelFlags(root)
 	addModelFlags(aiCmd)
-	for _, cmd := range []*cobra.Command{root, aiCmd, browserCmd} {
+	for _, cmd := range []*cobra.Command{root, aiCmd, browserCmd, speechCmd} {
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			cmd.SetContext(ctx)
-			result := runReadiness(cmd, args, (&ai.Model{}).Probe)
+			var result setupResult
+			if cmd == speechCmd {
+				if !jsonOutput {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Testing say and listen with one phrase...")
+				}
+				result = checkSpeechSetup(ctx, speech.SystemEnv())
+			} else {
+				result = runReadiness(cmd, args, (&ai.Model{}).Probe)
+			}
 			writeReadiness(cmd, result)
 			if !result.Ready {
 				os.Exit(1)
