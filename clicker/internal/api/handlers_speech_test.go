@@ -221,8 +221,24 @@ func TestSpeechStepsAreRecordedOverTheWire(t *testing.T) {
 	if r := wireCall(t, router, client, 23, speechSayMethod, map[string]interface{}{"text": "hello", "provider": "nobody"}); r.Type != "error" {
 		t.Fatalf("a say that fails: %+v", r)
 	}
-	// An after event is written when its step ends, just after the answer.
-	time.Sleep(200 * time.Millisecond)
+	// A step's after event is finished just after its answer, and the
+	// track is written by a goroutine of its own. Stopping cuts the track
+	// where that goroutine has got to, so wait for both.
+	settled := func() bool {
+		recorder.mu.Lock()
+		defer recorder.mu.Unlock()
+		ended := 0
+		for _, e := range recorder.events {
+			if e["type"] == "after" && (e["result"] != nil || e["error"] != nil) {
+				ended++
+			}
+		}
+		return ended == 3 && recorder.audio != nil && len(recorder.audio.tracks) == 1 &&
+			len(recorder.audio.tracks[0].samples) >= 3*speech.Rate
+	}
+	for deadline := time.Now().Add(5 * time.Second); !settled() && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 	session.speech.StopAudioRecording()
 	raw, err := recorder.Stop()
 	if err != nil {
