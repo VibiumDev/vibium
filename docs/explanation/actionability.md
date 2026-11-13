@@ -138,10 +138,28 @@ This means your code doesn't need retry logic. When you write:
 await page.find({ css: '#submit' }).click();
 ```
 
+```python
+page.find(css="#submit").click()
+```
+
+```java
+page.find(new SelectorOptions().css("#submit")).click();
+```
+
 Vibium will automatically wait up to 30 seconds for the element to become clickable. You can customize the timeout per-action:
 
 ```javascript
 await page.find({ css: '#submit' }).click({ timeout: 5000 }); // 5 seconds
+```
+
+```python
+page.find(css="#submit").click(timeout=5000)  # 5 seconds
+```
+
+Java's `click()` takes no timeout argument. `SelectorOptions.timeout()` bounds how long `find()` waits for the element:
+
+```java
+page.find(new SelectorOptions().css("#submit").timeout(5000)).click();
 ```
 
 ## Element Finding
@@ -155,6 +173,16 @@ The simplest case — pass a CSS selector string:
 ```javascript
 await page.find({ css: 'button.submit' }).click();
 await page.find({ css: '#login-form input[type="email"]' }).fill('user@example.com');
+```
+
+```python
+page.find(css="button.submit").click()
+page.find(css='#login-form input[type="email"]').fill("user@example.com")
+```
+
+```java
+page.find(new SelectorOptions().css("button.submit")).click();
+page.find(new SelectorOptions().css("#login-form input[type=\"email\"]")).fill("user@example.com");
 ```
 
 Internally this uses `document.querySelector()` (or `querySelectorAll()` with an `index` param).
@@ -179,8 +207,22 @@ Semantic selectors can be combined with each other and with a CSS selector for p
 ```javascript
 await page.find({ role: 'button', text: 'Submit' }).click();
 await page.find({ label: 'Email' }).fill('user@example.com');
-await page.find({ selector: 'nav', role: 'link', text: 'Home' }).click();
+await page.find({ css: 'nav a', role: 'link', text: 'Home' }).click();
 ```
+
+```python
+page.find(role="button", text="Submit").click()
+page.find(label="Email").fill("user@example.com")
+page.find(css="nav a", role="link", text="Home").click()
+```
+
+```java
+page.find(new SelectorOptions().role("button").text("Submit")).click();
+page.find(new SelectorOptions().label("Email")).fill("user@example.com");
+page.find(new SelectorOptions().css("nav a").role("link").text("Home")).click();
+```
+
+Every field must match the same element. To search inside a container instead, chain a second `find()` on the container element.
 
 ### The `pickBest()` Heuristic
 
