@@ -204,6 +204,13 @@ type AudioSummary struct {
 	Seconds     float64 `json:"seconds"`
 }
 
+// AudioSummary is the recording's audio so far, or nil when it has none.
+func (t *Recorder) AudioSummary() *AudioSummary {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.audioSummaryLocked()
+}
+
 func (t *Recorder) audioSummaryLocked() *AudioSummary {
 	if t.audio == nil {
 		return nil
