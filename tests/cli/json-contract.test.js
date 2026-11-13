@@ -114,6 +114,7 @@ const CLASSES = {
   'ready': 'envelope',
   'ready ai': 'envelope',
   'ready browser': 'envelope',
+  'ready speech': 'envelope',
   'record chunk start': 'envelope',
   'record chunk stop': 'envelope',
   'record group start': 'usage-error',
@@ -190,6 +191,10 @@ const ENV_OVERRIDES = {
   // No speech provider, so listen fails at once instead of opening a microphone.
   'listen': () => ({ OPENAI_API_KEY: '', DEEPGRAM_API_KEY: '', ELEVENLABS_API_KEY: '',
     VIBIUM_LISTEN_PROVIDER: '', VIBIUM_LISTEN_COMMAND: '', VIBIUM_LISTEN_MODEL: '' }),
+  // No hosted provider or server, so nothing is asked of the network.
+  'ready speech': () => ({ OPENAI_API_KEY: '', DEEPGRAM_API_KEY: '', ELEVENLABS_API_KEY: '',
+    VIBIUM_SAY_PROVIDER: '', VIBIUM_SAY_COMMAND: '', VIBIUM_PIPER_URL: '',
+    VIBIUM_LISTEN_PROVIDER: '', VIBIUM_LISTEN_COMMAND: '', VIBIUM_SHERPA_URL: '' }),
 };
 
 function seedFakeChromeCache(cacheDir) {

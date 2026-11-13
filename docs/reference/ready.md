@@ -34,6 +34,7 @@ passes. Readiness does not assess your application's behavior.
 | `vibium ready browser firefox --channel beta` | Firefox beta executable files |
 | `vibium ready ai` | AI configuration and provider tool round-trip; no browser required |
 | `vibium ready ai anthropic --model your-model` | Anthropic using that model and `ANTHROPIC_API_KEY` |
+| `vibium ready speech` | The say and listen providers, with one phrase sent through both; no browser required |
 
 Run readiness during initial setup, after changing configuration, or when
 troubleshooting. You do not need to run it before every browser command.
@@ -93,18 +94,49 @@ bodies are not displayed.
 Use it before [checking an archive](../tutorials/check-from-a-recording.md).
 It does not test screenshot support or application behavior.
 
+## Speech readiness
+
+```bash
+vibium ready speech
+```
+
+`ready speech` tests [`vibium say` and `vibium listen`](../specs/say-listen-spec.md).
+It picks the providers as those commands do, has the say provider render
+one phrase into a WAV file, and has the listen provider transcribe that
+file.
+
+```text
+[PASSED] say: piper-server en_US-bryce-medium rendered 3.7 s of speech in 5.5 s.
+[PASSED] listen: sherpa-server heard "the quick brown fox jumps over the lazy dog" in 2.8 s.
+
+READY: Say and listen passed: a phrase went through both providers.
+```
+
+- `say` fails when no provider is configured, its engine or key is
+  missing, or the render fails. The message carries the error code that
+  `vibium say` would give, such as `not_configured` or `engine_failed`.
+- `listen` fails the same way, and also when what it heard is not the
+  phrase. It is skipped when `say` rendered nothing for it to hear.
+- Both checks must pass. Plain `vibium ready` does not test speech.
+
+Nothing is played or captured, so speakers, the microphone, a browser page
+and a device are not tested. A hosted provider is asked for one render and
+up to two transcripts, which may cost money. The render does not go into
+the cache `vibium say` uses.
+
 ## JSON and exit status
 
 ```bash
 vibium ready --json
 vibium ready ai --json
+vibium ready speech --json
 ```
 
 Without `--json`, output is readable text. With it, stdout contains one JSON
 object using the normal `{ok, result, error?}` CLI envelope:
 
 - `result.ready`: whether all requested checks passed
-- `result.scope`: `all`, `browser`, or `ai`
+- `result.scope`: `all`, `browser`, `ai`, or `speech`
 - `result.summary`: concise readiness explanation
 - `result.checks`: `{name, status, message, fix?}` entries
 - `result.notes`: limitations and setup guidance

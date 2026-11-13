@@ -223,6 +223,33 @@ vibium listen --no-transcribe -o reply.wav
 Both commands MUST be built so a text or path that begins with `-` is not
 read as a flag where that matters (`say -- "-5 degrees"`).
 
+### `vibium ready speech`
+
+```
+vibium ready speech [--json]
+```
+
+Tests both providers without a browser, a session or a sound card.
+
+1. Resolve the say and listen providers as the two commands do.
+2. Have the say provider render one fixed phrase into a WAV file.
+3. Have the listen provider transcribe that file.
+
+It reports one check for each direction, with the provider, model and
+voice, and how long each took. A failure carries its code from
+[Errors](#errors). `listen` also fails when the transcript is not a
+reading of the phrase, and is skipped when `say` rendered nothing.
+
+```bash
+vibium ready speech
+# [PASSED] say: piper-server en_US-bryce-medium rendered 3.7 s of speech in 5.5 s.
+# [PASSED] listen: sherpa-server heard "the quick brown fox jumps over the lazy dog" in 2.8 s.
+# READY: Say and listen passed: a phrase went through both providers.
+```
+
+The render MUST NOT read or write the cache `say` uses. The command exits
+0 when both checks pass, and 1 otherwise.
+
 ## SDKs
 
 `say` and `listen` live on `Page` and `Browser`, as `run` and `check` do.
@@ -1553,7 +1580,8 @@ The voice repository's own license is MIT.
 |-------|---------------|-----------------------|
 | `ljspeech` | Public domain | Yes |
 | `joe` | CC0 | Yes |
-| `norman`, `john`, `kristin`, `bryce` | LibriVox recordings, public domain | Yes |
+| `norman`, `john`, `kristin` | LibriVox recordings, public domain | Yes |
+| `bryce` | The trainer's own recordings, public domain | Yes |
 | `libritts_r` | CC BY 4.0 | Yes, with attribution |
 | `amy`, `danny`, `kusal` | From Mycroft's Mimic 3 voices, CC BY-SA 4.0 | With attribution and share-alike |
 | `lessac` | Blizzard Challenge 2013 license, research use on application | No |
@@ -1768,14 +1796,10 @@ Each has a proposed answer. The spec is written as if that answer holds.
 11. **`after.result` in recordings.** `say` and `listen` need `result`
     and `error` on `after` events. That spec is still a draft. May
     these two methods land the fields first?
-12. **Readiness check.** `vibium ready speech` would report the chosen
-    providers, find the engines, and do one round trip through a WAV
-    file. It is small and it helps a first-time user. Is it in the
-    first version?
-13. **System speech on Windows.** Its built-in synthesizer can be run
+12. **System speech on Windows.** Its built-in synthesizer can be run
     through PowerShell. The command line is not written yet because it
     could not be tried. Is Windows `say` wanted in the first version?
-14. **System transcription.** macOS can transcribe on the device, but
+13. **System transcription.** macOS can transcribe on the device, but
     only through an API, not a command. Using it means Vibium ships a
     small native helper for macOS. Is that wanted, or do local and
     hosted `listen` cover it?

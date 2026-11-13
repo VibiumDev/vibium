@@ -206,4 +206,30 @@ describe('say and listen', () => {
     assert.match(cli(['say', 'hi', '--target', 'speaker.mp3']).stderr, /invalid_target/);
     assert.match(cli(['listen', '--target', 'missing.wav']).stderr, /no_audio: cannot read/);
   });
+
+  test('ready speech sends one phrase through both engines', { skip }, () => {
+    fs.rmSync(renders, { force: true });
+    const fox = script('fox.sh', `echo '{"text": "the quick brown fox jumps over the lazy dog"}'`);
+    const ready = cli(['ready', 'speech'], { VIBIUM_LISTEN_COMMAND: `${fox} {input}` });
+    assert.strictEqual(ready.status, 0, ready.stdout + ready.stderr);
+    assert.match(ready.stdout, /^\[PASSED\] say: command rendered 1\.1 s of speech in /);
+    assert.match(ready.stdout, /\n\[PASSED\] listen: command heard "the quick brown fox jumps over the lazy dog" in /);
+    assert.match(ready.stdout, /\nREADY: Say and listen passed/);
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'said.txt'), 'utf-8'), 'The quick brown fox jumps over the lazy dog.');
+
+    // The usual fake listen engine hears Watson whatever it is given.
+    const wrong = cli(['ready', 'speech', '--json']);
+    assert.strictEqual(wrong.status, 1);
+    const result = JSON.parse(wrong.stdout).result;
+    assert.strictEqual(result.ready, false);
+    assert.strictEqual(result.scope, 'speech');
+    assert.deepStrictEqual(result.checks.map((c) => [c.name, c.status]), [['say', 'passed'], ['listen', 'failed']]);
+    assert.match(result.checks[1].message, /heard "Come here, Watson\." for "The quick brown fox/);
+    assert.strictEqual(fs.readFileSync(renders, 'utf-8'), 'x\nx\n', 'each run renders: the check keeps out of the cache');
+
+    const none = cli(['ready', 'speech'], { VIBIUM_SAY_PROVIDER: '', VIBIUM_SAY_COMMAND: '', VIBIUM_LISTEN_PROVIDER: '', VIBIUM_LISTEN_COMMAND: '', PATH: '/usr/bin:/bin' });
+    assert.strictEqual(none.status, 1);
+    assert.match(none.stdout, /\[FAILED\] listen: not_configured: no listen provider is configured/);
+    assert.match(none.stdout, /\nNOT READY: Fix the failed checks and rerun vibium ready speech\./);
+  });
 });
