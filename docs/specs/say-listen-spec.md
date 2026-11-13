@@ -291,6 +291,8 @@ interface SayResult {
   sha256: string;
   /** Present for file targets. */
   path?: string;
+  /** Present when a file was played in place of text. */
+  file?: string;
 }
 
 interface ListenOptions extends SpeechOptions {
@@ -326,9 +328,12 @@ interface ListenResult {
   stoppedBy: 'silence' | 'duration' | 'eof' | 'timeout';
   /** Length of the captured audio. */
   durationMs: number;
+  target: string;
   provider: string;
   model: string;
   path?: string;
+  /** Audio the target dropped on its way here, in ms. The transcript may miss words. */
+  lostMs?: number;
 }
 
 class Page {
@@ -345,6 +350,19 @@ browser.listen(options?: ListenOptions): Promise<ListenResult>;
 ```
 
 The sync API mirrors these without promises.
+
+```ts
+import { browser, SpeechError } from 'vibium';
+
+await browser.say('Come here, Watson.', { target: 'question.wav' });
+try {
+  const reply = await browser.listen({ target: 'reply.wav' });
+  console.log(reply.text, reply.latencyMs);
+} catch (err) {
+  if (err instanceof SpeechError && err.code === 'no_speech') console.log('nothing was said');
+  else throw err;
+}
+```
 
 ### Python
 
@@ -387,7 +405,14 @@ ListenResult reply = page.listen(ListenOptions.builder().timeout(5000).build());
 
 Each client raises a `SpeechError` with a `code` from
 [Errors](#errors). `listen` raises it with code `no_speech` when nothing
-is heard and `allowSilence` is off.
+is heard and `allowSilence` is off. Its message is the message alone,
+without the code.
+
+A call the engine refuses for another reason, such as an option it does
+not know, raises the client's ordinary error.
+
+In JavaScript, `vibium` and `vibium/sync` each export `SpeechError`. Import
+it from the one `browser` came from.
 
 ## MCP tools
 

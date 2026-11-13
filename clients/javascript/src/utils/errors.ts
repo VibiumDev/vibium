@@ -65,6 +65,20 @@ export class BiDiError extends Error {
 }
 
 /**
+ * SpeechError is thrown when say or listen fails. `code` names the failure,
+ * such as 'no_speech' or 'not_configured'.
+ */
+export class SpeechError extends Error {
+  constructor(
+    public code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'SpeechError';
+  }
+}
+
+/**
  * Maps an engine error response onto the exported error classes, the same
  * way the Python client does: element-not-found failures and engine-reported
  * timeouts get their dedicated classes, everything else is a BiDiError.

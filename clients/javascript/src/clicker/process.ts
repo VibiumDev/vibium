@@ -54,6 +54,16 @@ export class VibiumProcess {
   /** Lines received before the vibium:lifecycle.ready signal (buffered events). */
   get preReadyLines(): string[] { return this._preReadyLines; }
 
+  get exited(): boolean { return this._process.exitCode !== null || this._process.signalCode !== null; }
+
+  /** Let Node exit while this process runs. A command in flight still holds Node open, by its timer. */
+  unref(): void {
+    this._process.unref();
+    for (const stream of [this._process.stdin, this._process.stdout, this._process.stderr]) {
+      (stream as unknown as { unref?: () => void } | null)?.unref?.();
+    }
+  }
+
   static async start(options: VibiumProcessOptions = {}): Promise<VibiumProcess> {
     const binaryPath = options.executablePath || getVibiumBinPath();
 

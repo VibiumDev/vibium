@@ -1,6 +1,7 @@
 import { callable } from './callable';
 import { RunOptions, RunResult, sendRun } from './run';
 import { CheckOptions, CheckResult, sendCheck } from './check';
+import { SayOptions, SayResult, ListenOptions, ListenResult, sendSay, sendListen } from './speech';
 import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
 import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
@@ -477,6 +478,16 @@ export class Page {
   /** Verify this exact page, or inspect a read-only archive. */
   check(claim: string, options: CheckOptions = {}): Promise<CheckResult> {
     return sendCheck(this.client, claim, options, this.contextId);
+  }
+
+  /** Speak text into this page's microphone, or into the device. */
+  say(text: string, options: SayOptions = {}): Promise<SayResult> {
+    return sendSay(this.client, text, options, this.contextId);
+  }
+
+  /** Hear what this page, or the device, plays, and return its words. */
+  listen(options: ListenOptions = {}): Promise<ListenResult> {
+    return sendListen(this.client, options, this.contextId);
   }
 
   /** Navigate to a URL. */

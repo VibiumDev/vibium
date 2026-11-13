@@ -27,7 +27,7 @@ else
   endif
 endif
 
-.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-cleanup mtlshim vm-fast-launch-note double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
+.PHONY: all build build-go build-js embeds build-go-all package package-js package-python install-browser install-firefox install-engine deps clean clean-go clean-js clean-npm-packages clean-python-packages clean-packages clean-cache clean-all serve test test-core test-checkrun test-core-suites test-checkrun-suites test-go test-cli test-cli-shared test-js test-js-async test-js-sync test-js-process test-js-engine test-mcp test-daemon test-python test-python-engine python-venv test-browser-modes test-firefox test-firefox-core test-firefox-capabilities test-engine test-java test-java-engine check-api-drift test-capability-audit test-check test-run test-speech test-cleanup mtlshim vm-fast-launch-note double-tap get-version set-version build-java package-java verify-staged-java clean-java jshell help
 
 # Version from VERSION file
 # Note: GnuWin32 Make 3.81 runs $(shell) via CreateProcess, not SHELL,
@@ -372,7 +372,8 @@ test-tail-suites:
 
 test-checkrun-suites:
 	@"$(MAKE)" test-check && \
-	"$(MAKE)" test-run
+	"$(MAKE)" test-run && \
+	"$(MAKE)" test-speech
 
 # Kill any browser/driver processes left over from tests.
 # The bracketed characters stop Linux pkill from SIGKILLing the recipe's
@@ -830,3 +831,9 @@ test-check: build-go build-js build-java python-venv
 test-run: build-go build-js build-java python-venv
 	@echo "--- Run Tests ($(ENGINE)) ---"
 	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/naming/*.test.js tests/run/cli.test.js tests/run/overrides.test.js tests/run/surfaces.test.js tests/run/live.test.js
+
+# Say and listen through each client library: on WAV files with no browser,
+# and through a page. No speech engine, key or sound card is needed.
+test-speech: build-go build-js
+	@echo "--- Speech Client Tests ($(ENGINE)) ---"
+	VIBIUM_ENGINE=$(ENGINE) node --test --test-concurrency=1 tests/speech/client-js.test.js tests/speech/surfaces.test.js
