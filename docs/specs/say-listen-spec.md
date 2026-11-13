@@ -782,6 +782,43 @@ loaded: `python3 -m piper.http_server -m <voice.onnx>`. The
   the call with `engine_failed`.
 - It speaks only. `listen` MUST NOT resolve to it.
 
+### A sherpa-onnx server
+
+A local speech-to-text engine started for every call loads its model
+every time. sherpa-onnx's streaming WebSocket servers load a model once
+and keep it. The `sherpa-server` provider transcribes through one.
+
+- The user starts the server. Vibium MUST NOT start, install or bundle
+  it.
+- `VIBIUM_SHERPA_URL` names the server. Without it the address is the
+  servers' default, `ws://127.0.0.1:6006`. An `http://` or `https://`
+  address is read as `ws://` or `wss://`.
+- A call is one WebSocket connection. Vibium sends the audio as 16 kHz
+  mono 32-bit float samples, little-endian, in binary messages, and then
+  the text `Done`. The server answers JSON text messages and ends with
+  the text `Done!`.
+- Each JSON message carries the `text` so far of one `segment`. A server
+  starts a new segment after a pause in the speech. The last message of
+  each segment counts, and the transcript is the segments' texts in
+  order.
+- When a segment's last message carries `tokens`, `timestamps` and
+  `start_time`, the result's `words` and `segments` get their times from
+  them. A token that starts with a space starts a word. Without them the
+  result has the text alone.
+- Text with no lower-case letter is returned in lower case. A model
+  trained on upper-case text answers in capitals, which say nothing
+  about case.
+- Vibium MUST NOT send an `Origin` header, so a server can turn a
+  browser's pages away by it.
+- The call's `model` and `language` are not sent. The server has one
+  model loaded.
+- A server that does not answer, or closes before its `Done!`, fails the
+  call with `engine_failed`.
+- It transcribes only. `say` MUST NOT resolve to it.
+
+[Keep a Speech-to-Text Model Loaded](../how-to-guides/keep-a-speech-to-text-model-loaded.md)
+has the steps.
+
 Defaults for each preset come from [Measurements](#measurements-on-a-raspberry-pi-4).
 
 ### Choosing a provider
@@ -792,7 +829,7 @@ An explicit choice always wins: the call's `provider` option or
 `--provider` flag, then `VIBIUM_SAY_PROVIDER` or
 `VIBIUM_LISTEN_PROVIDER`, then a `VIBIUM_SAY_COMMAND` or
 `VIBIUM_LISTEN_COMMAND` on its own, then for `say` a `VIBIUM_PIPER_URL`
-on its own.
+on its own and for `listen` a `VIBIUM_SHERPA_URL` on its own.
 
 With nothing chosen, the default goes through three levels. It takes the
 first one that exists on the machine.
@@ -851,6 +888,7 @@ gains the variables below.
 | `VIBIUM_LISTEN_PROVIDER` | STT provider or preset |
 | `VIBIUM_LISTEN_MODEL` | STT model |
 | `VIBIUM_LISTEN_COMMAND` | Command line for the `command` provider or a preset |
+| `VIBIUM_SHERPA_URL` | Address of a running sherpa-onnx streaming server, for the `sherpa-server` provider |
 | `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` | Credentials |
 
 That is the whole list. Language, speed, silence, timeout and the cache
@@ -1416,6 +1454,8 @@ after it is complete.
 | OpenAI | `gpt-4o-mini-transcribe` | 1 of 219 | 2 of 88 | 0.7 s | 0.12 s |
 | OpenAI | `gpt-4o-transcribe` | 1 of 219 | 2 of 88 | 0.7 s | 0.11 s |
 | OpenAI | `whisper-1`, with word timings | 4 of 219 | 2 of 88 | 1.5 s | 0.22 s |
+| sherpa-onnx server | streaming Zipformer `en-2023-06-26`, int8 | 26 of 219 | 1 of 88 | 2.9 s | 0.53 s |
+| sherpa-onnx server | streaming Zipformer `en-kroko-2025-08-06` | 5 of 219 | 2 of 88 | 2.2 s | 0.49 s |
 
 What this shows:
 
@@ -1423,8 +1463,27 @@ What this shows:
   human words. The worst result is 5 errors in 219 words.
 - **Quantized models are faster and no less accurate.** q5_1 cuts
   whisper.cpp's time by a quarter to a third.
-- **`tiny.en` is the only local model near usable here.** It still
-  takes 10 seconds to transcribe a 6-second reply on this Pi.
+- **`tiny.en` is the only local model near usable here when the engine
+  starts for every call.** It still takes 10 seconds to transcribe a
+  6-second reply on this Pi.
+- **A server with the model loaded is three to five times faster.** The
+  sherpa-onnx rows are `vibium listen` through the `sherpa-server`
+  provider, with one thread. Loading the model takes 12 to 16 seconds,
+  once, when the server starts.
+- **The two Zipformer models differ on replies.** `en-2023-06-26` was
+  trained on audiobooks. Of its 26 reply errors, 18 are written forms of
+  words it heard right (`its` for "it's", `o k` for "Okay",
+  `to morrow`) and 8 are words it misheard. The Kroko model writes with
+  case and punctuation and matches whisper.cpp `tiny.en` on replies: a
+  surname and three slurred words. Its makers license it apart from
+  sherpa-onnx (CC-BY-SA, by its page).
+- **The 20M Zipformer is not usable.** It dropped the opening words of a
+  recording when the same audio began 10 ms later, in sherpa-onnx's own
+  command-line tool too.
+- **A streaming model needs silence after the audio.** A model gives a
+  word some time after hearing it. With 0.8 s of silence at the end the
+  Kroko model lost the last words of several clips. The server measured
+  here feeds silence for two more of the model's chunks.
 - **Hosted transcription is fifteen times faster** from the same machine.
 - **`gpt-transcribe` returns no timestamps.** It refuses the timestamped
   format with HTTP 400. Vibium's own detector supplies onset and end.
@@ -1455,6 +1514,7 @@ The local defaults are provisional until the remaining engines are measured.
 
 - Moonshine, in its tiny, base and streaming sizes.
 - sherpa-onnx streaming Zipformer with Silero VAD, including time to first word.
+- `sherpa-onnx-streaming-zipformer-en-2023-06-21`, trained on more than audiobooks, for an Apache-2.0 model that knows everyday words.
 - faster-whisper, the reference `openai-whisper` package, and whisper.cpp `small.en`.
 - A warm whisper.cpp server, to price the model load.
 - Piper voices with clean dataset terms: `ljspeech`, `joe`, `norman`, `kristin`, `libritts_r`.
@@ -1481,7 +1541,8 @@ it. A preset is a command line.
 | faster-whisper, CTranslate2 | STT engine | MIT | |
 | Moonshine | STT engine and models | MIT for code and English models | Older non-English models carry a non-commercial license. |
 | sherpa-onnx | STT engine | Apache-2.0 | |
-| Streaming Zipformer English models | STT models | Apache-2.0 | |
+| Streaming Zipformer English models `en-2023-06-26` and `en-20M-2023-02-17` | STT models | Apache-2.0 | |
+| Kroko streaming Zipformer models | STT models | CC-BY-SA for its community models, by its page | Licensed apart from sherpa-onnx. The repository's license file is empty. |
 | Silero VAD | Detector model | MIT | Not used by default. |
 | ONNX Runtime | Runtime under most of the above | MIT | |
 

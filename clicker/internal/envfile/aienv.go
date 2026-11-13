@@ -34,6 +34,7 @@ var allowed = map[string]bool{
 	"VIBIUM_LISTEN_PROVIDER":     true,
 	"VIBIUM_LISTEN_MODEL":        true,
 	"VIBIUM_LISTEN_COMMAND":      true,
+	"VIBIUM_SHERPA_URL":          true,
 	"DEEPGRAM_API_KEY":           true,
 	"ELEVENLABS_API_KEY":         true,
 }
