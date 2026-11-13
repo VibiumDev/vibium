@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -50,7 +51,7 @@ func (s *Speech) speechEngine() *speech.Engine {
 			}
 			return os.Getenv(name)
 		}
-		s.engine = speech.NewEngine(speech.Env{Getenv: getenv, LookPath: exec.LookPath})
+		s.engine = speech.NewEngine(speech.Env{Getenv: getenv, LookPath: exec.LookPath, OS: runtime.GOOS})
 	}
 	return s.engine
 }
