@@ -30,6 +30,7 @@ var allowed = map[string]bool{
 	"VIBIUM_SAY_MODEL":           true,
 	"VIBIUM_SAY_VOICE":           true,
 	"VIBIUM_SAY_COMMAND":         true,
+	"VIBIUM_PIPER_URL":           true,
 	"VIBIUM_LISTEN_PROVIDER":     true,
 	"VIBIUM_LISTEN_MODEL":        true,
 	"VIBIUM_LISTEN_COMMAND":      true,
