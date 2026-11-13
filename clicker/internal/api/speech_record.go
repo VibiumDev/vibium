@@ -1,4 +1,4 @@
-package agent
+package api
 
 import (
 	"context"
@@ -13,8 +13,9 @@ import (
 // recording. For a session it also keeps one continuous track of what the
 // device plays, from the first say or listen to the end of the recording.
 type audioRecording struct {
-	h      *Handlers
-	target speech.Target
+	s        *Speech
+	recorder *Recorder
+	target   speech.Target
 	// offset turns a time on the target's clock into the recording's
 	// timeline: timeline = target time - offset.
 	offset float64
@@ -32,14 +33,15 @@ type clockSyncer interface {
 // beginAudioRecording returns the recording's audio for this target,
 // starting its continuous track when the target is the session. It
 // returns nil when nothing is being recorded; its methods accept that.
-func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
-	if h.recorder == nil || !h.recorder.IsRecording() {
+func (s *Speech) beginAudioRecording(t speech.Target) *audioRecording {
+	recorder := s.recording()
+	if recorder == nil || !recorder.IsRecording() {
 		return nil
 	}
-	if h.audioRec != nil && h.audioRec.target.Key() == t.Key() {
-		return h.audioRec
+	if s.audioRec != nil && s.audioRec.recorder == recorder && s.audioRec.target.Key() == t.Key() {
+		return s.audioRec
 	}
-	rec := &audioRecording{h: h, target: t}
+	rec := &audioRecording{s: s, recorder: recorder, target: t}
 	if !t.Live() {
 		return rec
 	}
@@ -47,7 +49,7 @@ func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
 	if s, ok := t.(clockSyncer); ok {
 		now, rtt = s.Sync()
 	}
-	at := h.recorder.TimelineMs(time.Now())
+	at := recorder.TimelineMs(time.Now())
 	rec.offset = now - at
 	source := t.Name()
 	switch t.(type) {
@@ -56,7 +58,7 @@ func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
 	case *browserAudio:
 		source = "page"
 	}
-	h.recorder.SetAudioClock(t.Name(), map[string]interface{}{
+	recorder.SetAudioClock(t.Name(), map[string]interface{}{
 		"source": source,
 		"sync":   []map[string]float64{{"atMs": round1(at), "offsetMs": round1(rec.offset), "rttMs": round1(rtt)}},
 	})
@@ -68,10 +70,9 @@ func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
 	if err != nil {
 		return rec
 	}
-	h.stopAudioRecording()
+	s.StopAudioRecording()
 	rec.capture, rec.done = capture, make(chan struct{})
-	h.audioRec = rec
-	recorder := h.recorder
+	s.audioRec = rec
 	go func() {
 		defer close(rec.done)
 		for {
@@ -85,11 +86,14 @@ func (h *Handlers) beginAudioRecording(t speech.Target) *audioRecording {
 	return rec
 }
 
-// stopAudioRecording ends the continuous track. Called before the
+// StopAudioRecording ends the continuous track. Called before the
 // recording is built into its zip.
-func (h *Handlers) stopAudioRecording() {
-	rec := h.audioRec
-	h.audioRec = nil
+func (s *Speech) StopAudioRecording() {
+	if s == nil {
+		return
+	}
+	rec := s.audioRec
+	s.audioRec = nil
 	if rec == nil || rec.capture == nil {
 		return
 	}
@@ -100,47 +104,45 @@ func (h *Handlers) stopAudioRecording() {
 	}
 }
 
-func round1(ms float64) float64 { return float64(int64(ms*10+0.5)) / 10 }
-
-// said records the clip a say sent and when it played.
-func (r *audioRecording) said(res *speech.SayResult) {
+// said records the clip a say sent and when it played. It returns what
+// the step's after event carries.
+func (r *audioRecording) said(res *speech.SayResult, callID string) map[string]interface{} {
 	if r == nil {
-		return
+		return nil
 	}
-	h := r.h
 	meta := map[string]interface{}{"target": res.Target, "text": res.Text, "provider": res.Provider, "model": res.Model, "voice": res.Voice}
 	if res.File != "" {
 		meta["source"] = "file"
 	}
-	clip := h.recorder.AddAudioClip(res.Clip, meta)
+	clip := r.recorder.AddAudioClip(res.Clip, meta)
 	out := resultMap(res)
 	out["clip"] = clip
 	if r.target.Live() {
 		start, end := round1(res.PlayStart-r.offset), round1(res.PlayEnd-r.offset)
-		h.recorder.NoteAudioPlay(clip, h.speechCallID, start, end)
+		r.recorder.NoteAudioPlay(clip, callID, start, end)
 		out["playStartMs"], out["playEndMs"] = start, end
 	}
-	h.speechResult = out
-	h.lastSayCall = h.speechCallID
+	r.s.lastSayCall = callID
+	return out
 }
 
 // heard records what a listen heard. Its times move from the capture's
-// own start onto the recording's timeline.
-func (r *audioRecording) heard(res *speech.ListenResult) {
+// own start onto the recording's timeline. It returns what the step's
+// after event carries.
+func (r *audioRecording) heard(res *speech.ListenResult, callID string) map[string]interface{} {
 	if r == nil {
-		return
+		return nil
 	}
-	h := r.h
 	out := resultMap(res)
 	if !r.target.Live() {
-		h.speechResult = out
-		return
+		return out
 	}
+	lastSay := r.s.lastSayCall
 	base := res.CaptureStart - r.offset
 	shift := func(ms float64) float64 { return round1(base + ms) }
 	track := "in-" + r.target.Name()
 	entry := map[string]interface{}{
-		"callId": h.speechCallID, "track": track, "startMs": shift(0), "endMs": shift(res.DurationMs),
+		"callId": callID, "track": track, "startMs": shift(0), "endMs": shift(res.DurationMs),
 		"text": res.Text, "transcribed": res.Transcribed, "provider": res.Provider, "model": res.Model, "stoppedBy": res.StoppedBy,
 	}
 	out["track"], out["audioStartMs"], out["audioEndMs"] = track, shift(0), shift(res.DurationMs)
@@ -149,8 +151,8 @@ func (r *audioRecording) heard(res *speech.ListenResult) {
 		out["onsetMs"], out["speechEndMs"] = entry["onsetMs"], entry["speechEndMs"]
 	}
 	if res.LatencyMs != nil {
-		entry["latencyMs"], entry["latencyFrom"] = *res.LatencyMs, h.lastSayCall
-		out["latencyFrom"] = h.lastSayCall
+		entry["latencyMs"], entry["latencyFrom"] = *res.LatencyMs, lastSay
+		out["latencyFrom"] = lastSay
 	}
 	segments := []map[string]interface{}{}
 	for _, s := range res.Segments {
@@ -165,8 +167,8 @@ func (r *audioRecording) heard(res *speech.ListenResult) {
 	if len(words) > 0 {
 		out["words"] = words
 	}
-	h.recorder.AddAudioTranscript(entry)
-	h.speechResult = out
+	r.recorder.AddAudioTranscript(entry)
+	return out
 }
 
 func resultMap(v interface{}) map[string]interface{} {

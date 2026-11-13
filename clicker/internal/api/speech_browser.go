@@ -1,4 +1,4 @@
-package agent
+package api
 
 import (
 	"context"
@@ -207,24 +207,26 @@ const browserAudioScript = `(channel) => {
 
 // browserAudio is the session target for a page in a browser.
 type browserAudio struct {
-	h      *Handlers
-	client *bidi.Client
-	tap    *speech.Tap
+	s   *Speech
+	tap *speech.Tap
 }
 
 // installBrowserAudio adds the audio script to the session: every document
 // from now on, and the pages already open. It reports whether the session
-// took it; a device on a Roadie does not run scripts.
-func (h *Handlers) installBrowserAudio(client *bidi.Client) bool {
+// took it; a device on a Roadie does not run scripts. subscribe turns on
+// script.message, which carries the page's audio.
+func installBrowserAudio(sess Session, subscribe func() error) bool {
 	arg := []map[string]interface{}{{"type": "channel", "value": map[string]interface{}{"channel": browserAudioChannel}}}
-	if _, err := client.SendCommandWithTimeout("script.addPreloadScript", map[string]interface{}{
+	if _, err := sess.SendBidiCommandWithTimeout("script.addPreloadScript", map[string]interface{}{
 		"functionDeclaration": browserAudioScript, "arguments": arg,
 	}, 15*time.Second); err != nil {
 		return false
 	}
-	subscribeEvents(client, []string{"script.message"})
-	for _, ctx := range browserContexts(client, "") {
-		client.SendCommandWithTimeout("script.callFunction", map[string]interface{}{
+	if subscribe != nil {
+		subscribe()
+	}
+	for _, ctx := range browserContexts(sess, "") {
+		sess.SendBidiCommandWithTimeout("script.callFunction", map[string]interface{}{
 			"functionDeclaration": browserAudioScript, "arguments": arg,
 			"target": map[string]interface{}{"context": ctx}, "awaitPromise": false,
 		}, 10*time.Second)
@@ -234,9 +236,17 @@ func (h *Handlers) installBrowserAudio(client *bidi.Client) bool {
 
 // browserContexts lists a page and its frames, or every page and frame
 // when root is empty.
-func browserContexts(client *bidi.Client, root string) []string {
-	tree, err := client.GetTree()
+func browserContexts(sess Session, root string) []string {
+	resp, err := sess.SendBidiCommandWithTimeout("browsingContext.getTree", map[string]interface{}{}, 10*time.Second)
 	if err != nil {
+		return nil
+	}
+	var tree struct {
+		Result struct {
+			Contexts []bidi.BrowsingContextInfo `json:"contexts"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(resp, &tree) != nil {
 		return nil
 	}
 	var out []string
@@ -250,7 +260,7 @@ func browserContexts(client *bidi.Client, root string) []string {
 			walk(n.Children, in)
 		}
 	}
-	walk(tree.Contexts, false)
+	walk(tree.Result.Contexts, false)
 	return out
 }
 
@@ -272,28 +282,17 @@ func (b *browserAudio) call(ctx string, fn string, timeout time.Duration, args .
 			serialized = append(serialized, map[string]interface{}{"type": "boolean", "value": v})
 		}
 	}
-	resp, err := b.client.SendCommandWithTimeout("script.callFunction", map[string]interface{}{
+	resp, err := b.s.sess().SendBidiCommandWithTimeout("script.callFunction", map[string]interface{}{
 		"functionDeclaration": fn, "arguments": serialized, "awaitPromise": true, "resultOwnership": "none",
 		"target": map[string]interface{}{"context": ctx},
 	}, timeout)
 	if err != nil {
 		return "", err
 	}
-	res, err := bidi.ParseScriptResult(resp.Result)
-	if err != nil {
-		return "", err
-	}
-	var value struct {
-		Type  string      `json:"type"`
-		Value interface{} `json:"value"`
-	}
-	raw, _ := json.Marshal(res.Result)
-	json.Unmarshal(raw, &value)
-	s, _ := value.Value.(string)
-	return s, nil
+	return parseScriptResult(resp)
 }
 
-func (b *browserAudio) page() string { return b.h.currentContext() }
+func (b *browserAudio) contexts() []string { return browserContexts(b.s.sess(), b.s.currentPage()) }
 
 // Now is the present on the page's clock: milliseconds since the epoch, as
 // performance.timeOrigin + performance.now() gives them.
@@ -303,7 +302,7 @@ func (b *browserAudio) Now() float64 {
 }
 
 func (b *browserAudio) Sync() (float64, float64) {
-	contexts := browserContexts(b.client, b.page())
+	contexts := b.contexts()
 	if len(contexts) == 0 {
 		return 0, 0
 	}
@@ -333,7 +332,7 @@ func (b *browserAudio) Play(_ context.Context, a speech.Audio) (float64, float64
 		return 0, 0, speechErr("no_audio", "a clip for a page is at most 60 seconds")
 	}
 	data := base64.StdEncoding.EncodeToString(clip.Bytes())
-	for _, ctx := range browserContexts(b.client, b.page()) {
+	for _, ctx := range b.contexts() {
 		s, err := b.call(ctx, `(data, rate) => window.__vibiumAudio && window.__vibiumAudio.say ? window.__vibiumAudio.say(data, rate) : ''`,
 			clip.Duration()+30*time.Second, data, speech.Rate)
 		if err != nil {
@@ -352,7 +351,7 @@ func (b *browserAudio) Play(_ context.Context, a speech.Audio) (float64, float64
 
 // capturing turns the page's audio tap on or off in every frame.
 func (b *browserAudio) capturing(on bool) {
-	for _, ctx := range browserContexts(b.client, b.page()) {
+	for _, ctx := range b.contexts() {
 		b.call(ctx, `(on) => { if (window.__vibiumAudio) window.__vibiumAudio.capturing = on; return '' }`, 5*time.Second, on)
 	}
 }
@@ -369,7 +368,7 @@ func (b *browserAudio) open(context.Context) (speech.Capture, error) {
 		return nil, speechErr("no_audio", "the page did not answer")
 	}
 	c := &browserCapture{b: b, chunks: make(chan speech.Chunk, 256), done: make(chan struct{}), next: now, offset: now - localMs()}
-	b.h.setPageSink(c)
+	b.s.setPageSink(c)
 	b.capturing(true)
 	return c, nil
 }
@@ -447,28 +446,28 @@ func (c *browserCapture) Next(ctx context.Context) (speech.Chunk, error) {
 func (c *browserCapture) Close() {
 	c.once.Do(func() {
 		close(c.done)
-		c.b.h.clearPageSink(c)
+		c.b.s.clearPageSink(c)
 		go c.b.capturing(false)
 	})
 }
 
-func (h *Handlers) setPageSink(c *browserCapture) {
-	h.audioMu.Lock()
-	h.pageSink = c
-	h.audioMu.Unlock()
+func (s *Speech) setPageSink(c *browserCapture) {
+	s.audioMu.Lock()
+	s.pageSink = c
+	s.audioMu.Unlock()
 }
 
-func (h *Handlers) clearPageSink(c *browserCapture) {
-	h.audioMu.Lock()
-	if h.pageSink == c {
-		h.pageSink = nil
+func (s *Speech) clearPageSink(c *browserCapture) {
+	s.audioMu.Lock()
+	if s.pageSink == c {
+		s.pageSink = nil
 	}
-	h.audioMu.Unlock()
+	s.audioMu.Unlock()
 }
 
 // pageAudioEvent routes a chunk a page sent over the audio channel to the
 // running capture. It reports whether the event was one.
-func (h *Handlers) pageAudioEvent(msg string) bool {
+func (s *Speech) pageAudioEvent(msg string) bool {
 	if !strings.Contains(msg, `"`+browserAudioChannel+`"`) {
 		return false
 	}
@@ -504,9 +503,9 @@ func (h *Handlers) pageAudioEvent(msg string) bool {
 			data, _ = value.Value.(string)
 		}
 	}
-	h.audioMu.Lock()
-	sink := h.pageSink
-	h.audioMu.Unlock()
+	s.audioMu.Lock()
+	sink := s.pageSink
+	s.audioMu.Unlock()
 	if sink == nil || data == "" {
 		return true
 	}
