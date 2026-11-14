@@ -305,9 +305,14 @@ target builds the Go binary, JS client, and Java client.
 
 ---
 
-## Roadmap
+## What's next
 
-See [ROADMAP.md](ROADMAP.md) for current development work and longer-term ideas.
+There is no single roadmap. Feature requests and bugs are in the
+[issues](https://github.com/VibiumDev/vibium/issues). Designs are in
+[docs/specs](docs/specs/), and not every one will be built. Related work
+happens in [Vibium Station](https://github.com/VibiumDev/station),
+[Roadie](https://github.com/VibiumDev/roadie) and the
+[Record Player](https://github.com/VibiumDev/record-player).
 
 ---
 
