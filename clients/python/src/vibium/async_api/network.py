@@ -26,22 +26,27 @@ class Request:
         self._client = client
 
     def url(self) -> str:
+        """The request URL."""
         req = self._data.get("request", {})
         return req.get("url", "")
 
     def method(self) -> str:
+        """The HTTP method (GET, POST, etc.)."""
         req = self._data.get("request", {})
         return req.get("method", "")
 
     def headers(self) -> Dict[str, str]:
+        """Request headers as a dict."""
         req = self._data.get("request", {})
         return _convert_headers(req.get("headers", []))
 
     def request_id(self) -> str:
+        """The request ID (BiDi network request identifier)."""
         req = self._data.get("request", {})
         return req.get("request", "")
 
     async def post_data(self) -> Optional[str]:
+        """Request body / post data."""
         if not self._client:
             return None
         req_id = self.request_id()
@@ -66,22 +71,27 @@ class Response:
         self._client = client
 
     def url(self) -> str:
+        """The response URL."""
         resp = self._data.get("response", {})
         return resp.get("url", "") or self._data.get("url", "")
 
     def status(self) -> int:
+        """The HTTP status code."""
         resp = self._data.get("response", {})
         return resp.get("status", 0)
 
     def headers(self) -> Dict[str, str]:
+        """Response headers as a dict."""
         resp = self._data.get("response", {})
         return _convert_headers(resp.get("headers", []))
 
     def request_id(self) -> str:
+        """The request ID associated with this response."""
         req = self._data.get("request", {})
         return req.get("request", "")
 
     async def body(self) -> Optional[str]:
+        """Response body as a string. Requires a data collector (set up by on_response or capture.response)."""
         if not self._client:
             return None
         req_id = self.request_id()
@@ -102,6 +112,7 @@ class Response:
             return None
 
     async def json(self) -> Any:
+        """Response body parsed as JSON. Requires a data collector (set up by on_response or capture.response)."""
         import json as _json
         text = await self.body()
         if text is None:

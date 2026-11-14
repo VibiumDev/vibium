@@ -101,15 +101,19 @@ class Keyboard:
         self._context_id = context_id
 
     async def press(self, key: str) -> None:
+        """Press and release a key. Supports combos like "Control+a"."""
         await self._client.send("vibium:keyboard.press", {"context": self._context_id, "key": key})
 
     async def down(self, key: str) -> None:
+        """Press a key down (without releasing)."""
         await self._client.send("vibium:keyboard.down", {"context": self._context_id, "key": key})
 
     async def up(self, key: str) -> None:
+        """Release a key."""
         await self._client.send("vibium:keyboard.up", {"context": self._context_id, "key": key})
 
     async def type(self, text: str) -> None:
+        """Type a string of text character by character."""
         await self._client.send("vibium:keyboard.type", {"context": self._context_id, "text": text})
 
 
@@ -125,20 +129,25 @@ class Mouse:
         self._last_y: float = 0
 
     async def click(self, x: float, y: float) -> None:
+        """Click at (x, y) coordinates."""
         await self._client.send("vibium:mouse.click", {"context": self._context_id, "x": x, "y": y})
         self._last_x, self._last_y = x, y
 
     async def move(self, x: float, y: float) -> None:
+        """Move mouse to (x, y) coordinates."""
         await self._client.send("vibium:mouse.move", {"context": self._context_id, "x": x, "y": y})
         self._last_x, self._last_y = x, y
 
     async def down(self) -> None:
+        """Press mouse button down."""
         await self._client.send("vibium:mouse.down", {"context": self._context_id})
 
     async def up(self) -> None:
+        """Release mouse button."""
         await self._client.send("vibium:mouse.up", {"context": self._context_id})
 
     async def wheel(self, delta_x: float, delta_y: float) -> None:
+        """Scroll the mouse wheel at the current pointer position."""
         await self._client.send("vibium:mouse.wheel", {
             "context": self._context_id, "x": self._last_x, "y": self._last_y,
             "deltaX": delta_x, "deltaY": delta_y,
@@ -153,6 +162,7 @@ class Touch:
         self._context_id = context_id
 
     async def tap(self, x: float, y: float) -> None:
+        """Tap at (x, y) coordinates."""
         await self._client.send("vibium:touch.tap", {"context": self._context_id, "x": x, "y": y})
 
     async def swipe(
@@ -246,6 +256,7 @@ class Page:
 
     @property
     def id(self) -> str:
+        """The browsing context ID for this page."""
         return self._context_id
 
     @property
@@ -283,25 +294,31 @@ class Page:
         await self._client.send("vibium:page.navigate", {"context": self._context_id, "url": url})
 
     async def back(self) -> None:
+        """Navigate back in history."""
         await self._client.send("vibium:page.back", {"context": self._context_id})
 
     async def forward(self) -> None:
+        """Navigate forward in history."""
         await self._client.send("vibium:page.forward", {"context": self._context_id})
 
     async def reload(self) -> None:
+        """Reload the page."""
         await self._client.send("vibium:page.reload", {"context": self._context_id})
 
     # --- Info ---
 
     async def url(self) -> str:
+        """Get the current page URL."""
         result = await self._client.send("vibium:page.url", {"context": self._context_id})
         return result["url"]
 
     async def title(self) -> str:
+        """Get the current page title."""
         result = await self._client.send("vibium:page.title", {"context": self._context_id})
         return result["title"]
 
     async def content(self) -> str:
+        """Get the full HTML content of the page."""
         result = await self._client.send("vibium:page.content", {"context": self._context_id})
         return result["content"]
 
@@ -783,9 +800,11 @@ class Page:
     # --- Lifecycle ---
 
     async def bring_to_front(self) -> None:
+        """Bring this page to the foreground."""
         await self._client.send("browsingContext.activate", {"context": self._context_id})
 
     async def close(self) -> None:
+        """Close this page."""
         if self._event_handler is not None:
             self._client.remove_event_handler(self._event_handler)
         await self._client.send("browsingContext.close", {"context": self._context_id})

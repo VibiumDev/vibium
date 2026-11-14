@@ -30,15 +30,19 @@ class Keyboard:
         self._loop = loop_thread
 
     def press(self, key: str) -> None:
+        """Press and release a key. Supports combos like "Control+a"."""
         self._loop.run(self._async.press(key))
 
     def down(self, key: str) -> None:
+        """Press a key down (without releasing)."""
         self._loop.run(self._async.down(key))
 
     def up(self, key: str) -> None:
+        """Release a key."""
         self._loop.run(self._async.up(key))
 
     def type(self, text: str) -> None:
+        """Type a string of text character by character."""
         self._loop.run(self._async.type(text))
 
 
@@ -50,18 +54,23 @@ class Mouse:
         self._loop = loop_thread
 
     def click(self, x: float, y: float) -> None:
+        """Click at (x, y) coordinates."""
         self._loop.run(self._async.click(x, y))
 
     def move(self, x: float, y: float) -> None:
+        """Move mouse to (x, y) coordinates."""
         self._loop.run(self._async.move(x, y))
 
     def down(self) -> None:
+        """Press mouse button down."""
         self._loop.run(self._async.down())
 
     def up(self) -> None:
+        """Release mouse button."""
         self._loop.run(self._async.up())
 
     def wheel(self, delta_x: float, delta_y: float) -> None:
+        """Scroll the mouse wheel at the current pointer position."""
         self._loop.run(self._async.wheel(delta_x, delta_y))
 
 
@@ -73,6 +82,7 @@ class Touch:
         self._loop = loop_thread
 
     def tap(self, x: float, y: float) -> None:
+        """Tap at (x, y) coordinates."""
         self._loop.run(self._async.tap(x, y))
 
     def swipe(
@@ -117,18 +127,22 @@ class Page:
 
     @property
     def keyboard(self) -> Keyboard:
+        """Page-level keyboard input."""
         return self._keyboard
 
     @property
     def mouse(self) -> Mouse:
+        """Page-level mouse input."""
         return self._mouse
 
     @property
     def touch(self) -> Touch:
+        """Page-level touch input."""
         return self._touch
 
     @property
     def clock(self) -> Clock:
+        """Page-level clock control for faking timers and Date."""
         return self._clock
 
     def __repr__(self) -> str:
@@ -141,6 +155,7 @@ class Page:
 
     @property
     def id(self) -> str:
+        """The browsing context ID for this page."""
         return self._async.id
 
     @property
@@ -177,23 +192,29 @@ class Page:
         self._loop.run(self._async.go(url))
 
     def back(self) -> None:
+        """Navigate back in history."""
         self._loop.run(self._async.back())
 
     def forward(self) -> None:
+        """Navigate forward in history."""
         self._loop.run(self._async.forward())
 
     def reload(self) -> None:
+        """Reload the page."""
         self._loop.run(self._async.reload())
 
     # --- Info ---
 
     def url(self) -> str:
+        """Get the current page URL."""
         return self._loop.run(self._async.url())
 
     def title(self) -> str:
+        """Get the current page title."""
         return self._loop.run(self._async.title())
 
     def content(self) -> str:
+        """Get the full HTML content of the page."""
         return self._loop.run(self._async.content())
 
     # --- Finding ---
@@ -410,9 +431,11 @@ class Page:
     # --- Lifecycle ---
 
     def bring_to_front(self) -> None:
+        """Bring this page to the foreground."""
         self._loop.run(self._async.bring_to_front())
 
     def close(self) -> None:
+        """Close this page."""
         self._loop.run(self._async.close())
 
     # --- Scrolling ---
@@ -661,15 +684,19 @@ class _SyncRequestData:
         self._post_data = post_data
 
     def url(self) -> str:
+        """The request URL."""
         return self._req.url()
 
     def method(self) -> str:
+        """The HTTP method (GET, POST, etc.)."""
         return self._req.method()
 
     def headers(self) -> Dict[str, str]:
+        """Request headers as a dict."""
         return self._req.headers()
 
     def post_data(self) -> Optional[str]:
+        """Request body / post data."""
         return self._post_data
 
 
@@ -681,18 +708,23 @@ class _SyncResponseData:
         self._body = body
 
     def url(self) -> str:
+        """The response URL."""
         return self._resp.url()
 
     def status(self) -> int:
+        """The HTTP status code."""
         return self._resp.status()
 
     def headers(self) -> Dict[str, str]:
+        """Response headers as a dict."""
         return self._resp.headers()
 
     def body(self) -> Optional[str]:
+        """Response body as a string. Requires a data collector (set up by on_response or capture.response)."""
         return self._body
 
     def json(self) -> Any:
+        """Response body parsed as JSON. Requires a data collector (set up by on_response or capture.response)."""
         import json as _json
         if self._body is None:
             return None
@@ -716,9 +748,11 @@ class SyncDownload(dict):
         shutil.copy2(src, dest)
 
     def url(self) -> str:
+        """The URL of the download."""
         return self["url"]
 
     def suggested_filename(self) -> str:
+        """The filename suggested by the server (from Content-Disposition)."""
         return self["suggested_filename"]
 
     def path(self) -> Optional[str]:
