@@ -4,7 +4,7 @@ Browser automation for AI agents and humans.
 
 ## Key Docs
 
-- ROADMAP.md — Future features (not yet prioritized)
+- docs/specs/ — Designs; not every one will be built
 - docs/reference/WebDriver-Bidi-Spec.md — BiDirectional WebDriver Protocol spec
 
 ## Current Goal

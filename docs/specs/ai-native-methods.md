@@ -6,8 +6,6 @@
 
 Vibium's signature differentiators. No Playwright or Selenium equivalent exists.
 
-See also: [ROADMAP.md — AI-Powered Locators](../../ROADMAP.md#ai-powered-locators)
-
 ---
 
 ## `page.check(claim, options?)` — AI-Powered Verification
