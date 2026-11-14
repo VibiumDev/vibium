@@ -21,14 +21,14 @@ If you're using `clicker/bin/vibium`, give it the absolute binary path too.
 
 ## 1. Install the browser and check skills
 
-From the project where your agent will write the test, install the skills from
-the checkout containing this development build:
+From the project where your agent will write the test, install the skills:
 
 ```bash
-npx skills add /absolute/path/to/vibium --skill browser check
+npx skills add https://github.com/VibiumDev/vibium --skill browser check
 ```
 
-Replace the path, choose your coding agent, and install for this project.
+Choose your coding agent, and install for this project. To install from a
+checkout instead, give its path in place of the URL.
 Start a new agent session if needed to discover the skills.
 
 - **browser** handles navigation, interaction, debugging, and recording. It

@@ -44,7 +44,7 @@ binary, or to `clicker/bin/vibium` when using a development checkout.
 
 The `check` skill calls `vibium check` for a fresh assessment of a claim.
 Check and `vibium run` (which carries out browser tasks from instructions)
-currently require the development build and Vibium's own AI settings.
+need Vibium 26.11 or newer and Vibium's own AI settings.
 Signing into Codex does not configure those settings.
 
 Follow [Configure AI access](../tutorials/first-check.md#1-configure-ai-access)

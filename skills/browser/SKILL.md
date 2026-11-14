@@ -184,6 +184,11 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 - `vibium screenshot -o file.png` — capture screenshot (`--full-page`, `--annotate`)
 - `vibium pdf -o file.pdf` — save page as PDF
 
+### Speech
+- `vibium say "<text>"` — speak text into the page's microphone, or this machine's speakers with no session open (`--file clip.wav` plays a clip, `--target out.wav` writes one)
+- `vibium listen` — hear what the page plays and print its words (`--timeout`, `--duration`, `-o heard.wav`)
+- `vibium ready speech` — test the configured speech providers with one phrase, without a browser
+
 ### Dialogs
 - `vibium dialog accept [text]` — accept dialog (optionally with prompt text)
 - `vibium dialog dismiss` — dismiss dialog

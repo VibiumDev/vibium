@@ -45,7 +45,7 @@ Claude Code session.
 
 ## 3. Add an independent check
 
-Run and Check currently require the development build and
+Run and Check need Vibium 26.11 or newer and
 [Vibium AI configuration](../tutorials/first-check.md#1-configure-ai-access).
 Your Claude login does not configure Vibium's model provider; you can use any
 [supported provider](../reference/model-providers.md).

@@ -15,10 +15,10 @@ vibium check --help
 ```
 
 The shell examples use Bash or Zsh on macOS or Linux.
-These tutorials describe the development build. If your installed version
-has no `check` command, use the development binary supplied with your checkout
-(`./clicker/bin/vibium`) in place of `vibium` below. Build instructions are
-available for [macOS](../contributing/local-dev-setup-mac.md) and
+These tutorials need Vibium 26.11 or newer. If your installed version has no
+`check` command, update it (`npm install -g vibium`). To use a binary built
+from a checkout instead, put `./clicker/bin/vibium` in place of `vibium`
+below. Build instructions are available for [macOS](../contributing/local-dev-setup-mac.md) and
 [Linux](../contributing/local-dev-setup-x86-linux.md).
 
 ## 1. Configure AI access
