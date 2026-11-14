@@ -17,14 +17,23 @@ Before your first release, ensure you have:
 
 ## Version Bump
 
+`main` takes changes only through a pull request and the merge queue, so
+make the bump on a branch:
+
 ```bash
-make set-version VERSION=0.1.4
+git switch -c release/26.11.15
+make set-version VERSION=26.11.15
 ```
 
+The version MUST have three parts (`X.Y.Z`). npm accepts nothing else, and
+`set-version` refuses `26.11`. Releases are numbered by date: `YY.M.D`.
+
 This updates:
+- `VERSION`
 - All `package.json` files and optionalDependencies
 - All `pyproject.toml` files and dependency constraints
 - Python `__init__.py` version strings
+- The Maven coordinates in `README.md`, `CONTRIBUTING.md` and two tutorials
 - Regenerates `package-lock.json`
 
 ## Build and Test
@@ -36,6 +45,22 @@ make test
 ```
 
 All tests must pass before proceeding.
+
+## Merge the Bump
+
+```bash
+# Not `git add -A`: untracked files in the checkout stay out.
+git commit -am "Bump version to 26.11.15"
+git push -u origin release/26.11.15
+gh pr create --fill
+```
+
+Merge the pull request through the merge queue. Then package and publish
+from the commit it made on `main`:
+
+```bash
+git switch main && git pull
+```
 
 ## Package
 
@@ -90,18 +115,28 @@ twine upload clients/python/dist/*.whl
 (cd packages/vibium && npm publish)
 ```
 
+## Publish to Maven Central
+
+`make set-version` changed the Maven coordinates in the README and the
+tutorials, so the Java client MUST go out with the same release. Follow
+[Publishing the Java Client to Maven Central](publish-java-maven-central.md).
+
 ## Create GitHub Release
 
 ```bash
-# Commit version bump
-git add -A && git commit -m "bump version to 0.1.4"
+# Tag the bump's commit on main, and push the tag alone
+git tag v26.11.15
+git push origin v26.11.15
 
-# Tag and push
-git tag v0.1.4
-git push origin main --tags
+# Notes since the last stable release, not since the last nightly
+gh release create v26.11.15 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.15"
 
-# Create release with auto-generated notes
-gh release create v0.1.4 --generate-notes --title "v0.1.4"
+# Attach the binaries and their checksums, so an image can pin the release
+(cd clicker/bin && shasum -a 256 vibium-linux-amd64 vibium-linux-arm64 \
+  vibium-darwin-amd64 vibium-darwin-arm64 vibium-windows-amd64.exe > SHA256SUMS)
+gh release upload v26.11.15 clicker/bin/vibium-linux-amd64 clicker/bin/vibium-linux-arm64 \
+  clicker/bin/vibium-darwin-amd64 clicker/bin/vibium-darwin-arm64 \
+  clicker/bin/vibium-windows-amd64.exe clicker/bin/SHA256SUMS
 ```
 
 ## Verification
@@ -117,7 +152,7 @@ node -e "const { browser } = require('vibium'); console.log('npm OK')"
 
 # Test PyPI
 pip install --upgrade vibium
-python3 -c "from vibium import browser_sync; print('PyPI OK')"
+python3 -c "from vibium import browser; print('PyPI OK')"
 ```
 
 ## Troubleshooting
@@ -144,9 +179,17 @@ Wait a few seconds for npm registry propagation before publishing the main packa
 ## Quick Reference
 
 ```bash
-# Complete release (replace 0.1.4 with your version)
-make clean-all && make test
-make set-version VERSION=0.1.4
+# Complete release (replace 26.11.15 with your version)
+git switch -c release/26.11.15
+make set-version VERSION=26.11.15
+make clean-all && make build && make test
+
+git commit -am "Bump version to 26.11.15"
+git push -u origin release/26.11.15
+gh pr create --fill
+# merge through the merge queue, then:
+git switch main && git pull
+
 make package
 
 source .venv-publish/bin/activate
@@ -160,8 +203,10 @@ twine upload clients/python/dist/*.whl
 (cd packages/win32-x64 && npm publish --access public)
 (cd packages/vibium && npm publish)
 
-git add -A && git commit -m "bump version to 0.1.4"
-git tag v0.1.4
-git push origin main --tags
-gh release create v0.1.4 --generate-notes --title "v0.1.4"
+# The Java client: see publish-java-maven-central.md
+
+git tag v26.11.15
+git push origin v26.11.15
+gh release create v26.11.15 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.15"
+# then attach the binaries and SHA256SUMS, as under "Create GitHub Release"
 ```
