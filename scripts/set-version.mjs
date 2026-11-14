@@ -96,6 +96,7 @@ const isPrerelease = !/^\d+\.\d+\.\d+$/.test(npmVersion);
 if (!isPrerelease) {
   for (const relative of [
     "README.md",
+    "CONTRIBUTING.md",
     "docs/tutorials/getting-started-java.md",
     "docs/tutorials/remote-browser.md",
   ]) {

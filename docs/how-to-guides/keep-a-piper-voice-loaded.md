@@ -21,8 +21,11 @@ python3 -m venv ~/piper
 
 ```bash
 mkdir -p ~/piper/voices
-~/piper/bin/python -m piper.download_voices --download-dir ~/piper/voices en_US-lessac-medium
+~/piper/bin/python -m piper.download_voices --download-dir ~/piper/voices en_US-bryce-medium
 ```
+
+Each voice has its own license, and some are for research only. The
+[say and listen spec](../specs/say-listen-spec.md) has a table.
 
 The [Piper voices](https://huggingface.co/rhasspy/piper-voices) page lists
 the others. A low voice renders about a third faster than a medium one.
@@ -32,7 +35,7 @@ A medium one has a higher sample rate.
 
 ```bash
 ~/piper/bin/python -m piper.http_server \
-  -m ~/piper/voices/en_US-lessac-medium.onnx \
+  -m ~/piper/voices/en_US-bryce-medium.onnx \
   --data-dir ~/piper/voices --host 127.0.0.1 --port 5000
 ```
 
@@ -67,7 +70,7 @@ Save this as `~/.config/systemd/user/piper.service`:
 Description=Piper speech server, with a voice kept loaded
 
 [Service]
-ExecStart=%h/piper/bin/python -m piper.http_server -m %h/piper/voices/en_US-lessac-medium.onnx --data-dir %h/piper/voices --host 127.0.0.1 --port 5000
+ExecStart=%h/piper/bin/python -m piper.http_server -m %h/piper/voices/en_US-bryce-medium.onnx --data-dir %h/piper/voices --host 127.0.0.1 --port 5000
 Restart=on-failure
 
 [Install]

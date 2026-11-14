@@ -185,6 +185,7 @@ mkdir /tmp/vibium-java-test && cd /tmp/vibium-java-test
 
 cat > Test.java << 'EOF'
 import com.vibium.Vibium;
+import com.vibium.types.SelectorOptions;
 import com.vibium.types.StartOptions;
 
 public class Test {

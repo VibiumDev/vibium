@@ -1,8 +1,8 @@
 # Spec: `say` and `listen`
 
-> **Status: Draft.** This document describes proposed behavior. It does
-> not reflect what is currently implemented in vibium. Do not rely on it
-> as documentation of existing functionality.
+> **Status: Implemented in Vibium 26.11**, except what "Not built yet" and
+> "Future work" list. Where this document and a command's `--help`
+> disagree, the help is right.
 
 ## Summary
 

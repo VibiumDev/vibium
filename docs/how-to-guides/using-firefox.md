@@ -6,10 +6,10 @@ Vibium launches Chrome by default. Firefox is supported as an alternative engine
 
 ```
 $ vibium install --engine firefox
-Installing Firefox v153.0.3 (release channel)...
-Downloading Firefox from https://ftp.mozilla.org/pub/firefox/releases/153.0.3/mac/en-US/Firefox%20153.0.3.dmg...
+Installing Firefox v159.0.1 (release channel)...
+Downloading Firefox from https://ftp.mozilla.org/pub/firefox/releases/159.0.1/mac/en-US/Firefox%20159.0.1.dmg...
 Installation complete!
-Firefox: /Users/you/Library/Caches/vibium/firefox/release/153.0.3/Firefox.app/Contents/MacOS/firefox
+Firefox: /Users/you/Library/Caches/vibium/firefox/release/159.0.1/Firefox.app/Contents/MacOS/firefox
 ```
 
 Firefox installs into the vibium cache next to Chrome for Testing. The vibium

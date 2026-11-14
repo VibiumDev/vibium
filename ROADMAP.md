@@ -9,14 +9,6 @@ Things we'd like to work on. Priorities will follow what people need.
 - Make setup smooth in Codex and Claude.
 - Evaluate how well independent checks catch mistakes, using the same model or a different one.
 
-## Find an element by description
-
-The main remaining piece of AI-powered locators: ask for an element and get
-one back. Something like `vibe.find("the blue submit button")`.
-
-We still need to work out ambiguous matches and how prompts fit alongside
-CSS selectors and semantic locators.
-
 ## Records
 
 Help agents remember pages and paths between sessions, so they don't keep

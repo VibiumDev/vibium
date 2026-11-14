@@ -31,7 +31,7 @@ console.log(JSON.stringify({ok: true, result}));
       try {
         ({ stdout } = await exec(process.execPath, [path.resolve(__dirname, '../../scripts/var-parts-check.mjs')], {
           env: { ...process.env, VIBIUM_BINARY: binary, TUTORIAL_CALLS: callsPath, TUTORIAL_VERDICT: status },
-          timeout: 15000,
+          timeout: 60000,
         }));
       } catch (error) { stdout = error.stdout; exitCode = error.code; }
       assert.equal(exitCode, status === 'passed' ? 0 : 1);

@@ -13,7 +13,7 @@ Vibium gives AI agents the tools they need to check their work. Install the `bro
 - **AI-native.** Install as a skill — your agent learns the full browser automation toolkit instantly.
 - **Zero config.** One install, browser downloads automatically, visible by default.
 - **Standards-based.** Built on [WebDriver BiDi](docs/explanation/webdriver-bidi.md), not proprietary protocols controlled by large corporations.
-- **Lightweight.** Single ~10MB binary. No runtime dependencies.
+- **Lightweight.** A single binary of about 17 MB. No runtime dependencies.
 - **Flexible.** Use as a CLI skill, MCP server, or JS/Python/Java library.
 
 ---
@@ -42,7 +42,7 @@ Invoke `/browser` or `/check` in agents with slash skills, or `$browser` and
 Run [`vibium ready`](docs/reference/ready.md) to check setup.
 
 For a walkthrough, follow [Your coding agent’s first Check](docs/tutorials/check-with-a-coding-agent.md).
-Run and Check currently require the development build and AI configuration:
+Run and Check need Vibium 26.11 or newer and AI configuration:
 `vibium setup` writes `~/.config/vibium/ai.env` (or `vibium config init` for the
 template). See [model providers](docs/reference/model-providers.md).
 
@@ -94,7 +94,12 @@ vibium wait text "Success"            # wait for text on page
 
 # Record sessions
 vibium record start                   # record with screenshots
-vibium record stop                    # stop and save to record.zip
+vibium record stop                    # stop and save record-<date>-<time>.zip
+
+# Speak and hear
+vibium say "What's the weather?"      # speak into the page's microphone
+vibium listen                         # hear the page's reply as text
+vibium ready speech                   # test the speech settings
 
 # Forms & input
 vibium fill @e2 "hello@example.com"   # fill input using ref

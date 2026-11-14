@@ -39,6 +39,8 @@ runbooks).
 | Accomplish a live browser goal | [Run](how-to-guides/run.md) |
 | Configure models for either operation | [Model providers](reference/model-providers.md) |
 | Diagnose browser and AI setup | [Readiness diagnostics](reference/ready.md) |
+| Speak to a page or a device, and hear its reply | [`say` and `listen`](specs/say-listen-spec.md) |
+| Speak with a local voice, quickly | [Keep a Piper voice loaded](how-to-guides/keep-a-piper-voice-loaded.md) |
 | Run a check and save evidence | [Check a live browser or saved recording](how-to-guides/check.md) |
 | Look up options, configuration, and language APIs | [Check reference](reference/check.md) |
 | Understand Run, Check, and their browser architecture | [How Run and Check work](explanation/run-check-webdriver-bidi-architecture.md) |
