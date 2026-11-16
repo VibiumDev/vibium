@@ -21,8 +21,8 @@ Before your first release, ensure you have:
 make the bump on a branch:
 
 ```bash
-git switch -c release/26.11.15
-make set-version VERSION=26.11.15
+git switch -c release/26.11.16
+make set-version VERSION=26.11.16
 ```
 
 The version MUST have three parts (`X.Y.Z`). npm accepts nothing else, and
@@ -50,8 +50,8 @@ All tests must pass before proceeding.
 
 ```bash
 # Not `git add -A`: untracked files in the checkout stay out.
-git commit -am "Bump version to 26.11.15"
-git push -u origin release/26.11.15
+git commit -am "Bump version to 26.11.16"
+git push -u origin release/26.11.16
 gh pr create --fill
 ```
 
@@ -59,8 +59,14 @@ Merge the pull request through the merge queue. Then package and publish
 from the commit it made on `main`:
 
 ```bash
+SHA=$(gh pr view release/26.11.16 --json mergeCommit --jq .mergeCommit.oid)
 git switch main && git pull
+git rev-parse HEAD
 ```
+
+If `HEAD` is not `$SHA`, other pull requests merged after the bump. Run
+`git switch --detach $SHA` so they stay out of the release, and
+`git switch main` once it is out.
 
 ## Package
 
@@ -125,16 +131,16 @@ tutorials, so the Java client MUST go out with the same release. Follow
 
 ```bash
 # Tag the bump's commit on main, and push the tag alone
-git tag v26.11.15
-git push origin v26.11.15
+git tag v26.11.16 $SHA
+git push origin v26.11.16
 
 # Notes since the last stable release, not since the last nightly
-gh release create v26.11.15 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.15"
+gh release create v26.11.16 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.16"
 
 # Attach the binaries and their checksums, so an image can pin the release
 (cd clicker/bin && shasum -a 256 vibium-linux-amd64 vibium-linux-arm64 \
   vibium-darwin-amd64 vibium-darwin-arm64 vibium-windows-amd64.exe > SHA256SUMS)
-gh release upload v26.11.15 clicker/bin/vibium-linux-amd64 clicker/bin/vibium-linux-arm64 \
+gh release upload v26.11.16 clicker/bin/vibium-linux-amd64 clicker/bin/vibium-linux-arm64 \
   clicker/bin/vibium-darwin-amd64 clicker/bin/vibium-darwin-arm64 \
   clicker/bin/vibium-windows-amd64.exe clicker/bin/SHA256SUMS
 ```
@@ -150,9 +156,11 @@ npm init -y
 npm install vibium
 node -e "const { browser } = require('vibium'); console.log('npm OK')"
 
-# Test PyPI
-pip install --upgrade vibium
-python3 -c "from vibium import browser; print('PyPI OK')"
+# Test PyPI. vibium requires Python 3.11+; macOS python3 is 3.9.
+# Use any 3.11+ interpreter, e.g. `brew install python@3.12`.
+python3.12 -m venv /tmp/vibium-pypi-test
+/tmp/vibium-pypi-test/bin/pip install vibium==26.11.16
+/tmp/vibium-pypi-test/bin/python -c "from vibium import browser; print('PyPI OK')"
 ```
 
 ## Troubleshooting
@@ -179,16 +187,18 @@ Wait a few seconds for npm registry propagation before publishing the main packa
 ## Quick Reference
 
 ```bash
-# Complete release (replace 26.11.15 with your version)
-git switch -c release/26.11.15
-make set-version VERSION=26.11.15
+# Complete release (replace 26.11.16 with your version)
+git switch -c release/26.11.16
+make set-version VERSION=26.11.16
 make clean-all && make build && make test
 
-git commit -am "Bump version to 26.11.15"
-git push -u origin release/26.11.15
+git commit -am "Bump version to 26.11.16"
+git push -u origin release/26.11.16
 gh pr create --fill
 # merge through the merge queue, then:
+SHA=$(gh pr view release/26.11.16 --json mergeCommit --jq .mergeCommit.oid)
 git switch main && git pull
+git rev-parse HEAD   # not $SHA? git switch --detach $SHA
 
 make package
 
@@ -205,8 +215,8 @@ twine upload clients/python/dist/*.whl
 
 # The Java client: see publish-java-maven-central.md
 
-git tag v26.11.15
-git push origin v26.11.15
-gh release create v26.11.15 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.15"
+git tag v26.11.16 $SHA
+git push origin v26.11.16
+gh release create v26.11.16 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.16"
 # then attach the binaries and SHA256SUMS, as under "Create GitHub Release"
 ```

@@ -763,7 +763,8 @@ set-version:
 	@echo "  - packages/python/*/pyproject.toml (5 platform packages)"
 	@echo "  - packages/python/*/src/*/__init__.py (5 platform packages)"
 	@echo "  - package-lock.json (regenerated)"
-	@echo "  - README.md + docs/tutorials/getting-started-java.md (Maven coordinates)"
+	@echo "  - README.md, CONTRIBUTING.md, docs/tutorials/getting-started-java.md,"
+	@echo "    docs/tutorials/remote-browser.md (Maven coordinates)"
 
 # Show available targets
 help:
