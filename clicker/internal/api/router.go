@@ -1412,6 +1412,12 @@ func (r *Router) sendInternalCommand(session *BrowserSession, method string, par
 
 // sendInternalCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (r *Router) sendInternalCommandWithTimeout(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
+	return bidi.RetryStaleRealm(method, func() (json.RawMessage, error) {
+		return r.sendInternalCommandOnce(session, method, params, timeout)
+	})
+}
+
+func (r *Router) sendInternalCommandOnce(session *BrowserSession, method string, params map[string]interface{}, timeout time.Duration) (json.RawMessage, error) {
 	session.mu.Lock()
 	operationContext := session.modelContext
 	session.mu.Unlock()

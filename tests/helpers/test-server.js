@@ -211,6 +211,14 @@ const MORE_INFORMATION_HTML = `<html><head><title>More information</title></head
   <p>You followed the example link. This page is served locally.</p>
 </body></html>`;
 
+const SLOW_LINK_HTML = `<html><head><title>Slow link</title></head><body>
+  <a href="/slow-target">Slow target</a>
+</body></html>`;
+
+const SLOW_TARGET_HTML = `<html><head><title>Slow target</title></head><body>
+  <h1>Slow target</h1>
+</body></html>`;
+
 const SELECTORS_HTML = `<html><head><title>Selectors</title></head><body>
   <h1>Selector Strategies Test</h1>
   <input type="text" id="search" placeholder="Search..." data-testid="search-input" title="Search field" />
@@ -343,6 +351,7 @@ const routes = {
   '/type-filter': TYPE_FILTER_HTML,
   '/nested-scope': NESTED_SCOPE_HTML,
   '/form-redirect': FORM_REDIRECT_HTML,
+  '/slow-link': SLOW_LINK_HTML,
 };
 
 function handleRequest(req, res) {
@@ -359,6 +368,15 @@ function handleRequest(req, res) {
   if (req.url === '/authenticate' && req.method === 'POST') {
     res.writeHead(302, { 'Location': '/secure' });
     res.end();
+    return;
+  }
+
+  // Answers late, so a command sent right after the click lands mid-navigation (#811).
+  if (req.url === '/slow-target') {
+    setTimeout(() => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(SLOW_TARGET_HTML);
+    }, 300);
     return;
   }
 

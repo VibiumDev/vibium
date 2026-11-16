@@ -184,6 +184,12 @@ func (c *Client) SendCommand(method string, params interface{}) (*Message, error
 
 // SendCommandWithTimeout sends a BiDi command and waits for the response with a custom timeout.
 func (c *Client) SendCommandWithTimeout(method string, params interface{}, timeout time.Duration) (*Message, error) {
+	return RetryStaleRealm(method, func() (*Message, error) {
+		return c.sendCommandOnce(method, params, timeout)
+	})
+}
+
+func (c *Client) sendCommandOnce(method string, params interface{}, timeout time.Duration) (*Message, error) {
 	c.mu.Lock()
 	ctx := c.commandContext
 	c.mu.Unlock()
