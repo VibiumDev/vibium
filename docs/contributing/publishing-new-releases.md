@@ -157,8 +157,8 @@ npm install vibium
 node -e "const { browser } = require('vibium'); console.log('npm OK')"
 
 # Test PyPI. vibium requires Python 3.11+; macOS python3 is 3.9.
-# Use any 3.11+ interpreter, e.g. `brew install python@3.12`.
-python3.12 -m venv /tmp/vibium-pypi-test
+# Use any 3.11+ interpreter, e.g. `brew install python@3.13`.
+python3.13 -m venv /tmp/vibium-pypi-test
 /tmp/vibium-pypi-test/bin/pip install vibium==26.11.16
 /tmp/vibium-pypi-test/bin/python -c "from vibium import browser; print('PyPI OK')"
 ```
