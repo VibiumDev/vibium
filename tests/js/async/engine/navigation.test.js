@@ -114,6 +114,21 @@ describe('JS Navigation', () => {
     await vibe.waitUntil.loaded('complete', { timeout: 10000 });
   });
 
+  test('page reads right after a navigating click do not fail (#811)', async () => {
+    const vibe = await bro.page();
+    for (const read of [
+      () => vibe.evaluate('document.title'),
+      () => vibe.title(),
+      () => vibe.url(),
+      () => vibe.content(),
+    ]) {
+      await vibe.go(baseURL + '/slow-link');
+      await vibe.find({ css: 'a' }).click();
+      await read();
+      await vibe.waitForURL('**/slow-target');
+    }
+  });
+
   test('a non-timeout error is not mislabeled as a timeout (#64)', async () => {
     const vibe = await bro.page();
     let message = '';
