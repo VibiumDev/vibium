@@ -166,12 +166,22 @@ package-python: build-go-all
 		cp LICENSE NOTICE "$$pkg/"; \
 	done
 	@echo "Building Python wheels..."
-	@if [ ! -d ".venv-publish" ]; then \
-		echo "Creating .venv-publish..."; \
-		python3 -m venv .venv-publish && \
-		. .venv-publish/bin/activate && \
-		pip install -q twine; \
-	fi
+	@$(PICK_PYTHON); \
+		if [ -d .venv-publish ] && ! .venv-publish/bin/python -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then \
+			echo "ERROR: .venv-publish uses $$(.venv-publish/bin/python --version 2>&1); the Python client needs $(PY_FLOOR)+." >&2; \
+			echo "  Rebuild it: $${py:-python3} -m venv --clear .venv-publish" >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -d .venv-publish ]; then \
+			if [ -z "$$py" ]; then \
+				echo "ERROR: the Python wheels need Python $(PY_FLOOR)+, but $(PYTHON) is $$($(PYTHON) --version 2>&1)." >&2; \
+				echo "  Or name one: make package PYTHON=/path/to/python3" >&2; \
+				exit 1; \
+			fi; \
+			echo "Creating .venv-publish with $$py..."; \
+			"$$py" -m venv .venv-publish; \
+		fi; \
+		.venv-publish/bin/python -m twine --version >/dev/null 2>&1 || .venv-publish/bin/pip install -q twine
 	@. .venv-publish/bin/activate && \
 		cd packages/python/vibium_darwin_arm64 && pip wheel . -w dist --no-deps && \
 		cd ../vibium_darwin_x64 && pip wheel . -w dist --no-deps && \
@@ -499,12 +509,14 @@ PY_PARALLEL ?= $(DEFAULT_PARALLEL)
 # Ensure the Python client venv exists with the client + test deps installed.
 PY_FLOOR := $(shell sed -n 's/^requires-python *= *">=\([0-9.]*\)".*/\1/p' clients/python/pyproject.toml)
 PY_FLOOR_CHECK := import sys; sys.exit(sys.version_info < tuple(int(n) for n in '$(PY_FLOOR)'.split('.')))
+# Sets py to $(PYTHON), else the newest python3.N on PATH, that meets PY_FLOOR.
+PICK_PYTHON = py=; for p in $(PYTHON) $$(IFS=:; for d in $$PATH; do ls "$$d" 2>/dev/null; done | grep -E '^python3\.[0-9]+$$' | sort -u -t. -k2,2nr); do \
+	if "$$p" -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then py=$$p; break; fi; \
+	done
 
 python-venv:
 	@cd clients/python && \
-		py=; for p in $(PYTHON) $$(IFS=:; for d in $$PATH; do ls "$$d" 2>/dev/null; done | grep -E '^python3\.[0-9]+$$' | sort -u -t. -k2,2nr); do \
-			if "$$p" -c "$(PY_FLOOR_CHECK)" 2>/dev/null; then py=$$p; break; fi; \
-		done; \
+		$(PICK_PYTHON); \
 		if [ -d .venv ] && ! ( . $(VENV_ACTIVATE) && python -c "$(PY_FLOOR_CHECK)" ) 2>/dev/null; then \
 			echo "ERROR: clients/python/.venv uses $$( . $(VENV_ACTIVATE) && python --version 2>&1); the Python client needs $(PY_FLOOR)+." >&2; \
 			echo "  Rebuild it (removes packages you added by hand):" >&2; \
