@@ -453,21 +453,23 @@ class Page:
             self._loop.run(self._async.route(pattern, _fulfill_handler))
         else:
             # Callable handler — use sync decision pattern
-            def _sync_callback(async_route: Any) -> None:
-                sync_route = Route(async_route)
-                action(sync_route)
+            async def _sync_callback(async_route: Any) -> None:
+                # A sync handler cannot await, so the body is read before it runs.
+                sync_route = Route(async_route, await async_route.request.post_data())
+                try:
+                    action(sync_route)
+                except Exception as e:
+                    import sys
+                    print(f"vibium: error in route handler: {e}", file=sys.stderr)
+                    return
                 decision = sync_route._decision
-                import asyncio
-                # Safe: this callback fires from the background event loop thread,
-                # so ensure_future schedules onto the already-running loop.
+                opts = {k: v for k, v in decision.items() if k != "action" and v is not None}
                 if decision["action"] == "fulfill":
-                    opts = {k: v for k, v in decision.items() if k != "action" and v is not None}
-                    asyncio.ensure_future(async_route.fulfill(**opts))
+                    await async_route.fulfill(**opts)
                 elif decision["action"] == "abort":
-                    asyncio.ensure_future(async_route.abort())
+                    await async_route.abort()
                 else:
-                    opts = {k: v for k, v in decision.items() if k != "action" and v is not None}
-                    asyncio.ensure_future(async_route.continue_(**opts))
+                    await async_route.continue_(**opts)
 
             self._loop.run(self._async.route(pattern, _sync_callback))
 

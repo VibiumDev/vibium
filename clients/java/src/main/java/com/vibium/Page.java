@@ -1098,7 +1098,7 @@ public class Page {
     }
 
     private void handleBlockedRequest(JsonObject params) {
-        Request request = new Request(client, params, true);
+        Request request = new Request(client, params);
         String requestId = request.requestId();
 
         // The binary already matched the URL against every registered

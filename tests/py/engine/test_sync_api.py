@@ -6,6 +6,7 @@ context, dialog handlers, route handlers, console/error collection,
 expect request/response, and full checkpoint.
 """
 
+import json
 import re
 import time
 
@@ -520,6 +521,24 @@ def test_route_inspect_request(bro, test_server):
     assert "api/data" in captured.get("url", "")
     assert captured.get("method") == "GET"
     vibe.unroute("**/api/data")
+    vibe.close()
+
+
+@pytest.mark.capability("network")
+def test_route_request_post_data(bro, test_server):
+    vibe = bro.new_page()
+    vibe.go(test_server + "/fetch")
+    captured = {}
+
+    def handler(route):
+        captured["post_data"] = route.request["post_data"]
+        route.continue_()
+
+    vibe.route("**/api/echo", handler)
+    vibe.evaluate("doPostFetch()")
+    vibe.wait(500)
+    assert json.loads(captured.get("post_data") or "{}") == {"hello": "world"}
+    vibe.unroute("**/api/echo")
     vibe.close()
 
 

@@ -15,8 +15,9 @@ class Route:
     If none is called, the default is 'continue'.
     """
 
-    def __init__(self, async_route: AsyncRoute) -> None:
+    def __init__(self, async_route: AsyncRoute, post_data: Optional[str] = None) -> None:
         self._async = async_route
+        self._post_data = post_data
         self._decision: Dict[str, Any] = {"action": "continue"}
 
     @property
@@ -27,6 +28,7 @@ class Route:
             "url": req.url(),
             "method": req.method(),
             "headers": req.headers(),
+            "post_data": self._post_data,
         }
 
     def fulfill(
