@@ -153,16 +153,23 @@ await page.route('**/api/**', async (route) => {
 ```
 
 ```python
-# Async API
-async def log_body(route):
-    body = await route.request.post_data()
+def log_body(route):
+    body = route.request["post_data"]
     print("API received:", body)  # '{"name":"Alice"}'
-    await route.continue_()
+    route.continue_()
 
-await page.route("**/api/**", log_body)
+page.route("**/api/**", log_body)
 ```
 
-In the Python sync API and in Java, the request passed to a route handler does not carry the body. Read it from `on_request` / `onRequest` or from `capture.request` instead, as shown below.
+```java
+page.route("**/api/**", route -> {
+    String body = route.request().postData();
+    System.out.println("API received: " + body);  // {"name":"Alice"}
+    route.doContinue();
+});
+```
+
+In the Python async API the handler is `async def` and reads `await route.request.post_data()`.
 
 Without a data collector, `postData()` would always return `null` — the BiDi event simply doesn't include the body.
 
@@ -227,6 +234,27 @@ await page.route('**/api/search', async (route) => {
   } else {
     route.fulfill({ status: 200, body: JSON.stringify({ results: ['item1'] }) });
   }
+});
+```
+
+```python
+import json
+
+def mock_search(route):
+    body = json.loads(route.request["post_data"])
+    if body["query"] == "empty":
+        route.fulfill(status=200, body=json.dumps({"results": []}))
+    else:
+        route.fulfill(status=200, body=json.dumps({"results": ["item1"]}))
+
+page.route("**/api/search", mock_search)
+```
+
+```java
+page.route("**/api/search", route -> {
+    String body = route.request().postData();  // {"query":"empty"}
+    String results = body.contains("\"empty\"") ? "[]" : "[\"item1\"]";
+    route.fulfill(new FulfillOptions().status(200).body("{\"results\":" + results + "}"));
 });
 ```
 
