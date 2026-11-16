@@ -29,6 +29,14 @@ vibium find css "my-card >> p"
 const p = await vibe.find({ css: 'my-card >> p' });
 ```
 
+```python
+p = vibe.find(css="my-card >> p")
+```
+
+```java
+Element p = vibe.find(new SelectorOptions().css("my-card >> p"));
+```
+
 Everything works on the result, not just `find`:
 
 ```bash

@@ -152,6 +152,18 @@ await page.route('**/api/**', async (route) => {
 });
 ```
 
+```python
+# Async API
+async def log_body(route):
+    body = await route.request.post_data()
+    print("API received:", body)  # '{"name":"Alice"}'
+    await route.continue_()
+
+await page.route("**/api/**", log_body)
+```
+
+In the Python sync API and in Java, the request passed to a route handler does not carry the body. Read it from `on_request` / `onRequest` or from `capture.request` instead, as shown below.
+
 Without a data collector, `postData()` would always return `null` — the BiDi event simply doesn't include the body.
 
 The collector is set up lazily (only when you register a route or request listener) and torn down when you call `page.removeAllListeners('request')`. If the browser doesn't support `network.addDataCollector`, `postData()` gracefully returns `null`.
@@ -176,6 +188,30 @@ page.onRequest(async (req) => {
 });
 
 await page.find({ role: 'button', text: 'Place Order' }).click();
+```
+
+```python
+import json
+
+def check_order(req):
+    if req.method() == "POST" and "/api/checkout" in req.url():
+        body = json.loads(req.post_data())
+        assert len(body["items"]) == 3
+        assert body["total"] == 59.97
+
+page.on_request(check_order)
+
+page.find(role="button", text="Place Order").click()
+```
+
+```java
+page.onRequest(req -> {
+    if (req.method().equals("POST") && req.url().contains("/api/checkout")) {
+        String body = req.postData();  // {"items":[1,2,3],"total":59.97}
+    }
+});
+
+page.find(new SelectorOptions().role("button").text("Place Order")).click();
 ```
 
 ### Request Mocking with Body Inspection
@@ -210,6 +246,27 @@ const body = await req.postData();
 // body === 'name=Jane+Doe&email=jane%40example.com'
 ```
 
+```python
+def submit():
+    page.find(css="#name").fill("Jane Doe")
+    page.find(css="#email").fill("jane@example.com")
+    page.find(role="button", text="Submit").click()
+
+req = page.capture.request("**/submit", submit)
+body = req["post_data"]
+# body == 'name=Jane+Doe&email=jane%40example.com'
+```
+
+```java
+Request req = page.capture().request("**/submit", () -> {
+    page.find(new SelectorOptions().css("#name")).fill("Jane Doe");
+    page.find(new SelectorOptions().css("#email")).fill("jane@example.com");
+    page.find(new SelectorOptions().role("button").text("Submit")).click();
+});
+String body = req.postData();
+// body is "name=Jane+Doe&email=jane%40example.com"
+```
+
 ### Response Body Collection: `response.body()` and `response.json()`
 
 When you call `page.onResponse()` or `page.waitForResponse()`, Vibium sets up a data collector that includes the `"response"` data type. This makes `response.body()` and `response.json()` work:
@@ -223,12 +280,45 @@ page.onResponse(async (resp) => {
 });
 ```
 
+```python
+def log_users(resp):
+    if "/api/users" in resp.url():
+        data = resp.json()
+        print("Got users:", data)  # [{'name': 'Alice'}, ...]
+
+page.on_response(log_users)
+```
+
+```java
+page.onResponse(resp -> {
+    if (resp.url().contains("/api/users")) {
+        Object data = resp.json();
+        System.out.println("Got users: " + data);  // [{name=Alice}, ...]
+    }
+});
+```
+
 Or with `waitForResponse`:
 
 ```javascript
 const resp = await page.capture.response('**/api/users');
 const body = await resp.body();    // raw string
 const data = await resp.json();    // parsed JSON
+```
+
+```python
+import json
+
+resp = page.capture.response("**/api/users", lambda: page.find(css="#users").click())
+body = resp["body"]        # raw string
+data = json.loads(body)    # parsed JSON
+```
+
+```java
+Response resp = page.capture().response("**/api/users",
+    () -> page.find(new SelectorOptions().css("#users")).click());
+String body = resp.body();   // raw string
+Object data = resp.json();   // parsed JSON
 ```
 
 Under the hood, `body()` calls `network.getData` with `"dataType": "response"` and the request ID from the `network.responseCompleted` event. Base64-encoded responses (binary content) are automatically decoded. If no data collector was active when the response arrived, `body()` returns `null`.
