@@ -65,8 +65,8 @@ git rev-parse HEAD
 ```
 
 If `HEAD` is not `$SHA`, other pull requests merged after the bump. Run
-`git switch --detach $SHA` so they stay out of the release, and
-`git switch main` once it is out.
+`git switch --detach $SHA` so they stay out of the release. The last
+step switches back to `main`.
 
 ## Package
 
@@ -143,6 +143,9 @@ gh release create v26.11.16 --generate-notes --notes-start-tag v26.8.21 --title 
 gh release upload v26.11.16 clicker/bin/vibium-linux-amd64 clicker/bin/vibium-linux-arm64 \
   clicker/bin/vibium-darwin-amd64 clicker/bin/vibium-darwin-arm64 \
   clicker/bin/vibium-windows-amd64.exe clicker/bin/SHA256SUMS
+
+# Back to main, if you detached at $SHA
+git switch main
 ```
 
 ## Verification
@@ -219,4 +222,5 @@ git tag v26.11.16 $SHA
 git push origin v26.11.16
 gh release create v26.11.16 --generate-notes --notes-start-tag v26.8.21 --title "v26.11.16"
 # then attach the binaries and SHA256SUMS, as under "Create GitHub Release"
+git switch main
 ```
