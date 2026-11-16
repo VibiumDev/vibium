@@ -61,6 +61,18 @@ describe('Interaction: Checkpoint', () => {
     assert.strictEqual(await first.isSet(), false, 'First checkbox should be unchecked');
   });
 
+  test('checkbox found by role: set and unset', async () => {
+    const vibe = await bro.page();
+    await vibe.go(baseURL + '/checkboxes');
+
+    const first = await vibe.find({ role: 'checkbox' });
+
+    await first.set();
+    assert.strictEqual(await first.isSet(), true);
+    await first.unset();
+    assert.strictEqual(await first.isSet(), false);
+  });
+
   test('hover reveals hidden content', async () => {
     const vibe = await bro.page();
     await vibe.go(baseURL + '/hovers');

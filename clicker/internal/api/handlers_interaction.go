@@ -1211,9 +1211,9 @@ func scrollContextBy(s Session, context string, deltaX, deltaY int) error {
 func buildIsCheckedScript(ep ElementParams) (string, []map[string]interface{}) {
 	return buildElActionScript(ep, nil, nil, `
 			const t = el.tagName === 'INPUT' ? (el.type || '').toLowerCase() : '';
-			const role = (el.getAttribute('role') || '').toLowerCase();
+			const ariaRole = (el.getAttribute('role') || '').toLowerCase();
 			if (t !== 'checkbox' && t !== 'radio' &&
-				role !== 'checkbox' && role !== 'radio' && role !== 'switch') {
+				ariaRole !== 'checkbox' && ariaRole !== 'radio' && ariaRole !== 'switch') {
 				return 'not a checkbox or radio element';
 			}
 			if (t === '') return el.getAttribute('aria-checked') === 'true' ? 'true' : 'false';
