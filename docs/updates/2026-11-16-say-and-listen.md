@@ -50,17 +50,21 @@ With a browser open, Say speaks into the page's microphone and Listen hears
 what the page plays back. The page doesn't know it's talking to a script:
 it gets a microphone like any other.
 
+Try it on [Soundcheck](https://soundcheck.vibium.dev/). Its Mic test records
+the microphone for 8 seconds, then plays it back:
+
 ```bash
-vibium go https://voice.example.com
-vibium click "#talk"                  # the page opens its microphone
+vibium go https://soundcheck.vibium.dev/
+vibium click "#mic"                   # the page opens its microphone
 vibium say "Come here, Watson"        # the page hears it
-vibium listen --json                  # what the page says back
-# {"ok":true,"result":{"text":"Come here, Watson.","latencyMs":5550,"stoppedBy":"silence",...}}
+vibium listen --json                  # the page plays it back
+# {"ok":true,"result":{"text":"Come here, Watson.","latencyMs":7050,"stoppedBy":"silence",...}}
 ```
 
 `latencyMs` is the reply latency: from the end of what you said to the
-start of the answer. Listen starts hearing where Say left off, so a reply
-that begins before you call `listen` isn't missed.
+start of the answer. Here it's about 7 seconds, because Soundcheck waits
+for its 8-second recording to finish. Listen starts hearing where Say left
+off, so a reply that begins before you call `listen` isn't missed.
 
 ---
 
