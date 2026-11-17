@@ -60,37 +60,48 @@ class Element:
     # --- Interaction ---
 
     async def click(self, timeout: Optional[int] = None) -> None:
+        """Click the element. Waits for the element to be visible, stable, receive events, and enabled."""
         await self._client.send("vibium:element.click", self._command_params({"timeout": timeout}))
 
     async def dblclick(self, timeout: Optional[int] = None) -> None:
+        """Double-click the element."""
         await self._client.send("vibium:element.dblclick", self._command_params({"timeout": timeout}))
 
     async def fill(self, value: str, timeout: Optional[int] = None) -> None:
+        """Fill the element with text (clears existing content first). For inputs and textareas."""
         await self._client.send("vibium:element.fill", self._command_params({"value": value, "timeout": timeout}))
 
     async def type(self, text: str, timeout: Optional[int] = None) -> None:
         # "value" is the payload key; "text" would collide with a text filter.
+        """Type text into the element (appends to existing content). Waits for the element to be visible, stable, receive events, enabled, and editable."""
         await self._client.send("vibium:element.type", self._command_params({"value": text, "timeout": timeout}))
 
     async def press(self, key: str, timeout: Optional[int] = None) -> None:
+        """Press a key while the element is focused. Supports key names ("Enter", "Tab") and combos ("Control+a")."""
         await self._client.send("vibium:element.press", self._command_params({"key": key, "timeout": timeout}))
 
     async def clear(self, timeout: Optional[int] = None) -> None:
+        """Clear the element's content (select all + delete)."""
         await self._client.send("vibium:element.clear", self._command_params({"timeout": timeout}))
 
     async def set(self, value: bool = True, timeout: Optional[int] = None) -> None:
+        """Check a checkbox (no-op if already checked)."""
         await self._client.send("vibium:element.set", self._command_params({"value": value, "timeout": timeout}))
 
     async def unset(self, timeout: Optional[int] = None) -> None:
+        """Uncheck a checkbox (no-op if already unchecked)."""
         await self._client.send("vibium:element.unset", self._command_params({"timeout": timeout}))
 
     async def select_option(self, value: str, timeout: Optional[int] = None) -> None:
+        """Select an option in a <select> element by value."""
         await self._client.send("vibium:element.selectOption", self._command_params({"value": value, "timeout": timeout}))
 
     async def hover(self, timeout: Optional[int] = None) -> None:
+        """Hover over the element (move mouse to center, no click)."""
         await self._client.send("vibium:element.hover", self._command_params({"timeout": timeout}))
 
     async def focus(self, timeout: Optional[int] = None) -> None:
+        """Focus the element."""
         await self._client.send("vibium:element.focus", self._command_params({"timeout": timeout}))
 
     async def highlight(self, timeout: Optional[int] = None) -> None:
@@ -98,15 +109,18 @@ class Element:
         await self._client.send("vibium:element.highlight", self._command_params({"timeout": timeout}))
 
     async def drag_to(self, target: Element, timeout: Optional[int] = None) -> None:
+        """Drag this element to a target element."""
         await self._client.send("vibium:element.dragTo", self._command_params({
             "target": target._to_params(),
             "timeout": timeout,
         }))
 
     async def tap(self, timeout: Optional[int] = None) -> None:
+        """Tap the element (touch action)."""
         await self._client.send("vibium:element.tap", self._command_params({"timeout": timeout}))
 
     async def scroll_into_view(self, timeout: Optional[int] = None) -> None:
+        """Scroll the element into view."""
         await self._client.send("vibium:element.scrollIntoView", self._command_params({"timeout": timeout}))
 
     async def dispatch_event(
@@ -115,6 +129,7 @@ class Element:
         event_init: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
     ) -> None:
+        """Dispatch a DOM event on the element."""
         await self._client.send("vibium:element.dispatchEvent", self._command_params({
             "eventType": event_type,
             "eventInit": event_init,
@@ -122,6 +137,7 @@ class Element:
         }))
 
     async def set_files(self, files: List[str], timeout: Optional[int] = None) -> None:
+        """Set files on an <input type="file"> element."""
         await self._client.send("vibium:element.setFiles", self._command_params({
             "files": files,
             "timeout": timeout,
@@ -130,22 +146,27 @@ class Element:
     # --- State ---
 
     async def text(self) -> str:
+        """Get the element's textContent (trimmed)."""
         result = await self._client.send("vibium:element.text", self._command_params())
         return result["text"]
 
     async def inner_text(self) -> str:
+        """Get the element's innerText (rendered text only)."""
         result = await self._client.send("vibium:element.innerText", self._command_params())
         return result["text"]
 
     async def html(self) -> str:
+        """Get the element's innerHTML."""
         result = await self._client.send("vibium:element.html", self._command_params())
         return result["html"]
 
     async def value(self) -> str:
+        """Get the element's value (for inputs, textareas, selects)."""
         result = await self._client.send("vibium:element.value", self._command_params())
         return result["value"]
 
     async def attr(self, name: str) -> Optional[str]:
+        """Get an attribute value. Short name for get_attribute()."""
         result = await self._client.send("vibium:element.attr", self._command_params({"name": name}))
         return result["value"]
 
@@ -154,6 +175,7 @@ class Element:
         return await self.attr(name)
 
     async def bounds(self) -> BoundingBox:
+        """Get the element's bounding box. Short name for bounding_box()."""
         result = await self._client.send("vibium:element.bounds", self._command_params())
         return BoundingBox(x=result["x"], y=result["y"], width=result["width"], height=result["height"])
 
@@ -162,34 +184,42 @@ class Element:
         return await self.bounds()
 
     async def is_visible(self) -> bool:
+        """Check if the element is visible (has dimensions, not display:none/visibility:hidden/opacity:0)."""
         result = await self._client.send("vibium:element.isVisible", self._command_params())
         return result["visible"]
 
     async def is_hidden(self) -> bool:
+        """Check if the element is hidden (inverse of is_visible())."""
         result = await self._client.send("vibium:element.isHidden", self._command_params())
         return result["hidden"]
 
     async def is_enabled(self) -> bool:
+        """Check if the element is enabled (not disabled)."""
         result = await self._client.send("vibium:element.isEnabled", self._command_params())
         return result["enabled"]
 
     async def is_set(self) -> bool:
+        """Check if the element is checked (for checkboxes/radios)."""
         result = await self._client.send("vibium:element.isSet", self._command_params())
         return result["checked"]
 
     async def is_editable(self) -> bool:
+        """Check if the element is editable (not disabled and not readonly)."""
         result = await self._client.send("vibium:element.isEditable", self._command_params())
         return result["editable"]
 
     async def role(self) -> str:
+        """Get the element's computed ARIA role."""
         result = await self._client.send("vibium:element.role", self._command_params())
         return result["role"]
 
     async def label(self) -> str:
+        """Get the element's accessible name (label)."""
         result = await self._client.send("vibium:element.label", self._command_params())
         return result["label"]
 
     async def screenshot(self) -> bytes:
+        """Take a screenshot of just this element. Returns PNG bytes."""
         result = await self._client.send("vibium:element.screenshot", self._command_params())
         return base64.b64decode(result["data"])
 

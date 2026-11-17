@@ -21,9 +21,11 @@ class Download:
         self._navigation = params.get("navigation", "")
 
     def url(self) -> str:
+        """The URL of the download."""
         return self._url
 
     def suggested_filename(self) -> str:
+        """The filename suggested by the server (from Content-Disposition)."""
         return self._suggested_filename
 
     async def _wait_for_completion(self) -> dict:

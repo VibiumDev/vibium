@@ -23,10 +23,12 @@ class BrowserContext:
 
     @property
     def id(self) -> str:
+        """The user context ID for this browser context."""
         return self._async.id
 
     @property
     def recording(self) -> Recording:
+        """Get the Recording for this context."""
         if self._recording is None:
             self._recording = Recording(self._async.recording, self._loop)
         return self._recording

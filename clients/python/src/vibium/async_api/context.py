@@ -22,10 +22,12 @@ class BrowserContext:
 
     @property
     def id(self) -> str:
+        """The user context ID for this browser context."""
         return self._user_context_id
 
     @property
     def recording(self) -> RecordingType:
+        """Get the Recording for this context."""
         if self._recording is None:
             from .recording import Recording
             self._recording = Recording(self._client, self._user_context_id)
