@@ -55,8 +55,24 @@ git push -u origin release/26.11.16
 gh pr create --fill
 ```
 
+The bump's CI installs `@vibium/<platform>@26.11.16` from npm, so it
+cannot pass until those packages exist. Publish them from the release
+branch:
+
+```bash
+make package-js
+(cd packages/linux-x64 && npm publish --access public)
+(cd packages/linux-arm64 && npm publish --access public)
+(cd packages/darwin-x64 && npm publish --access public)
+(cd packages/darwin-arm64 && npm publish --access public)
+(cd packages/win32-x64 && npm publish --access public)
+```
+
+Do not publish `packages/vibium` yet: it would become npm's `latest`
+before the bump merges. Rerun the pull request's failed checks.
+
 Merge the pull request through the merge queue. Then package and publish
-from the commit it made on `main`:
+the rest from the commit it made on `main`:
 
 ```bash
 SHA=$(gh pr view release/26.11.16 --json mergeCommit --jq .mergeCommit.oid)
@@ -109,15 +125,10 @@ twine upload clients/python/dist/*.whl
 
 **Important:** Platform packages must be published first.
 
-```bash
-# Platform packages (all must succeed before main)
-(cd packages/linux-x64 && npm publish --access public)
-(cd packages/linux-arm64 && npm publish --access public)
-(cd packages/darwin-x64 && npm publish --access public)
-(cd packages/darwin-arm64 && npm publish --access public)
-(cd packages/win32-x64 && npm publish --access public)
+The platform packages went out before the bump merged. Publish the main
+package:
 
-# Main package (after all platform packages are live)
+```bash
 (cd packages/vibium && npm publish)
 ```
 
@@ -198,7 +209,14 @@ make clean-all && make build && make test
 git commit -am "Bump version to 26.11.16"
 git push -u origin release/26.11.16
 gh pr create --fill
-# merge through the merge queue, then:
+
+make package-js
+(cd packages/linux-x64 && npm publish --access public)
+(cd packages/linux-arm64 && npm publish --access public)
+(cd packages/darwin-x64 && npm publish --access public)
+(cd packages/darwin-arm64 && npm publish --access public)
+(cd packages/win32-x64 && npm publish --access public)
+# rerun the PR's failed checks, merge through the merge queue, then:
 SHA=$(gh pr view release/26.11.16 --json mergeCommit --jq .mergeCommit.oid)
 git switch main && git pull
 git rev-parse HEAD   # not $SHA? git switch --detach $SHA
@@ -209,11 +227,6 @@ source .venv-publish/bin/activate
 twine upload packages/python/*/dist/*.whl
 twine upload clients/python/dist/*.whl
 
-(cd packages/linux-x64 && npm publish --access public)
-(cd packages/linux-arm64 && npm publish --access public)
-(cd packages/darwin-x64 && npm publish --access public)
-(cd packages/darwin-arm64 && npm publish --access public)
-(cd packages/win32-x64 && npm publish --access public)
 (cd packages/vibium && npm publish)
 
 # The Java client: see publish-java-maven-central.md
