@@ -99,7 +99,7 @@ describe('cross-ecosystem version writer', () => {
     }
   });
 
-  test('repins Java coordinates in the docs on a stable release only', () => {
+  test('repins Java coordinates and the version sample output on a stable release only', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibium-docs-'));
     // Only the docs matter here; the writer skips a file it is not given.
     const docs = ['README.md', 'CONTRIBUTING.md', 'docs/tutorials/getting-started-java.md', 'docs/tutorials/remote-browser.md'];
@@ -113,12 +113,14 @@ describe('cross-ecosystem version writer', () => {
       'curl -LO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar',
       'javac -cp "vibium-26.3.18.jar:gson-2.11.0.jar" Hello.java',
     ].join('\n');
+    const helpFile = 'clicker/cmd/clicker/diagnostics.go';
+    const helpBefore = '  # vibium v26.3.18\n  # {"ok":true,"result":{"name":"vibium","version":"26.3.18"}}\n';
     const setVersion = (version, pythonVersion) => execFileSync(process.execPath, [
       path.join(ROOT, 'scripts/set-version.mjs'), '--root', root, '--version', version,
       ...(pythonVersion ? ['--python-version', pythonVersion] : []),
     ]);
     const seed = () => {
-      for (const file of [...docs, 'package.json', 'clients/javascript/package.json',
+      for (const file of [...docs, helpFile, 'package.json', 'clients/javascript/package.json',
         'packages/vibium/package.json', 'packages/linux-x64/package.json',
         'packages/linux-arm64/package.json', 'packages/darwin-x64/package.json',
         'packages/darwin-arm64/package.json', 'packages/win32-x64/package.json',
@@ -128,6 +130,7 @@ describe('cross-ecosystem version writer', () => {
             `packages/python/vibium_${name}/src/vibium_${name}/__init__.py`])]) {
         fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
         if (docs.includes(file)) fs.writeFileSync(path.join(root, file), before);
+        else if (file === helpFile) fs.writeFileSync(path.join(root, file), helpBefore);
         else if (file.endsWith('.json')) fs.writeFileSync(path.join(root, file), '{"version": "1.2.3"}\n');
         else if (file.endsWith('.toml')) fs.writeFileSync(path.join(root, file), 'version = "1.2.3"\n');
         else fs.writeFileSync(path.join(root, file), '__version__ = "1.2.3"\n');
@@ -147,6 +150,8 @@ describe('cross-ecosystem version writer', () => {
         assert.match(after, /gson\/2\.11\.0\/gson-2\.11\.0\.jar/);
         assert.doesNotMatch(after, /26\.3\.18/);
       }
+      assert.strictEqual(fs.readFileSync(path.join(root, helpFile), 'utf8'),
+        '  # vibium v26.8.21\n  # {"ok":true,"result":{"name":"vibium","version":"26.8.21"}}\n');
 
       seed();
       setVersion('2026.8.20-dev.20260820191542', '2026.8.20.dev20260820191542');
@@ -155,6 +160,8 @@ describe('cross-ecosystem version writer', () => {
         // prerelease must not be written into a copy-paste coordinate.
         assert.strictEqual(fs.readFileSync(path.join(root, file), 'utf8'), before);
       }
+      // The nightly binary's help keeps naming the latest release.
+      assert.strictEqual(fs.readFileSync(path.join(root, helpFile), 'utf8'), helpBefore);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

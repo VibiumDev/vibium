@@ -114,6 +114,12 @@ if (!isPrerelease) {
         ),
     );
   }
+  // The sample output in `vibium version --help` names the latest release.
+  update("clicker/cmd/clicker/diagnostics.go", (source) =>
+    source
+      .replace(/(# vibium v)[\d.]+/, `$1${npmVersion}`)
+      .replace(/("name":"vibium","version":")[\d.]+/, `$1${npmVersion}`),
+  );
 }
 
 writeFileSync(resolve(root, "VERSION"), `${npmVersion}\n`);
