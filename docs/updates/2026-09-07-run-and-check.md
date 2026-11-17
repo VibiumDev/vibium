@@ -12,7 +12,8 @@ vibium stop
 ```
 
 Run returns COMPLETED or NOT_COMPLETED with evidence. Check returns PASS,
-FAIL, or INCONCLUSIVE. Keeping these operations separate lets a coding agent
+FAIL, or REVIEW when the evidence can't decide it (`inconclusive` in JSON).
+Keeping these operations separate lets a coding agent
 act on a goal, then request a fresh assessment of its work. Check does not
 inherit the builder's or Run's model conversation.
 
@@ -21,7 +22,8 @@ Use precise claims, read the evidence, and keep deterministic tests for
 behavior you can assert directly. A different model can bring a different
 perspective; it does not guarantee independent errors.
 
-This post introduces the interfaces in the development build.
+Run and Check shipped in Vibium 26.11. This post was updated for that
+release: see [What's new since this post](#whats-new-since-this-post).
 
 | Interface | Accomplish a goal | Assess a claim |
 |-----------|------------------|----------------|
@@ -65,14 +67,23 @@ vibium check "https://var.parts was up during the recorded run" -i sitecheck.zip
 ```
 
 The verdict describes **what was recorded**. It cannot establish whether the
-site works now, and missing evidence can lead to INCONCLUSIVE. The reader
+site works now, and missing evidence can lead to REVIEW. The reader
 currently supports trace format version 8; see the
 [recording and trace tutorial](../tutorials/check-from-a-recording.md) for details.
 
 ## Shared AI settings
 
-Run and Check use one set of defaults. With your OpenAI API key already
-exported:
+Run and Check use one set of defaults. The quickest way to set them is:
+
+```bash
+vibium setup
+```
+
+It asks for a provider, a model and a key, writes them to
+`~/.config/vibium/ai.env`, and checks the result. Vibium loads that file
+for any AI variable that is empty, so there's nothing to source.
+
+To set them by hand instead, with your OpenAI API key already exported:
 
 ```bash
 export VIBIUM_AI_PROVIDER=openai
@@ -83,8 +94,8 @@ vibium ready ai
 ```
 
 Credentials use the provider's native variable, such as `OPENAI_API_KEY`.
-Keep exported assignments in your private configuration file, then source it
-in the shell running Vibium. Vibium does not load the file automatically.
+Providers are `openai`, `anthropic`, `google`, `xai`, `openai-compatible`
+and `local`.
 
 Use per-call provider and model overrides when you want Run and Check to use
 different models. See [model providers](../reference/model-providers.md).
@@ -200,3 +211,48 @@ Install the browser skill using `vibium add-skill browser` and the formal
 Check skill using `vibium add-skill check`. Use `/browser` for browser work,
 including Run, and `/check` for an independent acceptance check. See
 [checking with a coding agent](../tutorials/check-with-a-coding-agent.md).
+
+## What's new since this post
+
+Run and Check kept growing between this post and the 26.11 release.
+
+**Gate CI on the verdict.** `--expect pass` turns the verdict into an exit
+code, so a pipeline doesn't have to parse JSON. ([#773](https://github.com/VibiumDev/vibium/pull/773))
+
+```bash
+vibium check "the cart contains one battery pack" --expect pass
+```
+
+| Verdict | Exit code with `--expect pass` |
+|---------|--------------------------------|
+| PASS | 0 |
+| FAIL | 2 |
+| REVIEW | 3 |
+| Execution error | 1 |
+
+REVIEW fails the gate. A pipeline can retry on 3 and hard-fail on 2.
+`vibium run` takes `--expect completed`, and NOT_COMPLETED exits 2.
+
+**REVIEW.** The third verdict is now shown as REVIEW: it needs a person to
+look. JSON, reports and SDK results still say `inconclusive`. ([#775](https://github.com/VibiumDev/vibium/pull/775))
+
+**Reasons.** A REVIEW or NOT_COMPLETED result can carry a `reason`, such as
+`action_limit`, `insufficient_evidence` or `safety_stop`. ([#774](https://github.com/VibiumDev/vibium/pull/774))
+
+**Point Run and Check at your site.** `--base-url` names the site under test, so one
+claim works against localhost, a preview deploy, or production. The AI
+provider's endpoint moved to `--ai-base-url`. ([#577](https://github.com/VibiumDev/vibium/pull/577), [#578](https://github.com/VibiumDev/vibium/pull/578))
+
+```bash
+vibium check "checkout completes" --base-url http://localhost:3000
+vibium check "checkout completes" --base-url "$PREVIEW_URL"
+```
+
+**Reports from Run.** `vibium run --report run.json` saves the result and
+evidence as JSON, like Check. ([#772](https://github.com/VibiumDev/vibium/pull/772))
+
+**Setup and providers.** `vibium setup` writes your AI settings, and Vibium
+loads them on its own. xAI and Google joined OpenAI, Anthropic, and local
+models. ([#542](https://github.com/VibiumDev/vibium/pull/542), [#549](https://github.com/VibiumDev/vibium/pull/549), [#550](https://github.com/VibiumDev/vibium/pull/550), [#567](https://github.com/VibiumDev/vibium/pull/567))
+
+See the [Check reference](../reference/check.md) for the full details.

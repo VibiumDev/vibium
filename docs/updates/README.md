@@ -1,5 +1,10 @@
 # Updates
 
+- [2026-11-16: Introducing Say and Listen](2026-11-16-say-and-listen.md)
+- [2026-11-16: 26.11 release notes](https://github.com/VibiumDev/vibium/releases/tag/v26.11.16)
+- [2026-09-07: Introducing Run and Check](2026-09-07-run-and-check.md)
+- [2026-08-21: 26.8 release notes](https://github.com/VibiumDev/vibium/releases/tag/v26.8.21)
+- [2026-05-31: 26.5 release notes](https://github.com/VibiumDev/vibium/releases/tag/v26.5.31)
 - [2026-03-09: 26.3](2026-03-09-26.3-release.md)
 - [2026-02-28: 26.2](2026-02-28-26.2-release.md)
 - [2025-12-31: Python Client](2025-12-31-python-client.md)
