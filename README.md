@@ -130,7 +130,7 @@ pip install vibium   # Python
 
 **Java** (Gradle):
 ```groovy
-implementation 'com.vibium:vibium:26.8.21'
+implementation 'com.vibium:vibium:26.11.16'
 ```
 
 **Java** (Maven):
@@ -138,7 +138,7 @@ implementation 'com.vibium:vibium:26.8.21'
 <dependency>
     <groupId>com.vibium</groupId>
     <artifactId>vibium</artifactId>
-    <version>26.8.21</version>
+    <version>26.11.16</version>
 </dependency>
 ```
 

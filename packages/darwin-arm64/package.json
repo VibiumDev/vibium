@@ -1,6 +1,6 @@
 {
   "name": "@vibium/darwin-arm64",
-  "version": "26.8.21",
+  "version": "26.11.16",
   "description": "Vibium binary for macOS arm64",
   "author": "Jason Huggins <hugs@vibium.com>",
   "license": "Apache-2.0",

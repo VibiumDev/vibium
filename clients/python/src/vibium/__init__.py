@@ -34,7 +34,7 @@ from .errors import (
     SpeechError,
 )
 
-__version__ = "26.8.21"
+__version__ = "26.11.16"
 __all__ = [
     "RunResult",
     "CheckResult",
