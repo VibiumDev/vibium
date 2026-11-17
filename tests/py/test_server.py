@@ -321,7 +321,10 @@ FIND_CANVAS_HTML = """<html><head><title>Find canvas</title></head><body style="
     const c = document.getElementById('c');
     c.addEventListener('click', (e) => { const r = c.getBoundingClientRect(); window.__clicks.push({ x: e.clientX - r.left, y: e.clientY - r.top }); });
     const img = new Image();
-    img.onload = () => { c.getContext('2d').drawImage(img, 300, 150); window.__drawn = true; };
+    const draw = () => { c.getContext('2d').drawImage(img, 300, 150); window.__drawn = true; };
+    img.onload = draw;
+    // A canvas loses its drawing when the browser's GPU process restarts (#837).
+    c.addEventListener('contextrestored', draw);
     img.src = '/fixtures/pattern.png';
   </script>
 </body></html>"""

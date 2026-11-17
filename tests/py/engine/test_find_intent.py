@@ -113,6 +113,17 @@ async def test_visual_ref_is_driven_by_coordinates(async_page, test_server, patt
         await el.click()
 
 
+async def test_canvas_fixture_redraws_after_context_loss(async_page, test_server, pattern):
+    await async_page.go(test_server + "/find-canvas")
+    await async_page.wait_for_function("window.__drawn === true")
+    await async_page.evaluate(
+        "(() => { const c = document.getElementById('c');"
+        " c.getContext('2d').clearRect(0, 0, c.width, c.height);"
+        " c.dispatchEvent(new Event('contextrestored')); })()"
+    )
+    await async_page.find(image=pattern, strategy="cv", timeout=5000)
+
+
 def test_sync_find_forms(sync_page, test_server, pattern):
     sync_page.go(test_server + "/find-images")
     assert sync_page.find("Add to Cart").info.tag == "button"
