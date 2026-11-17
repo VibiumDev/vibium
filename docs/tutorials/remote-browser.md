@@ -177,7 +177,7 @@ bro.stop()
 ### Java
 
 ```groovy
-implementation 'com.vibium:vibium:26.8.21'
+implementation 'com.vibium:vibium:26.11.16'
 ```
 
 ```java
@@ -205,11 +205,11 @@ The env-var fallback makes jshell a first-class way to drive a remote
 browser interactively — no build file, no `StartOptions`:
 
 ```bash
-curl -sO https://repo1.maven.org/maven2/com/vibium/vibium/26.8.21/vibium-26.8.21.jar
+curl -sO https://repo1.maven.org/maven2/com/vibium/vibium/26.11.16/vibium-26.11.16.jar
 curl -sO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
 
 VIBIUM_CONNECT_URL=ws://your-server:9515/session \
-  jshell --class-path vibium-26.8.21.jar:gson-2.11.0.jar
+  jshell --class-path vibium-26.11.16.jar:gson-2.11.0.jar
 ```
 
 ```text

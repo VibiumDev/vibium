@@ -68,7 +68,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.vibium:vibium:26.8.21'
+    implementation 'com.vibium:vibium:26.11.16'
 }
 
 application {
@@ -96,7 +96,7 @@ Create a `pom.xml` file:
         <dependency>
             <groupId>com.vibium</groupId>
             <artifactId>vibium</artifactId>
-            <version>26.8.21</version>
+            <version>26.11.16</version>
         </dependency>
     </dependencies>
 </project>
@@ -111,7 +111,7 @@ mkdir my-first-bot
 cd my-first-bot
 
 # Download the vibium JAR and its dependency (Gson)
-curl -LO https://repo1.maven.org/maven2/com/vibium/vibium/26.8.21/vibium-26.8.21.jar
+curl -LO https://repo1.maven.org/maven2/com/vibium/vibium/26.11.16/vibium-26.11.16.jar
 curl -LO https://repo1.maven.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar
 ```
 
@@ -190,8 +190,8 @@ mvn compile exec:java -Dexec.mainClass=Hello
 ### No build tool
 
 ```bash
-javac -cp "vibium-26.8.21.jar:gson-2.11.0.jar" Hello.java
-java -cp ".:vibium-26.8.21.jar:gson-2.11.0.jar" Hello
+javac -cp "vibium-26.11.16.jar:gson-2.11.0.jar" Hello.java
+java -cp ".:vibium-26.11.16.jar:gson-2.11.0.jar" Hello
 ```
 
 You should see:
@@ -288,7 +288,7 @@ If Chrome for Testing fails to auto-download (e.g. behind a corporate proxy), yo
 ### No build tool
 
 ```bash
-java -jar vibium-26.8.21.jar install
+java -jar vibium-26.11.16.jar install
 ```
 
 ### Maven
@@ -321,7 +321,7 @@ Combine with environment variables as needed:
 
 ```bash
 # Install to a custom directory
-VIBIUM_CACHE_DIR=/path/to/dir java -jar vibium-26.8.21.jar install
+VIBIUM_CACHE_DIR=/path/to/dir java -jar vibium-26.11.16.jar install
 VIBIUM_CACHE_DIR=/path/to/dir mvn compile exec:java -Dexec.mainClass=com.vibium.CLI -Dexec.args="install"
 VIBIUM_CACHE_DIR=/path/to/dir gradle vibiumInstall
 
