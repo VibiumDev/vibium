@@ -105,15 +105,16 @@ embeds:
 # Build vibium binary
 build-go: deps embeds
 	cd clicker && go build -trimpath -ldflags="-X main.version=$(VERSION) -X github.com/vibium/clicker/internal/api.Version=$(VERSION)" -o bin/vibium$(EXE) ./cmd/clicker
-	@if [ -d node_modules/@vibium ]; then \
-		platform=$$(node -e "console.log(require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64'))"); \
-		target_dir="node_modules/@vibium/$$platform/bin"; \
-		if [ -d "node_modules/@vibium/$$platform" ]; then \
-			mkdir -p "$$target_dir"; \
-			cp clicker/bin/vibium$(EXE) "$$target_dir/vibium$(EXE).new" && \
-			mv -f "$$target_dir/vibium$(EXE).new" "$$target_dir/vibium$(EXE)"; \
-		fi; \
-	fi
+	@# The npm wrapper runs this build, not a published one, even for a version npm doesn't have yet.
+	@platform=$$(node -p "require('os').platform()+'-'+(require('os').arch()==='x64'?'x64':'arm64')"); \
+	pkg=$$(node -p "const p=require('path');try{p.relative('.',p.dirname(require.resolve('@vibium/$$platform/package.json',{paths:[p.resolve('packages/vibium')]}))).split(p.sep).join('/')}catch(e){''}"); \
+	if [ -z "$$pkg" ]; then \
+		pkg="packages/vibium/node_modules/@vibium/$$platform"; \
+		mkdir -p "$$pkg" && cp "packages/$$platform/package.json" "$$pkg/package.json"; \
+	fi; \
+	mkdir -p "$$pkg/bin" && \
+	cp clicker/bin/vibium$(EXE) "$$pkg/bin/vibium$(EXE).new" && \
+	mv -f "$$pkg/bin/vibium$(EXE).new" "$$pkg/bin/vibium$(EXE)"
 
 # Build JS client
 build-js: deps
