@@ -777,6 +777,7 @@ set-version:
 	@echo "  - package-lock.json (regenerated)"
 	@echo "  - README.md, CONTRIBUTING.md, docs/tutorials/getting-started-java.md,"
 	@echo "    docs/tutorials/remote-browser.md (Maven coordinates)"
+	@echo "  - clicker/cmd/clicker/diagnostics.go (sample output of vibium version)"
 
 # Show available targets
 help:

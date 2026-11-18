@@ -19,10 +19,10 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the version number",
 		Example: `  vibium version
-  # vibium v26.8.21
+  # vibium v26.11.16
 
   vibium version --json
-  # {"ok":true,"result":{"name":"vibium","version":"26.8.21"}}`,
+  # {"ok":true,"result":{"name":"vibium","version":"26.11.16"}}`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if jsonOutput {
 				printJSON(jsonEnvelope{OK: true, Result: map[string]string{
