@@ -146,4 +146,13 @@ describe('find: image', () => {
     await vibe.go(`${baseURL}/example`);
     await assert.rejects(el.click(), /stale: the page navigated/);
   });
+
+  test('the canvas fixture redraws after a context loss', async () => {
+    await vibe.go(`${baseURL}/find-canvas`);
+    await vibe.waitForFunction('window.__drawn === true');
+    await vibe.evaluate(`(() => { const c = document.getElementById('c');
+      c.getContext('2d').clearRect(0, 0, c.width, c.height);
+      c.dispatchEvent(new Event('contextrestored')); })()`);
+    await vibe.find({ image: PATTERN_PNG, strategy: 'cv', timeout: 5000 });
+  });
 });
