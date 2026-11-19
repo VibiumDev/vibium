@@ -138,7 +138,9 @@ jobs:
   #                     timing out the same way, with a renderer killed under
   #                     memory pressure in the second run ("Browsing context
   #                     is gone", runs 39296069220 and 39360774147), so macOS
-  #                     runs suites serially.
+  #                     ran suites serially. That was the 3-core / 7 GB
+  #                     hosted runner; the 5-core / 12 GB self-hosted VMs
+  #                     run 2-way. If those timeouts return, drop to 1.
   #   runner          — the machine the leg runs on. x64 Linux stays on the
   #                     GitHub-hosted image; macOS and arm64 Linux run on our
   #                     self-hosted Mac mini (vibium-mac-mini-dev-01,
@@ -173,7 +175,7 @@ jobs:
             rollup_native: '@rollup/rollup-darwin-arm64'
             python_version: '3.13'
             go_version: stable
-            suite_parallel: 1
+            suite_parallel: 2
           # arm64 Linux risk is binary and arch handling (#675), not browser
           # behavior, so only this job carries the leg. Runs on the mini's
           # Linux VM (4 cores / 6 GB); 2-way suites starved it into the
