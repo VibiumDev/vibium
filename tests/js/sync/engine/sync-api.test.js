@@ -617,6 +617,23 @@ describe.requires('network')('Sync API: Route handler callback', () => {
     assert.strictEqual(data.message, 'real data');
   });
 
+  test('a route handler that throws is reported and the request continues (#835)', () => {
+    const vibe = bro.newPage();
+    vibe.go(`${baseURL}/fetch`);
+    const reported = [];
+    const original = console.error;
+    console.error = (...args) => reported.push(args.join(' '));
+    try {
+      vibe.route('**/api/data', () => { throw new Error('boom'); });
+      vibe.evaluate('doFetch()');
+      const data = JSON.parse(vibe.find({ css: '#result' }).text());
+      assert.strictEqual(data.message, 'real data');
+    } finally {
+      console.error = original;
+    }
+    assert.deepStrictEqual(reported, ['vibium: error in route handler: boom']);
+  });
+
   test('static route actions still work alongside handler routes', () => {
     const vibe = bro.newPage();
     vibe.go(`${baseURL}/fetch`);

@@ -6,7 +6,7 @@ import { BiDiClient, BiDiEvent, ScreenshotResult } from './bidi';
 import { Element, ElementInfo, SelectorOptions, FluentElement, fluent } from './element';
 import { FoundElement, cssOf, handleSelector, infoFrom, locatorParams, resolvedHandle, reusableParams } from './locator';
 import { BrowserContext } from './context';
-import { Route } from './route';
+import { Route, reportRouteHandlerError } from './route';
 import { Request, Response } from './network';
 import { Dialog } from './dialog';
 import { ConsoleMessage } from './console';
@@ -1235,13 +1235,17 @@ export class Page {
       for (const routeEntry of this.routes) {
         if (matched.includes(routeEntry.pattern)) {
           const route = new Route(this.client, requestId, req);
-          // Catch errors from async route handlers (fire-and-forget pattern)
+          // A handler that throws would leave the request pending (#835).
+          const failed = (e: unknown) => {
+            reportRouteHandlerError(e);
+            route.continue().catch(() => {});
+          };
           try {
             const result = routeEntry.handler(route) as unknown;
             if (result && typeof (result as Promise<void>).catch === 'function') {
-              (result as Promise<void>).catch(() => {});
+              (result as Promise<void>).catch(failed);
             }
-          } catch (_) { /* ignore sync errors from handler */ }
+          } catch (e) { failed(e); }
           return;
         }
       }
