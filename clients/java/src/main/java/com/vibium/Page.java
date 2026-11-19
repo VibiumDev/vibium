@@ -1117,7 +1117,11 @@ public class Page {
                 NETWORK_CALLBACKS.execute(() -> {
                     try {
                         entry.handler.accept(route);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        // A handler that throws would leave the request pending (#835).
+                        System.err.println("vibium: error in route handler: " + e.getMessage());
+                        route.doContinue();
+                    }
                 });
                 return;
             }

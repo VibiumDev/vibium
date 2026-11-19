@@ -20,7 +20,7 @@ from .._locator import ImageInput, handle_selector, info_from, locator_params, r
 from .._types import A11yNode, BoundingBox, ElementInfo
 from .element import Element
 from .clock import Clock
-from .route import Route
+from .route import Route, report_handler_error
 from .network import Request, Response
 from .dialog import Dialog
 from .console import ConsoleMessage
@@ -1102,15 +1102,14 @@ class Page:
                     route = Route(self._client, request_id, req)
                     try:
                         result = route_entry["handler"](route)
+                    except Exception as e:
+                        self._route_handler_failed(route, e)
+                    else:
                         if hasattr(result, "__await__"):
-                            import asyncio
-                            asyncio.ensure_future(result)
-                    except Exception:
-                        pass
+                            asyncio.ensure_future(self._await_route_handler(result, route))
                     return
 
             # No matching route — auto-continue
-            import asyncio
             asyncio.ensure_future(
                 self._client.send("network.continueRequest", {"request": request_id})
             )
@@ -1118,6 +1117,17 @@ class Page:
             req = Request(params, self._client)
             for cb in self._request_callbacks:
                 cb(req)
+
+    def _route_handler_failed(self, route: Route, e: Exception) -> None:
+        # A handler that raises would leave the request pending (#835).
+        report_handler_error(e)
+        asyncio.ensure_future(route.continue_())
+
+    async def _await_route_handler(self, awaitable: Any, route: Route) -> None:
+        try:
+            await awaitable
+        except Exception as e:
+            self._route_handler_failed(route, e)
 
     def _handle_response_completed(self, params: Dict[str, Any]) -> None:
         resp = Response(params, self._client)

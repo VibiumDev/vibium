@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,6 +16,11 @@ def _is_race_error(e: Exception) -> bool:
             "Invalid state" in msg or
             "No blocked request" in msg or
             "no such request" in msg)
+
+
+def report_handler_error(e: BaseException) -> None:
+    """Report an error raised by a route handler; the caller then continues the request."""
+    print(f"vibium: error in route handler: {e}", file=sys.stderr)
 
 
 class Route:

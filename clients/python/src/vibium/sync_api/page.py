@@ -479,12 +479,7 @@ class Page:
             async def _sync_callback(async_route: Any) -> None:
                 # A sync handler cannot await, so the body is read before it runs.
                 sync_route = Route(async_route, await async_route.request.post_data())
-                try:
-                    action(sync_route)
-                except Exception as e:
-                    import sys
-                    print(f"vibium: error in route handler: {e}", file=sys.stderr)
-                    return
+                action(sync_route)
                 decision = sync_route._decision
                 opts = {k: v for k, v in decision.items() if k != "action" and v is not None}
                 if decision["action"] == "fulfill":

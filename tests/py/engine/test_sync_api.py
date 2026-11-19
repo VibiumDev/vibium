@@ -543,6 +543,25 @@ def test_route_request_post_data(bro, test_server):
 
 
 @pytest.mark.capability("network")
+def test_route_handler_error_is_reported_and_request_continues(bro, test_server, capsys):
+    vibe = bro.new_page()
+    vibe.go(test_server)
+
+    def handler(route):
+        raise RuntimeError("boom")
+
+    vibe.route("**/json", handler)
+    result = vibe.evaluate(
+        f"Promise.race([fetch('{test_server}/json').then(r => r.json()),"
+        " new Promise(resolve => setTimeout(() => resolve({name: 'still pending'}), 3000))])"
+    )
+    assert result["name"] == "vibium"
+    assert "vibium: error in route handler: boom" in capsys.readouterr().err
+    vibe.unroute("**/json")
+    vibe.close()
+
+
+@pytest.mark.capability("network")
 def test_route_abort(bro, test_server):
     vibe = bro.new_page()
     vibe.go(test_server + "/fetch")

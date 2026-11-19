@@ -11,6 +11,11 @@ function isRaceConditionError(e: unknown): boolean {
     msg.includes('no such request');
 }
 
+/** Report an error thrown by a route handler; the caller then continues the request. */
+export function reportRouteHandlerError(e: unknown): void {
+  console.error(`vibium: error in route handler: ${e instanceof Error ? e.message : String(e)}`);
+}
+
 /** Represents an intercepted network request that can be fulfilled, continued, or aborted. */
 export class Route {
   readonly request: Request;

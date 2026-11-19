@@ -95,6 +95,31 @@ async def test_route_continue(net_browser, test_server):
 
 
 @pytest.mark.capability("network")
+async def test_route_handler_error_is_reported_and_request_continues(net_browser, test_server, capsys):
+    vibe = await net_browser.new_page()
+    await vibe.go(test_server)
+
+    def sync_handler(route):
+        raise RuntimeError("boom sync")
+
+    async def async_handler(route):
+        raise RuntimeError("boom async")
+
+    for handler in (sync_handler, async_handler):
+        await vibe.route("**/json", handler)
+        result = await vibe.evaluate(
+            f"Promise.race([fetch('{test_server}/json').then(r => r.json()),"
+            " new Promise(resolve => setTimeout(() => resolve({name: 'still pending'}), 3000))])"
+        )
+        assert result["name"] == "vibium"
+        await vibe.unroute("**/json")
+    err = capsys.readouterr().err
+    assert "vibium: error in route handler: boom sync" in err
+    assert "vibium: error in route handler: boom async" in err
+    await vibe.close()
+
+
+@pytest.mark.capability("network")
 async def test_unroute(net_browser, test_server):
     vibe = await net_browser.new_page()
     await vibe.go(test_server)

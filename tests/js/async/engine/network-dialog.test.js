@@ -162,6 +162,34 @@ describe.requires('network')('Network Interception: page.route', () => {
     await vibe.close();
   });
 
+  test('a handler that throws is reported and the request continues (#835)', async () => {
+    const vibe = await bro.newPage();
+    await vibe.go(baseURL);
+    const reported = [];
+    const original = console.error;
+    console.error = (...args) => reported.push(args.join(' '));
+    try {
+      for (const handler of [
+        () => { throw new Error('boom sync'); },
+        async () => { throw new Error('boom async'); },
+      ]) {
+        await vibe.route('**/json', handler);
+        const result = await vibe.evaluate(`Promise.race([
+          fetch('${baseURL}/json').then(r => r.json()),
+          new Promise(resolve => setTimeout(() => resolve({ name: 'still pending' }), 3000)),
+        ])`);
+        assert.strictEqual(result.name, 'vibium');
+        await vibe.unroute('**/json');
+      }
+    } finally {
+      console.error = original;
+    }
+    assert.deepStrictEqual(reported, [
+      'vibium: error in route handler: boom sync',
+      'vibium: error in route handler: boom async',
+    ]);
+  });
+
   test('route.continue() lets request through', async () => {
     const vibe = await bro.newPage();
     await vibe.go(baseURL);

@@ -11,6 +11,7 @@ import { KeyboardSync, MouseSync, TouchSync } from './keyboard';
 import { ClockSync } from './clock';
 import { BrowserContextSync } from './context';
 import { RouteSync, RouteRequest } from './route';
+import { reportRouteHandlerError } from '../route';
 import { DialogSync, DialogData } from './dialog';
 import { ElementInfo, SelectorOptions } from '../element';
 import { bridgeLocator } from './locator';
@@ -446,7 +447,12 @@ export class PageSync {
       const handlerId = `route_${this._pageId}_${this._nextHandlerId++}`;
       this._bridge.registerHandler(handlerId, (data: RouteRequest) => {
         const route = new RouteSync(data);
-        action(route);
+        try {
+          action(route);
+        } catch (e) {
+          reportRouteHandlerError(e);
+          return null;
+        }
         return route._decision;
       });
       this._routeHandlerIds.set(pattern, handlerId);
