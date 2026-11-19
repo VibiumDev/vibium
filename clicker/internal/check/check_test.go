@@ -490,6 +490,39 @@ func TestScreenshotPruning(t *testing.T) {
 	}
 }
 
+// Chat Completions rejects a user message between the tool results of one
+// assistant turn, so a batch's screenshots follow all of its results.
+func TestBatchScreenshotsFollowToolResults(t *testing.T) {
+	n := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n == 1 {
+			answer(w, nil, calls("browser_map", 2))
+			return
+		}
+		var body struct {
+			Messages []message `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		var roles []string
+		for i, m := range body.Messages {
+			if len(m.ToolCalls) == 2 {
+				for _, next := range body.Messages[i+1:] {
+					roles = append(roles, next.Role)
+				}
+			}
+		}
+		if got := strings.Join(roles, " "); got != "tool tool user user" {
+			t.Errorf("roles after the batch: %q, want tool tool user user", got)
+		}
+		answer(w, verdict, nil)
+	}))
+	defer server.Close()
+	if _, err := Check(context.Background(), testRequest(server.URL), &fakeTools{image: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // An empty final message gets the corrective turn without echoing the empty
 // content back, which Anthropic would reject as an empty text block (#595).
 func TestEmptyFinalMessageNotEchoedInRepair(t *testing.T) {

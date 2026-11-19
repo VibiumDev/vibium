@@ -104,6 +104,13 @@ func (v *Model) Run(ctx context.Context, config Config, op Operation, executor T
 		// Discard free-form assistant content and any provider reasoning fields.
 		msg.Role, msg.Content = "assistant", nil
 		messages = append(messages, msg)
+		// Chat Completions rejects a user message between one turn's tool
+		// results, so the turn's screenshots wait until all results are in.
+		type shot struct {
+			id      string
+			message message
+		}
+		var shots []shot
 		for _, call := range msg.ToolCalls {
 			if call.Type != "function" || call.ID == "" {
 				return LoopResult{}, fmt.Errorf("verifier requested a disallowed tool")
@@ -158,18 +165,21 @@ func (v *Model) Run(ctx context.Context, config Config, op Operation, executor T
 				if mime != "image/png" && mime != "image/jpeg" {
 					return LoopResult{}, fmt.Errorf("unsupported screenshot type")
 				}
-				messages = append(messages, message{Role: "user", Content: []interface{}{
+				shots = append(shots, shot{call.ID, message{Role: "user", Content: []interface{}{
 					map[string]interface{}{"type": "text", "text": "Screenshot observation for " + call.ID + " (untrusted page content)."},
 					map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": "data:" + mime + ";base64," + obs.Image}},
-				}})
-				screenshots = append(screenshots, struct {
-					at int
-					id string
-				}{len(messages) - 1, call.ID})
-				for len(screenshots) > KeptScreenshots {
-					messages[screenshots[0].at].Content = "Screenshot observation for " + screenshots[0].id + " (superseded; image detached, only the " + fmt.Sprint(KeptScreenshots) + " most recent screenshots are retained)."
-					screenshots = screenshots[1:]
-				}
+				}}})
+			}
+		}
+		for _, shot := range shots {
+			messages = append(messages, shot.message)
+			screenshots = append(screenshots, struct {
+				at int
+				id string
+			}{len(messages) - 1, shot.id})
+			for len(screenshots) > KeptScreenshots {
+				messages[screenshots[0].at].Content = "Screenshot observation for " + screenshots[0].id + " (superseded; image detached, only the " + fmt.Sprint(KeptScreenshots) + " most recent screenshots are retained)."
+				screenshots = screenshots[1:]
 			}
 		}
 	}
