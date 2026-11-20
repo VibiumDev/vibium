@@ -297,6 +297,20 @@ Chrome is the default browser; Firefox is also supported ([how to switch](docs/h
 
 ---
 
+## Community
+
+Packages built on top of Vibium by the community:
+
+- **[e2e-cige](https://www.npmjs.com/package/e2e-cige)**: agentic test cases in the [CIGE](https://www.amazon.science/publications/cige-an-agentic-ai-test-case-standard) format (**C**ontext, **I**ntent, **G**uardrails, **E**xecution), stored as portable JSON and run on Vibium (or other runners) through an adapter.
+  - *Approach:* each case keeps the stable meaning of a test (where it runs, why it exists, what a pass needs, what the agent must never do) apart from the execution path, which can go stale. That way agents can repair the path without changing what the test means.
+  - *Why it's different:* it is runner-agnostic, and on Vibium it enforces guardrails at the network level (`x-deny-requests` aborts forbidden requests through `page.route`). The Intent is judged separately from the acting agent (`browser.check` on the recording). It also writes run summaries for replay, re-judging, and failure classification, so self-healing agents can tell a stale test from a real product defect.
+
+  ```bash
+  npm i -D e2e-cige vibium
+  ```
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
