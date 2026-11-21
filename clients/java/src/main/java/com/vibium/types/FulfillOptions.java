@@ -19,7 +19,9 @@ public class FulfillOptions {
 
     public Map<String, Object> toParams() {
         Map<String, Object> params = new LinkedHashMap<>();
-        if (status != null) params.put("status", status);
+        // The engine reads the status under "statusCode", as the JS and
+        // Python clients send it.
+        if (status != null) params.put("statusCode", status);
         if (headers != null) params.put("headers", headers);
         if (contentType != null) params.put("contentType", contentType);
         if (body != null) params.put("body", body);
