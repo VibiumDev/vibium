@@ -123,3 +123,30 @@ func TestCredentialPolicyAllowsWriteNotRead(t *testing.T) {
 		t.Fatalf("reading a password field must refuse with Run guidance, got %q", obs.Text)
 	}
 }
+
+// An empty required string is a value, not an omission: browser_fill with an
+// empty text must reach dispatch to clear the field, not abort the check (#839).
+func TestExecuteEmptyFillClearsInsteadOfAborting(t *testing.T) {
+	d := &fakeDispatcher{}
+	e := NewModelToolExecutor(d, ToolPolicy{}, true)
+	if _, err := e.Execute(context.Background(), "browser_fill", map[string]interface{}{"selector": "#name", "text": ""}); err != nil {
+		t.Fatalf("empty fill must not error, got %v", err)
+	}
+	if d.dispatched == nil {
+		t.Fatal("empty fill must dispatch to clear the field")
+	}
+	if got, ok := d.dispatched["text"].(string); !ok || got != "" {
+		t.Fatalf("dispatched text = %v, want empty string", d.dispatched["text"])
+	}
+}
+
+// A genuinely absent required argument still aborts, so the presence guard
+// is not lost (#839).
+func TestExecuteMissingRequiredArgStillErrors(t *testing.T) {
+	d := &fakeDispatcher{}
+	e := NewModelToolExecutor(d, ToolPolicy{}, true)
+	_, err := e.Execute(context.Background(), "browser_fill", map[string]interface{}{"selector": "#name"})
+	if err == nil || !strings.Contains(err.Error(), "missing verifier argument") {
+		t.Fatalf("absent text must still report missing, got %v", err)
+	}
+}
