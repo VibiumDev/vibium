@@ -148,7 +148,10 @@ func (v *Model) Run(ctx context.Context, config Config, op Operation, executor T
 			messages = append(messages, message{Role: "tool", ToolCallID: call.ID, Content: Clip(obs.Text)})
 			if obs.Image != "" {
 				if len(obs.Image) > MaxImage {
-					return LoopResult{}, fmt.Errorf("verifier screenshot exceeds payload limit")
+					// Recoverable: keep the text observation and tell the model,
+					// rather than aborting the whole check on a big screenshot (#852).
+					messages[len(messages)-1].Content = Clip(obs.Text + "\n(Screenshot omitted: it exceeds the payload limit; rely on other evidence.)")
+					continue
 				}
 				// Chat Completions accepts images in user messages, not tool content.
 				mime := obs.MIME

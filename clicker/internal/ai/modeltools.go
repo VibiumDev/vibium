@@ -133,7 +133,9 @@ func (e *ModelToolExecutor) Execute(ctx context.Context, name string, args map[s
 	for key, val := range args {
 		prop, ok := props[key].(map[string]interface{})
 		if !ok {
-			return Observation{}, fmt.Errorf("disallowed verifier argument %q", key)
+			// Model-correctable: hand it back so the model drops the unknown
+			// key and retries, rather than aborting the whole check (#852).
+			return Observation{}, &ActionError{Err: fmt.Errorf("unknown argument %q; omit it and retry", key)}
 		}
 		valid := false
 		switch prop["type"] {
@@ -146,7 +148,7 @@ func (e *ModelToolExecutor) Execute(ctx context.Context, name string, args map[s
 			_, valid = val.(bool)
 		}
 		if !valid {
-			return Observation{}, fmt.Errorf("invalid verifier argument %q", key)
+			return Observation{}, &ActionError{Err: fmt.Errorf("invalid value for %q; retry with a valid value", key)}
 		}
 		if enum, ok := prop["enum"].([]string); ok {
 			found := false
@@ -156,7 +158,7 @@ func (e *ModelToolExecutor) Execute(ctx context.Context, name string, args map[s
 				}
 			}
 			if !found {
-				return Observation{}, fmt.Errorf("invalid verifier argument %q", key)
+				return Observation{}, &ActionError{Err: fmt.Errorf("invalid value for %q; retry with an allowed value", key)}
 			}
 		}
 		clean[key] = val
@@ -171,7 +173,7 @@ func (e *ModelToolExecutor) Execute(ctx context.Context, name string, args map[s
 	if name == "browser_navigate" {
 		u, err := url.Parse(clean["url"].(string))
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return Observation{}, fmt.Errorf("verifier navigation requires an HTTP(S) URL without credentials")
+			return Observation{}, &ActionError{Err: fmt.Errorf("navigation requires an absolute HTTP(S) URL without credentials; retry with one")}
 		}
 	}
 	if name == "browser_scroll" {
