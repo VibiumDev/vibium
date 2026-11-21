@@ -163,7 +163,9 @@ func (e *ModelToolExecutor) Execute(ctx context.Context, name string, args map[s
 	}
 	if required, ok := schema["required"].([]string); ok {
 		for _, key := range required {
-			if val, ok := clean[key]; !ok || val == "" {
+			// Present counts, even if empty: browser_fill with "" clears the
+			// field, and the type check above already rejects a non-string (#839).
+			if _, ok := clean[key]; !ok {
 				return Observation{}, fmt.Errorf("missing verifier argument %q", key)
 			}
 		}
