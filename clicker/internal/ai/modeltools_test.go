@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -121,5 +122,33 @@ func TestCredentialPolicyAllowsWriteNotRead(t *testing.T) {
 	}
 	if d.dispatched != nil || !strings.Contains(obs.Text, "not_completed") {
 		t.Fatalf("reading a password field must refuse with Run guidance, got %q", obs.Text)
+	}
+}
+
+// Model-correctable argument-validation failures come back as *ActionError so
+// loop.go hands them to the model instead of aborting the check (#852).
+func TestExecuteValidationErrorsAreRecoverable(t *testing.T) {
+	cases := []struct {
+		name string
+		tool string
+		args map[string]interface{}
+	}{
+		{"number out of range", "browser_click", map[string]interface{}{"selector": "#a", "timeout": float64(60000)}},
+		{"unknown argument", "browser_click", map[string]interface{}{"selector": "#a", "bogus": true}},
+		{"relative navigate url", "browser_navigate", map[string]interface{}{"url": "/login"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := &fakeDispatcher{}
+			e := NewModelToolExecutor(d, ToolPolicy{}, true)
+			_, err := e.Execute(context.Background(), c.tool, c.args)
+			var action *ActionError
+			if !errors.As(err, &action) {
+				t.Fatalf("want *ActionError so the model can retry, got %v", err)
+			}
+			if d.dispatched != nil {
+				t.Fatal("an invalid call must not reach dispatch")
+			}
+		})
 	}
 }
