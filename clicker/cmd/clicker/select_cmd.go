@@ -34,5 +34,7 @@ func newSelectCmd() *cobra.Command {
 		},
 	}
 	addTimeoutFlag(cmd, &timeout)
-	return cmd
+	// A value like select "#x" "-1" must not be parsed as a shorthand flag,
+	// the same reason fill and type use lateParse (#179).
+	return lateParse(cmd)
 }
