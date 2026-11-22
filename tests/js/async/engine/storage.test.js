@@ -172,6 +172,35 @@ describe('Storage: context.setStorage()', () => {
 
     }
   });
+
+  test('setStorage() writes to the stored origin after the page navigated away', async () => {
+    // Regression for #861: restore wrote to whatever document was open, so
+    // seeding state before visiting the app lost it on about:blank.
+    try {
+      const ctx = await bro.newContext();
+      const vibe = await ctx.newPage();
+      await vibe.go(baseURL);
+      await vibe.evaluate('localStorage.setItem("origin_key", "origin_value")');
+
+      const state = await ctx.storage();
+      await ctx.clearStorage();
+
+      // Move off the origin, as a real caller does before visiting the app.
+      await vibe.go('about:blank');
+
+      await ctx.setStorage({ cookies: [], origins: state.origins });
+
+      // Visit the app and confirm the value was seeded on its own origin.
+      await vibe.go(baseURL);
+      const lsVal = await vibe.evaluate('localStorage.getItem("origin_key")');
+      assert.strictEqual(lsVal, 'origin_value',
+        'setStorage must seed the stored origin, not the page that was open');
+
+      await ctx.close();
+    } finally {
+
+    }
+  });
 });
 
 // --- context.clearStorage() ---
