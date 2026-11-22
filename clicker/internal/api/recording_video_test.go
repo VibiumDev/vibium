@@ -182,6 +182,40 @@ func TestRecordingZipRecordsVideoErrorWithoutFile(t *testing.T) {
 	}
 }
 
+// A video that finished cleanly but whose engine file is empty must surface
+// as a video error in the summary, not a successful video that is absent
+// from the zip (#862).
+func TestSummaryReportsEmptyVideoAfterPackaging(t *testing.T) {
+	engineFile := t.TempDir() + "/screencast.webm"
+	if err := writeTestFile(engineFile, []byte{}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := NewRecorder()
+	rec.Start(RecordingStartOptions{Screenshots: true}, nil)
+	rec.SetVideoTrack(&VideoTrack{
+		Context:    "ctx-e",
+		ID:         "sc-e",
+		EnginePath: engineFile,
+		StartedAt:  time.Now().UnixMilli(),
+		Width:      1280,
+		Height:     720,
+	})
+	rec.FinishVideo(engineFile, "")
+
+	if _, err := rec.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	videos := rec.Summary().Videos
+	if len(videos) != 1 {
+		t.Fatalf("want one video summary, got %d", len(videos))
+	}
+	if !strings.Contains(videos[0].Error, "empty") {
+		t.Fatalf("summary must report the empty video, got Error=%q", videos[0].Error)
+	}
+}
+
 func TestChunkZipCarriesVideoRangeButNoFile(t *testing.T) {
 	engineFile := t.TempDir() + "/screencast.webm"
 	if err := writeTestFile(engineFile, []byte{1, 2, 3}); err != nil {
