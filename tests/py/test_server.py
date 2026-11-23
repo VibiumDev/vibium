@@ -224,6 +224,29 @@ NESTED_SCOPE_HTML = """<html><head><title>Nested scope</title></head><body>
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
 </body></html>"""
 
+# Repeated rows for the has_text, has and nth find filters.
+FILTER_LIST_HTML = """<html><head><title>Filter list</title></head><body>
+  <ul id="list">
+    <li class="row"><span>Apples</span></li>
+    <li class="row"><span>Bananas</span></li>
+    <li class="row"><span>Cherries</span><em>sale</em></li>
+    <li class="row"><span>Dates</span></li>
+  </ul>
+  <div id="log"></div>
+  <script>
+    document.getElementById('list').addEventListener('click', (e) => {
+      const row = e.target.closest('.row');
+      if (row) document.getElementById('log').textContent = row.querySelector('span').textContent;
+    });
+    function appendRow() {
+      const li = document.createElement('li');
+      li.className = 'row';
+      li.innerHTML = '<span>Elderberries</span>';
+      document.getElementById('list').append(li);
+    }
+  </script>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -248,6 +271,7 @@ HTML_ROUTES = {
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
     "/nested-scope": NESTED_SCOPE_HTML,
+    "/filter-list": FILTER_LIST_HTML,
     "/find-images": None,
     "/find-canvas": None,
 }

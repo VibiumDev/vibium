@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
 	"strings"
 	"time"
 
@@ -49,6 +50,8 @@ type Locator struct {
 	Scope       string
 	HasText     string
 	Has         string
+	Nth         int // 0-based pick among the matches; negative counts from the end
+	HasNth      bool
 	Strategy    Strategy
 	Timeout     time.Duration
 	HasTimeout  bool
@@ -93,10 +96,14 @@ func (l Locator) Describe() string {
 	for _, p := range []struct{ k, v string }{
 		{"css", l.Selector}, {"tag", l.Tag}, {"name", l.Name}, {"role", l.Role}, {"text", l.Text}, {"label", l.Label},
 		{"placeholder", l.Placeholder}, {"alt", l.Alt}, {"title", l.Title}, {"testid", l.Testid}, {"xpath", l.Xpath},
+		{"hasText", l.HasText}, {"has", l.Has},
 	} {
 		if p.v != "" {
 			parts = append(parts, p.k+"="+p.v)
 		}
+	}
+	if l.HasNth {
+		parts = append(parts, fmt.Sprintf("nth=%d", l.Nth))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -139,6 +146,13 @@ func ParseLocator(params map[string]interface{}) (Locator, error) {
 	}
 	if n, ok := params["limit"].(float64); ok && n > 0 {
 		l.Limit = int(n)
+	}
+	if v, ok := params["nth"]; ok && v != nil {
+		n, isNumber := v.(float64)
+		if !isNumber || n != math.Trunc(n) {
+			return l, fmt.Errorf("nth must be a whole number, got %v", v)
+		}
+		l.Nth, l.HasNth = int(n), true
 	}
 	if d, ok := params["details"].(bool); ok {
 		l.Details = d
@@ -194,6 +208,9 @@ func (l Locator) validate() error {
 		return fmt.Errorf("description is a standalone locator; it does not combine with %s", l.Describe())
 	case !hasImage && !hasDesc && !l.structured():
 		return fmt.Errorf("find needs a description, an image, or a locator (css, tag, name, role, text, label, placeholder, alt, title, testid, xpath)")
+	}
+	if (hasImage || hasDesc) && (l.HasText != "" || l.Has != "" || l.HasNth) {
+		return fmt.Errorf("hasText, has and nth filter css and structured locators; they do not combine with a description or an image")
 	}
 	switch l.Strategy {
 	case StrategyCV:

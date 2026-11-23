@@ -65,6 +65,18 @@ public class TestServer {
         + "</div>"
         + "</body></html>";
 
+    private static final String FILTER_LIST_HTML = "<html><head><title>Filter list</title></head><body>"
+        + "<ul id=\"list\">"
+        + "<li class=\"row\"><span>Apples</span></li>"
+        + "<li class=\"row\"><span>Bananas</span></li>"
+        + "<li class=\"row\"><span>Cherries</span><em>sale</em></li>"
+        + "<li class=\"row\"><span>Dates</span></li>"
+        + "</ul><div id=\"log\"></div>"
+        + "<script>document.getElementById('list').addEventListener('click', (e) => {"
+        + "const row = e.target.closest('.row');"
+        + "if (row) document.getElementById('log').textContent = row.querySelector('span').textContent; });</script>"
+        + "</body></html>";
+
     private static final String EVAL_HTML = "<html><head><title>Eval</title></head><body>"
         + "<div id=\"result\"></div>"
         + "<script>window.testVal = 42;</script>"
@@ -124,6 +136,7 @@ public class TestServer {
         HTML_ROUTES.put("/inputs", INPUTS_HTML);
         HTML_ROUTES.put("/form", FORM_HTML);
         HTML_ROUTES.put("/links", LINKS_HTML);
+        HTML_ROUTES.put("/filter-list", FILTER_LIST_HTML);
         HTML_ROUTES.put("/eval", EVAL_HTML);
         HTML_ROUTES.put("/dialog", DIALOG_HTML);
         HTML_ROUTES.put("/dynamic-loading", DYNAMIC_LOADING_HTML);

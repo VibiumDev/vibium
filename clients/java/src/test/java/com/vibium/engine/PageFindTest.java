@@ -57,6 +57,22 @@ class PageFindTest {
     }
 
     @Test
+    void testFindFilters() {
+        page.go(server.baseUrl() + "/filter-list");
+        assertTrue(page.find(new SelectorOptions().css(".row").nth(2)).info().text().contains("Cherries"));
+        assertTrue(page.find(new SelectorOptions().css(".row").nth(-1)).info().text().contains("Dates"));
+        assertTrue(page.find(new SelectorOptions().css(".row").has("em")).info().text().contains("Cherries"));
+
+        page.find(new SelectorOptions().css(".row").hasText("Banan")).click();
+        assertEquals("Bananas", page.evaluate("document.getElementById('log').textContent"));
+
+        List<Element> rows = page.findAll(new SelectorOptions().css(".row").hasText("es"));
+        assertEquals(3, rows.size());
+        rows.get(1).click();
+        assertEquals("Cherries", page.evaluate("document.getElementById('log').textContent"));
+    }
+
+    @Test
     void testWaitFor() {
         page.go(server.baseUrl() + "/dynamic-loading");
         Element loaded = page.waitFor("#loaded");

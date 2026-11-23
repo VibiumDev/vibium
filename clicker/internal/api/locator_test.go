@@ -40,6 +40,8 @@ func TestParseLocatorForms(t *testing.T) {
 		{"role and text compose", map[string]interface{}{"role": "button", "text": "Add"}, "structured", "role=button, text=Add"},
 		{"role and name compose", map[string]interface{}{"role": "link", "name": "More"}, "structured", "name=More, role=link"},
 		{"css scopes a semantic locator", map[string]interface{}{"selector": "nav", "role": "link"}, "structured", "css=nav, role=link"},
+		{"filters and nth", map[string]interface{}{"css": "li", "hasText": "Bob", "has": "a", "nth": 2.0}, "structured", "css=li, hasText=Bob, has=a, nth=2"},
+		{"nth from the end", map[string]interface{}{"role": "row", "nth": -1.0}, "structured", "role=row, nth=-1"},
 		{"image", map[string]interface{}{"image": pngBase64(t, 16, 16)}, "image", "image"},
 		{"image data url", map[string]interface{}{"image": "data:image/png;base64," + pngBase64(t, 16, 16)}, "image", "image"},
 	}
@@ -105,6 +107,11 @@ func TestParseLocatorRejects(t *testing.T) {
 		{"bad image", map[string]interface{}{"image": "bm90IGFuIGltYWdl"}, "PNG or JPEG"},
 		{"image not a string", map[string]interface{}{"image": 7.0}, "base64"},
 		{"two css spellings", map[string]interface{}{"css": "h1", "selector": "h2"}, "give one"},
+		{"fractional nth", map[string]interface{}{"css": "li", "nth": 1.5}, "nth must be a whole number"},
+		{"nth not a number", map[string]interface{}{"css": "li", "nth": "2"}, "nth must be a whole number"},
+		{"nth on a description", map[string]interface{}{"description": "x", "nth": 1.0}, "do not combine with a description"},
+		{"hasText on a description", map[string]interface{}{"description": "x", "hasText": "y"}, "do not combine with a description"},
+		{"has on an image", map[string]interface{}{"image": img, "has": "a"}, "do not combine with a description"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -131,5 +138,15 @@ func TestLocatorStructuredSemantics(t *testing.T) {
 	loc, _ = ParseLocator(map[string]interface{}{"tag": "h1"})
 	if !loc.Semantic() {
 		t.Error("tag needs the semantic matcher")
+	}
+}
+
+func TestFindAllRejectsNth(t *testing.T) {
+	loc, err := ParseLocator(map[string]interface{}{"css": "li", "nth": 0.0})
+	if err != nil || !loc.HasNth || loc.Nth != 0 {
+		t.Fatalf("nth 0 must be kept: %v %+v", err, loc)
+	}
+	if _, err := FindElements(nil, "", loc, true); err == nil || !strings.Contains(err.Error(), "nth picks one element") {
+		t.Errorf("got %v, want the nth error", err)
 	}
 }

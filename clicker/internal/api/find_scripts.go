@@ -60,18 +60,19 @@ func describeElJS() string {
 // locateScript finds elements by css or structured locators and returns their
 // full records, so one query can both answer a client and mint refs.
 // Args: scope, selector, tag, name, role, text, label, placeholder, alt,
-// title, testid, xpath, hasText, has, all, limit.
+// title, testid, xpath, hasText, has, all, limit, nth.
 func locateScript() string {
-	return `(scope, selector, tag, name, role, text, label, placeholder, alt, title, testid, xpath, hasText, has, all, limit) => {
+	return `(scope, selector, tag, name, role, text, label, placeholder, alt, title, testid, xpath, hasText, has, all, limit, nth) => {
 		` + PierceQueryJS() + `
 		const root = scope ? pierceQuery(document, scope) : document;
 		if (!root) return '[]';
 		` + semanticMatchesHelper() + `
 		` + describeElJS() + `
 		const semantic = !!(tag || name || role || text || label || placeholder || alt || title || testid || xpath);
+		const picked = nth !== null && nth !== undefined;
 		let found;
 		if (!semantic) {
-			found = all ? Array.from(pierceQueryAll(root, selector)) : [pierceQuery(root, selector)].filter(Boolean);
+			found = all || hasText || has || picked ? Array.from(pierceQueryAll(root, selector)) : [pierceQuery(root, selector)].filter(Boolean);
 		} else {
 			// <head> holds a <title> whose text can shadow the heading a
 			// reader means; nothing there can be interacted with.
@@ -79,10 +80,11 @@ func locateScript() string {
 				.filter((el) => !el.closest('head'));
 			if (tag) found = found.filter((el) => el.tagName.toLowerCase() === tag);
 			if (name) found = found.filter((el) => getName(el).includes(name));
-			if (!all) found = [pickBest(found, text)].filter(Boolean);
 		}
 		if (hasText) found = found.filter((el) => (el.textContent || '').includes(hasText));
 		if (has) found = found.filter((el) => el.querySelector(has) !== null);
+		if (picked) found = [found[nth < 0 ? found.length + nth : nth]].filter(Boolean);
+		else if (!all) found = [semantic ? pickBest(found, text) : found[0]].filter(Boolean);
 		if (found.length === 0) return '[]';
 		if (!all) {
 			const el = found[0];

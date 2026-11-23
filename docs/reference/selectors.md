@@ -143,6 +143,46 @@ Locators combine — `{ role: 'button', text: 'Save' }` requires both. When seve
 
 ---
 
+## Filters
+
+`hasText`, `has` and `nth` narrow the matches of a CSS or semantic locator. They do not combine with a description or an image.
+
+| Filter | Keeps |
+|---|---|
+| `hasText` | Matches whose text contains the string |
+| `has` | Matches with a descendant that matches the CSS selector |
+| `nth` | The match at a 0-based position. Negative counts from the end, so `-1` is the last |
+
+`hasText` and `has` apply first, then `nth` picks from what is left. `nth` works with `find` only. `findAll` returns every match, so index the list instead.
+
+```bash
+vibium find css "li" --has-text "Bob"
+vibium find css "tr" --has "button.delete" --all
+vibium find css "li" --nth -1
+```
+
+```js
+await vibe.find({ css: 'li', hasText: 'Bob' });
+await vibe.findAll({ css: 'tr', has: 'button.delete' });
+await vibe.find({ css: 'li', nth: -1 });
+```
+
+```python
+vibe.find(css="li", has_text="Bob")
+vibe.find_all(css="tr", has="button.delete")
+vibe.find(css="li", nth=-1)
+```
+
+```java
+vibe.find(new SelectorOptions().css("li").hasText("Bob"));
+vibe.findAll(new SelectorOptions().css("tr").has("button.delete"));
+vibe.find(new SelectorOptions().css("li").nth(-1));
+```
+
+A filtered element keeps the place in the page where it was found. Later calls such as `click()` act on that place and do not run the filter again. Find it again after the list changes.
+
+---
+
 ## Scope
 
 `scope` (clients) restricts a search to a subtree. It accepts pierce combinators too. On the CLI, `map --selector` scopes the map. CLI `find` has no scope option.

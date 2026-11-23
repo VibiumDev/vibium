@@ -913,3 +913,14 @@ def test_full_checkpoint(bro, test_server):
 
     data = vibe.screenshot()
     assert data[:4] == b"\x89PNG"
+
+
+def test_find_filters(vibe, test_server):
+    """Sync find and find_all pass has_text, has and nth through (#709)."""
+    vibe.go(test_server + "/filter-list")
+    assert "Dates" in vibe.find(css=".row", nth=-1).info.text
+    assert "Cherries" in vibe.find(css=".row", has="em").info.text
+    assert len(vibe.find_all(css=".row", has_text="es")) == 3
+    parent = vibe.find(css="#list")
+    assert "Bananas" in parent.find(css=".row", has_text="Banan").info.text
+    assert len(parent.find_all(css=".row", has="em")) == 1

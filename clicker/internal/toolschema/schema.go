@@ -70,6 +70,8 @@ func findSchema(all bool) map[string]interface{} {
 		"xpath":       str("Find element by XPath expression"),
 		"alt":         str("Find element by alt attribute"),
 		"title":       str("Find element by title attribute"),
+		"hasText":     str("Keep only matches whose text contains this. Filters css and semantic locators"),
+		"has":         str("Keep only matches that contain a descendant matching this CSS selector. Filters css and semantic locators"),
 		"strategy": map[string]interface{}{
 			"type":        "string",
 			"enum":        []string{"auto", "cv", "vlm", "tree"},
@@ -94,6 +96,11 @@ func findSchema(all bool) map[string]interface{} {
 			"type":        "number",
 			"description": "Maximum number of elements to return (default: 10)",
 			"default":     10,
+		}
+	} else {
+		props["nth"] = map[string]interface{}{
+			"type":        "integer",
+			"description": "Pick the match at this 0-based position instead of the first; negative counts from the end (-1 is the last). Applies after hasText and has",
 		}
 	}
 	return map[string]interface{}{

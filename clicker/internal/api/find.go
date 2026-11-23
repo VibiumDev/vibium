@@ -93,6 +93,9 @@ func (e *AmbiguousError) Error() string {
 // match and reports a miss as NotFoundError; all=true returns every match and
 // reports a miss as an empty list.
 func FindElements(s Session, context string, loc Locator, all bool) (FindResult, error) {
+	if all && loc.HasNth {
+		return FindResult{}, fmt.Errorf("nth picks one element; it does not combine with finding all matches")
+	}
 	start := time.Now()
 	var res FindResult
 	var err error
@@ -110,12 +113,17 @@ func FindElements(s Session, context string, loc Locator, all bool) (FindResult,
 
 func locateArgs(loc Locator, all bool) []map[string]interface{} {
 	str := func(v string) map[string]interface{} { return map[string]interface{}{"type": "string", "value": v} }
+	nth := map[string]interface{}{"type": "null"}
+	if loc.HasNth {
+		nth = map[string]interface{}{"type": "number", "value": loc.Nth}
+	}
 	return []map[string]interface{}{
 		str(loc.Scope), str(loc.Selector), str(loc.Tag), str(loc.Name), str(loc.Role), str(loc.Text), str(loc.Label),
 		str(loc.Placeholder), str(loc.Alt), str(loc.Title), str(loc.Testid), str(loc.Xpath),
 		str(loc.HasText), str(loc.Has),
 		{"type": "boolean", "value": all},
 		{"type": "number", "value": loc.Limit},
+		nth,
 	}
 }
 

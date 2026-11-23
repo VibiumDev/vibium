@@ -238,6 +238,9 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
+        has: Optional[str] = None,
+        nth: Optional[int] = None,
         strategy: Optional[str] = None,
         details: Optional[bool] = None,
         provider: Optional[str] = None,
@@ -249,7 +252,7 @@ class Page:
         """Find an element; see the async page.find for the forms."""
         async_el = self._loop.run(self._async.find(
             selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
-            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near, has_text=has_text, has=has, nth=nth,
             strategy=strategy, details=details, provider=provider, model=model,
             ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
@@ -274,6 +277,8 @@ class Page:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
+        has: Optional[str] = None,
         strategy: Optional[str] = None,
         details: Optional[bool] = None,
         provider: Optional[str] = None,
@@ -285,7 +290,7 @@ class Page:
         """Find all matching elements; see the async page.find_all."""
         async_els = self._loop.run(self._async.find_all(
             selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
-            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near, has_text=has_text, has=has,
             strategy=strategy, details=details, provider=provider, model=model,
             ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout,
         ))
