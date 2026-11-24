@@ -65,6 +65,14 @@ public class TestServer {
         + "</div>"
         + "</body></html>";
 
+    private static final String NEAR_HTML = "<html><head><title>Near</title></head><body>"
+        + "<nav><button>Delete</button></nav>"
+        + "<section class=\"account\"><p>Delete your account here.</p><button>Delete</button></section>"
+        + "<div id=\"log\"></div>"
+        + "<script>document.addEventListener('click', (e) => { const area = e.target.closest('nav, section');"
+        + " if (area) document.getElementById('log').textContent = area.tagName; });</script>"
+        + "</body></html>";
+
     private static final String EVAL_HTML = "<html><head><title>Eval</title></head><body>"
         + "<div id=\"result\"></div>"
         + "<script>window.testVal = 42;</script>"
@@ -124,6 +132,7 @@ public class TestServer {
         HTML_ROUTES.put("/inputs", INPUTS_HTML);
         HTML_ROUTES.put("/form", FORM_HTML);
         HTML_ROUTES.put("/links", LINKS_HTML);
+        HTML_ROUTES.put("/near", NEAR_HTML);
         HTML_ROUTES.put("/eval", EVAL_HTML);
         HTML_ROUTES.put("/dialog", DIALOG_HTML);
         HTML_ROUTES.put("/dynamic-loading", DYNAMIC_LOADING_HTML);

@@ -116,6 +116,7 @@ func locateArgs(loc Locator, all bool) []map[string]interface{} {
 		str(loc.HasText), str(loc.Has),
 		{"type": "boolean", "value": all},
 		{"type": "number", "value": loc.Limit},
+		str(loc.Near),
 	}
 }
 

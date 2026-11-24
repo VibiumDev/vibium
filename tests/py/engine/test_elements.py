@@ -89,3 +89,14 @@ async def test_scoped_child_reresolves_inside_parent(async_page, test_server):
     await child.click()
     out = await async_page.evaluate("document.getElementById('out').textContent")
     assert out == "B"
+
+
+async def test_near_picks_the_closest_match(async_page, test_server):
+    """near must constrain the match, and the element must act on it (#853)."""
+    await async_page.go(test_server + "/near")
+    button = await async_page.find(role="button", text="Delete", near=".account")
+    await button.click()
+    assert await async_page.evaluate("document.getElementById('log').textContent") == "SECTION"
+    buttons = await async_page.find_all(css="button", near=".account")
+    await buttons[1].click()
+    assert await async_page.evaluate("document.getElementById('log').textContent") == "NAV"

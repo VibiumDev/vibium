@@ -49,6 +49,7 @@ type Locator struct {
 	Scope       string
 	HasText     string
 	Has         string
+	Near        string // CSS selector; matches are ranked by distance to its element
 	Strategy    Strategy
 	Timeout     time.Duration
 	HasTimeout  bool
@@ -93,6 +94,7 @@ func (l Locator) Describe() string {
 	for _, p := range []struct{ k, v string }{
 		{"css", l.Selector}, {"tag", l.Tag}, {"name", l.Name}, {"role", l.Role}, {"text", l.Text}, {"label", l.Label},
 		{"placeholder", l.Placeholder}, {"alt", l.Alt}, {"title", l.Title}, {"testid", l.Testid}, {"xpath", l.Xpath},
+		{"near", l.Near},
 	} {
 		if p.v != "" {
 			parts = append(parts, p.k+"="+p.v)
@@ -125,6 +127,7 @@ func ParseLocator(params map[string]interface{}) (Locator, error) {
 		Scope:       str("scope"),
 		HasText:     str("hasText"),
 		Has:         str("has"),
+		Near:        str("near"),
 		Timeout:     DefaultTimeout,
 		Limit:       10,
 	}
@@ -194,6 +197,9 @@ func (l Locator) validate() error {
 		return fmt.Errorf("description is a standalone locator; it does not combine with %s", l.Describe())
 	case !hasImage && !hasDesc && !l.structured():
 		return fmt.Errorf("find needs a description, an image, or a locator (css, tag, name, role, text, label, placeholder, alt, title, testid, xpath)")
+	}
+	if (hasImage || hasDesc) && l.Near != "" {
+		return fmt.Errorf("near ranks css and structured locators; it does not combine with a description or an image")
 	}
 	switch l.Strategy {
 	case StrategyCV:

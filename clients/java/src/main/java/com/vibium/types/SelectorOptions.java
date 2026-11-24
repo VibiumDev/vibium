@@ -81,7 +81,7 @@ public class SelectorOptions {
     public String css() { return css; }
 
     /** Whether later commands should address the match by what find resolved rather than by this locator. */
-    public boolean resolvedHandle() { return description != null || image != null || tag != null || name != null; }
+    public boolean resolvedHandle() { return description != null || image != null || tag != null || name != null || near != null; }
 
     /**
      * Convert to wire params map. css travels as "selector", the name element

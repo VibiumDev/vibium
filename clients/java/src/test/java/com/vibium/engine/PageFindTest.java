@@ -57,6 +57,13 @@ class PageFindTest {
     }
 
     @Test
+    void testNearPicksTheClosestMatch() {
+        page.go(server.baseUrl() + "/near");
+        page.find(new SelectorOptions().role("button").text("Delete").near(".account")).click();
+        assertEquals("SECTION", page.evaluate("document.getElementById('log').textContent"));
+    }
+
+    @Test
     void testWaitFor() {
         page.go(server.baseUrl() + "/dynamic-loading");
         Element loaded = page.waitFor("#loaded");

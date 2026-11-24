@@ -116,6 +116,7 @@ Find by what an element *is* rather than where it sits. Available as `find` subc
 | `title` | `title` attribute |
 | `testid` | `data-testid` attribute |
 | `xpath` | XPath expression |
+| `near` | Clients only. A CSS selector for a nearby element. Of several matches, the one closest to that element wins |
 
 ```bash
 vibium find role button
@@ -138,6 +139,8 @@ vibe.find(testid="submit-btn")
 vibe.find(new SelectorOptions().role("button").label("Log in"));
 vibe.find(new SelectorOptions().testid("submit-btn"));
 ```
+
+`near` settles which of several matches is meant: `{ role: 'button', text: 'Delete', near: '.account' }` picks the Delete button in or next to `.account`. Closeness is the gap between the two boxes, so a match inside the near element always wins. `findAll` returns the matches closest first.
 
 Locators combine — `{ role: 'button', text: 'Save' }` requires both. When several elements match, the one with the shortest text wins, so an exact match beats a container that happens to include it.
 
