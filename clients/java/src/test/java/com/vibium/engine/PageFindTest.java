@@ -57,6 +57,13 @@ class PageFindTest {
     }
 
     @Test
+    void testWaitForLoadNetworkIdle() {
+        page.go(server.baseUrl() + "/late-data");
+        page.waitForLoad("networkidle");
+        assertEquals("ok ok", page.evaluate("document.getElementById('out').textContent"));
+    }
+
+    @Test
     void testWaitFor() {
         page.go(server.baseUrl() + "/dynamic-loading");
         Element loaded = page.waitFor("#loaded");

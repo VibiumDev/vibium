@@ -69,3 +69,10 @@ async def test_wait_until_deprecated_alias(async_page, test_server):
     with pytest.warns(DeprecationWarning):
         await async_page.wait_until.loaded()
     assert await async_page.title() == "Test App"
+
+
+async def test_wait_for_load_networkidle(async_page, test_server):
+    """networkidle waits out the requests a page starts after load (#846)."""
+    await async_page.go(test_server + "/late-data")
+    await async_page.wait_for_load("networkidle", timeout=15000)
+    assert await async_page.evaluate("document.getElementById('out').textContent") == "ok ok"

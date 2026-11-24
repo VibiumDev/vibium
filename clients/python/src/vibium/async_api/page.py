@@ -449,7 +449,9 @@ class Page:
         await self._wait_for_url(pattern, timeout)
 
     async def wait_for_load(self, state: Optional[str] = None, timeout: Optional[int] = None) -> None:
-        """Wait until the page reaches a load state."""
+        """Wait until the page reaches a load state: "loading", "interactive",
+        "complete" (default), or "networkidle" (loaded, and no request in
+        flight for 500 ms)."""
         await self._wait_for_load(state, timeout)
 
     async def wait(self, ms: int) -> None:

@@ -65,6 +65,14 @@ public class TestServer {
         + "</div>"
         + "</body></html>";
 
+    private static final String LATE_DATA_HTML = "<html><head><title>Late data</title></head><body>"
+        + "<div id=\"out\">loading</div>"
+        + "<script>window.addEventListener('load', async () => {"
+        + " const first = await fetch('/slow').then((r) => r.text());"
+        + " const second = await fetch('/slow').then((r) => r.text());"
+        + " document.getElementById('out').textContent = first + ' ' + second; });</script>"
+        + "</body></html>";
+
     private static final String EVAL_HTML = "<html><head><title>Eval</title></head><body>"
         + "<div id=\"result\"></div>"
         + "<script>window.testVal = 42;</script>"
@@ -124,6 +132,7 @@ public class TestServer {
         HTML_ROUTES.put("/inputs", INPUTS_HTML);
         HTML_ROUTES.put("/form", FORM_HTML);
         HTML_ROUTES.put("/links", LINKS_HTML);
+        HTML_ROUTES.put("/late-data", LATE_DATA_HTML);
         HTML_ROUTES.put("/eval", EVAL_HTML);
         HTML_ROUTES.put("/dialog", DIALOG_HTML);
         HTML_ROUTES.put("/dynamic-loading", DYNAMIC_LOADING_HTML);
@@ -150,6 +159,12 @@ public class TestServer {
                 }
                 if ("/json".equals(path)) {
                     respond(exchange, 200, "application/json", "{\"name\":\"vibium\",\"version\":1}");
+                    return;
+                }
+                if ("/slow".equals(path)) {
+                    try { Thread.sleep(600); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    exchange.getResponseHeaders().set("Cache-Control", "no-store");
+                    respond(exchange, 200, "text/plain", "ok");
                     return;
                 }
                 if ("/text".equals(path)) {
