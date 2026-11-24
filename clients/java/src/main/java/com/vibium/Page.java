@@ -1127,6 +1127,9 @@ public class Page {
             }
         }
 
+        // Another Page object for this context owns the route that matched.
+        if (!matched.isEmpty()) return;
+
         // No matching route — continue the request so the page does not hang
         NETWORK_CALLBACKS.execute(() -> {
             try {
