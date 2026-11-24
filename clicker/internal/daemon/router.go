@@ -45,7 +45,8 @@ const installingBrowserMethod = "daemon/installingBrowser"
 func (d *Daemon) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	d.touchActivity()
+	d.trackRequest(1)
+	defer d.trackRequest(-1)
 
 	// Set read deadline
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
