@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 # Default timeout for download completion (5 minutes).
 _DOWNLOAD_TIMEOUT = 300
 
+# How long path() can take: the engine's wait plus time for its answer.
+PATH_TIMEOUT = _DOWNLOAD_TIMEOUT + 10
+
 
 class Download:
     """Represents a file download triggered by the page."""
@@ -36,7 +39,7 @@ class Download:
         return await self._client.send(
             "vibium:download.await",
             {"navigation": self._navigation, "timeout": _DOWNLOAD_TIMEOUT * 1000},
-            timeout=_DOWNLOAD_TIMEOUT + 10,
+            timeout=PATH_TIMEOUT,
         )
 
     async def save_as(self, path: str) -> None:
