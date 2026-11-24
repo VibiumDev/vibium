@@ -55,16 +55,12 @@ public class Download {
         JsonObject params = new JsonObject();
         params.addProperty("navigation", navigation);
         params.addProperty("timeout", DOWNLOAD_TIMEOUT_MS);
-        try {
-            JsonObject result = client.send("vibium:download.await", params, DOWNLOAD_TIMEOUT_MS + 10_000);
-            if (!result.has("status") || !"complete".equals(result.get("status").getAsString())) {
-                return null;
-            }
-            String filepath = result.has("filepath") ? result.get("filepath").getAsString() : "";
-            return filepath.isEmpty() ? null : filepath;
-        } catch (Exception e) {
+        JsonObject result = client.send("vibium:download.await", params, DOWNLOAD_TIMEOUT_MS + 10_000);
+        if (!result.has("status") || !"complete".equals(result.get("status").getAsString())) {
             return null;
         }
+        String filepath = result.has("filepath") ? result.get("filepath").getAsString() : "";
+        return filepath.isEmpty() ? null : filepath;
     }
 
     @Override

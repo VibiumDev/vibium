@@ -2,6 +2,8 @@ package com.vibium;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.vibium.errors.VibiumConnectionException;
+import com.vibium.errors.VibiumException;
 import com.vibium.internal.BiDiClient;
 import com.vibium.types.ContinueOptions;
 import com.vibium.types.FulfillOptions;
@@ -48,8 +50,8 @@ public class Route {
                 }
             }
             client.send("vibium:network.fulfill", params);
-        } catch (Exception ignored) {
-            // Silently ignore race conditions (connection closed, invalid state)
+        } catch (VibiumException e) {
+            if (!isRaceError(e)) throw e;
         }
     }
 
@@ -74,8 +76,8 @@ public class Route {
                 }
             }
             client.send("vibium:network.continue", params);
-        } catch (Exception ignored) {
-            // Silently ignore race conditions
+        } catch (VibiumException e) {
+            if (!isRaceError(e)) throw e;
         }
     }
 
@@ -85,8 +87,17 @@ public class Route {
             JsonObject params = new JsonObject();
             params.addProperty("request", requestId);
             client.send("vibium:network.abort", params);
-        } catch (Exception ignored) {
-            // Silently ignore race conditions
+        } catch (VibiumException e) {
+            if (!isRaceError(e)) throw e;
         }
+    }
+
+    /** A request that was already handled, or a connection that is gone, is not a failure. */
+    private static boolean isRaceError(VibiumException e) {
+        String message = String.valueOf(e.getMessage());
+        return e instanceof VibiumConnectionException
+            || message.contains("Invalid state")
+            || message.contains("No blocked request")
+            || message.contains("no such request");
     }
 }
