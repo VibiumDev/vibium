@@ -186,6 +186,8 @@ public class Browser {
     private void handleEvent(JsonObject event) {
         String method = event.has("method") ? event.get("method").getAsString() : "";
         if ("browsingContext.contextCreated".equals(method)) {
+            // A Page listens for events until it is closed, so none is made without a listener to take it.
+            if (pageListeners.isEmpty() && popupListeners.isEmpty()) return;
             JsonObject params = event.getAsJsonObject("params");
             if (params != null && params.has("context")) {
                 String contextId = params.get("context").getAsString();
