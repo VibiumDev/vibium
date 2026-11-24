@@ -798,7 +798,11 @@ export class Page {
     await this._waitForURL(pattern, options);
   }
 
-  /** Wait until the page reaches a load state. */
+  /**
+   * Wait until the page reaches a load state: 'loading', 'interactive',
+   * 'complete' (default), or 'networkidle' (loaded, and no request in flight
+   * for 500 ms).
+   */
   async waitForLoad(state?: string, options?: { timeout?: number }): Promise<void> {
     await this._waitForLoad(state, options);
   }

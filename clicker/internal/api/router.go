@@ -100,6 +100,7 @@ type BrowserSession struct {
 	routes       *routeRegistry
 	captures     *captureRegistry
 	navigations  *NavigationTracker
+	network      *NetworkTracker
 	downloads    *downloadRegistry
 
 	// Serializes recording start/stop across their async handlers (the
@@ -318,6 +319,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		dialogManual:      make(map[string]struct{}),
 		routes:            newRouteRegistry(),
 		captures:          newCaptureRegistry(),
+		network:           NewNetworkTracker(),
 		exposedPreloadIDs: make(map[string]string),
 		navigations:       NewNavigationTracker(),
 		downloads:         newDownloadRegistry(),
@@ -347,6 +349,7 @@ func (r *Router) OnClientConnect(client ClientTransport) {
 		"browsingContext.contextCreated",
 		"network.beforeRequestSent",
 		"network.responseCompleted",
+		"network.fetchError",
 		"browsingContext.userPromptOpened",
 		"browsingContext.userPromptClosed",
 		"log.entryAdded",
@@ -1294,6 +1297,7 @@ func (r *Router) routeBrowserToClient(session *BrowserSession) {
 		// Track user prompts so prompt-sensitive commands can fail fast.
 		session.prompts.Observe([]byte(msg))
 		session.navigations.Observe([]byte(msg))
+		session.network.Observe([]byte(msg))
 		// Chrome 156 nulls navigation on link-click downloads (#604);
 		// backfill it with the download id so shipped clients still get a
 		// usable await handle off the event they are about to receive.

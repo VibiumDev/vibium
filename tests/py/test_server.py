@@ -6,6 +6,7 @@ All routes match the JS sync-test-server.js so tests are equivalent.
 import json
 import struct
 import threading
+import time
 import zlib
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
@@ -224,6 +225,18 @@ NESTED_SCOPE_HTML = """<html><head><title>Nested scope</title></head><body>
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
 </body></html>"""
 
+# Fetches twice after load; only a networkidle wait sees the result.
+LATE_DATA_HTML = """<html><head><title>Late data</title></head><body>
+  <div id="out">loading</div>
+  <script>
+    window.addEventListener('load', async () => {
+      const first = await fetch('/slow').then((r) => r.text());
+      const second = await fetch('/slow').then((r) => r.text());
+      document.getElementById('out').textContent = first + ' ' + second;
+    });
+  </script>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -248,6 +261,7 @@ HTML_ROUTES = {
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
     "/nested-scope": NESTED_SCOPE_HTML,
+    "/late-data": LATE_DATA_HTML,
     "/find-images": None,
     "/find-canvas": None,
 }
@@ -362,6 +376,15 @@ class VibiumTestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(JSON_DATA).encode())
+            return
+
+        if path == "/slow":
+            time.sleep(0.6)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b"ok")
             return
 
         if path == "/text":

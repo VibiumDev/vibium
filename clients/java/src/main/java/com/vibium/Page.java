@@ -520,12 +520,23 @@ public class Page {
 
     /** Wait for page load. */
     public void waitForLoad() {
-        waitForLoad(null);
+        waitForLoad(null, null);
     }
 
     /** Wait for page load with options. */
     public void waitForLoad(WaitOptions options) {
+        waitForLoad(null, options);
+    }
+
+    /** Wait for a load state: "loading", "interactive", "complete" (default) or "networkidle". */
+    public void waitForLoad(String state) {
+        waitForLoad(state, null);
+    }
+
+    /** Wait for a load state with options. */
+    public void waitForLoad(String state, WaitOptions options) {
         JsonObject params = contextParams();
+        if (state != null) params.addProperty("state", state);
         if (options != null && options.timeout() != null) {
             params.addProperty("timeout", options.timeout());
         }

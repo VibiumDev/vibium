@@ -195,7 +195,12 @@ func (r *Router) handlePageWaitForLoad(session *BrowserSession, cmd bidiCommand)
 	}
 
 	s := NewAPISession(r, session, context)
-	if err := WaitForLoad(s, context, state, timeout); err != nil {
+	if state == "networkidle" {
+		err = waitForNetworkIdle(s, session.network, session.navigations, context, timeout)
+	} else {
+		err = WaitForLoad(s, context, state, timeout)
+	}
+	if err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
