@@ -224,7 +224,8 @@ func (r *Router) handleNetworkAbort(session *BrowserSession, cmd bidiCommand) {
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
 }
 
-// handlePageSetHeaders handles vibium:page.setHeaders — sets extra HTTP headers for a context.
+// handlePageSetHeaders handles vibium:page.setHeaders: the browser adds the
+// headers to every request the context makes. An empty map clears them.
 func (r *Router) handlePageSetHeaders(session *BrowserSession, cmd bidiCommand) {
 	context, err := r.resolveContext(session, cmd.Params)
 	if err != nil {
@@ -238,49 +239,15 @@ func (r *Router) handlePageSetHeaders(session *BrowserSession, cmd bidiCommand) 
 		return
 	}
 
-	// We use network.addIntercept + network.continueRequest pattern is too complex.
-	// BiDi doesn't have a direct "setExtraHeaders" command.
-	// Instead, we use script injection to add headers via the intercept pattern.
-	// For simplicity, use a beforeRequestSent intercept and modify headers on each request.
-	// Actually, the simplest approach: add an intercept and store headers on the session.
-	// But the plan says to use network.addIntercept with header setting.
-
-	// Use the session.subscribe approach: subscribe to beforeRequestSent,
-	// then on each request, continue with extra headers.
-	// Store the extra headers on the session for the event handler to use.
-
-	// For now, set up an intercept that the Go proxy will handle automatically.
-	// Store headers in session and auto-continue with them.
-
-	// First, add an intercept for this context
-	interceptParams := map[string]interface{}{
-		"phases":   []string{"beforeRequestSent"},
+	if _, err := r.sendInternalCommand(session, "network.setExtraHeaders", map[string]interface{}{
+		"headers":  convertHeadersToBidi(headers),
 		"contexts": []interface{}{context},
-	}
-
-	resp, err := r.sendInternalCommand(session, "network.addIntercept", interceptParams)
-	if err != nil {
+	}); err != nil {
 		r.sendError(session, cmd.ID, err)
 		return
 	}
 
-	var result struct {
-		Result struct {
-			Intercept string `json:"intercept"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		r.sendError(session, cmd.ID, fmt.Errorf("failed to parse addIntercept response: %w", err))
-		return
-	}
-
-	// Store extra headers on the session so the JS client can use them
-	bidiHeaders := convertHeadersToBidi(headers)
-
-	r.sendSuccess(session, cmd.ID, map[string]interface{}{
-		"intercept": result.Result.Intercept,
-		"headers":   bidiHeaders,
-	})
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
 }
 
 // convertHeadersToBidi converts headers from {"Name": "Value"} to BiDi format:

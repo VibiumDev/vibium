@@ -681,7 +681,7 @@ public class Page {
 
     // ── HTTP Headers ────────────────────────────────────────────
 
-    /** Set extra HTTP headers for this page. */
+    /** Set extra HTTP headers for all requests in this page. An empty map clears them. */
     public void setHeaders(Map<String, String> headers) {
         JsonObject params = contextParams();
         params.add("headers", GSON.toJsonTree(headers));

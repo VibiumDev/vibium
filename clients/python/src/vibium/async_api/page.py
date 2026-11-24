@@ -861,20 +861,9 @@ class Page:
         self._response_callbacks.append(fn)
 
     async def set_headers(self, headers: Dict[str, str]) -> None:
-        """Set extra HTTP headers for all requests in this page."""
-        result = await self._client.send("vibium:page.setHeaders", {
+        """Set extra HTTP headers for all requests in this page. An empty dict clears them."""
+        await self._client.send("vibium:page.setHeaders", {
             "context": self._context_id, "headers": headers,
-        })
-
-        def _header_handler(route: Route) -> None:
-            merged = {**route.request.headers(), **headers}
-            import asyncio
-            asyncio.ensure_future(route.continue_(headers=merged))
-
-        self._routes.append({
-            "pattern": "**",
-            "handler": _header_handler,
-            "interceptId": result["intercept"],
         })
 
     def on_web_socket(self, fn: Callable[[WebSocketInfo], None]) -> None:
