@@ -893,6 +893,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 		return
 
 	// Emulation commands
+	case "vibium:page.setLocale":
+		r.dispatch(session, cmd, r.handlePageSetLocale)
+		return
 	case "vibium:page.setViewport":
 		r.dispatch(session, cmd, r.handlePageSetViewport)
 		return

@@ -710,6 +710,10 @@ class Page:
 
     # --- Emulation ---
 
+    async def set_locale(self, locale: Optional[str]) -> None:
+        """Make the page report a locale such as "de-DE". None removes the override."""
+        await self._client.send("vibium:page.setLocale", {"context": self._context_id, "locale": locale or ""})
+
     async def set_viewport(self, size: Dict[str, int]) -> None:
         """Set the viewport size. size: {width, height}."""
         await self._client.send("vibium:page.setViewport", {

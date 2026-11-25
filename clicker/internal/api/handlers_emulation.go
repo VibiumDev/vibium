@@ -5,6 +5,36 @@ import (
 	"fmt"
 )
 
+// handlePageSetLocale handles vibium:page.setLocale.
+func (r *Router) handlePageSetLocale(session *BrowserSession, cmd bidiCommand) {
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	locale, _ := cmd.Params["locale"].(string)
+	if err := SetLocale(NewAPISession(r, session, context), context, locale); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+}
+
+// SetLocale makes a page report a locale such as "de-DE". An empty locale removes the override.
+func SetLocale(s Session, context, locale string) error {
+	var value interface{}
+	if locale != "" {
+		value = locale
+	}
+	if _, err := s.SendBidiCommand("emulation.setLocaleOverride", map[string]interface{}{
+		"locale":   value,
+		"contexts": []interface{}{context},
+	}); err != nil {
+		return fmt.Errorf("failed to set the locale: %w", err)
+	}
+	return nil
+}
+
 // handlePageSetViewport handles vibium:page.setViewport — sets the viewport size.
 // Uses BiDi browsingContext.setViewport.
 func (r *Router) handlePageSetViewport(session *BrowserSession, cmd bidiCommand) {

@@ -376,6 +376,10 @@ export class PageSync {
 
   // --- Emulation ---
 
+  setLocale(locale: string | null): void {
+    this._bridge.call('page.setLocale', [this._pageId, locale]);
+  }
+
   setViewport(size: { width: number; height: number }): void {
     this._bridge.call('page.setViewport', [this._pageId, size]);
   }

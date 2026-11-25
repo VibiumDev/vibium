@@ -194,6 +194,7 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 - `vibium dialog dismiss` — dismiss dialog
 
 ### Emulation
+- `vibium locale <tag>`: make the page report a locale such as `de-DE` (`--reset` to remove)
 - `vibium viewport` — get current viewport dimensions
 - `vibium viewport <width> <height>` — set viewport size (`--dpr` for device pixel ratio)
 - `vibium window` — get OS browser window dimensions and state

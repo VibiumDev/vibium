@@ -534,6 +534,13 @@ public class Page {
 
     // ── Viewport & Window ───────────────────────────────────────
 
+    /** Make the page report a locale such as "de-DE". null removes the override. */
+    public void setLocale(String locale) {
+        JsonObject params = contextParams();
+        params.addProperty("locale", locale != null ? locale : "");
+        client.send("vibium:page.setLocale", params);
+    }
+
     /** Set the viewport size. */
     public void setViewport(ViewportSize size) {
         JsonObject params = contextParams();

@@ -1395,6 +1395,21 @@ func GetToolSchemas() []Tool {
 		},
 		// --- Emulation ---
 		{
+			Name:        "browser_set_locale",
+			Description: "Make the page report a locale, so a site that follows the browser language (navigator.language, Accept-Language, number and date formats) can be pinned to one",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"locale": map[string]interface{}{
+						"type":        "string",
+						"description": "Language tag, e.g. \"de-DE\" or \"ja\". An empty string removes the override",
+					},
+				},
+				"required":             []string{"locale"},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "browser_set_viewport",
 			Description: "Set the browser viewport size",
 			InputSchema: map[string]interface{}{

@@ -95,6 +95,7 @@ const CLASSES = {
   'keys': 'usage-error',
   'launch-test': 'exempt', // runs until Ctrl+C
   'listen': 'envelope',
+  'locale': 'usage-error',
   'long-press': 'usage-error',
   'map': 'envelope',
   'mcp': 'exempt', // server: banner on stderr, exits when stdin closes

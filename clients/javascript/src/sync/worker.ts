@@ -488,6 +488,12 @@ const handlers: Record<string, Handler> = {
 
   // --- Page emulation ---
 
+  'page.setLocale': async (args) => {
+    const [pageId, locale] = args as [number, string | null];
+    await getPage(pageId).setLocale(locale);
+    return { success: true };
+  },
+
   'page.setViewport': async (args) => {
     const [pageId, size] = args as [number, { width: number; height: number }];
     await getPage(pageId).setViewport(size);
