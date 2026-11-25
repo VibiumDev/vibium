@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..check import CheckResult, send_check
 from ..speech import ListenResult, SayResult, SAY_TIMEOUT, SYNC_SLACK, listen_timeout
 from ..run import RunResult
+from ..async_api.download import PATH_TIMEOUT
 
 import shutil
 import warnings
@@ -840,7 +841,7 @@ class _SyncCapturedDownload:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if exc_type is None and self._wait_coro:
             dl = self._page._loop.run(self._wait_coro)
-            file_path = self._page._loop.run(dl.path())
+            file_path = self._page._loop.run(dl.path(), timeout=PATH_TIMEOUT + SYNC_SLACK)
             self.value = SyncDownload({"url": dl.url(), "suggested_filename": dl.suggested_filename(), "path": file_path})
 
 
@@ -946,7 +947,7 @@ class _SyncCaptureNamespace:
             )
             fn()
             dl = self._page._loop.run(wait_coro)
-            file_path = self._page._loop.run(dl.path())
+            file_path = self._page._loop.run(dl.path(), timeout=PATH_TIMEOUT + SYNC_SLACK)
             return SyncDownload({"url": dl.url(), "suggested_filename": dl.suggested_filename(), "path": file_path})
         return _SyncCapturedDownload(self._page, timeout)
 
