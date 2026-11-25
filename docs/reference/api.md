@@ -53,6 +53,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 33 | Override CSS media features | `vibium:page.emulateMedia` | `vibium media <scheme>` | `browser_emulate_media` | `page.emulateMedia(opts)` | `page.emulate_media(**opts)` | `page.emulateMedia(opts)` |
 | 34 | Set page HTML | `vibium:page.setContent` | `vibium content <html>` | `browser_set_content` | `page.setContent(html)` | `page.set_content(html)` | `page.setContent(html)` |
 | 35 | Override geolocation | `vibium:page.setGeolocation` | `vibium geolocation <lat> <lon>` | `browser_set_geolocation` | `page.setGeolocation(coords)` | `page.set_geolocation(coords)` | `page.setGeolocation(coords)` |
+| 240 | Grant, deny or reset a permission | `vibium:page.setPermission` | `vibium permission <name> <state>` | `browser_set_permission` | `page.setPermission(name, state, opts?)` | `page.set_permission(name, state, origin=None)` | `page.setPermission(name, state, origin?)` |
 | 36 | Set window size/position | `vibium:page.setWindow` | `vibium window <opts>` | `browser_set_window` | `page.setWindow(opts)` | `page.set_window(**opts)` | `page.setWindow(opts)` |
 | 37 | Get window info | `vibium:page.window` | `vibium window` | `browser_get_window` | `page.window()` | `page.window()` | `page.window()` |
 | 38 | Get accessibility tree | `vibium:page.a11yTree` | `vibium a11y-tree` | `browser_a11y_tree` | `page.a11yTree(opts?)` | `page.a11y_tree(opts?)` | `page.a11yTree(options?)` |

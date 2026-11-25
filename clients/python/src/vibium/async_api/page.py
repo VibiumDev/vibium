@@ -753,6 +753,15 @@ class Page:
             "context": self._context_id, **coords,
         })
 
+    async def set_permission(self, name: str, state: str, origin: Optional[str] = None) -> None:
+        """Grant ("granted"), deny ("denied") or reset ("prompt") a browser
+        permission such as "geolocation" or "notifications". Applies to the
+        page's own origin unless one is given."""
+        params: Dict[str, Any] = {"context": self._context_id, "name": name, "state": state}
+        if origin is not None:
+            params["origin"] = origin
+        await self._client.send("vibium:page.setPermission", params)
+
     async def set_window(self, **options: Any) -> None:
         """Set the OS browser window size, position, or state."""
         await self._client.send("vibium:page.setWindow", options)

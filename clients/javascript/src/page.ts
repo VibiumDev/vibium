@@ -629,6 +629,20 @@ export class Page {
     });
   }
 
+  /**
+   * Grant, deny or reset ('prompt') a browser permission such as
+   * 'geolocation' or 'notifications'. Applies to the page's own origin
+   * unless one is given.
+   */
+  async setPermission(name: string, state: 'granted' | 'denied' | 'prompt', options?: { origin?: string }): Promise<void> {
+    await this.client.send('vibium:page.setPermission', {
+      context: this.contextId,
+      name,
+      state,
+      origin: options?.origin,
+    });
+  }
+
   /** Set the OS browser window size, position, or state. */
   async setWindow(options: {
     width?: number;

@@ -180,12 +180,12 @@ describe('MCP Server: Protocol', () => {
     assert.match(response.result.protocolVersion, /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test('tools/list returns all 92 tools including Check, Run, Say and Listen', async () => {
+  test('tools/list returns all 93 tools including Check, Run, Say and Listen', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 92, 'Should have 92 tools');
+    assert.strictEqual(response.result.tools.length, 93, 'Should have 93 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
@@ -216,7 +216,7 @@ describe('MCP Server: Protocol', () => {
       'browser_set_viewport', 'browser_get_viewport',
       'browser_get_window', 'browser_set_window',
       'browser_emulate_media',
-      'browser_set_geolocation', 'browser_set_content',
+      'browser_set_geolocation', 'browser_set_permission', 'browser_set_content',
       'browser_frames', 'browser_frame',
       'browser_upload',
       'browser_record_start', 'browser_record_stop',
@@ -352,6 +352,24 @@ describe('MCP Server: Browser Tools', () => {
       name: 'browser_navigate',
       arguments: { url: `${baseURL}/example` },
     });
+  });
+
+  test('browser_set_permission answers a permission for the page origin (#711)', async () => {
+    const call = (name, args) => client.call('tools/call', { name, arguments: args });
+    const state = async () => (await call('browser_evaluate', {
+      expression: "navigator.permissions.query({ name: 'geolocation' }).then((s) => s.state)",
+    })).result.content[0].text;
+
+    const granted = await call('browser_set_permission', { name: 'geolocation', state: 'granted' });
+    assert.ok(!granted.result.isError, 'Should not be an error');
+    assert.ok(granted.result.content[0].text.includes(`Permission geolocation set to granted for ${baseURL}`), granted.result.content[0].text);
+    assert.ok((await state()).includes('granted'));
+
+    await call('browser_set_permission', { name: 'geolocation', state: 'prompt' });
+    assert.ok((await state()).includes('prompt'));
+
+    const bad = await call('browser_set_permission', { name: 'geolocation', state: 'allowed' });
+    assert.ok(bad.result.isError, 'An unknown state should be an error');
   });
 
   test('browser_evaluate executes JavaScript', async () => {

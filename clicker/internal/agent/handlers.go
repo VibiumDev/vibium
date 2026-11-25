@@ -439,6 +439,8 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserEmulateMedia(args)
 	case "browser_set_geolocation":
 		return h.browserSetGeolocation(args)
+	case "browser_set_permission":
+		return h.browserSetPermission(args)
 	case "browser_set_content":
 		return h.browserSetContent(args)
 	case "browser_frames":
@@ -854,6 +856,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:page.emulateMedia"
 	case "browser_set_geolocation":
 		return "vibium:page.setGeolocation"
+	case "browser_set_permission":
+		return "vibium:page.setPermission"
 	case "browser_set_content":
 		return "vibium:page.setContent"
 
@@ -4130,6 +4134,29 @@ func (h *Handlers) browserSetGeolocation(args map[string]interface{}) (*ToolsCal
 			Type: "text",
 			Text: fmt.Sprintf("Geolocation set to (%f, %f)", latitude, longitude),
 		}},
+	}, nil
+}
+
+// browserSetPermission grants, denies or resets a permission for an origin.
+func (h *Handlers) browserSetPermission(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+	name, _ := args["name"].(string)
+	state, _ := args["state"].(string)
+	origin, _ := args["origin"].(string)
+
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	origin, err = api.SetPermission(s, ctx, name, state, origin)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolsCallResult{
+		Content: []Content{{Type: "text", Text: fmt.Sprintf("Permission %s set to %s for %s", name, state, origin)}},
 	}, nil
 }
 

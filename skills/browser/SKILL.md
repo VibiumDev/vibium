@@ -200,6 +200,7 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 - `vibium window <width> <height> [x] [y]` — set window size and position (`--state`)
 - `vibium media` — override CSS media features (`--color-scheme`, `--reduced-motion`, `--forced-colors`, `--contrast`, `--media`)
 - `vibium geolocation <lat> <lng>` — override geolocation (`--accuracy`)
+- `vibium permission <name> <granted|denied|prompt>`: answer a permission request such as `geolocation` or `notifications` ahead of time (`--origin`)
 - `vibium content "<html>"` — replace page HTML (`--stdin` to read from stdin)
 
 ### Frames

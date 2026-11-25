@@ -511,6 +511,12 @@ const handlers: Record<string, Handler> = {
     return { success: true };
   },
 
+  'page.setPermission': async (args) => {
+    const [pageId, name, state, options] = args as [number, string, 'granted' | 'denied' | 'prompt', { origin?: string } | undefined];
+    await getPage(pageId).setPermission(name, state, options);
+    return { success: true };
+  },
+
   'page.setGeolocation': async (args) => {
     const [pageId, coords] = args as [number, { latitude: number; longitude: number; accuracy?: number }];
     await getPage(pageId).setGeolocation(coords);

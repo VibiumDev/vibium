@@ -347,6 +347,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 
 	// Renamed commands
 	rootCmd.AddCommand(newGeolocationCmd())
+	rootCmd.AddCommand(newPermissionCmd())
 	rootCmd.AddCommand(newContentCmd())
 	rootCmd.AddCommand(newMediaCmd())
 

@@ -398,6 +398,9 @@ class Page:
     def set_geolocation(self, coords: Dict[str, float]) -> None:
         self._loop.run(self._async.set_geolocation(coords))
 
+    def set_permission(self, name: str, state: str, origin: Optional[str] = None) -> None:
+        self._loop.run(self._async.set_permission(name, state, origin))
+
     def set_window(self, **options: Any) -> None:
         self._loop.run(self._async.set_window(**options))
 

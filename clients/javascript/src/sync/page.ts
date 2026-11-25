@@ -398,6 +398,10 @@ export class PageSync {
     this._bridge.call('page.setContent', [this._pageId, html]);
   }
 
+  setPermission(name: string, state: 'granted' | 'denied' | 'prompt', options?: { origin?: string }): void {
+    this._bridge.call('page.setPermission', [this._pageId, name, state, options]);
+  }
+
   setGeolocation(coords: { latitude: number; longitude: number; accuracy?: number }): void {
     this._bridge.call('page.setGeolocation', [this._pageId, coords]);
   }
