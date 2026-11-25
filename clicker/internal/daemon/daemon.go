@@ -22,8 +22,11 @@ type Daemon struct {
 	wg           sync.WaitGroup // tracks in-flight handler goroutines
 	version      string
 	startTime    time.Time
+	activityMu   sync.Mutex // guards lastActivity and inFlight; never held across a handler
 	lastActivity time.Time
+	inFlight     int
 	idleTimeout  time.Duration
+	drainTimeout time.Duration // how long Shutdown waits for in-flight requests
 	socketPath   string
 	shutdownOnce sync.Once
 	done         chan struct{} // signals shutdown started
@@ -51,6 +54,7 @@ func New(opts Options) *Daemon {
 		idleTimeout:  opts.IdleTimeout,
 		startTime:    time.Now(),
 		lastActivity: time.Now(),
+		drainTimeout: 10 * time.Second,
 		done:         make(chan struct{}),
 		shutdownDone: make(chan struct{}),
 	}
@@ -142,14 +146,12 @@ func (d *Daemon) Shutdown() {
 		go func() { d.wg.Wait(); close(waitDone) }()
 		select {
 		case <-waitDone:
-		case <-time.After(10 * time.Second):
+		case <-time.After(d.drainTimeout):
 			log.Debug("timed out waiting for in-flight handlers to finish")
 		}
 
-		// Now safe to close browser session
-		d.mu.Lock()
+		// Without d.mu: a running request holds it, and closing the session is what ends that request.
 		d.handlers.Close()
-		d.mu.Unlock()
 
 		// Clean up socket file
 		if d.socketPath != "" {
@@ -161,11 +163,22 @@ func (d *Daemon) Shutdown() {
 	})
 }
 
-// touchActivity updates the last activity timestamp.
-func (d *Daemon) touchActivity() {
-	d.mu.Lock()
+// trackRequest counts a request as activity from its start to its end.
+func (d *Daemon) trackRequest(delta int) {
+	d.activityMu.Lock()
+	d.inFlight += delta
 	d.lastActivity = time.Now()
-	d.mu.Unlock()
+	d.activityMu.Unlock()
+}
+
+// idleFor is how long the daemon has had no request. A running request is not idle.
+func (d *Daemon) idleFor() time.Duration {
+	d.activityMu.Lock()
+	defer d.activityMu.Unlock()
+	if d.inFlight > 0 {
+		return 0
+	}
+	return time.Since(d.lastActivity)
 }
 
 // watchIdle monitors for idle timeout and triggers shutdown.
@@ -176,10 +189,7 @@ func (d *Daemon) watchIdle(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			d.mu.Lock()
-			idle := time.Since(d.lastActivity)
-			d.mu.Unlock()
-
+			idle := d.idleFor()
 			if idle >= d.idleTimeout {
 				log.Debug("idle timeout reached, shutting down", "idle", idle, "timeout", d.idleTimeout)
 				d.Shutdown()
