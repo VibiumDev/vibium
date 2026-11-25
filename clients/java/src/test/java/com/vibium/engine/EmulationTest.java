@@ -41,6 +41,25 @@ class EmulationTest {
     }
 
     @Test
+    @RequiresCapability("network")
+    void testSetHeadersSendsThemOnThatPageOnly() {
+        String seen = "fetch('/echo-header').then(r => r.text())";
+        Page own = browser.newPage();
+        try {
+            own.setHeaders(java.util.Map.of("X-Vibium-Test", "716"));
+            own.go(server.baseUrl() + "/echo-header");
+            assertEquals("716", own.evaluate("document.body.innerText"));
+            assertEquals("716", own.evaluate(seen));
+            page.go(server.baseUrl() + "/echo-header");
+            assertEquals("absent", page.evaluate(seen));
+            own.setHeaders(java.util.Map.of());
+            assertEquals("absent", own.evaluate(seen));
+        } finally {
+            own.close();
+        }
+    }
+
+    @Test
     void testSetViewport() {
         page.setViewport(new ViewportSize(800, 600));
         ViewportSize vp = page.viewport();

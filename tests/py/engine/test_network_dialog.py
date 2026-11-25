@@ -43,6 +43,26 @@ async def test_route_abort(net_browser, test_server):
 
 
 @pytest.mark.capability("network")
+async def test_set_headers_sends_them_on_that_page_only(net_browser, test_server):
+    """set_headers must reach the server, for navigation and fetch (#716)."""
+    vibe = await net_browser.new_page()
+    other = await net_browser.new_page()
+    seen = "fetch('/echo-header').then(r => r.text())"
+    try:
+        await vibe.set_headers({"X-Vibium-Test": "716"})
+        await vibe.go(test_server + "/echo-header")
+        assert await vibe.evaluate("document.body.innerText") == "716"
+        assert await vibe.evaluate(seen) == "716"
+        await other.go(test_server + "/echo-header")
+        assert await other.evaluate(seen) == "absent"
+        await vibe.set_headers({})
+        assert await vibe.evaluate(seen) == "absent"
+    finally:
+        await vibe.close()
+        await other.close()
+
+
+@pytest.mark.capability("network")
 async def test_route_fulfill(net_browser, test_server):
     vibe = await net_browser.new_page()
     await vibe.go(test_server)

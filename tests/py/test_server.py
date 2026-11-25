@@ -364,6 +364,14 @@ class VibiumTestHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(JSON_DATA).encode())
             return
 
+        if path == "/echo-header":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write((self.headers.get("X-Vibium-Test") or "absent").encode())
+            return
+
         if path == "/text":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")

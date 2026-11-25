@@ -1039,22 +1039,11 @@ export class Page {
     }
   }
 
-  /** Set extra HTTP headers for all requests in this page. */
+  /** Set extra HTTP headers for all requests in this page. An empty object clears them. */
   async setHeaders(headers: Record<string, string>): Promise<void> {
-    const result = await this.client.send<{ intercept: string; headers: unknown }>('vibium:page.setHeaders', {
+    await this.client.send('vibium:page.setHeaders', {
       context: this.contextId,
       headers,
-    });
-
-    // Store the intercept and headers for auto-continue in the event handler
-    this.routes.push({
-      pattern: '**',
-      handler: (route: Route) => {
-        // Merge custom headers with original request headers
-        const merged = { ...route.request.headers(), ...headers };
-        route.continue({ headers: merged });
-      },
-      interceptId: result.intercept,
     });
   }
 

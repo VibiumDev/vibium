@@ -21,7 +21,10 @@ let bro;
 
 before(async () => {
   server = http.createServer((req, res) => {
-    if (req.url === '/json') {
+    if (req.url === '/echo-header') {
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+      res.end(req.headers['x-vibium-test'] || 'absent');
+    } else if (req.url === '/json') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ name: 'vibium', version: 1 }));
     } else if (req.url === '/text') {
@@ -116,6 +119,29 @@ describe.requires('network')('Network Interception: page.route', () => {
     await vibe.go(baseURL);
     assert.strictEqual(await vibe.title(), 'Test Page', 'navigation should complete');
     await vibe.close();
+  });
+
+  test('setHeaders() sends the headers on that page only, and an empty set clears them (#716)', async () => {
+    const vibe = await bro.newPage();
+    const other = await bro.newPage();
+    const seen = (page) => page.evaluate("fetch('/echo-header').then(r => r.text())");
+    try {
+      await vibe.setHeaders({ 'X-Vibium-Test': '716' });
+      await vibe.go(`${baseURL}/echo-header`);
+      assert.strictEqual(await vibe.evaluate('document.body.innerText'), '716', 'navigation request');
+      assert.strictEqual(await seen(vibe), '716', 'fetch request');
+
+      await other.go(`${baseURL}/echo-header`);
+      assert.strictEqual(await seen(other), 'absent', 'another page is not affected');
+
+      await vibe.setHeaders({ 'X-Vibium-Test': 'second' });
+      assert.strictEqual(await seen(vibe), 'second', 'a second call replaces the headers');
+      await vibe.setHeaders({});
+      assert.strictEqual(await seen(vibe), 'absent', 'an empty set clears them');
+    } finally {
+      await vibe.close();
+      await other.close();
+    }
   });
 
   test('route.fulfill() returns a mock response', async () => {

@@ -152,6 +152,12 @@ public class TestServer {
                     respond(exchange, 200, "application/json", "{\"name\":\"vibium\",\"version\":1}");
                     return;
                 }
+                if ("/echo-header".equals(path)) {
+                    String sent = exchange.getRequestHeaders().getFirst("X-Vibium-Test");
+                    exchange.getResponseHeaders().set("Cache-Control", "no-store");
+                    respond(exchange, 200, "text/plain", sent != null ? sent : "absent");
+                    return;
+                }
                 if ("/text".equals(path)) {
                     respond(exchange, 200, "text/plain", "hello world");
                     return;
