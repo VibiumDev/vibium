@@ -720,6 +720,10 @@ class Page:
         """Get the current viewport size."""
         return await self._client.send("vibium:page.viewport", {"context": self._context_id})
 
+    async def set_offline(self, offline: bool) -> None:
+        """Cut the page off from the network (True), or reconnect it (False)."""
+        await self._client.send("vibium:page.setOffline", {"context": self._context_id, "offline": offline})
+
     async def emulate_media(
         self,
         *,

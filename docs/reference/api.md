@@ -50,6 +50,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 30 | Scroll the page | `vibium:page.scroll` | `vibium scroll <dir> <amt>` | `browser_scroll` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(options?)` |
 | 31 | Set viewport size | `vibium:page.setViewport` | `vibium viewport <w> <h>` | `browser_set_viewport` | `page.setViewport(size)` | `page.set_viewport(size)` | `page.setViewport(size)` |
 | 32 | Get viewport size | `vibium:page.viewport` | `vibium viewport` | `browser_get_viewport` | `page.viewport()` | `page.viewport()` | `page.viewport()` |
+| 241 | Take the page offline or back online | `vibium:page.setOffline` | `vibium offline <state>` | `browser_set_offline` | `page.setOffline(offline)` | `page.set_offline(offline)` | `page.setOffline(offline)` |
 | 33 | Override CSS media features | `vibium:page.emulateMedia` | `vibium media <scheme>` | `browser_emulate_media` | `page.emulateMedia(opts)` | `page.emulate_media(**opts)` | `page.emulateMedia(opts)` |
 | 34 | Set page HTML | `vibium:page.setContent` | `vibium content <html>` | `browser_set_content` | `page.setContent(html)` | `page.set_content(html)` | `page.setContent(html)` |
 | 35 | Override geolocation | `vibium:page.setGeolocation` | `vibium geolocation <lat> <lon>` | `browser_set_geolocation` | `page.setGeolocation(coords)` | `page.set_geolocation(coords)` | `page.setGeolocation(coords)` |

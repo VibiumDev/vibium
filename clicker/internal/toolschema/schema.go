@@ -1467,6 +1467,21 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
+			Name:        "browser_set_offline",
+			Description: "Cut the page off from the network, or reconnect it, to test how a site behaves offline",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"offline": map[string]interface{}{
+						"type":        "boolean",
+						"description": "true takes the page offline; false reconnects it",
+					},
+				},
+				"required":             []string{"offline"},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "browser_emulate_media",
 			Description: "Override CSS media features (color scheme, reduced motion, etc.)",
 			InputSchema: map[string]interface{}{

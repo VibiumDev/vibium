@@ -349,6 +349,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newGeolocationCmd())
 	rootCmd.AddCommand(newContentCmd())
 	rootCmd.AddCommand(newMediaCmd())
+	rootCmd.AddCommand(newOfflineCmd())
 
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(progName + " v{{.Version}}\n")

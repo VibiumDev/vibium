@@ -499,6 +499,12 @@ const handlers: Record<string, Handler> = {
     return await getPage(pageId).viewport();
   },
 
+  'page.setOffline': async (args) => {
+    const [pageId, offline] = args as [number, boolean];
+    await getPage(pageId).setOffline(offline);
+    return { success: true };
+  },
+
   'page.emulateMedia': async (args) => {
     const [pageId, opts] = args as [number, any];
     await getPage(pageId).emulateMedia(opts);

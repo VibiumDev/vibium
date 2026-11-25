@@ -567,6 +567,13 @@ public class Page {
 
     // ── Emulation ───────────────────────────────────────────────
 
+    /** Cut the page off from the network (true), or reconnect it (false). */
+    public void setOffline(boolean offline) {
+        JsonObject params = contextParams();
+        params.addProperty("offline", offline);
+        client.send("vibium:page.setOffline", params);
+    }
+
     /** Override CSS media features. */
     public void emulateMedia(MediaOptions options) {
         JsonObject params = contextParams();
