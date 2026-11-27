@@ -79,7 +79,7 @@ def locator_params(
 def resolved_handle(params: Dict[str, Any]) -> bool:
     """Whether later commands address the match by what find resolved rather
     than by running the locator again."""
-    return any(k in params for k in ("description", "image", "tag", "name"))
+    return any(k in params for k in ("description", "image", "tag", "name", "near"))
 
 
 def handle_selector(result: Dict[str, Any]) -> str:

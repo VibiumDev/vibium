@@ -224,6 +224,19 @@ NESTED_SCOPE_HTML = """<html><head><title>Nested scope</title></head><body>
   <script>document.addEventListener('mouseup', (e) => { document.getElementById('out').textContent = e.target.textContent; });</script>
 </body></html>"""
 
+# Two identical buttons; only the near locator tells them apart.
+NEAR_HTML = """<html><head><title>Near</title></head><body>
+  <nav><button>Delete</button></nav>
+  <section class="account"><p>Delete your account here.</p><button>Delete</button></section>
+  <div id="log"></div>
+  <script>
+    document.addEventListener('click', (e) => {
+      const area = e.target.closest('nav, section');
+      if (area) document.getElementById('log').textContent = area.tagName;
+    });
+  </script>
+</body></html>"""
+
 HTML_ROUTES = {
     "/": HOME_HTML,
     "/subpage": SUBPAGE_HTML,
@@ -248,6 +261,7 @@ HTML_ROUTES = {
     "/combined-locator": COMBINED_LOCATOR_HTML,
     "/type-filter": TYPE_FILTER_HTML,
     "/nested-scope": NESTED_SCOPE_HTML,
+    "/near": NEAR_HTML,
     "/find-images": None,
     "/find-canvas": None,
 }

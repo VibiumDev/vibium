@@ -163,3 +163,53 @@ describe('Selector Strategies', () => {
     }
   });
 });
+
+describe('The near locator (#853)', () => {
+  before(async () => {
+    await vibe.go(`${baseURL}/near`);
+  });
+
+  after(async () => {
+    await vibe.go(`${baseURL}/selectors`);
+  });
+
+  const logged = () => vibe.evaluate("document.getElementById('log').textContent");
+
+  test('find picks the match closest to the near element and acts on it', async () => {
+    const plain = await vibe.find({ role: 'button', text: 'Delete' });
+    await plain.click();
+    assert.strictEqual(await logged(), 'NAV', 'without near, the first button in the page wins');
+    const near = await vibe.find({ role: 'button', text: 'Delete', near: '.account' });
+    await near.click();
+    assert.strictEqual(await logged(), 'SECTION');
+    const css = await vibe.find({ css: 'button', near: '.account' });
+    await css.click();
+    assert.strictEqual(await logged(), 'SECTION');
+  });
+
+  test('near prefers the smallest text match inside the near element', async () => {
+    const el = await vibe.find({ text: 'Delete', near: '.account' });
+    assert.strictEqual(el.info.tag, 'button');
+  });
+
+  test('findAll orders matches by distance to the near element', async () => {
+    const buttons = await vibe.findAll({ css: 'button', near: '.account' });
+    assert.strictEqual(buttons.length, 2);
+    await buttons[0].click();
+    assert.strictEqual(await logged(), 'SECTION');
+    await buttons[1].click();
+    assert.strictEqual(await logged(), 'NAV');
+  });
+
+  test('a near element that is missing, or near on a description, is an error', async () => {
+    await assert.rejects(
+      vibe.find({ css: 'button', near: '.missing' }, { timeout: 300 }),
+      /near=\.missing.*element not found/,
+    );
+    await assert.rejects(
+      vibe.find({ description: 'the delete button', near: '.account' }),
+      /near ranks css and structured locators/,
+    );
+  });
+});
+

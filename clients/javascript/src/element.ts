@@ -69,6 +69,7 @@ export interface SelectorOptions {
   title?: string;
   testid?: string;
   xpath?: string;
+  /** CSS selector of a nearby element. Of several matches, the closest to it wins. */
   near?: string;
   timeout?: number;
 }

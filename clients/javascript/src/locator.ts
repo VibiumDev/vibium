@@ -39,11 +39,11 @@ export async function locatorParams(selector: string | SelectorOptions): Promise
 /**
  * Whether later commands should address the match by what find resolved
  * rather than by re-running the locator: a description or image would run
- * the search again, and tag is not an action locator.
+ * the search again, and tag and near are not action locators.
  */
 export function resolvedHandle(selector: string | SelectorOptions): boolean {
   if (typeof selector === 'string') return true;
-  return selector.description !== undefined || selector.image !== undefined || selector.tag !== undefined || selector.name !== undefined;
+  return selector.description !== undefined || selector.image !== undefined || selector.tag !== undefined || selector.name !== undefined || selector.near !== undefined;
 }
 
 /** The selector an element is addressed by after find: its DOM selector, or its @ref for a visual match. */

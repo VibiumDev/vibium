@@ -40,6 +40,7 @@ func TestParseLocatorForms(t *testing.T) {
 		{"role and text compose", map[string]interface{}{"role": "button", "text": "Add"}, "structured", "role=button, text=Add"},
 		{"role and name compose", map[string]interface{}{"role": "link", "name": "More"}, "structured", "name=More, role=link"},
 		{"css scopes a semantic locator", map[string]interface{}{"selector": "nav", "role": "link"}, "structured", "css=nav, role=link"},
+		{"near", map[string]interface{}{"role": "button", "near": ".account"}, "structured", "role=button, near=.account"},
 		{"image", map[string]interface{}{"image": pngBase64(t, 16, 16)}, "image", "image"},
 		{"image data url", map[string]interface{}{"image": "data:image/png;base64," + pngBase64(t, 16, 16)}, "image", "image"},
 	}
@@ -105,6 +106,8 @@ func TestParseLocatorRejects(t *testing.T) {
 		{"bad image", map[string]interface{}{"image": "bm90IGFuIGltYWdl"}, "PNG or JPEG"},
 		{"image not a string", map[string]interface{}{"image": 7.0}, "base64"},
 		{"two css spellings", map[string]interface{}{"css": "h1", "selector": "h2"}, "give one"},
+		{"near on a description", map[string]interface{}{"description": "x", "near": ".account"}, "near ranks css and structured locators"},
+		{"near on an image", map[string]interface{}{"image": img, "near": ".account"}, "near ranks css and structured locators"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
