@@ -908,6 +908,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.setGeolocation":
 		r.dispatch(session, cmd, r.handlePageSetGeolocation)
 		return
+	case "vibium:page.setPermission":
+		r.dispatch(session, cmd, r.handlePageSetPermission)
+		return
 	case "vibium:page.setWindow":
 		r.dispatch(session, cmd, r.handlePageSetWindow)
 		return

@@ -583,6 +583,20 @@ public class Page {
         client.send("vibium:page.setContent", params);
     }
 
+    /** Grant ("granted"), deny ("denied") or reset ("prompt") a permission for the page's own origin. */
+    public void setPermission(String name, String state) {
+        setPermission(name, state, null);
+    }
+
+    /** Grant, deny or reset a permission such as "geolocation" for an origin. */
+    public void setPermission(String name, String state, String origin) {
+        JsonObject params = contextParams();
+        params.addProperty("name", name);
+        params.addProperty("state", state);
+        if (origin != null) params.addProperty("origin", origin);
+        client.send("vibium:page.setPermission", params);
+    }
+
     /** Override geolocation. */
     public void setGeolocation(GeoCoords coords) {
         JsonObject params = contextParams();

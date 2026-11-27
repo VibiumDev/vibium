@@ -1526,6 +1526,30 @@ func GetToolSchemas() []Tool {
 			},
 		},
 		{
+			Name:        "browser_set_permission",
+			Description: "Grant, deny or reset a browser permission (geolocation, notifications, camera, microphone, ...) for an origin, so a page that asks for it gets an answer without a prompt",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "Permission name, e.g. \"geolocation\", \"notifications\", \"camera\", \"microphone\", \"clipboard-read\". The browser decides which names it knows",
+					},
+					"state": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"granted", "denied", "prompt"},
+						"description": "granted or denied answers the request; prompt resets it to asking",
+					},
+					"origin": map[string]interface{}{
+						"type":        "string",
+						"description": "Origin the permission applies to, e.g. \"https://example.com\" (default: the current page's origin)",
+					},
+				},
+				"required":             []string{"name", "state"},
+				"additionalProperties": false,
+			},
+		},
+		{
 			Name:        "browser_set_content",
 			Description: "Replace the page HTML content",
 			InputSchema: map[string]interface{}{

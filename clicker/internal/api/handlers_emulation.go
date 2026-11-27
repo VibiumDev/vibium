@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // handlePageSetViewport handles vibium:page.setViewport — sets the viewport size.
@@ -284,6 +286,25 @@ func (r *Router) handlePageSetGeolocation(session *BrowserSession, cmd bidiComma
 	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
 }
 
+// handlePageSetPermission handles vibium:page.setPermission.
+func (r *Router) handlePageSetPermission(session *BrowserSession, cmd bidiCommand) {
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	name, _ := cmd.Params["name"].(string)
+	state, _ := cmd.Params["state"].(string)
+	origin, _ := cmd.Params["origin"].(string)
+
+	origin, err = SetPermission(NewAPISession(r, session, context), context, name, state, origin)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{"origin": origin})
+}
+
 // ---------------------------------------------------------------------------
 // Exported standalone functions — usable from both proxy and MCP.
 // ---------------------------------------------------------------------------
@@ -465,4 +486,55 @@ func SetGeolocation(s Session, context string, lat, lon, accuracy float64) error
 		"contexts":            []interface{}{context},
 	})
 	return err
+}
+
+// PermissionStates are the states a permission can be set to.
+var PermissionStates = []string{"granted", "denied", "prompt"}
+
+// SetPermission sets a permission for an origin in the page's browser context
+// and returns the origin. An empty origin means the page's own.
+func SetPermission(s Session, context, name, state, origin string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("a permission name is required, such as geolocation or notifications")
+	}
+	if !slices.Contains(PermissionStates, state) {
+		return "", fmt.Errorf("state must be one of %s, got %q", strings.Join(PermissionStates, ", "), state)
+	}
+	if origin == "" {
+		var err error
+		if origin, err = EvalSimpleScript(s, context, "() => location.origin"); err != nil || origin == "" || origin == "null" {
+			return "", fmt.Errorf("the page has no origin to set a permission for; give an origin")
+		}
+	}
+	params := map[string]interface{}{
+		"descriptor": map[string]interface{}{"name": name},
+		"state":      state,
+		"origin":     origin,
+	}
+	if userContext := userContextOf(s, context); userContext != "" {
+		params["userContext"] = userContext
+	}
+	if _, err := s.SendBidiCommand("permissions.setPermission", params); err != nil {
+		return "", fmt.Errorf("failed to set the %s permission: %w", name, err)
+	}
+	return origin, nil
+}
+
+// userContextOf returns the browser context a page belongs to, or "" when it cannot be read.
+func userContextOf(s Session, context string) string {
+	resp, err := s.SendBidiCommand("browsingContext.getTree", map[string]interface{}{"root": context, "maxDepth": 0})
+	if err != nil {
+		return ""
+	}
+	var tree struct {
+		Result struct {
+			Contexts []struct {
+				UserContext string `json:"userContext"`
+			} `json:"contexts"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(resp, &tree) != nil || len(tree.Result.Contexts) == 0 {
+		return ""
+	}
+	return tree.Result.Contexts[0].UserContext
 }

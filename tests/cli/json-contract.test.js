@@ -109,6 +109,7 @@ const CLASSES = {
   'pages': 'envelope',
   'paths': 'envelope',
   'pdf': 'envelope',
+  'permission': 'usage-error',
   'pipe': 'exempt', // stdout carries the BiDi protocol stream by design
   'press': 'usage-error',
   'ready': 'envelope',
