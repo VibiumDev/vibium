@@ -1516,11 +1516,15 @@ func (t *Recorder) writeVideoEntriesLocked(zw *zip.Writer, now time.Time, includ
 				vw.Write(data)
 				entry["file"] = name
 			} else if t.video.Error == "" {
+				msg := "video file empty: the engine wrote no frames"
 				if readErr != nil {
-					entry["error"] = "video file unreadable: " + readErr.Error()
-				} else {
-					entry["error"] = "video file empty: the engine wrote no frames"
+					msg = "video file unreadable: " + readErr.Error()
 				}
+				// Record it on the video too, so Summary() and the saved
+				// sentence report the failure instead of a video that is not
+				// in the zip (#862).
+				t.video.Error = msg
+				entry["error"] = msg
 			}
 		}
 	} else {
