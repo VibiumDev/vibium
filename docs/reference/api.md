@@ -48,6 +48,7 @@ For what goes *in* the `<sel>` argument — CSS, shadow-DOM pierce combinators, 
 | 28 | Wait for URL to match | `vibium:page.waitForURL` | `vibium wait url <pat>` | `browser_wait_for_url` | `page.waitForURL(url, opts?)` | `page.wait_for_url(url, **opts)` | `page.waitForURL(url, options?)` |
 | 29 | Wait for page load | `vibium:page.waitForLoad` | `vibium wait load` | `browser_wait_for_load` | `page.waitForLoad(opts?)` | `page.wait_for_load(**opts)` | `page.waitForLoad(options?)` |
 | 30 | Scroll the page | `vibium:page.scroll` | `vibium scroll <dir> <amt>` | `browser_scroll` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(dir?, amt?, sel?)` | `page.scroll(options?)` |
+| 242 | Override the page locale | `vibium:page.setLocale` | `vibium locale <tag>` | `browser_set_locale` | `page.setLocale(locale)` | `page.set_locale(locale)` | `page.setLocale(locale)` |
 | 31 | Set viewport size | `vibium:page.setViewport` | `vibium viewport <w> <h>` | `browser_set_viewport` | `page.setViewport(size)` | `page.set_viewport(size)` | `page.setViewport(size)` |
 | 32 | Get viewport size | `vibium:page.viewport` | `vibium viewport` | `browser_get_viewport` | `page.viewport()` | `page.viewport()` | `page.viewport()` |
 | 33 | Override CSS media features | `vibium:page.emulateMedia` | `vibium media <scheme>` | `browser_emulate_media` | `page.emulateMedia(opts)` | `page.emulate_media(**opts)` | `page.emulateMedia(opts)` |

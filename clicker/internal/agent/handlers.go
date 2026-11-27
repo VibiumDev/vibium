@@ -427,6 +427,8 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserLongPress(args)
 	case "browser_drag":
 		return h.browserDrag(args)
+	case "browser_set_locale":
+		return h.browserSetLocale(args)
 	case "browser_set_viewport":
 		return h.browserSetViewport(args)
 	case "browser_get_viewport":
@@ -822,6 +824,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:page.close"
 
 	// Viewport/window
+	case "browser_set_locale":
+		return "vibium:page.setLocale"
 	case "browser_set_viewport":
 		return "vibium:page.setViewport"
 	case "browser_get_viewport":
@@ -3916,6 +3920,30 @@ func (h *Handlers) browserDrag(args map[string]interface{}) (*ToolsCallResult, e
 			Text: fmt.Sprintf("Dragged %q to %q", source, target),
 		}},
 	}, nil
+}
+
+// browserSetLocale makes the page report a locale, or removes the override.
+func (h *Handlers) browserSetLocale(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+	locale, ok := args["locale"].(string)
+	if !ok {
+		return nil, fmt.Errorf("locale is required; an empty string removes the override")
+	}
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.SetLocale(s, ctx, locale); err != nil {
+		return nil, err
+	}
+	text := "Locale set to " + locale
+	if locale == "" {
+		text = "Locale override removed"
+	}
+	return &ToolsCallResult{Content: []Content{{Type: "text", Text: text}}}, nil
 }
 
 // browserSetViewport sets the viewport size.

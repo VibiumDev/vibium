@@ -583,6 +583,14 @@ export class Page {
 
   // --- Emulation ---
 
+  /** Make the page report a locale such as 'de-DE'. null removes the override. */
+  async setLocale(locale: string | null): Promise<void> {
+    await this.client.send('vibium:page.setLocale', {
+      context: this.contextId,
+      locale: locale ?? '',
+    });
+  }
+
   /** Set the viewport size. */
   async setViewport(size: { width: number; height: number }): Promise<void> {
     await this.client.send('vibium:page.setViewport', {

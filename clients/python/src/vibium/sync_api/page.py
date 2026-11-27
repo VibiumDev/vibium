@@ -370,6 +370,9 @@ class Page:
 
     # --- Emulation ---
 
+    def set_locale(self, locale: Optional[str]) -> None:
+        self._loop.run(self._async.set_locale(locale))
+
     def set_viewport(self, size: Dict[str, int]) -> None:
         self._loop.run(self._async.set_viewport(size))
 

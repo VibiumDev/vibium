@@ -330,6 +330,7 @@ func newRootCmd(progName string) (root, run *cobra.Command) {
 	rootCmd.AddCommand(newTapCmd())
 	rootCmd.AddCommand(newSwipeCmd())
 	rootCmd.AddCommand(newLongPressCmd())
+	rootCmd.AddCommand(newLocaleCmd())
 	rootCmd.AddCommand(newViewportCmd())
 	rootCmd.AddCommand(newWindowCmd())
 	rootCmd.AddCommand(newFramesCmd())

@@ -180,12 +180,12 @@ describe('MCP Server: Protocol', () => {
     assert.match(response.result.protocolVersion, /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  test('tools/list returns all 92 tools including Check, Run, Say and Listen', async () => {
+  test('tools/list returns all 93 tools including Check, Run, Say and Listen', async () => {
     const response = await client.call('tools/list', {});
 
     assert.ok(response.result, 'Should have result');
     assert.ok(response.result.tools, 'Should have tools array');
-    assert.strictEqual(response.result.tools.length, 92, 'Should have 92 tools');
+    assert.strictEqual(response.result.tools.length, 93, 'Should have 93 tools');
 
     const toolNames = response.result.tools.map(t => t.name);
     const expectedTools = [
@@ -213,7 +213,7 @@ describe('MCP Server: Protocol', () => {
       'browser_get_cookies', 'browser_set_cookie', 'browser_delete_cookies',
       'browser_mouse_move', 'browser_mouse_down', 'browser_mouse_up', 'browser_mouse_click', 'browser_drag',
       'browser_tap', 'browser_swipe', 'browser_long_press',
-      'browser_set_viewport', 'browser_get_viewport',
+      'browser_set_locale', 'browser_set_viewport', 'browser_get_viewport',
       'browser_get_window', 'browser_set_window',
       'browser_emulate_media',
       'browser_set_geolocation', 'browser_set_content',
@@ -352,6 +352,21 @@ describe('MCP Server: Browser Tools', () => {
       name: 'browser_navigate',
       arguments: { url: `${baseURL}/example` },
     });
+  });
+
+  test('browser_set_locale sets and removes the page locale (#717)', async () => {
+    const call = (name, args) => client.call('tools/call', { name, arguments: args });
+    const formatted = async () => (await call('browser_evaluate', { expression: '(1234.5).toLocaleString()' })).result.content[0].text;
+
+    const before = await formatted();
+    const set = await call('browser_set_locale', { locale: 'de-DE' });
+    try {
+      assert.ok(set.result.content[0].text.includes('Locale set to de-DE'), set.result.content[0].text);
+      assert.ok((await formatted()).includes('1.234,5'));
+    } finally {
+      await call('browser_set_locale', { locale: '' });
+    }
+    assert.strictEqual(await formatted(), before);
   });
 
   test('browser_evaluate executes JavaScript', async () => {
