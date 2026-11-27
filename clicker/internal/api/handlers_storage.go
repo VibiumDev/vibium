@@ -335,22 +335,46 @@ func (r *Router) handleContextSetStorage(session *BrowserSession, cmd bidiComman
 		}
 	}
 
-	// 2. Set localStorage/sessionStorage from origins
+	// 2. Set localStorage/sessionStorage per origin. Web storage is
+	//    origin-scoped, so each origin must be the active document before its
+	//    items can be written; writing against whatever page happens to be
+	//    open lands the values on the wrong origin or discards them (#861).
+	//    Cookies were set in step 1, so navigating to an origin stays
+	//    authenticated instead of bouncing to a login page.
 	if originsRaw, ok := stateRaw["origins"].([]interface{}); ok && len(originsRaw) > 0 {
 		context, err := r.findContextForUserContext(session, userContext)
 		if err == nil {
+			// Return the page to where the caller had it once every origin is
+			// seeded, instead of leaving it on the last restored origin.
+			original, _ := r.evalSimpleScript(session, context, "() => location.href")
+			navigated := false
+
 			for _, oRaw := range originsRaw {
 				o, ok := oRaw.(map[string]interface{})
 				if !ok {
 					continue
 				}
 
-				// Build JS to restore storage for this origin
+				origin, _ := o["origin"].(string)
 				lsItems, _ := o["localStorage"].([]interface{})
 				ssItems, _ := o["sessionStorage"].([]interface{})
 
 				if len(lsItems) == 0 && len(ssItems) == 0 {
 					continue
+				}
+
+				// Visit the origin so setItem writes to its own storage. An
+				// entry with no origin falls back to the current page.
+				if origin != "" {
+					if _, err := r.sendInternalCommand(session, "browsingContext.navigate", map[string]interface{}{
+						"context": context,
+						"url":     origin,
+						"wait":    "complete",
+					}); err != nil {
+						r.sendError(session, cmd.ID, err)
+						return
+					}
+					navigated = true
 				}
 
 				// Serialize items to JSON for safe embedding in JS
@@ -370,6 +394,14 @@ func (r *Router) handleContextSetStorage(session *BrowserSession, cmd bidiComman
 				}`, string(lsJSON), string(ssJSON))
 
 				r.evalSimpleScript(session, context, script)
+			}
+
+			if navigated && original != "" && original != "about:blank" {
+				r.sendInternalCommand(session, "browsingContext.navigate", map[string]interface{}{
+					"context": context,
+					"url":     original,
+					"wait":    "complete",
+				})
 			}
 		}
 	}
