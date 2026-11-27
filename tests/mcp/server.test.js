@@ -354,6 +354,31 @@ describe('MCP Server: Browser Tools', () => {
     });
   });
 
+  test('browser_find filters with hasText and has, and picks with nth (#709)', async () => {
+    await client.call('tools/call', {
+      name: 'browser_navigate',
+      arguments: { url: `${baseURL}/filter-list` },
+    });
+    const find = async (name, args) => {
+      const response = await client.call('tools/call', { name, arguments: args });
+      return response.result;
+    };
+    try {
+      assert.ok((await find('browser_find', { css: '.row', hasText: 'Banan' })).content[0].text.includes('Bananas'));
+      assert.ok((await find('browser_find', { css: '.row', has: 'em' })).content[0].text.includes('Cherries'));
+      assert.ok((await find('browser_find', { css: '.row', nth: -1 })).content[0].text.includes('Dates'));
+      const all = (await find('browser_find_all', { css: '.row', hasText: 'es' })).content[0].text;
+      assert.ok(all.includes('Apples') && all.includes('Dates') && !all.includes('Bananas'), `filtered list: ${all}`);
+      const described = await find('browser_find', { description: 'the last row', nth: -1 });
+      assert.ok(described.isError, 'nth does not combine with a description');
+    } finally {
+      await client.call('tools/call', {
+        name: 'browser_navigate',
+        arguments: { url: `${baseURL}/example` },
+      });
+    }
+  });
+
   test('browser_evaluate executes JavaScript', async () => {
     const response = await client.call('tools/call', {
       name: 'browser_evaluate',

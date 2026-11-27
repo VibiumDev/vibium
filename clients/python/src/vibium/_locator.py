@@ -42,6 +42,9 @@ def locator_params(
     testid: Optional[str] = None,
     xpath: Optional[str] = None,
     near: Optional[str] = None,
+    has_text: Optional[str] = None,
+    has: Optional[str] = None,
+    nth: Optional[int] = None,
     strategy: Optional[str] = None,
     details: Optional[bool] = None,
     provider: Optional[str] = None,
@@ -68,6 +71,7 @@ def locator_params(
     for key, val in [("tag", tag), ("name", name), ("role", role), ("text", text), ("label", label),
                      ("placeholder", placeholder), ("alt", alt), ("title", title),
                      ("testid", testid), ("xpath", xpath), ("near", near),
+                     ("hasText", has_text), ("has", has), ("nth", nth),
                      ("strategy", strategy), ("details", details), ("provider", provider),
                      ("model", model), ("aiBaseURL", ai_base_url),
                      ("reasoningEffort", reasoning_effort), ("timeout", timeout)]:
@@ -79,7 +83,7 @@ def locator_params(
 def resolved_handle(params: Dict[str, Any]) -> bool:
     """Whether later commands address the match by what find resolved rather
     than by running the locator again."""
-    return any(k in params for k in ("description", "image", "tag", "name"))
+    return any(k in params for k in ("description", "image", "tag", "name", "hasText", "has", "nth"))
 
 
 def handle_selector(result: Dict[str, Any]) -> str:

@@ -89,3 +89,32 @@ async def test_scoped_child_reresolves_inside_parent(async_page, test_server):
     await child.click()
     out = await async_page.evaluate("document.getElementById('out').textContent")
     assert out == "B"
+
+
+async def test_find_filters_and_nth(async_page, test_server):
+    """find filters by has_text and has, then picks nth (#709)."""
+    await async_page.go(test_server + "/filter-list")
+    third = await async_page.find(css=".row", nth=2)
+    assert "Cherries" in third.info.text
+    last = await async_page.find(css=".row", nth=-1)
+    assert "Dates" in last.info.text
+    bananas = await async_page.find(css=".row", has_text="Banan")
+    assert "Bananas" in bananas.info.text
+    sale = await async_page.find(css=".row", has="em")
+    assert "Cherries" in sale.info.text
+    parent = await async_page.find(css="#list")
+    scoped = await parent.find(css=".row", has_text="es", nth=1)
+    await scoped.click()
+    assert await async_page.evaluate("document.getElementById('log').textContent") == "Cherries"
+
+
+async def test_filtered_find_all_acts_on_its_own_match(async_page, test_server):
+    """A filtered find_all element must act on the element it matched (#709)."""
+    await async_page.go(test_server + "/filter-list")
+    rows = await async_page.find_all(css=".row", has_text="es")
+    assert len(rows) == 3
+    await rows[1].click()
+    assert await async_page.evaluate("document.getElementById('log').textContent") == "Cherries"
+    parent = await async_page.find(css="#list")
+    scoped = await parent.find_all(css=".row", has="em")
+    assert len(scoped) == 1 and "Cherries" in scoped[0].info.text

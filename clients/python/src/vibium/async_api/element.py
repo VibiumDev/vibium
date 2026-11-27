@@ -251,6 +251,9 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
+        has: Optional[str] = None,
+        nth: Optional[int] = None,
         strategy: Optional[str] = None,
         details: Optional[bool] = None,
         provider: Optional[str] = None,
@@ -261,7 +264,7 @@ class Element:
     ) -> Element:
         """Find a child element; the forms are those of page.find, scoped to this element."""
         params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
-            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near, has_text=has_text, has=has, nth=nth,
             strategy=strategy, details=details, provider=provider, model=model,
             ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
         params["context"] = self._context
@@ -291,6 +294,8 @@ class Element:
         testid: Optional[str] = None,
         xpath: Optional[str] = None,
         near: Optional[str] = None,
+        has_text: Optional[str] = None,
+        has: Optional[str] = None,
         strategy: Optional[str] = None,
         details: Optional[bool] = None,
         provider: Optional[str] = None,
@@ -301,7 +306,7 @@ class Element:
     ) -> List[Element]:
         """Find all child elements; the forms are those of page.find_all, scoped to this element."""
         params = locator_params(selector, description=description, image=image, css=css, tag=tag, name=name, role=role, text=text, label=label,
-            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near,
+            placeholder=placeholder, alt=alt, title=title, testid=testid, xpath=xpath, near=near, has_text=has_text, has=has,
             strategy=strategy, details=details, provider=provider, model=model,
             ai_base_url=ai_base_url, reasoning_effort=reasoning_effort, timeout=timeout)
         params["context"] = self._context

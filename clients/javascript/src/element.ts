@@ -70,6 +70,12 @@ export interface SelectorOptions {
   testid?: string;
   xpath?: string;
   near?: string;
+  /** Keep only matches whose text contains this. Filters css and semantic locators. */
+  hasText?: string;
+  /** Keep only matches with a descendant matching this CSS selector. */
+  has?: string;
+  /** With find: the match at this 0-based position; negative counts from the end. Applies after hasText and has. */
+  nth?: number;
   timeout?: number;
 }
 

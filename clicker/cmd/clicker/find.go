@@ -17,6 +17,9 @@ type findFlags struct {
 	limit    int
 	strategy string
 	details  bool
+	hasText  string
+	has      string
+	nth      int
 }
 
 func newFindCmd() *cobra.Command {
@@ -52,7 +55,16 @@ reference go to the model only if local matching finds nothing.`,
   # Force the vision model for one call
 
   vibium find role button --strategy tree
-  # Only the page's semantic tree, never a model`,
+  # Only the page's semantic tree, never a model
+
+  vibium find css "li" --has-text "Bob"
+  # → @e1 [li] "Bob Smith"
+
+  vibium find css "tr" --has "button.delete" --all
+  # Only the rows that contain a delete button
+
+  vibium find css "li" --nth 2
+  # The third match; --nth -1 is the last`,
 		Args: cobra.RangeArgs(0, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) == 0 {
@@ -79,6 +91,9 @@ reference go to the model only if local matching finds nothing.`,
 	cmd.PersistentFlags().IntVar(&flags.limit, "limit", 10, "Maximum number of elements to return (with --all)")
 	cmd.PersistentFlags().StringVar(&flags.strategy, "strategy", "auto", "How to resolve: auto, cv (local image matching only), vlm (vision model only), or tree (page tree only)")
 	cmd.PersistentFlags().BoolVar(&flags.details, "details", false, "Print diagnostics: method, model, raw scores")
+	cmd.PersistentFlags().StringVar(&flags.hasText, "has-text", "", "Keep only matches whose text contains this (css and locator subcommands)")
+	cmd.PersistentFlags().StringVar(&flags.has, "has", "", "Keep only matches containing a descendant that matches this CSS selector")
+	cmd.PersistentFlags().IntVar(&flags.nth, "nth", 0, "Pick the match at this 0-based position; negative counts from the end")
 
 	locator := func(name, short, example, key string) *cobra.Command {
 		var t time.Duration
@@ -188,6 +203,15 @@ func runFind(cmd *cobra.Command, flags *findFlags, timeout time.Duration, toolAr
 	toolArgs["strategy"] = flags.strategy
 	if flags.details {
 		toolArgs["details"] = true
+	}
+	if flags.hasText != "" {
+		toolArgs["hasText"] = flags.hasText
+	}
+	if flags.has != "" {
+		toolArgs["has"] = flags.has
+	}
+	if cmd.Flags().Changed("nth") {
+		toolArgs["nth"] = float64(flags.nth)
 	}
 	if cmd.Flags().Lookup("provider") != nil {
 		for name, value := range modelOverrideParams(cmd) {

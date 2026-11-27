@@ -27,6 +27,9 @@ public class SelectorOptions {
     private String testid;
     private String xpath;
     private String near;
+    private String hasText;
+    private String has;
+    private Integer nth;
     private String strategy;
     private Boolean details;
     private String provider;
@@ -62,6 +65,12 @@ public class SelectorOptions {
     public SelectorOptions testid(String testid) { this.testid = testid; return this; }
     public SelectorOptions xpath(String xpath) { this.xpath = xpath; return this; }
     public SelectorOptions near(String near) { this.near = near; return this; }
+    /** Keep only matches whose text contains this. Filters css and semantic locators. */
+    public SelectorOptions hasText(String hasText) { this.hasText = hasText; return this; }
+    /** Keep only matches with a descendant matching this CSS selector. */
+    public SelectorOptions has(String has) { this.has = has; return this; }
+    /** With find: the match at this 0-based position; negative counts from the end. */
+    public SelectorOptions nth(int nth) { this.nth = nth; return this; }
     /**
      * auto (default): page evidence first, a vision model only when needed
      * and configured. cv: local image matching only. vlm: vision model only.
@@ -81,7 +90,9 @@ public class SelectorOptions {
     public String css() { return css; }
 
     /** Whether later commands should address the match by what find resolved rather than by this locator. */
-    public boolean resolvedHandle() { return description != null || image != null || tag != null || name != null; }
+    public boolean resolvedHandle() {
+        return description != null || image != null || tag != null || name != null || hasText != null || has != null || nth != null;
+    }
 
     /**
      * Convert to wire params map. css travels as "selector", the name element
@@ -103,6 +114,9 @@ public class SelectorOptions {
         if (testid != null) params.put("testid", testid);
         if (xpath != null) params.put("xpath", xpath);
         if (near != null) params.put("near", near);
+        if (hasText != null) params.put("hasText", hasText);
+        if (has != null) params.put("has", has);
+        if (nth != null) params.put("nth", nth);
         if (strategy != null) params.put("strategy", strategy);
         if (details != null) params.put("details", details);
         if (provider != null) params.put("provider", provider);

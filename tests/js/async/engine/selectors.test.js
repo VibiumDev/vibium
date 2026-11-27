@@ -163,3 +163,70 @@ describe('Selector Strategies', () => {
     }
   });
 });
+
+describe('Find filters (#709)', () => {
+  before(async () => {
+    await vibe.go(`${baseURL}/filter-list`);
+  });
+
+  after(async () => {
+    await vibe.go(`${baseURL}/selectors`);
+  });
+
+  const logged = () => vibe.evaluate("document.getElementById('log').textContent");
+
+  test('find picks the nth match, negative from the end', async () => {
+    const third = await vibe.find({ css: '.row', nth: 2 });
+    assert.ok(third.info.text.includes('Cherries'), `nth 2 found: ${third.info.text}`);
+    const last = await vibe.find({ css: '.row', nth: -1 });
+    assert.ok(last.info.text.includes('Dates'), `nth -1 found: ${last.info.text}`);
+  });
+
+  test('find filters by hasText and has before it picks', async () => {
+    const bananas = await vibe.find({ css: '.row', hasText: 'Banan' });
+    assert.ok(bananas.info.text.includes('Bananas'), `hasText found: ${bananas.info.text}`);
+    const sale = await vibe.find({ css: '.row', has: 'em' });
+    assert.ok(sale.info.text.includes('Cherries'), `has found: ${sale.info.text}`);
+    const semantic = await vibe.find({ role: 'listitem', hasText: 'Dates' });
+    assert.ok(semantic.info.text.includes('Dates'), `role with hasText found: ${semantic.info.text}`);
+    const second = await vibe.find({ css: '.row', hasText: 'es', nth: 1 });
+    assert.ok(second.info.text.includes('Cherries'), `nth after hasText found: ${second.info.text}`);
+  });
+
+  test('a filtered find acts on the element it matched', async () => {
+    const cherries = await vibe.find({ css: '.row', hasText: 'Cherries' });
+    await cherries.click();
+    assert.strictEqual(await logged(), 'Cherries');
+    const last = await vibe.find({ css: '.row', nth: -1 });
+    await last.click();
+    assert.strictEqual(await logged(), 'Dates');
+    const scoped = await vibe.find({ css: '#list' }).find({ css: '.row', nth: 1 });
+    await scoped.click();
+    assert.strictEqual(await logged(), 'Bananas');
+  });
+
+  test('a filtered findAll element acts on its own match', async () => {
+    const rows = await vibe.findAll({ css: '.row', hasText: 'es' });
+    assert.strictEqual(rows.length, 3, 'Apples, Cherries and Dates contain "es"');
+    await rows[1].click();
+    assert.strictEqual(await logged(), 'Cherries');
+  });
+
+  test('findAll refuses nth', async () => {
+    await assert.rejects(vibe.findAll({ css: '.row', nth: 1 }), /nth picks one element/);
+  });
+
+  test('a filtered find waits for its match and names the filter on a miss', async () => {
+    await vibe.evaluate('setTimeout(appendRow, 300)');
+    const added = await vibe.find({ css: '.row', hasText: 'Elderberries' }, { timeout: 5000 });
+    assert.ok(added.info.text.includes('Elderberries'));
+    await assert.rejects(
+      vibe.find({ css: '.row', hasText: 'Grapes' }, { timeout: 500 }),
+      /hasText=Grapes.*element not found/,
+    );
+    await assert.rejects(
+      vibe.find({ css: '.row', nth: 99 }, { timeout: 500 }),
+      /nth=99.*element not found/,
+    );
+  });
+});

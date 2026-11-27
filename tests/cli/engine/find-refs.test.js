@@ -56,4 +56,17 @@ describe('CLI: Find @refs', () => {
     assert.match(result, /@e1/, 'Should contain @e1');
     assert.ok(!result.includes('@e2'), 'Should not contain @e2');
   });
+
+  test('find filters with --has-text and --has, and picks with --nth (#709)', () => {
+    execSync(`${VIBIUM} go ${baseURL}/filter-list`, { encoding: 'utf-8', timeout: 30000 });
+    const run = (flags) => execSync(`${VIBIUM} find css ".row" ${flags}`, { encoding: 'utf-8', timeout: 30000 });
+    assert.match(run('--has-text Banan'), /Bananas/);
+    assert.match(run('--has em'), /Cherries/);
+    assert.match(run('--nth 2'), /Cherries/);
+    assert.match(run('--nth -1'), /Dates/);
+    const filtered = run('--has-text es --all');
+    assert.match(filtered, /Apples/);
+    assert.match(filtered, /Dates/);
+    assert.ok(!filtered.includes('Bananas'), `Bananas does not contain "es": ${filtered}`);
+  });
 });
