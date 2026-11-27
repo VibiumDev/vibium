@@ -60,3 +60,31 @@ func TestClearFrameIfContextClosedIgnoresOtherPages(t *testing.T) {
 			h.activeContext, h.activeFrameParent)
 	}
 }
+
+// browser_frame records the frame as the ambient context and the page it
+// lives in, so the next unpinned command runs inside it (#510).
+func TestRememberActiveFrameRecordsFrameAndParent(t *testing.T) {
+	h := &Handlers{activeContext: "page-ctx"}
+
+	h.rememberActiveFrame("page-ctx", "frame-ctx")
+
+	if h.activeContext != "frame-ctx" {
+		t.Errorf("activeContext = %q, want frame-ctx", h.activeContext)
+	}
+	if h.activeFrameParent != "page-ctx" {
+		t.Errorf("activeFrameParent = %q, want page-ctx", h.activeFrameParent)
+	}
+}
+
+// A page-pinned browser_frame (concurrent subagents) must not mutate the
+// shared ambient state, or it contaminates other callers (#863).
+func TestRememberActiveFrameIgnoredWhenPinned(t *testing.T) {
+	h := &Handlers{activeContext: "page-ctx", pageOverride: "PA"}
+
+	h.rememberActiveFrame("PA", "frame-ctx")
+
+	if h.activeContext != "page-ctx" || h.activeFrameParent != "" {
+		t.Errorf("pinned frame mutated ambient state: activeContext=%q activeFrameParent=%q",
+			h.activeContext, h.activeFrameParent)
+	}
+}

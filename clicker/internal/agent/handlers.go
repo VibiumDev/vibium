@@ -149,6 +149,22 @@ func (h *Handlers) leaveActiveFrame() {
 	}
 }
 
+// rememberActiveFrame records a frame found by browser_frame as the ambient
+// context so the next CLI command runs inside it, and the page it belongs to
+// so navigation can leave it (#510). On nested frame calls pageCtx is itself
+// a frame, so the first recorded page is kept. A page-pinned call (concurrent
+// subagents) must not touch the shared ambient state, so it is a no-op then,
+// matching browserNavigate's guard (#863).
+func (h *Handlers) rememberActiveFrame(pageCtx, frameCtx string) {
+	if h.pageOverride != "" {
+		return
+	}
+	if h.activeFrameParent == "" {
+		h.activeFrameParent = pageCtx
+	}
+	h.activeContext = frameCtx
+}
+
 // clearFrameIfContextClosed drops the frame state when the closed context is
 // the frame's page (the frame dies with it) — keeping either would leave
 // later commands pointed at a dead frame (#510).
@@ -4223,13 +4239,7 @@ func (h *Handlers) browserFrame(args map[string]interface{}) (*ToolsCallResult, 
 
 	// The daemon is the only thing that survives between CLI invocations, so
 	// without this the frame is forgotten before the next command runs.
-	// Remember the page it belongs to as well, so a later navigation can
-	// leave the frame instead of navigating inside it (#510). On nested
-	// frame calls ctx is itself a frame, so keep the first recorded page.
-	if h.activeFrameParent == "" {
-		h.activeFrameParent = ctx
-	}
-	h.activeContext = frame.Context
+	h.rememberActiveFrame(ctx, frame.Context)
 
 	result, _ := json.Marshal(frame)
 	return &ToolsCallResult{
