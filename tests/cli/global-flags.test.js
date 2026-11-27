@@ -39,6 +39,7 @@ const COMMANDS = {
   swipe: ['swipe', '200', '400', '200', '100'],
   'long-press': ['long-press', '100', '200'],
   window: ['window', '1280', '720'],
+  select: ['select', '#a', 'x'],
 };
 
 describe('CLI: late-parsed commands honor global flag validation (#482)', () => {

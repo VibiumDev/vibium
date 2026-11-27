@@ -40,6 +40,7 @@ const COMMANDS = {
   swipe: { argv: ['swipe'], short: 'Swipe a touchscreen in a direction or from one point to another', executed: /^\{/m },
   'long-press': { argv: ['long-press'], short: 'Press and hold a touchscreen at coordinates', executed: /^\{/m },
   window: { argv: ['window'], short: 'Get or set the OS browser window size, position, or state', executed: /^\{/m },
+  select: { argv: ['select'], short: 'Select an option in a <select> element', executed: /^\{/m },
 };
 
 function assertHelp(result, cmd, invocation) {
