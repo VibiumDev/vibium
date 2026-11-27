@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Model selects a native provider adapter for the shared operation loop.
-type Model struct{ Client *http.Client }
+type Model struct {
+	Client *http.Client
+	sleep  func(context.Context, time.Duration) error // nil waits on a real timer
+}
 
 type toolCall struct {
 	Signature  string `json:"-"` // opaque Gemini continuation metadata; memory only

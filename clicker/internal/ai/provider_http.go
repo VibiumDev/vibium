@@ -4,11 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
+
+const postAttempts = 3
+const retryBackoff = 500 * time.Millisecond
+
+// A longer Retry-After fails fast: the wait would eat the run's Timeout.
+const maxRetryAfter = 30 * time.Second
+
+type transientError struct {
+	error
+	after time.Duration
+}
 
 // post returns the response body and its Content-Type media type, so parse
 // failures can say what the endpoint answered with. The media type is not
@@ -22,6 +37,31 @@ func (v *Model) post(ctx context.Context, endpoint string, payload interface{}, 
 	if len(body) > 8*1024*1024 {
 		return nil, "", fmt.Errorf("verifier context payload limit reached")
 	}
+	sleep := v.sleep
+	if sleep == nil {
+		sleep = sleepContext
+	}
+	for attempt := 1; ; attempt++ {
+		data, contentType, err := v.postOnce(ctx, endpoint, body, headers)
+		var transient transientError
+		if !errors.As(err, &transient) {
+			return data, contentType, err
+		}
+		if attempt == postAttempts {
+			return nil, "", fmt.Errorf("%w after %d attempts", transient.error, attempt)
+		}
+		wait := transient.after
+		if wait == 0 {
+			backoff := retryBackoff << (attempt - 1)
+			wait = backoff/2 + rand.N(backoff/2+1)
+		}
+		if wait > maxRetryAfter || sleep(ctx, wait) != nil {
+			return nil, "", transient.error
+		}
+	}
+}
+
+func (v *Model) postOnce(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid verifier endpoint")
@@ -63,7 +103,12 @@ func (v *Model) post(ctx context.Context, endpoint string, payload interface{}, 
 		case "model", "messages", "tools", "max_completion_tokens", "parallel_tool_calls", "reasoning_effort":
 			suffix += " in " + field
 		}
-		return nil, "", fmt.Errorf("verifier provider returned HTTP %d%s", response.StatusCode, suffix)
+		err := fmt.Errorf("verifier provider returned HTTP %d%s", response.StatusCode, suffix)
+		status := response.StatusCode
+		if detail.Error.Code != "insufficient_quota" && (status == 408 || status == 429 || status >= 500) {
+			return nil, "", transientError{err, retryAfter(response.Header.Get("Retry-After"))}
+		}
+		return nil, "", err
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, 1024*1024+1))
 	if err != nil || len(data) > 1024*1024 {
@@ -71,6 +116,25 @@ func (v *Model) post(ctx context.Context, endpoint string, payload interface{}, 
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(response.Header.Get("Content-Type"), ";", 2)[0]))
 	return data, contentType, nil
+}
+
+func retryAfter(header string) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(header))
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return time.Duration(min(seconds, int(maxRetryAfter/time.Second)+1)) * time.Second
+}
+
+func sleepContext(ctx context.Context, wait time.Duration) error {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // invalidProviderResponse says what the endpoint answered with when a reply
