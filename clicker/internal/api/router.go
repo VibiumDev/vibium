@@ -899,6 +899,9 @@ func (r *Router) OnClientMessage(client ClientTransport, msg string) {
 	case "vibium:page.viewport":
 		r.dispatch(session, cmd, r.handlePageViewport)
 		return
+	case "vibium:page.setOffline":
+		r.dispatch(session, cmd, r.handlePageSetOffline)
+		return
 	case "vibium:page.emulateMedia":
 		r.dispatch(session, cmd, r.handlePageEmulateMedia)
 		return

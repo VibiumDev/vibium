@@ -376,6 +376,9 @@ class Page:
     def viewport(self) -> Dict[str, int]:
         return self._loop.run(self._async.viewport())
 
+    def set_offline(self, offline: bool) -> None:
+        self._loop.run(self._async.set_offline(offline))
+
     def emulate_media(
         self,
         *,

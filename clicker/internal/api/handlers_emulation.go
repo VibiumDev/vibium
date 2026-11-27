@@ -73,6 +73,40 @@ func (r *Router) handlePageViewport(session *BrowserSession, cmd bidiCommand) {
 	})
 }
 
+// handlePageSetOffline handles vibium:page.setOffline.
+func (r *Router) handlePageSetOffline(session *BrowserSession, cmd bidiCommand) {
+	context, err := r.resolveContext(session, cmd.Params)
+	if err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	offline, ok := cmd.Params["offline"].(bool)
+	if !ok {
+		r.sendError(session, cmd.ID, fmt.Errorf("offline must be true or false"))
+		return
+	}
+	if err := SetOffline(NewAPISession(r, session, context), context, offline); err != nil {
+		r.sendError(session, cmd.ID, err)
+		return
+	}
+	r.sendSuccess(session, cmd.ID, map[string]interface{}{})
+}
+
+// SetOffline cuts a page off from the network, or reconnects it.
+func SetOffline(s Session, context string, offline bool) error {
+	var conditions interface{}
+	if offline {
+		conditions = map[string]interface{}{"type": "offline"}
+	}
+	if _, err := s.SendBidiCommand("emulation.setNetworkConditions", map[string]interface{}{
+		"networkConditions": conditions,
+		"contexts":          []interface{}{context},
+	}); err != nil {
+		return fmt.Errorf("failed to set the network offline state: %w", err)
+	}
+	return nil
+}
+
 // handlePageEmulateMedia handles vibium:page.emulateMedia — overrides CSS media features.
 // Uses JS matchMedia override since BiDi has no CSS media feature commands.
 // Supports: media, colorScheme, reducedMotion, forcedColors, contrast.

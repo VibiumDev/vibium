@@ -599,6 +599,14 @@ export class Page {
     });
   }
 
+  /** Cut the page off from the network (true), or reconnect it (false). */
+  async setOffline(offline: boolean): Promise<void> {
+    await this.client.send('vibium:page.setOffline', {
+      context: this.contextId,
+      offline,
+    });
+  }
+
   /** Override CSS media features (colorScheme, reducedMotion, forcedColors, contrast, media type). */
   async emulateMedia(opts: {
     media?: 'screen' | 'print' | null;

@@ -384,6 +384,10 @@ export class PageSync {
     return this._bridge.call<{ width: number; height: number }>('page.viewport', [this._pageId]);
   }
 
+  setOffline(offline: boolean): void {
+    this._bridge.call('page.setOffline', [this._pageId, offline]);
+  }
+
   emulateMedia(opts: {
     media?: 'screen' | 'print' | null;
     colorScheme?: 'light' | 'dark' | 'no-preference' | null;

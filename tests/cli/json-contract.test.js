@@ -99,6 +99,7 @@ const CLASSES = {
   'map': 'envelope',
   'mcp': 'exempt', // server: banner on stderr, exits when stdin closes
   'media': 'usage-error',
+  'offline': 'usage-error',
   'mouse click': 'envelope',
   'mouse down': 'envelope',
   'mouse move': 'usage-error',

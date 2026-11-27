@@ -198,6 +198,7 @@ For touchscreen devices and phones (for example driving a phone through Roadie).
 - `vibium viewport <width> <height>` — set viewport size (`--dpr` for device pixel ratio)
 - `vibium window` — get OS browser window dimensions and state
 - `vibium window <width> <height> [x] [y]` — set window size and position (`--state`)
+- `vibium offline <on|off>`: cut the page off from the network, or reconnect it
 - `vibium media` — override CSS media features (`--color-scheme`, `--reduced-motion`, `--forced-colors`, `--contrast`, `--media`)
 - `vibium geolocation <lat> <lng>` — override geolocation (`--accuracy`)
 - `vibium content "<html>"` — replace page HTML (`--stdin` to read from stdin)

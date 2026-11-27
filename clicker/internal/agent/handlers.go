@@ -435,6 +435,8 @@ func (h *Handlers) dispatch(name string, args map[string]interface{}) (*ToolsCal
 		return h.browserGetWindow(args)
 	case "browser_set_window":
 		return h.browserSetWindow(args)
+	case "browser_set_offline":
+		return h.browserSetOffline(args)
 	case "browser_emulate_media":
 		return h.browserEmulateMedia(args)
 	case "browser_set_geolocation":
@@ -850,6 +852,8 @@ func mcpToolToMethod(name string) string {
 		return "vibium:dialog.dismiss"
 
 	// Media/content
+	case "browser_set_offline":
+		return "vibium:page.setOffline"
 	case "browser_emulate_media":
 		return "vibium:page.emulateMedia"
 	case "browser_set_geolocation":
@@ -4055,6 +4059,30 @@ func (h *Handlers) browserSetWindow(args map[string]interface{}) (*ToolsCallResu
 			Text: msg,
 		}},
 	}, nil
+}
+
+// browserSetOffline cuts the page off from the network, or reconnects it.
+func (h *Handlers) browserSetOffline(args map[string]interface{}) (*ToolsCallResult, error) {
+	if err := h.ensureBrowser(); err != nil {
+		return nil, err
+	}
+	offline, ok := args["offline"].(bool)
+	if !ok {
+		return nil, fmt.Errorf("offline must be true or false")
+	}
+	s := h.newSession()
+	ctx, err := s.GetContextID()
+	if err != nil {
+		return nil, err
+	}
+	if err := api.SetOffline(s, ctx, offline); err != nil {
+		return nil, err
+	}
+	text := "Network online"
+	if offline {
+		text = "Network offline"
+	}
+	return &ToolsCallResult{Content: []Content{{Type: "text", Text: text}}}, nil
 }
 
 // browserEmulateMedia overrides CSS media features.
